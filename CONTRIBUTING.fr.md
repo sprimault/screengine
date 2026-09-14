@@ -64,8 +64,10 @@ Les conventions de code et la doctrine de test sont dans
   de commit.
 - **Le noyau reste `no_std` et sans dépendance.** Un `use std::` ajouté dans
   `src/` est un défaut, même s'il compile sur le poste de son auteur.
-- **Aucune allocation par image.** Tout est alloué à la création du contexte ;
-  les tampons de travail se réutilisent par `clear`, jamais par réallocation.
+- **Aucune allocation par image.** Toute allocation a lieu dans un appel nommé —
+  création du contexte, chargement d'une ressource, calcul de lightmaps —, jamais
+  pendant une image ; les tampons de travail se réutilisent par `clear`, jamais
+  par réallocation.
 - **Aucun appel à la libm.** Trigonométrie et racine inverse passent par les
   tables du noyau. Un `f32::sin` introduit fait diverger les empreintes entre
   plateformes, et l'écart n'apparaît que sur la cible qu'on ne construit pas
