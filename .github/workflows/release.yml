@@ -1,0 +1,195 @@
+# Publication d'une version, déclenchée par un tag.
+#
+# Chaque cible se construit sur sa plateforme : MSVC sous Windows, la chaîne GNU
+# sous Linux. Jamais le poste de travail, qui n'offre aucune garantie de
+# reproductibilité.
+#
+# La release est créée en brouillon : les notes disent ce que le numéro ne dit
+# pas — un changement de SCG_ABI_VERSION, de version_format, du rendu — et ça
+# demande un jugement qu'aucun générateur ne remplace. Relire, publier.
+#
+# Actions épinglées au SHA, pour la même raison que dans ci.yml : un tag de
+# majeure est mobile, et celles-ci s'exécutent avec les droits d'écriture du
+# dépôt.
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # Lu avant toute construction : une section absente arrête la publication, et
+  # autant le savoir avant de compiler. Une version sans notes ne dit ni ce qui
+  # change, ni ce qu'un auteur de liaison doit reprendre.
+  notes:
+    name: Notes et version
+    runs-on: ubuntu-latest
+    outputs:
+      titre: ${{ steps.notes.outputs.titre }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # Le tag et la version du Cargo.toml disent la même chose, ou rien ne part :
+      # une bibliothèque publiée sous v0.1.0 qui se déclare 0.0.0 ment à chaque
+      # outil qui lit ses métadonnées.
+      - name: Vérifier la version du Cargo.toml
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          declaree=$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -n 1)
+          if [ "$declaree" != "$version" ]; then
+            echo "Cargo.toml déclare $declaree, le tag est $GITHUB_REF_NAME" >&2
+            exit 1
+          fi
+
+      - name: Lire les notes dans le CHANGELOG
+        id: notes
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+
+          # index et non une expression régulière : les crochets du titre de
+          # section formeraient une classe de caractères, et « [0.4.0] » ne
+          # désignerait plus qu'un seul caractère.
+          awk -v v="$version" '
+            index($0, "## [" v "]") == 1 { dedans = 1; next }
+            dedans && index($0, "## ") == 1 { exit }
+            dedans { print }
+          ' CHANGELOG.md > notes.md
+
+          # Une section faite de lignes vides passerait un test de taille : c'est
+          # du texte qui est exigé, pas des octets.
+          if ! grep -q '[^[:space:]]' notes.md; then
+            echo "CHANGELOG.md n'a pas de section pour la version $version" >&2
+            exit 1
+          fi
+
+          # Le titre est la troisième partie du titre de section, après la
+          # version et la date. Absent, la release se nomme par son tag seul.
+          titre=$(grep -m1 -F "## [$version]" CHANGELOG.md \
+            | sed -n 's/^## \[[^]]*\][^—]*—[^—]*— *//p')
+          echo "titre=${GITHUB_REF_NAME}${titre:+ — $titre}" >> "$GITHUB_OUTPUT"
+          cat notes.md
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: notes
+          path: notes.md
+
+  bibliotheque:
+    name: Bibliothèque — ${{ matrix.cible }}
+    needs: notes
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: windows-latest
+            cible: windows_x64
+            fichiers: screengine_ffi.dll screengine_ffi.dll.lib screengine_ffi.lib
+          - os: ubuntu-latest
+            cible: linux_x64
+            fichiers: libscreengine_ffi.so libscreengine_ffi.a
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Chaîne Rust
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+
+      - name: GNU Make
+        if: runner.os == 'Windows'
+        run: choco install make --no-progress
+
+      # ci.yml n'écoute que les branches et les PR : sans ce garde-fou, un tag
+      # posé sur un commit rouge publierait quand même. La conformance en fait
+      # partie — une bibliothèque qui ne rend pas les empreintes de référence
+      # n'est pas celle que les notes décrivent.
+      - name: Tests et conformance
+        run: make test && make conform
+
+      # make lib et non cargo build : c'est lui qui porte le profil release-ffi,
+      # sans lequel catch_unwind ne rattraperait rien.
+      - name: Construire
+        run: make lib
+
+      # Le nom de l'archive porte version, système et architecture : c'est ce
+      # qui permet de choisir son fichier et d'en garder deux versions côte à
+      # côte. LICENSE va dans l'archive et non à côté : personne ne télécharge
+      # un asset séparé pour accompagner une bibliothèque.
+      - name: Empaqueter
+        run: |
+          paquet="screengine_${GITHUB_REF_NAME}_${{ matrix.cible }}"
+          mkdir -p "paquets/$paquet/lib" "paquets/$paquet/include" publication
+          for fichier in ${{ matrix.fichiers }}; do
+            cp "target/release-ffi/$fichier" "paquets/$paquet/lib/"
+          done
+          cp include/screengine.h "paquets/$paquet/include/"
+          cp LICENSE THIRD-PARTY-NOTICES "paquets/$paquet/"
+
+          # Zip sous Windows, tar.gz ailleurs : ce que chaque système ouvre sans
+          # rien installer.
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            (cd paquets && 7z a -tzip -bso0 "../publication/$paquet.zip" "$paquet")
+          else
+            tar -czf "publication/$paquet.tar.gz" -C paquets "$paquet"
+          fi
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: archive-${{ matrix.cible }}
+          path: publication/*
+
+  publication:
+    name: Brouillon de release
+    needs: [notes, bibliotheque]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      # L'attestation lie l'archive au commit et au workflow qui l'a produite,
+      # et se vérifie avec `gh attestation verify`. C'est le seul contrepoids
+      # crédible à des bibliothèques non signées, chargées dans le processus de
+      # l'hôte.
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          path: telecharge
+
+      - name: Rassembler
+        run: |
+          mkdir -p publication
+          cp telecharge/archive-*/* publication/
+          cp telecharge/notes/notes.md .
+          cd publication
+          # Sur les archives et non sur les bibliothèques : c'est l'archive que
+          # la personne télécharge, donc ce qu'elle peut vérifier.
+          sha256sum screengine_* > SHA256SUMS
+          ls -la
+
+      - name: Attester la provenance
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: 'publication/screengine_*'
+
+      # gh est préinstallé sur le runner : pas d'action tierce à épingler pour
+      # une opération que la ligne de commande fait aussi bien.
+      - name: Créer la release en brouillon
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            --repo "$GITHUB_REPOSITORY" \
+            --draft \
+            --title "${{ needs.notes.outputs.titre }}" \
+            --notes-file notes.md \
+            publication/*

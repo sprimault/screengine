@@ -1,0 +1,37 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/screengine",
+    "crates/screengine-ffi",
+    "crates/screengine-host",
+    "crates/screengine-conformance",
+]
+
+[workspace.package]
+version = "0.0.0"
+edition = "2024"
+rust-version = "1.85"
+license = "MIT"
+repository = "https://github.com/sprimault/screengine"
+authors = ["Stéphane Primault"]
+
+[workspace.dependencies]
+screengine = { path = "crates/screengine", default-features = false }
+
+# Le rendu logiciel est inutilisable en profil de débogage : on optimise les
+# dépendances et le noyau même en dev, sans perdre les assertions.
+[profile.dev.package."*"]
+opt-level = 3
+
+[profile.dev.package.screengine]
+opt-level = 3
+
+[profile.release]
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+
+# La FFI doit rattraper les paniques : `panic = "abort"` y est interdit.
+[profile.release-ffi]
+inherits = "release"
+panic = "unwind"

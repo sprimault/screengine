@@ -1,0 +1,138 @@
+# Intégration continue.
+#
+# Les actions sont épinglées au SHA, le tag lisible en commentaire. Un tag de
+# majeure comme `@v7` est mobile : il désigne un contenu qui change sans que ce
+# dépôt bouge, donc du code tiers exécuté avec nos droits. Le SHA ne se réécrit
+# pas. Contrepartie assumée : relever les versions est une opération manuelle.
+#
+# Tout passe par le Makefile, comme en local. Une commande cargo écrite ici
+# serait une seconde définition du contrôle, et c'est celle qu'on ne peut pas
+# essayer avant de pousser.
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+  # L'audit doit tourner même quand personne ne contribue : un avis publié en
+  # amont n'attend pas la prochaine PR.
+  schedule:
+    - cron: '0 6 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  verification:
+    name: Format, lint, no_std, header, licences
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Chaîne Rust
+        run: |
+          rustup toolchain install stable --profile minimal --component rustfmt,clippy
+          rustup default stable
+
+      # cbindgen et cargo-deny se compilent depuis les sources : plusieurs
+      # minutes à chaque exécution sans cache. La clé suit le Makefile, qui porte
+      # les versions épinglées : une version relevée invalide le cache.
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/bin
+            ~/.cargo/.crates.toml
+            ~/.cargo/.crates2.json
+          key: outils-${{ runner.os }}-${{ hashFiles('Makefile') }}
+
+      - name: Outils
+        run: make tools
+
+      - name: Format
+        run: make fmt
+
+      - name: Lint
+        run: make lint
+
+      # Sur une cible sans std : c'est la seule forme du contrôle qui échoue
+      # vraiment sur un `use std::` glissé dans le noyau.
+      - name: no_std
+        run: make nostd
+
+      # Un écart signale une édition manuelle du header ou une régénération
+      # oubliée. Les deux se paient chez l'intégrateur.
+      - name: Header
+        run: make header-verif
+
+      - name: Licences et provenance
+        run: make deny
+
+  # Les empreintes de référence sont versionnées : chaque plateforme les compare
+  # aux mêmes fichiers, donc toutes les plateformes entre elles. Une conformance
+  # qui ne tournerait que sur une plateforme ne comparerait rien.
+  tests:
+    name: Tests et conformance — ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Chaîne Rust
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+
+      # L'image Windows fournit bash mais pas GNU Make.
+      - name: GNU Make
+        if: runner.os == 'Windows'
+        run: choco install make --no-progress
+
+      - name: Tests
+        run: make test
+
+      - name: Conformance
+        run: make conform
+
+  # Job distinct : un avis publié en amont n'a rien à voir avec la PR en cours,
+  # et son échec ne doit pas se lire comme « ta contribution est cassée ».
+  audit:
+    name: Audit des dépendances
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Chaîne Rust
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/bin
+            ~/.cargo/.crates.toml
+            ~/.cargo/.crates2.json
+          key: outils-${{ runner.os }}-${{ hashFiles('Makefile') }}
+
+      # cargo-audit n'est pas épinglé : make tools le remet à jour quand une
+      # version plus récente existe, cache ou pas.
+      - name: Outils
+        run: make tools
+
+      - name: Vulnérabilités
+        run: make audit

@@ -1,0 +1,276 @@
+# Conventions Rust
+
+`CONTRIBUTING.fr.md` en donne le résumé exigible. Ce document en porte le détail
+et les raisons : ce qu'une règle écarte, pour qu'on puisse la rouvrir sans
+rejouer la discussion.
+
+Les invariants — ABI comme contrat, noyau sans système, zéro allocation par
+image, déterminisme au bit près, rien du jeu dans le moteur — commandent tout ce
+qui suit. Une convention qui entrerait en conflit avec l'un d'eux est fausse.
+
+## Chaîne
+
+- **Rust stable**, édition 2024, `rust-version = "1.85"` déclaré dans le
+  `Cargo.toml` de l'espace de travail. Pas de fonctionnalité nightly, y compris
+  dans les hôtes : une cible qui n'existe qu'en nightly n'est pas une cible.
+- L'édition 2024 impose `#[unsafe(no_mangle)]` et `unsafe extern`. Ce n'est pas
+  une contrainte de plus : c'est la marque, dans le texte, de chaque endroit où
+  le compilateur cesse de garantir quelque chose.
+
+## Découpage des crates
+
+| Crate | Rôle | `std` | Dépendances | `unsafe` |
+|---|---|---|---|---|
+| `screengine` | le noyau : maths, pipeline, rasteriseur, formats, monde | non | aucune | chemins SIMD seulement |
+| `screengine-ffi` | la frontière C, `cdylib` + `staticlib` | oui | `screengine` | oui |
+| `screengine-host` | hôte de développement : fenêtre, blit, mise à l'échelle | oui | à choisir au lot 4 | non |
+| `screengine-conformance` | scènes de référence, empreintes | oui | `screengine` | non |
+
+**Le sens des dépendances ne s'inverse jamais.** Rien dans `screengine` n'importe
+`screengine-ffi`. Si le noyau en avait besoin, c'est que de la logique serait
+descendue dans la couche d'adaptation, ou que la frontière aurait fui vers le
+noyau — les deux cassent la séparation.
+
+**`screengine-ffi` ne contient aucune logique.** Elle convertit des types,
+enveloppe les appels, traduit les erreurs en codes et formate les messages. Un
+calcul qui y apparaît est un calcul que l'hôte wasm, qui passe par elle, et la
+conformance, qui n'y passe pas, feraient différemment.
+
+**Les types qui traversent la frontière sont déclarés dans `screengine-ffi`**, et
+convertis vers ceux du noyau. `cbindgen` ne lit que ce crate : un type du noyau
+qui apparaîtrait dans une signature exportée ne serait pas dans le header, et le
+noyau se retrouverait tenu à une disposition `#[repr(C)]` qu'il n'a pas choisie.
+
+**`screengine-host` est un consommateur comme un autre.** Il n'accède à rien que
+l'API publique n'expose, et aucune fonctionnalité du noyau n'existe pour lui
+seul.
+
+## Dépendances
+
+- **Le noyau n'en a aucune**, `dev-dependencies` comprises. Pas même `libm`,
+  pourtant `no_std` : le déterminisme exige que la trigonométrie passe par les
+  tables du noyau, et une dépendance de test finit toujours par servir hors des
+  tests. Le générateur pseudo-aléatoire des tests est écrit dans le noyau — il
+  lui en faut un de toute façon pour la graine du tramage.
+- `screengine-ffi` n'en a pas davantage : `std` suffit à ce qu'elle fait.
+- Les hôtes et la conformance en portent. Ce sont elles qui voyagent dans les
+  archives publiées : chacune entre dans `THIRD-PARTY-NOTICES`, et passe
+  `make deny`.
+- Choisir une version, épingler, justifier un épinglage : voir
+  `CONTRIBUTING.fr.md`, « Corriger une vulnérabilité sans en créer une autre ».
+
+## `no_std`
+
+- `#![no_std]` en tête de `crates/screengine/src/lib.rs`, sans condition, et
+  `extern crate alloc`.
+- **Pas de `#![cfg_attr(not(test), no_std)]`.** Cette forme rend `std` disponible
+  à tout le crate pendant les tests, et un `use std::` écrit dans du code non test
+  compile alors sous `cargo test`. Un module de test qui a besoin de `std` le
+  déclare lui-même : `extern crate std;` dans le `mod tests`.
+- **Le noyau ne déclare aucune fonctionnalité Cargo.** Une fonctionnalité `std`
+  « pour les messages d'erreur » ou « pour déboguer » est exactement le
+  contournement que l'invariant interdit.
+- **La preuve est `make nostd`**, qui compile le noyau pour
+  `thumbv7em-none-eabihf`. `cargo build --no-default-features` ne prouve rien :
+  sur la cible hôte, `std` reste dans le sysroot et un `use std::` passe au
+  travers. La cible choisie est aussi 32 bits, ce qui fait apparaître une
+  hypothèse sur la largeur de `usize` au même moment qu'un `std` oublié.
+
+## Erreurs, paniques et marqueurs de stub
+
+- **Ce qui peut échouer rend un `Result`.** Le noyau définit son type d'erreur,
+  une énumération sans chaîne de caractères : le message se formate dans
+  `screengine-ffi`, qui traduit chaque variante en code d'ABI.
+- **Aucun `unwrap` ni `expect` sur un chemin atteignable**, noyau compris. Un
+  invariant se tient par le type ; ce qui ne se tient pas par le type remonte en
+  erreur.
+- **Une panique signale un défaut du moteur**, jamais une entrée invalide. Une
+  carte malformée rend `SCG_ERR_INVALID_FORMAT` ; elle ne panique pas, même en
+  débogage.
+- **`debug_assert!` pour les invariants internes coûteux**, `assert!` pour ceux
+  dont la violation corromprait la mémoire ou la sortie en release.
+- **Les stubs portent leur étape** : `todo!("étape 5 : traversée de portails")`.
+  C'est ce que compte la mesure d'avancement du `ROADMAP`. Un `todo!()` nu, un
+  `unimplemented!()` ou un commentaire `// TODO` ne comptent nulle part et sont
+  refusés.
+- Un stub panique, la couche FFI rattrape la panique, et l'hôte reçoit
+  `SCG_ERR_PANIC`. Les notes d'une version qui en contient disent ce qu'elle ne
+  fait pas encore.
+
+## `unsafe`
+
+- **Uniquement dans `screengine-ffi` et dans les chemins SIMD du noyau.** Le
+  noyau déclare `#![deny(unsafe_code)]` ; chaque module SIMD l'autorise
+  localement, et c'est la seule autorisation du crate.
+- **Chaque bloc porte un commentaire `// SAFETY:` qui nomme l'invariant tenu**, et
+  qui le tient. « L'appelant garantit que `ptr` pointe vers `stride × hauteur`
+  pixels, précondition documentée dans le header » est un commentaire ;
+  « pointeur valide » n'en est pas un.
+- Une fonction `unsafe fn` documente ses préconditions dans une section
+  `# Safety` de sa doc. En édition 2024, son corps n'est pas implicitement
+  `unsafe` : chaque opération y reprend son propre bloc et son propre
+  commentaire.
+- Un `unsafe` sans commentaire est un défaut, même correct. Le lint
+  `clippy::undocumented_unsafe_blocks` le fait refuser par `make lint`.
+
+## Frontière C, côté Rust
+
+Le contrat est dans [`abi.md`](abi.md). Ce qui suit est la manière de l'écrire.
+
+- **Un seul utilitaire enveloppe tous les points d'entrée** : `catch_unwind`,
+  traduction de l'erreur en code, mémorisation du message pour `scg_last_error`.
+  Écrit dès le premier point d'entrée, jamais recopié. Un point d'entrée ajouté
+  sans lui est le défaut le plus discret du projet : il ne se manifeste que le
+  jour où quelque chose panique, chez quelqu'un d'autre.
+- **Aucun `enum` ni `bool` Rust dans une signature exportée ou une structure
+  `#[repr(C)]`.** Un discriminant ou un octet invalide reçu d'un hôte y est un
+  comportement indéfini, avant même la première ligne de vérification. On reçoit
+  un entier, on le convertit en `enum` par `TryFrom`, et l'échec rend
+  `SCG_ERR_INVALID_ARGUMENT`.
+- **Un handle est un `Box` converti** par `Box::into_raw`, rendu par
+  `Box::from_raw` à la destruction et jamais ailleurs. Le type pointé est opaque
+  pour `cbindgen`.
+- **`AssertUnwindSafe` ne se pose qu'en un point**, dans l'utilitaire
+  d'enveloppe. C'est le poison de l'objet (A5 dans `abi.md`) qui rend cette
+  assertion honnête.
+- **La documentation des éléments exportés est en anglais**, et elle est la
+  documentation du header : durée de vie du message d'erreur, préconditions sur
+  les pointeurs, obligation de `scg_buffer_alloc` sur wasm. Ce qui n'y est pas
+  n'existe pas pour un auteur de liaison.
+- `panic = "abort"` rendrait tout cela inopérant : la bibliothèque se construit
+  avec le profil `release-ffi`. Voir [`construction.md`](construction.md).
+
+## Arithmétique et précision
+
+**Même scène, même tampon, sur toutes les cibles.** C'est ce qui fait de la
+conformance un détecteur de régression multi-plateforme.
+
+- **Aucun appel à la libm.** Pas de `sin`, `cos`, `tan`, `sqrt`, `powf`, `exp`,
+  `ln` ni de leurs cousins : leur résultat dépend de l'implémentation — musl,
+  Darwin, le CRT de MSVC. Trigonométrie et racine inverse passent par les tables
+  et polynômes du noyau. Le `no_std` en écarte la plupart d'office ; la règle vaut
+  aussi dans les crates qui ont `std`, dès qu'un résultat entre dans une
+  empreinte.
+- **Pas de `mul_add`.** Sur une cible sans instruction FMA, il retombe sur la
+  libm ; sur une autre, il ne rend pas les mêmes bits qu'une multiplication
+  suivie d'une addition.
+- **Opérations admises sur les flottants** : addition, soustraction,
+  multiplication, division, comparaisons, conversions. IEEE 754 les définit au
+  bit près, et Rust ne contracte jamais d'expression flottante de lui-même.
+- **Conversion flottant → entier par `as`**, dont Rust définit la saturation. Pas
+  de `floor` ni de `round` de bibliothèque : l'arrondi s'écrit sur la conversion,
+  et son sens est commenté.
+- **Le rasteriseur travaille en entiers.** Sommets en coordonnées entières
+  sous-pixel, fonctions de bord entières, règle top-left. La précision
+  sous-pixel et la largeur des produits de fonctions de bord (`i32` ou `i64`) se
+  fixent à l'étape 1, par le calcul du pire cas à la plus haute résolution
+  interne prévue, écrit en commentaire à côté de la constante.
+- **Un débordement possible s'écrit explicitement** : `wrapping_`, `checked_` ou
+  `saturating_`. Ne jamais s'en remettre au profil : le profil de développement
+  garde `overflow-checks` et panique, le profil release enveloppe en silence, et
+  l'empreinte de la conformance, construite en release, ne verrait rien.
+- **`usize` pour indexer, rien d'autre.** Ce qui entre dans un format de fichier,
+  une empreinte ou une signature d'ABI a une largeur fixe.
+
+## Allocation
+
+- **Tout est alloué à la création du contexte**, ou au chargement d'une
+  ressource : tampon indexé, z-buffer, listes de faces, pile de matrices, tampons
+  de clipping. Ni l'un ni l'autre ne se produit par image.
+- **Un tampon de travail se vide par `clear()`**, jamais par une réaffectation ni
+  un `Vec::new()`. Sa capacité est dimensionnée à la création, pour le pire cas de
+  la scène, et un dépassement est une erreur rendue, pas une croissance.
+- **Changer la résolution interne réalloue**, et c'est admis : ce n'est pas une
+  image, c'est une reconfiguration.
+- La preuve est un test, pas une relecture : voir « Tests ».
+
+## Documentation et commentaires
+
+- **Toute déclaration a sa documentation** — fonctions, méthodes, types, champs
+  publics, constantes, statiques, fonctions de test. Une ligne quand c'est
+  évident, un paragraphe quand il y a un arbitrage à retrouver. Le lint
+  `missing_docs` le fait refuser par `make lint`.
+- **Les commentaires disent pourquoi**, jamais ce que dit la ligne suivante. Leur
+  densité suit la difficulté : quatre lignes sur la règle top-left, rien sur la
+  plomberie.
+- **Langue** : identifiants en anglais, documentation et commentaires en français,
+  documentation des éléments exportés en FFI en anglais. Le détail est dans
+  `CONTRIBUTING.fr.md`, section « Langue ».
+- **En-tête de fichier.** Tout fichier source — `.rs`, et dans les hôtes `.c`,
+  `.php`, `.kt`, `.js` — commence par :
+
+  ```rust
+  // Copyright 2026 Stéphane Primault <sprimault@users.noreply.github.com>
+  // SPDX-License-Identifier: MIT
+  ```
+
+  Côté Rust, il précède la doc de module `//!` et les attributs internes. Côté
+  PHP, il suit `<?php`. `include/screengine.h` le reçoit par l'option `header` de
+  `cbindgen.toml`, jamais par une édition.
+- Pas de bannière, pas d'emoji, ni dans le code, ni dans les messages de commit.
+
+## Formatage et lints
+
+- **`rustfmt` sans configuration.** `make fmt` vérifie tout l'arbre, sans
+  exclusion. Une configuration est une discussion de style de plus, pour un gain
+  qui ne se mesure pas.
+- **`clippy` avec `-D warnings`**, sur `--all-targets --all-features` : les tests
+  et les exemples sont du code comme le reste.
+- **Les lints se déclarent une fois**, dans `[workspace.lints]` du `Cargo.toml`
+  racine, et chaque crate les hérite par `lints.workspace = true`. Ceux que ce
+  document exige : `missing_docs`, `unsafe_op_in_unsafe_fn`,
+  `clippy::undocumented_unsafe_blocks`. `unsafe_code` est refusé dans le noyau
+  seul, par attribut de crate, puisque la couche FFI en a besoin partout.
+
+## Tests
+
+**Tout code livré part avec ses tests, dans le même commit.** Un lot sans test
+n'est pas un lot plus petit, c'est un lot inachevé.
+
+**Un test se vérifie en le faisant échouer une fois.** On casse le code, on voit
+le test rougir, on répare. Un test qui n'a jamais échoué ne prouve pas qu'il
+teste quelque chose.
+
+### Où vivent les tests
+
+- **Tests unitaires** dans le module qu'ils testent, `#[cfg(test)] mod tests`. Ils
+  peuvent déclarer `extern crate std;`.
+- **Tests de la frontière** dans `crates/screengine-ffi/tests/` : ils appellent
+  les fonctions exportées comme le ferait un hôte, pointeurs nuls et séquences
+  invalides compris, et vérifient qu'aucune panique ne s'échappe.
+- **Conformance** dans `crates/screengine-conformance` : des scènes de référence,
+  rendues sans fenêtre, dont le tampon est haché et comparé aux empreintes de
+  `references/`.
+- **Aucun test n'exige de fenêtre ni de GPU.** Les runners d'intégration continue
+  n'ont pas d'écran ; un hôte n'est pas un test.
+
+### Conformance
+
+- **Le rasteriseur scalaire est la référence.** Une variante SIMD se valide contre
+  son empreinte, jamais contre une capture prise avec elle-même. Une divergence
+  est une variante fausse, pas une différence acceptable.
+- **Une empreinte qui change est soit une régression, soit une évolution
+  voulue.** Dans le second cas, `make conform-update`, et la mise à jour des
+  références est un commit distinct, dont le message dit ce que le rendu fait
+  désormais autrement. Jamais mêlée au lot qui l'a causée : le diff d'un fichier
+  d'empreintes ne se relit pas.
+- **La scène des arêtes partagées** — deux triangles qui partagent une arête se
+  partagent ses pixels, sans trou ni recouvrement — se repasse à chaque
+  modification du remplissage, à toutes les résolutions internes prévues. C'est
+  le défaut le plus coûteux du projet : invisible à l'arrêt, visible en
+  mouvement.
+- Les empreintes sont comparées octet pour octet : `.gitattributes` les déclare
+  binaires.
+
+### Allocation
+
+Un test de `screengine-conformance` installe un allocateur global qui compte les
+allocations, crée un contexte, rend quelques images de chauffe, puis vérifie que
+les images suivantes n'allouent rien. C'est la seule preuve de l'invariant qui
+ne dépende pas de l'attention du relecteur.
+
+### Tests aléatoires
+
+Pas de bibliothèque de tests par propriétés dans le noyau. Les tests qui tirent
+des entrées au hasard utilisent le générateur du noyau, avec une graine fixe
+affichée en cas d'échec : un échec qui ne se rejoue pas n'a pas été trouvé.
