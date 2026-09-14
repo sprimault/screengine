@@ -14,9 +14,23 @@ rust-version = "1.85"
 license = "MIT"
 repository = "https://github.com/sprimault/screengine"
 authors = ["Stéphane Primault"]
+# Rien ne part sur crates.io tant que l'ABI n'est pas figée : la distribution
+# passe par les archives de release. C'est aussi ce qui permet à cargo-deny
+# d'admettre les dépendances de chemin sans version.
+publish = false
 
 [workspace.dependencies]
 screengine = { path = "crates/screengine", default-features = false }
+
+# Déclarés une fois, hérités par chaque crate avec `lints.workspace = true`. En
+# avertissement : `make lint` passe clippy en -D warnings, et un avertissement
+# n'arrête pas une compilation en cours d'écriture.
+[workspace.lints.rust]
+missing_docs = "warn"
+unsafe_op_in_unsafe_fn = "warn"
+
+[workspace.lints.clippy]
+undocumented_unsafe_blocks = "warn"
 
 # Le rendu logiciel est inutilisable en profil de débogage : on optimise les
 # dépendances et le noyau même en dev, sans perdre les assertions.

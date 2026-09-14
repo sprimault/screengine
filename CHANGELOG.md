@@ -45,3 +45,27 @@ doit reprendre son travail. Ce préambule reste en français : il n'est jamais
 publié, et explique les conventions du dépôt à qui y contribue.
 
 ## [Non publié]
+
+Aucun rendu : la bibliothèque compile mais n'expose encore aucune fonction.
+
+### Ajouté
+- Espace de travail en quatre crates : noyau sans std, frontière C, hôte de
+  développement, suite de conformance.
+- Contrat d'ABI, conventions Rust et documentation de construction, en brouillon.
+- Intégration continue et publication sur tag.
+
+### Modifié
+- Licence MIT seule.
+
+***
+
+No rendering yet: the library builds but exposes no function.
+
+### Added
+- Four-crate workspace: std-free core, C boundary, development host,
+  conformance suite.
+- Draft ABI contract, Rust conventions and build documentation.
+- Continuous integration and tag-triggered release.
+
+### Changed
+- MIT licence only.

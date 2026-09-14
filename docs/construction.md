@@ -189,9 +189,9 @@ Dans l'ordre où les causes se rencontrent :
   et échoue sur tout écart avec le fichier versionné. L'intégration continue passe
   le second ; un développeur le passe avant de pousser, pour ne pas découvrir
   l'écart après avoir perdu le contexte.
-- **`cbindgen.toml`**, à la racine, s'écrit au lot 3 de l'étape 0. Il fixe au
-  minimum : le langage C, une garde d'inclusion, la recopie de la documentation,
-  et l'en-tête de licence par l'option `header`.
+- **`cbindgen.toml`**, à la racine, fixe le langage C, la garde d'inclusion, la
+  recopie de la documentation et l'en-tête de licence par l'option `header`. Il
+  n'inclut que `stddef.h` et `stdint.h` : aucun `bool` ne traverse la frontière.
 - **Le header est en LF**, déclaré dans `.gitattributes` : une conversion en CRLF
   sur un clone Windows ferait échouer `make header-verif` sans qu'une ligne de
   code ait bougé.

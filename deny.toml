@@ -1,0 +1,24 @@
+# Licences et provenance des dépendances, contrôlées par `make deny`.
+#
+# Le noyau et la couche FFI n'ont aucune dépendance. Ce qui entre ici vient des
+# hôtes et de la conformance, et voyage dans les archives publiées.
+
+[graph]
+all-features = true
+
+[licenses]
+# Une licence s'ajoute à la liste avec la dépendance qui l'amène, et la
+# dépendance entre dans THIRD-PARTY-NOTICES dans le même commit.
+allow = ["MIT"]
+confidence-threshold = 0.93
+
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+# Les crates du dépôt se référencent par chemin, sans version. Admis parce
+# qu'aucun n'est publié sur crates.io.
+allow-wildcard-paths = true
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"

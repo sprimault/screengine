@@ -96,8 +96,15 @@ audit:
 # Licences et provenance des dépendances. Le noyau n'en a aucune ; ce sont les
 # hôtes et la conformance qui en portent, et ce sont elles qui voyagent dans les
 # archives publiées.
+#
+# DENY_CHECKS vide : tous les contrôles, avis de sécurité compris. Un poste dont
+# le TLS est intercepté ne peut pas télécharger la base d'avis par la pile de
+# cargo-deny ; il restreint la liste dans makefile.local, et les avis restent
+# couverts par `make audit`.
+DENY_CHECKS ?=
+
 deny:
-	cargo deny check
+	cargo deny check $(DENY_CHECKS)
 
 doc:
 	cargo doc --workspace --no-deps --open

@@ -1,0 +1,16 @@
+[package]
+name = "screengine-conformance"
+description = "Scènes de référence de Screengine et comparaison de leurs empreintes."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish.workspace = true
+
+[dependencies]
+screengine.workspace = true
+
+[lints]
+workspace = true
