@@ -19,6 +19,26 @@ qui suit. Une convention qui entrerait en conflit avec l'un d'eux est fausse.
 
 ## Découpage des crates
 
+```
+Cargo.toml          paquet screengine et espace de travail
+src/                le noyau ; un sous-dossier par module, créé avec son étape
+tests/              tests d'intégration du noyau
+examples/           usage de l'API Rust du noyau
+benches/            mesures du noyau
+crates/
+  screengine-ffi/           src/, tests/
+  screengine-host/          src/
+  screengine-conformance/   src/, references/
+```
+
+**Le noyau est le paquet racine**, avec la disposition standard de Cargo ; les
+trois autres crates la reprennent chacun dans `crates/`. Un répertoire naît avec
+son premier fichier : pas de `tests/` vide en attendant le premier test.
+
+**Un seul paquet ne suffirait pas.** Les dépendances d'un paquet valent pour
+toutes ses cibles : l'hôte et la conformance y feraient entrer les leurs dans le
+noyau. Et la frontière C exige `std` et `unsafe`, que le noyau refuse.
+
 | Crate | Rôle | `std` | Dépendances | `unsafe` |
 |---|---|---|---|---|
 | `screengine` | le noyau : maths, pipeline, rasteriseur, formats, monde | non | aucune | chemins SIMD seulement |
@@ -61,7 +81,7 @@ seul.
 
 ## `no_std`
 
-- `#![no_std]` en tête de `crates/screengine/src/lib.rs`, sans condition, et
+- `#![no_std]` en tête de `src/lib.rs`, sans condition, et
   `extern crate alloc`.
 - **Pas de `#![cfg_attr(not(test), no_std)]`.** Cette forme rend `std` disponible
   à tout le crate pendant les tests, et un `use std::` écrit dans du code non test
