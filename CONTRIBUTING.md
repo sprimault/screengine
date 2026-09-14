@@ -63,8 +63,9 @@ What follows is the enforceable summary.
 - No banners, no decorative emoji, neither in code nor in commit messages.
 - **The core stays `no_std` and dependency-free.** A `use std::` added to
   `src/` is a defect, even if it compiles on its author's machine.
-- **No per-frame allocation.** Everything is allocated when the context is
-  created; working buffers are reused through `clear`, never reallocated.
+- **No per-frame allocation.** Every allocation happens in a named call —
+  context creation, resource loading, lightmap computation —, never during a
+  frame; working buffers are reused through `clear`, never reallocated.
 - **No libm calls.** Trigonometry and inverse square root go through the core's
   tables. An `f32::sin` introduced makes hashes diverge across platforms, and
   the gap only shows on the target you do not build yourself.
