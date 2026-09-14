@@ -27,7 +27,7 @@ Sans lui, un clone se construit dans `target/`.
 | Rust | stable, `rust-version = "1.85"` au minimum | édition 2024 |
 | GNU Make | 4 | |
 | `cbindgen` | `0.29.0`, épinglé | un générateur : une autre version produit un autre header, et `make header-verif` échouerait sur un dépôt propre |
-| `cargo-deny` | `0.18.4`, épinglé | ses règles changent de sens d'une version à l'autre |
+| `cargo-deny` | `0.19.4`, épinglé | ses règles changent de sens d'une version à l'autre ; en deçà de 0.19.1, il ne lit pas les scores CVSS 4.0 de la base d'avis |
 | `cargo-audit` | la dernière | il lit des avis publiés en continu ; l'épingler figerait ce qu'il sait lire |
 
 Les versions sont épinglées dans le `Makefile` et nulle part ailleurs.

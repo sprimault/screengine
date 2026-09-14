@@ -56,6 +56,9 @@ Aucun rendu : la bibliothèque compile mais n'expose encore aucune fonction.
 
 ### Modifié
 - Licence MIT seule.
+- Cible de rendu : la classe des moteurs logiciels de 1996 à 1998 plutôt que
+  palette et texture affine. Couleurs directes, mipmaps, lightmaps, cellules 3D,
+  rendu par tuiles, virgule fixe après la projection.
 
 ***
 
@@ -69,3 +72,6 @@ No rendering yet: the library builds but exposes no function.
 
 ### Changed
 - MIT licence only.
+- Rendering target: the 1996–1998 software renderer class instead of palette
+  and affine texturing. True colour, mipmaps, lightmaps, 3D cells, tile-based
+  rendering, fixed-point after projection.

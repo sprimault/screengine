@@ -50,8 +50,8 @@ seul.
 - **Le noyau n'en a aucune**, `dev-dependencies` comprises. Pas même `libm`,
   pourtant `no_std` : le déterminisme exige que la trigonométrie passe par les
   tables du noyau, et une dépendance de test finit toujours par servir hors des
-  tests. Le générateur pseudo-aléatoire des tests est écrit dans le noyau — il
-  lui en faut un de toute façon pour la graine du tramage.
+  tests. Le générateur pseudo-aléatoire des tests est écrit dans le module de test
+  qui s'en sert : une dizaine de lignes, et une graine fixe.
 - `screengine-ffi` n'en a pas davantage : `std` suffit à ce qu'elle fait.
 - Les hôtes et la conformance en portent. Ce sont elles qui voyagent dans les
   archives publiées : chacune entre dans `THIRD-PARTY-NOTICES`, et passe
@@ -133,6 +133,11 @@ Le contrat est dans [`abi.md`](abi.md). Ce qui suit est la manière de l'écrire
 - **`AssertUnwindSafe` ne se pose qu'en un point**, dans l'utilitaire
   d'enveloppe. C'est le poison de l'objet (A5 dans `abi.md`) qui rend cette
   assertion honnête.
+- **Le même utilitaire fixe l'environnement flottant** à l'entrée — arrondi au
+  plus proche, DAZ et FTZ désactivés, dans MXCSR sur x86 et FPCR sur ARM — et
+  rend celui de l'hôte à la sortie, panique comprise. Le noyau ne touche jamais
+  à ces registres : il suppose l'environnement par défaut, et c'est la frontière
+  qui le lui garantit.
 - **La documentation des éléments exportés est en anglais**, et elle est la
   documentation du header : durée de vie du message d'erreur, préconditions sur
   les pointeurs, obligation de `scg_buffer_alloc` sur wasm. Ce qui n'y est pas
@@ -142,9 +147,29 @@ Le contrat est dans [`abi.md`](abi.md). Ce qui suit est la manière de l'écrire
 
 ## Arithmétique et précision
 
-**Même scène, même tampon, sur toutes les cibles.** C'est ce qui fait de la
+**Même scène, même tampon, sur toutes les cibles, tous les chemins SIMD, toutes
+les tailles de tuile et tous les nombres de threads.** C'est ce qui fait de la
 conformance un détecteur de régression multi-plateforme.
 
+**La virgule fixe commence à la projection.** Les flottants s'arrêtent à la
+transformation des sommets ; tout ce qui suit est entier. C'est ce qui rend le
+déterminisme accessible plutôt que coûteux : une multiplication entière rend le
+même résultat en scalaire, en NEON, en SSE et en simd128, et aucun registre de
+l'hôte n'y change rien. Les formats ci-dessous se figent avant le premier
+remplissage — celui du triangle de l'étape 0 — parce qu'ils donnent leur forme
+aux fonctions de bord.
+
+### Côté flottant
+
+- **Uniquement la transformation des sommets et la projection**, en `f32`, avec
+  un ordre d'opérations unique écrit une fois. Une variante SIMD reproduit cet
+  ordre ; elle ne le « simplifie » pas.
+- **Le plan proche se clippe en espace homogène**, avant la division. Les plans
+  de la bande de garde aussi, pour que les coordonnées écran tiennent dans leur
+  format ; les côtés de l'image se traitent ensuite par découpe du rectangle.
+- **Le passage en sous-pixels se fait dans une seule fonction**, arrondi au plus
+  proche, testée sur des valeurs négatives : la conversion `as` tronque vers zéro,
+  et `-0.4` et `0.4` ne tomberaient pas du même côté.
 - **Aucun appel à la libm.** Pas de `sin`, `cos`, `tan`, `sqrt`, `powf`, `exp`,
   `ln` ni de leurs cousins : leur résultat dépend de l'implémentation — musl,
   Darwin, le CRT de MSVC. Trigonométrie et racine inverse passent par les tables
@@ -160,11 +185,50 @@ conformance un détecteur de régression multi-plateforme.
 - **Conversion flottant → entier par `as`**, dont Rust définit la saturation. Pas
   de `floor` ni de `round` de bibliothèque : l'arrondi s'écrit sur la conversion,
   et son sens est commenté.
-- **Le rasteriseur travaille en entiers.** Sommets en coordonnées entières
-  sous-pixel, fonctions de bord entières, règle top-left. La précision
-  sous-pixel et la largeur des produits de fonctions de bord (`i32` ou `i64`) se
-  fixent à l'étape 1, par le calcul du pire cas à la plus haute résolution
-  interne prévue, écrit en commentaire à côté de la constante.
+- **Dans les chemins SIMD, aucune intrinsèque fusionnée, relâchée ou
+  approximative.** Rust ne fusionne jamais `a*b+c` de lui-même ; les intrinsèques,
+  si : `vfmaq_f32` fusionne quand `vmlaq_f32` ne le fait pas. `relaxed_madd` et
+  les autres opérations `relaxed-simd` sont non déterministes par définition.
+  `rsqrtps` et `vrsqrteq_f32` sont des approximations dont les bits varient selon
+  le fondeur. `minps` et `vminq_f32` ne traitent pas NaN pareil : une comparaison
+  explicite les remplace. Une conversion flottant → entier vectorielle ne se fait
+  qu'après bornage, `cvttps2dq` rendant `0x80000000` là où `as` sature.
+
+### Côté entier
+
+Les pires cas sont calculés pour une résolution interne de 2048 pixels de côté
+au plus, dans une bande de garde de ±4096 pixels. Chaque constante porte ce calcul
+en commentaire.
+
+| Grandeur | Format | Pourquoi |
+|---|---|---|
+| Coordonnées écran | `i32`, 28.4 (un seizième de pixel) | quatre bits suffisent à une résolution basse remontée en entier ; le pixel est échantillonné en son centre, à +8 |
+| Bande de garde | ±4096 pixels, soit ±2¹⁶ en 28.4 | au-delà, le sommet est clippé en espace homogène |
+| Fonctions de bord | `i64` | un écart entre sommets atteint 2¹⁷ en 28.4, un produit 2³⁴ : `i32` déborde dès que la bande de garde sert |
+| Règle top-left | biais de −1 sur les arêtes ni hautes ni gauches | deux triangles partageant une arête se partagent ses pixels, sans trou ni recouvrement |
+| Profondeur | `u32`, `near/w` en 0.32, saturé | plus grand est plus proche ; `1/w` est affine en espace écran, donc s'interpole exactement |
+| Attributs (`1/w`, `u/w`, `v/w`, lightmap) | `i64`, 32.32 | équations de plan établies à la mise en place du triangle, par division entière |
+| Coordonnées de texture après division | `i32`, 16.16 | textures en puissance de deux, repli par masque |
+| Poids du bilinéaire | 8 bits, tirés des bits fractionnaires | mélange entier, arrondi `(… + 128) >> 8` |
+
+- **Tout s'évalue en coordonnées globales.** Une fonction de bord ou un attribut
+  en un pixel se calcule à partir des sommets et de la position du pixel dans
+  l'image, jamais d'une valeur arrondie propre à la tuile. Rebaser les valeurs à
+  l'origine d'une tuile est permis, parce qu'une translation entière est exacte.
+- **La division de perspective a lieu aux multiples de 16 de l'abscisse dans
+  l'image**, même quand ce point tombe hors du triangle ou de la tuile ; entre
+  deux, l'interpolation est affine. Un segment qui commencerait au bord de la
+  tuile ou du triangle donnerait une texture différente selon le découpage.
+- **Le niveau de mipmap se choisit par segment de 16 pixels**, sur la même grille,
+  à partir de la dérivée entière des coordonnées de texture ; le logarithme se
+  prend par `leading_zeros`.
+- **Le tramage ordonné** ajoute aux coordonnées 16.16, avant troncature, un
+  décalage sous-texel tiré d'une table fixe indexée par la position du pixel dans
+  l'image. C'est le filtrage par défaut ; le bilinéaire est le niveau au-dessus.
+  La table et son motif sont figés à l'étape 2, et testés.
+- **Toute division est entière et arrondie dans un sens écrit** : la division
+  `i64` de Rust tronque vers zéro, et une équation de plan dont le signe du
+  dénominateur change doit rester continue.
 - **Un débordement possible s'écrit explicitement** : `wrapping_`, `checked_` ou
   `saturating_`. Ne jamais s'en remettre au profil : le profil de développement
   garde `overflow-checks` et panique, le profil release enveloppe en silence, et
@@ -174,14 +238,20 @@ conformance un détecteur de régression multi-plateforme.
 
 ## Allocation
 
-- **Tout est alloué à la création du contexte**, ou au chargement d'une
-  ressource : tampon indexé, z-buffer, listes de faces, pile de matrices, tampons
-  de clipping. Ni l'un ni l'autre ne se produit par image.
+- **Toute allocation a lieu dans un appel nommé** : création du contexte,
+  chargement d'une ressource, calcul de lightmaps. Jamais entre le début et la fin
+  d'une image — ni pour générer un mipmap manquant, ni pour agrandir un atlas au
+  premier affichage. C'est le défaut type : il transforme « zéro allocation par
+  image » en « une réallocation au premier niveau chargé », sans que rien ne le
+  signale.
+- **Le contexte dimensionne ses tampons pour la résolution interne maximale**
+  reçue à la création : couleur, profondeur, listes de faces, pile de matrices,
+  tampons de clipping. Changer de résolution sous ce maximum n'alloue rien.
+- **Les ressources portent la mémoire qui dépend de la scène** : une texture
+  alloue ses mipmaps à son chargement, une cellule ses lightmaps à leur calcul.
 - **Un tampon de travail se vide par `clear()`**, jamais par une réaffectation ni
   un `Vec::new()`. Sa capacité est dimensionnée à la création, pour le pire cas de
   la scène, et un dépassement est une erreur rendue, pas une croissance.
-- **Changer la résolution interne réalloue**, et c'est admis : ce n'est pas une
-  image, c'est une reconfiguration.
 - La preuve est un test, pas une relecture : voir « Tests ».
 
 ## Documentation et commentaires
@@ -259,18 +329,27 @@ teste quelque chose.
   modification du remplissage, à toutes les résolutions internes prévues. C'est
   le défaut le plus coûteux du projet : invisible à l'arrêt, visible en
   mouvement.
+- **Chaque scène se rend en tuiles de 32, en tuiles de 64 et en image entière**, et
+  les trois empreintes doivent être identiques ; puis ses tuiles dans un ordre
+  mélangé. Une couture de tuile ne se voit que dans une configuration : sans ce
+  contrôle, la conformance ne vaudrait que pour la sienne.
+- **L'environnement flottant de l'hôte ne change pas l'image.** Un test de la
+  frontière active DAZ et FTZ avant d'appeler le moteur, et compare l'empreinte à
+  celle de la conformance.
 - Les empreintes sont comparées octet pour octet : `.gitattributes` les déclare
   binaires.
 
 ### Allocation
 
 Un test de `screengine-conformance` installe un allocateur global qui compte les
-allocations, crée un contexte, rend quelques images de chauffe, puis vérifie que
-les images suivantes n'allouent rien. C'est la seule preuve de l'invariant qui
-ne dépende pas de l'attention du relecteur.
+allocations, crée un contexte, charge une scène complète — textures, mipmaps,
+lightmaps —, puis vérifie qu'aucune image rendue ensuite n'alloue, la première
+comprise. C'est la première qui compte : c'est là qu'un mipmap généré à la
+demande ou un atlas agrandi se cacherait. Et c'est la seule preuve de l'invariant
+qui ne dépende pas de l'attention du relecteur.
 
 ### Tests aléatoires
 
 Pas de bibliothèque de tests par propriétés dans le noyau. Les tests qui tirent
-des entrées au hasard utilisent le générateur du noyau, avec une graine fixe
+des entrées au hasard utilisent un générateur écrit dans le test, avec une graine fixe
 affichée en cas d'échec : un échec qui ne se rejoue pas n'a pas été trouvé.
