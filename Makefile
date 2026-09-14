@@ -96,15 +96,8 @@ audit:
 # Licences et provenance des dépendances. Le noyau n'en a aucune ; ce sont les
 # hôtes et la conformance qui en portent, et ce sont elles qui voyagent dans les
 # archives publiées.
-#
-# DENY_CHECKS vide : tous les contrôles, avis de sécurité compris. Un poste dont
-# le TLS est intercepté ne peut pas télécharger la base d'avis par la pile de
-# cargo-deny ; il restreint la liste dans makefile.local, et les avis restent
-# couverts par `make audit`.
-DENY_CHECKS ?=
-
 deny:
-	cargo deny check $(DENY_CHECKS)
+	cargo deny check
 
 doc:
 	cargo doc --workspace --no-deps --open
@@ -132,7 +125,10 @@ clean:
 # cbindgen est épinglable parce que c'est un générateur : une version différente
 # produit un header différent, donc header-verif échouerait sur un dépôt propre.
 CBINDGEN_VERSION   ?= 0.29.0
-CARGO_DENY_VERSION ?= 0.18.4
+# 0.19.4 et pas en deçà : les versions antérieures à 0.19.1 ne lisent pas les
+# scores CVSS 4.0 de la base d'avis et échouent sur toute la base, et 0.19.4
+# corrige la lecture des avis sous Windows.
+CARGO_DENY_VERSION ?= 0.19.4
 
 # print-<VARIABLE> écrit la valeur d'une variable et rien d'autre, pour que
 # l'intégration continue lise l'épinglage plutôt que de le recopier.
