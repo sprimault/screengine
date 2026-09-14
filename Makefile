@@ -125,7 +125,10 @@ clean:
 # cbindgen est épinglable parce que c'est un générateur : une version différente
 # produit un header différent, donc header-verif échouerait sur un dépôt propre.
 CBINDGEN_VERSION   ?= 0.29.0
-CARGO_DENY_VERSION ?= 0.18.4
+# 0.19.4 et pas en deçà : les versions antérieures à 0.19.1 ne lisent pas les
+# scores CVSS 4.0 de la base d'avis et échouent sur toute la base, et 0.19.4
+# corrige la lecture des avis sous Windows.
+CARGO_DENY_VERSION ?= 0.19.4
 
 # print-<VARIABLE> écrit la valeur d'une variable et rien d'autre, pour que
 # l'intégration continue lise l'épinglage plutôt que de le recopier.
