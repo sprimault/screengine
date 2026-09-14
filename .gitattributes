@@ -1,0 +1,41 @@
+# Normalisation des fins de ligne. Indispensable quand le dépôt est alimenté
+# depuis Windows et consommé sous Linux : sans ça, un script shell ou un test
+# comparant des octets casse de façon incompréhensible.
+* text=auto eol=lf
+
+# Doivent rester en LF quoi qu'il arrive
+*.sh text eol=lf
+*.rs text eol=lf
+*.toml text eol=lf
+*.json text eol=lf
+*.yaml text eol=lf
+*.yml text eol=lf
+*.md text eol=lf
+Makefile text eol=lf
+
+# Le header généré est comparé au fichier versionné par `make header-verif`.
+# Une conversion de fins de ligne ferait échouer ce contrôle sur un dépôt
+# cloné sous Windows, sans qu'aucune ligne de code ait bougé.
+*.h text eol=lf
+*.c text eol=lf
+
+# Spécifiques Windows
+*.ps1 text eol=crlf
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Binaire, jamais converti. Les empreintes de conformance y figurent : elles
+# sont comparées octet pour octet, et s'en remettre à l'heuristique de
+# `text=auto` ferait dépendre le contrôle d'une détection au lieu d'une
+# déclaration.
+*.png binary
+*.bin binary
+*.wasm binary
+*.so binary
+*.dll binary
+*.dylib binary
+*.a binary
+*.lib binary
+*.zip binary
+*.gz binary
+*.exe binary

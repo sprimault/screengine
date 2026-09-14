@@ -1,0 +1,25 @@
+# Compilation. /target/ reste listé : un clone sans makefile.local s'y compile,
+# la redirection vers .tmp/ étant une contrainte de poste et non du projet.
+/target/
+*.pdb
+*.rs.bk
+
+# Répertoire de travail local : artefacts redirigés, binaires d'essai, sorties
+# de contrôle comparées. Aucun exécutable ne sort d'ici.
+/.tmp/
+/makefile.local
+
+# Hôtes — tout ce qui en sort est reconstruit
+/hosts/web/pkg/
+/hosts/c/*.exe
+/hosts/c/*.obj
+/hosts/c/*.lib
+/hosts/c/*.exp
+/hosts/android/.gradle/
+/hosts/android/local.properties
+/hosts/android/**/build/
+/hosts/android/**/jniLibs/
+
+# Systèmes de fichiers
+.DS_Store
+Thumbs.db
