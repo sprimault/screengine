@@ -63,8 +63,7 @@ Les conventions de code et la doctrine de test sont dans
 - Pas de bannière, pas d'emoji décoratif, ni dans le code, ni dans les messages
   de commit.
 - **Le noyau reste `no_std` et sans dépendance.** Un `use std::` ajouté dans
-  `crates/screengine` est un défaut, même s'il compile sur le poste de son
-  auteur.
+  `src/` est un défaut, même s'il compile sur le poste de son auteur.
 - **Aucune allocation par image.** Tout est alloué à la création du contexte ;
   les tampons de travail se réutilisent par `clear`, jamais par réallocation.
 - **Aucun appel à la libm.** Trigonométrie et racine inverse passent par les
@@ -75,7 +74,7 @@ Les conventions de code et la doctrine de test sont dans
   commentaire qui nomme l'invariant tenu par l'appelant.
 - **Tout point d'entrée FFI est enveloppé de `catch_unwind`.** Une panique qui
   traverse la frontière est un comportement indéfini, pas un plantage propre.
-- Rien dans `crates/screengine` n'importe `screengine-ffi`. Les runners sont sans
+- Rien dans le noyau n'importe `screengine-ffi`. Les runners sont sans
   écran ; un test qui exige une fenêtre n'a pas sa place dans la suite par
   défaut.
 - Une dépendance ajoutée entre dans `THIRD-PARTY-NOTICES` — et dans le noyau,

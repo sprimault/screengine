@@ -59,6 +59,8 @@ Aucun rendu : la bibliothèque compile mais n'expose encore aucune fonction.
 - Cible de rendu : la classe des moteurs logiciels de 1996 à 1998 plutôt que
   palette et texture affine. Couleurs directes, mipmaps, lightmaps, cellules 3D,
   rendu par tuiles, virgule fixe après la projection.
+- Le noyau est le paquet racine du dépôt ; frontière C, hôte et conformance
+  restent dans `crates/`.
 
 ***
 
@@ -75,3 +77,5 @@ No rendering yet: the library builds but exposes no function.
 - Rendering target: the 1996–1998 software renderer class instead of palette
   and affine texturing. True colour, mipmaps, lightmaps, 3D cells, tile-based
   rendering, fixed-point after projection.
+- The core is the repository's root package; C boundary, host and conformance
+  stay in `crates/`.

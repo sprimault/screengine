@@ -1,7 +1,27 @@
+# Le noyau est le paquet racine : src/, tests/, examples/ et benches/ sont les
+# siens. La frontière C, l'hôte et la conformance vivent dans crates/, chacun son
+# paquet — les réunir au noyau lui ferait hériter de leurs dépendances, de std et
+# de unsafe.
+#
+# Un `cargo test` tapé à la racine ne teste donc que le noyau. Le Makefile passe
+# --workspace ou -p partout, et c'est lui qu'on appelle.
+[package]
+name = "screengine"
+description = "Moteur de rendu 3D logiciel : le noyau, sans std et sans dépendance."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
 [workspace]
 resolver = "2"
 members = [
-    "crates/screengine",
     "crates/screengine-ffi",
     "crates/screengine-host",
     "crates/screengine-conformance",
@@ -20,7 +40,7 @@ authors = ["Stéphane Primault"]
 publish = false
 
 [workspace.dependencies]
-screengine = { path = "crates/screengine", default-features = false }
+screengine = { path = ".", default-features = false }
 
 # Déclarés une fois, hérités par chaque crate avec `lints.workspace = true`. En
 # avertissement : `make lint` passe clippy en -D warnings, et un avertissement

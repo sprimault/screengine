@@ -62,7 +62,7 @@ What follows is the enforceable summary.
   the next line.
 - No banners, no decorative emoji, neither in code nor in commit messages.
 - **The core stays `no_std` and dependency-free.** A `use std::` added to
-  `crates/screengine` is a defect, even if it compiles on its author's machine.
+  `src/` is a defect, even if it compiles on its author's machine.
 - **No per-frame allocation.** Everything is allocated when the context is
   created; working buffers are reused through `clear`, never reallocated.
 - **No libm calls.** Trigonometry and inverse square root go through the core's
@@ -72,7 +72,7 @@ What follows is the enforceable summary.
   the invariant the caller upholds.
 - **Every FFI entry point is wrapped in `catch_unwind`.** A panic crossing the
   boundary is undefined behaviour, not a clean crash.
-- Nothing in `crates/screengine` imports `screengine-ffi`. Runners are headless;
+- Nothing in the core imports `screengine-ffi`. Runners are headless;
   a test that needs a window has no place in the default suite.
 - An added dependency goes into `THIRD-PARTY-NOTICES` — and in the core, it does
   not go in at all.
