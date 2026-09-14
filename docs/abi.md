@@ -34,6 +34,14 @@ Arrêtés. Ils découlent des invariants du projet et ne se rediscutent pas ici.
   compilé contre un `screengine.h` d'il y a six mois doit continuer à se lier.
 - **Le moteur n'ouvre rien.** Cartes, maillages et textures arrivent en blocs
   d'octets. Le moteur n'a ni chemin de fichier, ni horloge, ni thread.
+- **L'environnement flottant de l'hôte est préservé.** Chaque point d'entrée
+  fixe le sien — arrondi au plus proche, DAZ et FTZ désactivés — et rend celui de
+  l'hôte au retour. Une bibliothèque audio ou un moteur de jeu qui a activé DAZ
+  dans le même processus ne change donc pas l'image, et le moteur ne change rien
+  pour eux.
+- **Toute allocation a lieu dans un appel nommé** : création, chargement d'une
+  ressource, calcul de lightmaps, changement de résolution au-delà du maximum.
+  Aucune entre le début et la fin d'une image.
 - **Rien du jeu ne traverse.** Aucune fonction ne prend un joueur, une arme ou un
   score. Une fonction de rendu qui en réclame un manque d'un paramètre générique.
 
@@ -165,6 +173,14 @@ qui restent permises pour que l'hôte puisse lire la cause et libérer.
 - **Contexte.** Créé par `scg_create`, libéré par `scg_destroy`. `scg_destroy(NULL)`
   ne fait rien, comme `free(NULL)`. Un handle détruit puis réutilisé n'est pas
   détecté : c'est une précondition, pas un cas d'erreur.
+- **Budget du contexte.** **À trancher — A12** : ce que reçoit la création.
+  Recommandation : une structure de configuration, premier cas concret de A6,
+  portant la résolution interne maximale, la résolution initiale et la taille de
+  tuile (32 ou 64). Tous les tampons propres à l'image — couleur, profondeur,
+  listes de faces, tampons de clipping — sont dimensionnés pour le maximum dès la
+  création. Changer de résolution sous ce maximum n'alloue rien ; au-delà, c'est
+  une erreur. La mémoire qui dépend de la scène — textures, mipmaps, lightmaps —
+  appartient aux ressources, pas au contexte.
 - **Tampon de sortie.** Appartient à l'hôte. Le moteur y écrit pendant
   `scg_frame_end` et n'en garde aucune référence au retour.
 - **Tampons alloués par `scg_buffer_alloc`.** Appartiennent à l'hôte entre
@@ -179,10 +195,11 @@ qui restent permises pour que l'hôte puisse lire la cause et libérer.
   échéance étape 4 : le moteur copie ce qu'il garde, ou emprunte le bloc de
   l'hôte. Recommandation : il copie. L'hôte peut libérer son bloc dès le retour
   de l'appel, et aucune durée de vie ne traverse la frontière.
-- **Ressources** (maillages, mondes). Même échéance, même point : elles sont
-  indépendantes de tout contexte, ce qu'impose la collision sans rendu de
-  l'étape 7. Détruire une ressource encore référencée par un appel de dessin est
-  une précondition, pas un cas d'erreur.
+- **Ressources** (textures, maillages, mondes). Même échéance, même point : elles
+  sont indépendantes de tout contexte, ce qu'impose la collision sans rendu de
+  l'étape 7. Leur mémoire est allouée à leur chargement, mipmaps compris ; celle
+  des lightmaps, à l'appel qui les calcule. Détruire une ressource encore
+  référencée par un appel de dessin est une précondition, pas un cas d'erreur.
 
 ## Concurrence
 
@@ -193,6 +210,19 @@ Arrêté :
   sont indépendants et peuvent servir chacun sur son thread.
 - Les fonctions sans objet — `scg_abi_version`, `scg_buffer_alloc`,
   `scg_buffer_free` — sont appelables depuis n'importe quel thread.
+- **Une exception, et une seule : le rendu des tuiles.** Entre le début et la fin
+  d'une image, l'hôte peut rendre des tuiles distinctes depuis des threads
+  distincts. Aucun autre appel sur le contexte n'est permis pendant ce temps.
+  Chaque tuile écrit un rectangle disjoint du tampon de l'hôte : le partage du
+  tampon entre threads est sûr par construction.
+- **L'image ne dépend ni de la taille des tuiles, ni du nombre de threads, ni de
+  l'ordre dans lequel les tuiles sont rendues.**
+
+**À trancher — A13**, échéance étape 1 : la forme de l'API de tuiles.
+Recommandation : `scg_frame_begin` prépare l'image et rend le nombre de tuiles ;
+`scg_frame_tile(ctx, index, pixels, stride)` rend une tuile et y applique le
+post-traitement ; `scg_frame_end` clôt l'image. Un hôte sans threads appelle les
+tuiles dans une boucle. Le noyau ne crée aucun thread et ne rappelle personne.
 
 Le partage d'une ressource en lecture entre deux contextes sur deux threads se
 tranche avec A8.
@@ -204,15 +234,21 @@ tranche avec A8.
 - **`stride` est exprimé en pixels**, et vaut au moins la largeur. Le tampon
   fait au moins `stride × hauteur` pixels. Le moteur ne reçoit pas sa longueur et
   ne peut pas la vérifier : c'est une précondition documentée.
-- **La résolution interne se change sans recréer le contexte** (étape 3). Le
-  tampon de l'hôte suit ce changement ; le moteur ne réalloue que ses propres
-  tampons.
+- **La résolution interne se change sans recréer le contexte** (étape 3), et
+  sans allocation sous le maximum fixé à la création (A12). Le tampon de l'hôte
+  suit ce changement.
 - **À trancher — A9** : le format des pixels. Recommandation : 4 octets par
   pixel dans l'ordre R, G, B, A en mémoire, alpha toujours à 255. C'est l'ordre
   natif de `ImageData` dans un navigateur et de `Bitmap.Config.ARGB_8888` sur
   Android ; l'hôte Windows permute vers BGRA pour GDI.
-- La graine du tramage ordonné, si le tramage entre dans la conversion indexé →
-  RGBA, est un paramètre de contexte et non une constante (étape 3).
+- **Le niveau de qualité du filtrage est un paramètre de contexte** (étape 2) :
+  tramage ordonné des coordonnées par défaut, bilinéaire au-dessus. Le motif de
+  tramage est une table fixe du noyau, indexée par la position du pixel dans
+  l'image : il n'a pas de graine, et rien de ce qu'il produit ne dépend de
+  l'hôte.
+- **Le post-traitement** — gamma, tonemapping, étalonnage — s'applique pendant
+  l'écriture de chaque tuile dans le tampon de l'hôte. Il n'y a pas de passe plein
+  écran, et donc rien qui lise les pixels voisins.
 
 ## Versionnement
 
@@ -238,12 +274,12 @@ tranche avec A8.
 ### Étape 0
 
 Les sept points d'entrée de la feuille de route. Leur existence est arrêtée ;
-les signatures ci-dessous suivent les recommandations de A1, A4 et A7, et se
-figent avec elles au lot 1.
+les signatures ci-dessous suivent les recommandations de A1, A4, A7 et A12, et
+se figent avec elles au lot 1.
 
 ```c
 uint32_t    scg_abi_version(void);
-int32_t     scg_create(uint32_t width, uint32_t height, ScgContext **out);
+int32_t     scg_create(const ScgContextConfig *config, ScgContext **out);
 void        scg_destroy(ScgContext *ctx);
 int32_t     scg_frame_end(ScgContext *ctx, uint8_t *pixels, uint32_t stride);
 const char *scg_last_error(const ScgContext *ctx);
@@ -251,8 +287,10 @@ uint8_t    *scg_buffer_alloc(size_t len);
 void        scg_buffer_free(uint8_t *ptr, size_t len);
 ```
 
-À l'étape 0, `scg_frame_end` rend un triangle en dur : il n'y a pas encore de
-scène à soumettre.
+À l'étape 0, `scg_frame_end` rend un triangle en dur dans l'image entière : il
+n'y a pas encore de scène à soumettre, ni de tuiles. Ce triangle est pourtant
+rempli par les fonctions de bord en virgule fixe et la règle top-left
+définitives — c'est le premier remplissage.
 
 ### Étapes suivantes
 
@@ -261,13 +299,14 @@ noms ne le sont pas.
 
 | Étape | Ce qui doit être exposé |
 |---|---|
-| 1 | début d'image, caméra et projection, soumission de triangles avec une matrice |
-| 3 | changement de résolution interne, palette, colormap d'atténuation, graine de tramage |
+| 1 | début d'image, rendu d'une tuile (A13), caméra et projection, soumission de triangles avec une matrice |
+| 2 | chargement d'une texture depuis un bloc de pixels, mipmaps générés au chargement, niveau de qualité du filtrage |
+| 3 | changement de résolution interne, calcul des lightmaps d'une cellule et reprise d'un cache, lumières dynamiques, brouillard, post-traitement |
 | 4 | chargement d'un maillage et d'une carte depuis un bloc d'octets, libération |
 | 5 | rendu du monde depuis la caméra |
 | 6 | interpolation entre trames, sprites orientés caméra |
 | 7 | module de collision, utilisable sans contexte de rendu |
-| 8 | tracé de lignes et de points, interrogation de la scène, modification d'un secteur par identifiant |
+| 8 | tracé de lignes et de points, interrogation de la scène, modification d'une cellule par identifiant |
 
 ## Ce qu'un auteur de liaison doit savoir
 

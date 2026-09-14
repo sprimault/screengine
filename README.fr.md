@@ -7,10 +7,17 @@ GPU, pas de fenêtre : on lui donne une scène et un tampon, il remplit le tampo
 
 MIT — voir [`LICENSE`](LICENSE).
 
-Le rendu est celui des jeux de la fin des années 90, et c'est un choix : tampon
-indexé 256 couleurs, atténuation par table, texture affine corrigée par
-segments, aucun filtrage, résolution interne basse remontée en entier. Ces
-défauts-là ne se rajoutent pas après coup, ils tiennent au pipeline.
+La cible est la classe des moteurs logiciels de 1996 à 1998, faite proprement :
+couleurs directes, perspective corrigée, mipmaps, lightmaps, brouillard, filtrage
+par tramage ordonné des coordonnées par défaut et bilinéaire en niveau de
+qualité, résolution interne basse remontée en entier.
+Cette classe tournait en logiciel sur un PC de 1998 ; un cœur de téléphone
+actuel est bien plus rapide, et la marge va à la batterie et à la chauffe.
+
+Tout ce qui suit la projection est en virgule fixe, et le rendu se fait par
+tuiles : la même scène donne la même image au bit près sur toutes les cibles,
+tous les chemins SIMD, toutes les tailles de tuile et tous les nombres de
+threads.
 
 ## Ce qu'il ne fait pas
 

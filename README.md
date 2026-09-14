@@ -7,10 +7,16 @@ you hand it a scene and a buffer, it fills the buffer.
 
 MIT — see [`LICENSE`](LICENSE).
 
-The look is that of late-nineties games, and that is deliberate: 256-colour
-indexed buffer, table-driven distance falloff, affine texturing corrected per
-segment, no filtering, low internal resolution scaled up by an integer factor.
-Those traits cannot be bolted on afterwards — they belong to the pipeline.
+The target is the class of 1996–1998 software renderers, done properly: true
+colour, perspective-correct texturing, mipmaps, lightmaps, fog, ordered-dither
+texture filtering by default with bilinear as a quality level, low internal
+resolution scaled up by an integer factor. That class ran in software on a 1998
+PC; a current phone core is many times faster, and the headroom goes to battery
+and heat.
+
+Everything after projection is fixed-point, and rendering is tile-based: the
+same scene gives the same image to the bit on every target, every SIMD path,
+every tile size and every thread count.
 
 ## What it does not do
 
