@@ -371,15 +371,15 @@ la création du contexte rend une erreur plutôt que de déborder en silence.
   documentation des éléments exportés en FFI en anglais. Le détail est dans
   `CONTRIBUTING.fr.md`, section « Langue ».
 - **En-tête de fichier.** Tout fichier source — `.rs`, et dans les hôtes `.c`,
-  `.php`, `.kt`, `.js` — commence par :
+  `.cpp`, `.kt`, `.js` — commence par :
 
   ```rust
   // Copyright 2026 Stéphane Primault <sprimault@users.noreply.github.com>
   // SPDX-License-Identifier: MIT
   ```
 
-  Côté Rust, il précède la doc de module `//!` et les attributs internes. Côté
-  PHP, il suit `<?php`. `include/screengine.h` le reçoit par l'option `header` de
+  Côté Rust, il précède la doc de module `//!` et les attributs internes.
+  `include/screengine.h` le reçoit par l'option `header` de
   `cbindgen.toml`, jamais par une édition.
 - Pas de bannière, pas d'emoji, ni dans le code, ni dans les messages de commit.
 
@@ -432,6 +432,11 @@ teste quelque chose.
   à celle du chemin Rust (`screengine-conformance --print triangle`). Il fait
   partie de `make test` ; sans compilateur C il saute en le disant, et ce saut
   est une erreur en intégration continue.
+- **L'hôte C++, dans `make test-cpp`**, se lie à la bibliothèque dynamique et
+  reprend les mêmes contrôles. Il ajoute ce que le C statique ne voit pas : le
+  header compilé en C++ — gardes `extern "C"`, assertions de disposition — et la
+  preuve que `scg_abi_version` vient bien de la bibliothèque chargée. Même
+  règle de saut.
 - **Conformance** dans `crates/screengine-conformance` : des scènes de référence,
   rendues sans fenêtre, dont le tampon est haché et comparé aux empreintes de
   `references/`.
@@ -460,8 +465,8 @@ teste quelque chose.
 - **L'empreinte est FNV-1a 64 bits**, écrite en seize chiffres hexadécimaux
   minuscules. Elle hache la largeur puis la hauteur en `u32` petit-boutiste, puis
   la zone utile ligne par ligne, `largeur × 4` octets alpha compris ; le `stride`
-  n'y entre pas. Chaque hôte la recalcule dans son langage — elle est native en
-  PHP (`hash('fnv1a64')`) et tient en dix lignes ailleurs. Écartés : xxHash, à
+  n'y entre pas. Chaque hôte la recalcule dans son langage : elle tient en dix
+  lignes partout, et elle est native en PHP (`hash('fnv1a64')`). Écartés : xxHash, à
   réimplémenter en JavaScript et en Java ; SHA-256, asynchrone dans un
   navigateur, pour un détecteur de régression qui n'a rien à sécuriser.
 - **L'environnement flottant de l'hôte ne change pas l'image.** L'hôte C démasque

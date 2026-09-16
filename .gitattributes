@@ -18,6 +18,7 @@ Makefile text eol=lf
 # cloné sous Windows, sans qu'aucune ligne de code ait bougé.
 *.h text eol=lf
 *.c text eol=lf
+*.cpp text eol=lf
 
 # Spécifiques Windows
 *.ps1 text eol=crlf

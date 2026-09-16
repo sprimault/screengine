@@ -84,8 +84,8 @@ dynamique par nom.
 
 | Cible | Triple | Artefact | Outillage | Hôtes | Contrôle |
 |---|---|---|---|---|---|
-| Windows x64 | `x86_64-pc-windows-msvc` | `.dll`, `.lib` | MSVC Build Tools | `screengine-play`, `hosts/c`, `hosts/php` | CI |
-| Linux x64 | `x86_64-unknown-linux-gnu` | `.so`, `.a` | gcc ou clang | `hosts/c`, `hosts/php`, conformance | CI |
+| Windows x64 | `x86_64-pc-windows-msvc` | `.dll`, `.lib` | MSVC Build Tools | `screengine-play`, `hosts/c`, `hosts/cpp` | CI |
+| Linux x64 | `x86_64-unknown-linux-gnu` | `.so`, `.a` | gcc ou clang | `hosts/c`, `hosts/cpp`, conformance | CI |
 | Navigateur | `wasm32-unknown-unknown` | `.wasm` | cible rustup | `hosts/web` | CI, avec son hôte |
 | Android arm64 | `aarch64-linux-android` | `.so` | NDK | `hosts/android` | CI, avec son hôte |
 | Android armv7 | `armv7-linux-androideabi` | `.so` | NDK | `hosts/android` | CI, avec son hôte |
@@ -130,7 +130,16 @@ et un cycle de retour lent depuis un poste Windows.
   Chacune embarque sa bibliothèque standard : un intégrateur qui lie déjà une
   autre bibliothèque Rust en statique aura des symboles en double, et doit
   passer par la bibliothèque dynamique.
-- **L'hôte PHP charge la DLL**, par FFI : voir « Liaisons ».
+- **L'hôte C++ se lie à la DLL** par sa bibliothèque d'importation
+  `screengine_ffi.dll.lib`, avec `cl -MD -std:c++17`, et sans aucune
+  bibliothèque système : c'est la DLL qui les porte. La DLL est copiée à côté de
+  l'exécutable, seul emplacement de recherche qui ne dépende ni du PATH ni du
+  répertoire courant. L'hôte vérifie que `scg_abi_version` vient bien du module
+  `screengine_ffi.dll` : `&scg_abi_version` y désigne le thunk d'import de
+  l'exécutable, pas la fonction.
+- **`windows.h` définit une macro `small`**, héritée de `rpcndr.h`. Un
+  intégrateur C++ qui nomme ainsi une variable obtient une erreur de syntaxe
+  sans rapport apparent avec le moteur.
 
 ### Linux
 
@@ -138,7 +147,11 @@ et un cycle de retour lent depuis un poste Windows.
   CRT de MSVC doivent être identiques. Un écart désigne un appel à la libm, une
   hypothèse sur l'alignement ou un chemin SIMD sélectionné différemment — jamais
   une différence acceptable.
-- Sert aussi l'hôte PHP, dont l'outillage s'installe plus simplement sous Linux.
+- **L'hôte C++ se compile avec `c++ -std=c++17`**, lié par
+  `-L… -lscreengine_ffi` : l'éditeur de liens y préfère la bibliothèque partagée
+  à l'archive voisine. Rust ne pose pas de `SONAME` ; un `rpath` vers le
+  répertoire de construction la retrouve à l'exécution, sans
+  `LD_LIBRARY_PATH`.
 - **L'hôte C se compile avec `cc -std=c11`**, lié à `libscreengine_ffi.a` puis
   à `-lgcc_s -lutil -lrt -lpthread -lm -ldl -lc`. `gcc_s` porte le dépliage, sans
   lequel `catch_unwind` ne rattraperait rien.
@@ -220,13 +233,18 @@ Dans l'ordre où les causes se rencontrent :
 - **`cbindgen.toml`**, à la racine, fixe le langage C, la garde d'inclusion, la
   recopie de la documentation et l'en-tête de licence par l'option `header`. Il
   n'inclut que `stddef.h` et `stdint.h` : aucun `bool` ne traverse la frontière.
+- **Le header se compile en C++.** `cpp_compat` l'entoure de gardes
+  `extern "C"` ; sans elles, un programme C++ cherche des symboles au nom décoré
+  et échoue à l'édition de liens.
 - **`cbindgen` ne prouve aucun décalage.** Il analyse la source syntaxiquement et
   n'interroge jamais `rustc` : il ne connaît ni taille ni alignement, et recopie
   l'ordre des champs tel qu'il le lit. Or une liaison JavaScript reproduit ces
   décalages octet par octet. Ils se prouvent donc ailleurs — un test de
-  `screengine-ffi` sur `offset_of!`, et des `_Static_assert` sur `sizeof` et
-  `offsetof` injectés par l'option `trailer` de `cbindgen.toml`, compilés par
-  l'hôte C. C'est le seul contrôle qui échoue quand une structure change de
+  `screengine-ffi` sur `offset_of!`, et des assertions statiques sur `sizeof` et
+  `offsetof` injectées par l'option `trailer` de `cbindgen.toml` — une seule
+  liste, en `_Static_assert` pour C11 et en `static_assert` pour C++11 —,
+  compilées par les hôtes C et C++. Sous MSVC, la norme C++ se lit dans
+  `_MSVC_LANG` : `__cplusplus` y reste à 199711 sans `/Zc:__cplusplus`. C'est le seul contrôle qui échoue quand une structure change de
   disposition sans que personne ne l'ait voulu.
 - **Le header est en LF**, déclaré dans `.gitattributes` : une conversion en CRLF
   sur un clone Windows ferait échouer `make header-verif` sans qu'une ligne de
@@ -242,11 +260,13 @@ Les hôtes de `hosts/` sont des démonstrations de portabilité, pas des liaison
 publiées. Ce qui suit est ce que chaque langage impose au chargement.
 
 - **C** : inclut le header, se lie à la bibliothèque statique ou dynamique.
-- **PHP** : l'extension FFI. **À trancher — C5** : `FFI::cdef` ne comprend pas les
-  directives du préprocesseur — `#include`, `#define`, gardes d'inclusion. Le
-  header généré ne se passe donc pas tel quel. Recommandation : une seconde
-  sortie de `cbindgen`, sans directives, générée et vérifiée comme la première,
-  plutôt qu'un filtrage à la main dans l'hôte, qui divergerait en silence.
+- **C++** : inclut le même header, que `cpp_compat` entoure de gardes
+  `extern "C"`, et se lie de préférence à la bibliothèque dynamique.
+- **PHP** : l'extension FFI. `FFI::cdef` ignore les lignes de préprocesseur sans
+  les évaluer, mais ne connaît pas les assertions statiques du `trailer` : une
+  liaison coupe le header à `#endif  /* SCREENGINE_H */`, et lit les constantes
+  `SCG_*` dans les `#define` du même fichier. Constaté sous PHP 8.4 ; aucun hôte
+  PHP ne le vérifie en continu.
 - **JavaScript** : instancie le `.wasm`, alloue par `scg_buffer_alloc`, écrit les
   structures octet par octet selon les décalages du header — d'où l'absence de
   remplissage implicite exigée par `abi.md`.
@@ -260,7 +280,7 @@ et chaque semaine pour l'audit :
 | Job | Plateforme | Contrôles |
 |---|---|---|
 | vérification | Linux | `fmt`, `lint`, `nostd`, `header-verif`, `deny` |
-| tests | Linux et Windows | `test`, hôte C compris, `conform` |
+| tests | Linux et Windows | `test`, hôtes C et C++ compris, `conform` |
 | audit | Linux | `audit`, dans un job à part : un avis publié en amont n'est pas un défaut de la PR en cours |
 
 Tout passe par le `Makefile`, et les outils par `make tools`. Les actions sont

@@ -32,7 +32,7 @@ browser and on a phone.
 
 **Step 0 in progress: a hardcoded triangle, and no engine.** The C boundary is
 written, and the triangle is filled by the final fixed-point edge functions. It
-remains to display it from four hosts — C, PHP, wasm, Android — before any
+remains to display it from four hosts — C, C++, wasm, Android — before any
 other line of engine.
 
 The roadmap has ten steps, each one published.
@@ -110,7 +110,7 @@ difference between platforms.
 make build     # core and shared library
 make run       # opens a window on the engine
 make header    # regenerates include/screengine.h
-make test      # including the statically linked C host, if a C compiler is present
+make test      # including the C and C++ hosts, if a compiler is present
 make conform   # replays the reference scenes and compares hashes
 make lint
 make nostd     # proof that the core builds without std

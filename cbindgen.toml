@@ -12,6 +12,12 @@ header = """/*
  * SPDX-License-Identifier: MIT
  */"""
 
+# Les gardes `extern "C"`. Sans elles, un programme C++ qui inclut le header
+# cherche des symboles au nom décoré et échoue à l'édition de liens — alors que
+# C++ est le langage de la plupart des moteurs et des jeux qui intégreront
+# celui-ci.
+cpp_compat = true
+
 documentation = true
 documentation_style = "c99"
 
@@ -26,20 +32,30 @@ usize_is_size_t = true
 # liaison JavaScript écrit la structure octet par octet d'après ces décalages.
 # Le compilateur de l'hôte les contrôle donc lui-même, sur sa propre cible, et
 # un test `offset_of!` les contrôle côté Rust.
+#
+# Une seule liste d'assertions, pour C11 et pour C++11. MSVC laisse __cplusplus
+# à 199711 sans /Zc:__cplusplus quelle que soit la norme demandée : c'est
+# _MSVC_LANG qui la dit.
 trailer = """
 /* cbindgen place ce bloc après la garde d'inclusion : il lui en faut une. */
 #ifndef SCREENGINE_LAYOUT_CHECKED
 #define SCREENGINE_LAYOUT_CHECKED
-#if !defined(__cplusplus) && defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112L
-_Static_assert(sizeof(ScgContextConfig) == 32, "ScgContextConfig changed size");
-_Static_assert(offsetof(ScgContextConfig, max_width) == 0, "max_width moved");
-_Static_assert(offsetof(ScgContextConfig, max_height) == 4, "max_height moved");
-_Static_assert(offsetof(ScgContextConfig, width) == 8, "width moved");
-_Static_assert(offsetof(ScgContextConfig, height) == 12, "height moved");
-_Static_assert(offsetof(ScgContextConfig, tile_size) == 16, "tile_size moved");
-_Static_assert(offsetof(ScgContextConfig, reserved0) == 20, "reserved0 moved");
-_Static_assert(offsetof(ScgContextConfig, reserved1) == 24, "reserved1 moved");
-_Static_assert(offsetof(ScgContextConfig, reserved2) == 28, "reserved2 moved");
+#if defined(__cplusplus) && (__cplusplus >= 201103L || (defined(_MSVC_LANG) && _MSVC_LANG >= 201103L))
+#define SCREENGINE_LAYOUT_ASSERT(cond, what) static_assert(cond, what)
+#elif !defined(__cplusplus) && defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112L
+#define SCREENGINE_LAYOUT_ASSERT(cond, what) _Static_assert(cond, what)
+#endif
+#ifdef SCREENGINE_LAYOUT_ASSERT
+SCREENGINE_LAYOUT_ASSERT(sizeof(ScgContextConfig) == 32, "ScgContextConfig changed size");
+SCREENGINE_LAYOUT_ASSERT(offsetof(ScgContextConfig, max_width) == 0, "max_width moved");
+SCREENGINE_LAYOUT_ASSERT(offsetof(ScgContextConfig, max_height) == 4, "max_height moved");
+SCREENGINE_LAYOUT_ASSERT(offsetof(ScgContextConfig, width) == 8, "width moved");
+SCREENGINE_LAYOUT_ASSERT(offsetof(ScgContextConfig, height) == 12, "height moved");
+SCREENGINE_LAYOUT_ASSERT(offsetof(ScgContextConfig, tile_size) == 16, "tile_size moved");
+SCREENGINE_LAYOUT_ASSERT(offsetof(ScgContextConfig, reserved0) == 20, "reserved0 moved");
+SCREENGINE_LAYOUT_ASSERT(offsetof(ScgContextConfig, reserved1) == 24, "reserved1 moved");
+SCREENGINE_LAYOUT_ASSERT(offsetof(ScgContextConfig, reserved2) == 28, "reserved2 moved");
+#undef SCREENGINE_LAYOUT_ASSERT
 #endif
 #endif"""
 
