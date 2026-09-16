@@ -40,7 +40,7 @@ plutôt que de les recopier.
 | Profil | Pour quoi | Réglages |
 |---|---|---|
 | `dev` | développement | `opt-level = 3` pour le noyau et les dépendances, assertions conservées |
-| `release` | binaires : hôte, conformance | `lto = "fat"`, `codegen-units = 1`, `panic = "abort"` |
+| `release` | binaires : exemples de l'étage d'accueil, conformance | `lto = "fat"`, `codegen-units = 1`, `panic = "abort"` |
 | `release-ffi` | bibliothèque partagée et statique | hérite de `release`, `panic = "unwind"` |
 
 - **Un rasteriseur logiciel non optimisé est inutilisable**, même pour déboguer :
@@ -79,7 +79,7 @@ dynamique par nom.
 
 | Cible | Triple | Artefact | Outillage | Hôtes | Contrôle |
 |---|---|---|---|---|---|
-| Windows x64 | `x86_64-pc-windows-msvc` | `.dll`, `.lib` | MSVC Build Tools | `screengine-host`, `hosts/c`, `hosts/php` | CI |
+| Windows x64 | `x86_64-pc-windows-msvc` | `.dll`, `.lib` | MSVC Build Tools | `screengine-play`, `hosts/c`, `hosts/php` | CI |
 | Linux x64 | `x86_64-unknown-linux-gnu` | `.so`, `.a` | gcc ou clang | `hosts/php`, conformance | CI |
 | Navigateur | `wasm32-unknown-unknown` | `.wasm` | cible rustup | `hosts/web` | CI, avec son hôte |
 | Android arm64 | `aarch64-linux-android` | `.so` | NDK | `hosts/android` | CI, avec son hôte |
@@ -120,6 +120,12 @@ et un cycle de retour lent depuis un poste Windows.
   hypothèse sur l'alignement ou un chemin SIMD sélectionné différemment — jamais
   une différence acceptable.
 - Sert aussi l'hôte PHP, dont l'outillage s'installe plus simplement sous Linux.
+- **`screengine-play` s'y compile sans paquet système** : X11, Wayland et
+  xkbcommon sont chargés par `dlopen`, et seule l'exécution les exige. **À
+  vérifier** : l'ouverture de la fenêtre sous X11 et sous Wayland. Sans les
+  décorations dessinées de `winit`, retirées pour leurs dépendances, une fenêtre
+  sous un compositeur Wayland qui n'en fournit pas — GNOME — n'a pas de barre de
+  titre.
 
 ### wasm
 

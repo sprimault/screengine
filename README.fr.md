@@ -31,10 +31,10 @@ Windows, dans un navigateur et sur un téléphone.
 
 ## État
 
-**Rien n'est encore écrit.** Le projet démarre à l'étape 0 : afficher un
-triangle depuis quatre hôtes — C, PHP, wasm, Android — avant toute ligne de
-moteur. Tant que cette étape n'est pas franchie, la bibliothèque panique sur
-`todo!`.
+**Étape 0 en cours : un triangle en dur, et aucun moteur.** La frontière C est
+écrite, et le triangle est rempli par les fonctions de bord en virgule fixe
+définitives. Il reste à l'afficher depuis quatre hôtes — C, PHP, wasm, Android —
+avant toute autre ligne de moteur.
 
 La feuille de route compte dix étapes, publiées à chacune.
 
@@ -47,9 +47,37 @@ La feuille de route compte dix étapes, publiées à chacune.
 
 ## Utilisation
 
-Depuis Rust, l'API est idiomatique et le crate se lie directement. Depuis tout
-le reste, la bibliothèque expose une ABI C stable, préfixée `scg_`, dont le
-header est généré :
+Deux chemins, selon ce qu'on écrit.
+
+### Faire un jeu, en Rust
+
+`screengine-play` fournit la fenêtre, le clavier, la souris et une boucle à pas
+fixe, et remonte l'image par facteur entier. Sans aucun réglage, il ouvre une
+fenêtre qui marche :
+
+```rust
+use screengine_play::{KeyCode, Play};
+
+fn main() -> Result<(), screengine_play::Error> {
+    Play::new().run(
+        (),
+        |_, tick| {
+            if tick.input().pressed(KeyCode::Space) {
+                println!("pas {}", tick.index());
+            }
+        },
+        |_, _context| {},
+    )
+}
+```
+
+`make run` lance cet exemple. Le chemin Rust ajoute du confort, jamais de
+capacité : tout ce qu'il permet se fait aussi par l'ABI C.
+
+### Intégrer, depuis n'importe quel langage
+
+L'hôte garde sa fenêtre, sa boucle et ses entrées. La bibliothèque expose une
+ABI C stable, préfixée `scg_`, dont le header est généré :
 
 ```c
 ScgContextConfig config = {0};
@@ -80,6 +108,7 @@ différence entre les plateformes.
 
 ```
 make build     # noyau et bibliothèque partagée
+make run       # ouvre une fenêtre sur le moteur
 make header    # régénère include/screengine.h
 make test
 make conform   # rejoue les scènes de référence et compare les empreintes
@@ -88,7 +117,8 @@ make nostd     # preuve que le noyau compile sans std
 ```
 
 Le noyau est `no_std` et n'a aucune dépendance. Un dépôt fraîchement cloné
-compile sans rien installer d'autre qu'une chaîne Rust.
+compile sans rien installer d'autre qu'une chaîne Rust ; seul `screengine-play`
+porte des dépendances, `winit` et `softbuffer`.
 
 Les cibles Android et wasm exigent chacune leur outillage et passent par
 l'intégration continue. iOS attend que le reste soit stable — voir la feuille de

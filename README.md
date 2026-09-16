@@ -30,9 +30,10 @@ browser and on a phone.
 
 ## Status
 
-**Nothing is written yet.** The project starts at step 0: display a triangle
-from four hosts — C, PHP, wasm, Android — before a single line of engine. Until
-that step is cleared, the library panics on `todo!`.
+**Step 0 in progress: a hardcoded triangle, and no engine.** The C boundary is
+written, and the triangle is filled by the final fixed-point edge functions. It
+remains to display it from four hosts — C, PHP, wasm, Android — before any
+other line of engine.
 
 The roadmap has ten steps, each one published.
 
@@ -46,9 +47,37 @@ The roadmap has ten steps, each one published.
 
 ## Usage
 
-From Rust the API is idiomatic and the crate links directly. From everything
-else, the library exposes a stable C ABI prefixed `scg_`, whose header is
-generated:
+Two paths, depending on what you are writing.
+
+### Making a game, in Rust
+
+`screengine-play` provides the window, keyboard, mouse and a fixed-step loop,
+and scales the image up by an integer factor. With no settings at all, it opens
+a working window:
+
+```rust
+use screengine_play::{KeyCode, Play};
+
+fn main() -> Result<(), screengine_play::Error> {
+    Play::new().run(
+        (),
+        |_, tick| {
+            if tick.input().pressed(KeyCode::Space) {
+                println!("step {}", tick.index());
+            }
+        },
+        |_, _context| {},
+    )
+}
+```
+
+`make run` launches this example. The Rust path adds convenience, never
+capability: everything it allows can also be done through the C ABI.
+
+### Embedding, from any language
+
+The host keeps its window, loop and input. The library exposes a stable C ABI
+prefixed `scg_`, whose header is generated:
 
 ```c
 ScgContextConfig config = {0};
@@ -79,6 +108,7 @@ difference between platforms.
 
 ```
 make build     # core and shared library
+make run       # opens a window on the engine
 make header    # regenerates include/screengine.h
 make test
 make conform   # replays the reference scenes and compares hashes
@@ -87,7 +117,8 @@ make nostd     # proof that the core builds without std
 ```
 
 The core is `no_std` and has no dependencies. A fresh clone builds with nothing
-installed beyond a Rust toolchain.
+installed beyond a Rust toolchain; only `screengine-play` carries dependencies,
+`winit` and `softbuffer`.
 
 The Android and wasm targets each need their own tooling and go through CI. iOS
 waits until the rest is stable — see the roadmap.

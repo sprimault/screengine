@@ -1,15 +1,18 @@
 # Licences et provenance des dépendances, contrôlées par `make deny`.
 #
-# Le noyau et la couche FFI n'ont aucune dépendance. Ce qui entre ici vient des
-# hôtes et de la conformance, et voyage dans les archives publiées.
+# Le noyau et la couche FFI n'ont aucune dépendance. Ce qui entre ici vient de
+# l'étage d'accueil et de la conformance.
 
 [graph]
 all-features = true
 
 [licenses]
-# Une licence s'ajoute à la liste avec la dépendance qui l'amène, et la
-# dépendance entre dans THIRD-PARTY-NOTICES dans le même commit.
-allow = ["MIT"]
+# Une licence s'ajoute à la liste avec la dépendance qui l'amène. Une dépendance
+# qui voyage dans une archive publiée entre aussi dans THIRD-PARTY-NOTICES, dans
+# le même commit ; celles de l'étage d'accueil n'y voyagent pas.
+#
+# Apache-2.0, ISC et Unicode-3.0 arrivent avec winit et softbuffer.
+allow = ["MIT", "Apache-2.0", "ISC", "Unicode-3.0"]
 confidence-threshold = 0.93
 
 [bans]

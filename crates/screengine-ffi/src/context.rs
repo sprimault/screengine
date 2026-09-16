@@ -7,8 +7,9 @@
 //! la règle d'extension : figée, complétée par des champs réservés, et faite de
 //! champs dont aucun ne change de largeur selon la cible.
 
-use screengine::{Config, Context, Error};
+use screengine::{Config, Context};
 
+use crate::entry::AbiError;
 use crate::message::Message;
 
 /// Configuration passed to `scg_create`.
@@ -43,14 +44,11 @@ pub struct ScgContextConfig {
 }
 
 impl ScgContextConfig {
-    /// Convertit vers la configuration du noyau, ou refuse.
-    ///
-    /// Les champs réservés se contrôlent ici et pas dans le noyau : ils
-    /// n'existent que parce que l'ABI est figée, et le noyau n'a pas à savoir
-    /// qu'elle l'est.
-    pub(crate) fn to_core(self) -> Result<Config, Error> {
+    /// Convertit vers la configuration du noyau, ou refuse un champ réservé non
+    /// nul.
+    pub(crate) fn to_core(self) -> Result<Config, AbiError> {
         if self.reserved0 | self.reserved1 | self.reserved2 != 0 {
-            return Err(Error::InvalidArgument);
+            return Err(AbiError::RESERVED);
         }
         Ok(Config {
             max_width: self.max_width,

@@ -27,7 +27,7 @@ examples/           usage de l'API Rust du noyau
 benches/            mesures du noyau
 crates/
   screengine-ffi/           src/, tests/
-  screengine-host/          src/
+  screengine-play/          src/, examples/
   screengine-conformance/   src/, references/
 ```
 
@@ -36,20 +36,20 @@ trois autres crates la reprennent chacun dans `crates/`. Un répertoire naît av
 son premier fichier : pas de `tests/` vide en attendant le premier test.
 
 **Un seul paquet ne suffirait pas.** Les dépendances d'un paquet valent pour
-toutes ses cibles : l'hôte et la conformance y feraient entrer les leurs dans le
-noyau. Et la frontière C exige `std` et `unsafe`, que le noyau refuse.
+toutes ses cibles : l'étage d'accueil et la conformance y feraient entrer les
+leurs dans le noyau. Et la frontière C exige `std` et `unsafe`, que le noyau refuse.
 
 | Crate | Rôle | `std` | Dépendances | `unsafe` |
 |---|---|---|---|---|
 | `screengine` | le noyau : maths, pipeline, rasteriseur, formats, monde | non | aucune | chemins SIMD seulement |
 | `screengine-ffi` | la frontière C, `cdylib` + `staticlib` | oui | `screengine` | oui |
-| `screengine-host` | hôte de développement : fenêtre, blit, mise à l'échelle | oui | à choisir au lot 4 | non |
+| `screengine-play` | étage d'accueil : fenêtre, entrées, boucle à pas fixe, mise à l'échelle | oui | `winit`, `softbuffer` | non |
 | `screengine-conformance` | scènes de référence, empreintes | oui | `screengine` | non |
 
 **Un crate se crée pour une contrainte de compilation, jamais pour ranger.** Les
 quatre existants se justifient chacun par un besoin que les autres ne partagent
-pas : le noyau refuse `std` et les dépendances, la frontière exige les deux, la
-conformance et l'hôte portent les leurs. Ranger, c'est l'affaire des modules, qui
+pas : le noyau refuse `std` et les dépendances, la frontière exige `std`, la
+conformance et l'étage d'accueil portent les leurs. Ranger, c'est l'affaire des modules, qui
 ne coûtent ni `Cargo.toml`, ni arbre de dépendances, ni frontière publique à
 maintenir. Le module de collision de l'étape 7 en est le cas limite : il doit
 servir sans rendu, mais c'est l'ABI qui l'expose séparément, pas un crate — un
@@ -93,9 +93,33 @@ convertis vers ceux du noyau. `cbindgen` ne lit que ce crate : un type du noyau
 qui apparaîtrait dans une signature exportée ne serait pas dans le header, et le
 noyau se retrouverait tenu à une disposition `#[repr(C)]` qu'il n'a pas choisie.
 
-**`screengine-host` est un consommateur comme un autre.** Il n'accède à rien que
-l'API publique n'expose, et aucune fonctionnalité du noyau n'existe pour lui
-seul.
+### Deux chemins vers le moteur
+
+**Faire un jeu** passe par `screengine-play`, en Rust : fenêtre, entrées et
+boucle fournies. **Intégrer** passe par l'ABI C, depuis n'importe quel langage,
+l'hôte gardant sa fenêtre, sa boucle et ses entrées.
+
+- **`screengine-play` consomme l'API Rust du noyau, pas la frontière C.** Écarté :
+  passer par l'ABI, qui l'aurait éprouvée à chaque lancement, au prix de handles
+  opaques et de codes de retour là où un exemple doit tenir en quinze lignes. La
+  conséquence est qu'aucun consommateur quotidien ne franchit la frontière : c'est
+  à l'hôte C de l'éprouver dans la suite de tests, sans fenêtre, en comparant son
+  empreinte à celle du chemin Rust.
+- **Rien n'est atteignable par un seul chemin.** Ce que `screengine-play` permet
+  se fait aussi par l'ABI ; le confort est réservé au chemin Rust, jamais la
+  capacité. Sans quoi l'ABI cesse d'être le contrat.
+- **`screengine-play` ajoute du comportement, jamais des données.** Pas de temps
+  fixe, entrées, mise à l'échelle : oui. Un type de scène, de maillage, de
+  matériau ou de lumière à lui : non, même pour un exemple — il réexporte ceux du
+  noyau. Deux modèles de scène qui divergent est la seule façon de rater ce crate.
+- **Le noyau ignore son existence**, et aucune fonctionnalité du noyau n'existe
+  pour lui seul. Les invariants du noyau — `no_std`, zéro allocation par image,
+  déterminisme — ne s'y appliquent pas.
+- **`winit` et `softbuffer` y sont confinés.** `winit` change son API à chaque
+  version mineure : c'est le seul endroit du projet qui subira des ruptures
+  régulières. Écartés : `pixels` et `wgpu`, qui font dépendre l'affichage d'un
+  moteur logiciel d'un pilote graphique, et SDL, qui ajoute une bibliothèque C à
+  construire.
 
 ## Dépendances
 
@@ -105,9 +129,9 @@ seul.
   tests. Le générateur pseudo-aléatoire des tests est écrit dans le module de test
   qui s'en sert : une dizaine de lignes, et une graine fixe.
 - `screengine-ffi` n'en a pas davantage : `std` suffit à ce qu'elle fait.
-- Les hôtes et la conformance en portent. Ce sont elles qui voyagent dans les
-  archives publiées : chacune entre dans `THIRD-PARTY-NOTICES`, et passe
-  `make deny`.
+- L'étage d'accueil et la conformance en portent, et toutes passent
+  `make deny`. Seule une dépendance qui voyage dans une archive publiée entre
+  dans `THIRD-PARTY-NOTICES` ; celles de l'étage d'accueil n'y voyagent pas.
 - Choisir une version, épingler, justifier un épinglage : voir
   `CONTRIBUTING.fr.md`, « Corriger une vulnérabilité sans en créer une autre ».
 
@@ -132,7 +156,10 @@ seul.
 
 - **Ce qui peut échouer rend un `Result`.** Le noyau définit son type d'erreur,
   une énumération sans chaîne de caractères : le message se formate dans
-  `screengine-ffi`, qui traduit chaque variante en code d'ABI.
+  `screengine-ffi`, qui traduit chaque variante en code d'ABI, et dans
+  `screengine-play`. Une variante nomme une catégorie, celle d'un code d'ABI ;
+  ce qui la précise — l'argument refusé — est porté par la variante, et ne se
+  lit que dans le message.
 - **Aucun `unwrap` ni `expect` sur un chemin atteignable**, noyau compris. Un
   invariant se tient par le type ; ce qui ne se tient pas par le type remonte en
   erreur.

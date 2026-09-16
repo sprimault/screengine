@@ -28,7 +28,7 @@ HOSTS ?= c web
 # tapée directement perd ces réglages, et l'écart ne se voit pas dans la sortie.
 -include makefile.local
 
-.PHONY: build lib run test fmt lint lint-doc-tests nostd conform conform-update header \
+.PHONY: build lib run example test fmt lint lint-doc-tests nostd conform conform-update header \
         header-verif audit deny doc hosts host-c host-web host-android clean tools
 
 build:
@@ -40,8 +40,14 @@ build:
 lib:
 	cargo build -p screengine-ffi --profile release-ffi
 
-run:
-	cargo run -p screengine-host
+# Les exemples de l'étage d'accueil, qui ouvrent une fenêtre. `make run` lance
+# le plus petit ; `make example EXAMPLE=nom` en choisit un autre.
+EXAMPLE ?= hello
+
+run: example
+
+example:
+	cargo run -p screengine-play --example $(EXAMPLE)
 
 PKG ?= --workspace
 RUN ?=
@@ -62,14 +68,19 @@ lint: lint-doc-tests
 # règle du projet ne fait pas d'exception pour elles. Sans ce contrôle, la
 # documentation des tests se dégrade sans que rien ne le dise : on en écrit
 # quelques-unes, puis plus, et personne ne s'en aperçoit à la relecture.
+#
+# Les fichiers par find et non par git ls-files : un arbre sans .git, comme une
+# archive, ne donnerait aucun fichier, et awk lirait alors son entrée standard
+# au lieu d'échouer — le contrôle attendrait indéfiniment, ou ne vérifierait
+# rien.
 lint-doc-tests:
 	@awk '/#\[test\]/ { if (prev !~ /\/\/\//) { print FILENAME ":" FNR ": #[test] sans documentation"; bad = 1 } } { prev = $$0 } END { exit bad }' \
-	  $$(git ls-files '*.rs') \
+	  $$(find src crates -name '*.rs') < /dev/null \
 	  || (echo "Chaque fonction de test porte sa documentation, comme toute declaration." && exit 1)
 
 # Le noyau seul, sur une cible sans std. Les autres crates en sont dispensés :
-# l'hôte ouvre une fenêtre, la conformance écrit des fichiers, la couche FFI
-# formate des messages d'erreur.
+# l'étage d'accueil ouvre une fenêtre, la conformance écrit des fichiers, la
+# couche FFI formate des messages d'erreur.
 nostd:
 	cargo build -p screengine --no-default-features --target $(CIBLE_NOSTD)
 
@@ -102,11 +113,13 @@ header-verif:
 audit:
 	cargo audit
 
-# Licences et provenance des dépendances. Le noyau n'en a aucune ; ce sont les
-# hôtes et la conformance qui en portent, et ce sont elles qui voyagent dans les
-# archives publiées.
+# Licences et provenance des dépendances. Le noyau et la couche FFI n'en ont
+# aucune ; ce sont l'étage d'accueil et la conformance qui en portent.
+#
+# --workspace indispensable : le noyau est le paquet racine, et sans ce drapeau
+# cargo-deny ne contrôle que lui — licences comprises, sans rien signaler.
 deny:
-	cargo deny check
+	cargo deny --workspace check
 
 doc:
 	cargo doc --workspace --no-deps --open

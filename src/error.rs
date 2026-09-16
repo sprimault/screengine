@@ -12,14 +12,35 @@
 /// traduction, au lieu de la laisser tomber dans un bras générique.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Error {
-    /// Une valeur reçue est hors de ce que le moteur accepte : dimension nulle,
-    /// résolution au-delà de [`MAX_RESOLUTION`], taille de tuile autre que 32
-    /// ou 64, `stride` inférieur à la largeur.
+    /// Une valeur reçue est hors de ce que le moteur accepte, et [`Argument`]
+    /// dit laquelle.
     ///
-    /// [`MAX_RESOLUTION`]: crate::MAX_RESOLUTION
-    InvalidArgument,
+    /// Une variante qui porte l'argument plutôt qu'une variante par argument :
+    /// la catégorie reste une, comme le code d'ABI qui la traduit, et c'est le
+    /// message seul qui se précise.
+    InvalidArgument(Argument),
     /// Un tampon du contexte n'a pas pu être alloué.
     OutOfMemory,
+}
+
+/// L'argument qu'une [`Error::InvalidArgument`] refuse.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Argument {
+    /// Une dimension nulle, un maximum au-delà de [`MAX_RESOLUTION`], ou une
+    /// résolution courante au-delà du maximum reçu à la création.
+    ///
+    /// [`MAX_RESOLUTION`]: crate::MAX_RESOLUTION
+    Resolution,
+    /// Une taille de tuile autre que 32 ou 64.
+    TileSize,
+    /// Un `stride` inférieur à la largeur courante, ou si grand que la taille
+    /// du tampon qu'il décrit ne tient pas dans un `usize`.
+    Stride,
+    /// Un tampon de pixels plus court que `stride × hauteur × 4` octets.
+    ///
+    /// Seul un appelant Rust le rencontre : la frontière C ne reçoit pas la
+    /// longueur du tampon et en fait une précondition.
+    BufferLength,
 }
 
 /// Le résultat d'un appel du noyau.

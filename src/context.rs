@@ -5,7 +5,7 @@
 
 use alloc::vec::Vec;
 
-use crate::error::{Error, Result};
+use crate::error::{Argument, Error, Result};
 use crate::math::fixed::to_subpixel;
 use crate::raster::{Clip, Point, Target, fill_triangle};
 
@@ -72,14 +72,15 @@ impl Config {
     fn validate(&self) -> Result<()> {
         let bounded = |v: u32, max: u32| v >= 1 && v <= max;
 
-        if !bounded(self.max_width, MAX_RESOLUTION) || !bounded(self.max_height, MAX_RESOLUTION) {
-            return Err(Error::InvalidArgument);
-        }
-        if !bounded(self.width, self.max_width) || !bounded(self.height, self.max_height) {
-            return Err(Error::InvalidArgument);
+        if !bounded(self.max_width, MAX_RESOLUTION)
+            || !bounded(self.max_height, MAX_RESOLUTION)
+            || !bounded(self.width, self.max_width)
+            || !bounded(self.height, self.max_height)
+        {
+            return Err(Error::InvalidArgument(Argument::Resolution));
         }
         if !TILE_SIZES.contains(&self.tile_size) {
-            return Err(Error::InvalidArgument);
+            return Err(Error::InvalidArgument(Argument::TileSize));
         }
         Ok(())
     }
@@ -198,15 +199,15 @@ impl Context {
     /// qui distingue les deux chemins.
     pub fn frame_end(&mut self, pixels: &mut [u8], stride: u32) -> Result<()> {
         if stride < self.width {
-            return Err(Error::InvalidArgument);
+            return Err(Error::InvalidArgument(Argument::Stride));
         }
 
         let needed = (stride as usize)
             .checked_mul(self.height as usize)
             .and_then(|p| p.checked_mul(BYTES_PER_PIXEL))
-            .ok_or(Error::InvalidArgument)?;
+            .ok_or(Error::InvalidArgument(Argument::Stride))?;
         if pixels.len() < needed {
-            return Err(Error::InvalidArgument);
+            return Err(Error::InvalidArgument(Argument::BufferLength));
         }
 
         self.clear();

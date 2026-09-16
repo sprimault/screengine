@@ -63,8 +63,13 @@ hacher pareil.
 - Contrôle des décalages de `ScgContextConfig` des deux côtés de la frontière :
   un test Rust, et des assertions statiques que le compilateur de l'hôte vérifie
   sur sa propre cible.
-- Espace de travail en quatre crates : noyau sans std, frontière C, hôte de
-  développement, suite de conformance.
+- Espace de travail en quatre crates : noyau sans std, frontière C, étage
+  d'accueil, suite de conformance.
+- `screengine-play`, pour faire un jeu en Rust sans écrire d'hôte : fenêtre,
+  clavier et souris, boucle à pas fixe, image remontée par facteur entier ou
+  remplissant la fenêtre. `make run` ouvre l'exemple.
+- Le message d'un argument refusé dit lequel : résolution, taille de tuile,
+  `stride` ou longueur du tampon. Le code de retour ne change pas.
 - Contrat d'ABI, conventions Rust et documentation de construction.
 - Intégration continue et publication sur tag.
 
@@ -73,8 +78,8 @@ hacher pareil.
 - Cible de rendu : la classe des moteurs logiciels de 1996 à 1998 plutôt que
   palette et texture affine. Couleurs directes, mipmaps, lightmaps, cellules 3D,
   rendu par tuiles, virgule fixe après la projection.
-- Le noyau est le paquet racine du dépôt ; frontière C, hôte et conformance
-  restent dans `crates/`.
+- Le noyau est le paquet racine du dépôt ; frontière C, étage d'accueil et
+  conformance restent dans `crates/`.
 - Frontière C arrêtée : codes de retour entiers à plages réservées par étape,
   message d'erreur en anglais, objet empoisonné après une panique, structures
   figées et complétées par des champs réservés, tampon de sortie en RGBA. Le
@@ -97,8 +102,13 @@ hash identically.
   errors into return codes.
 - `ScgContextConfig` offsets checked on both sides of the boundary: a Rust test,
   and static assertions the host's compiler verifies on its own target.
-- Four-crate workspace: std-free core, C boundary, development host,
-  conformance suite.
+- Four-crate workspace: std-free core, C boundary, Rust front end, conformance
+  suite.
+- `screengine-play`, to make a game in Rust without writing a host: window,
+  keyboard and mouse, fixed-step loop, image scaled up by an integer factor or
+  filling the window. `make run` opens the example.
+- The message for a rejected argument names it: resolution, tile size, `stride`
+  or buffer length. The return code is unchanged.
 - ABI contract, Rust conventions and build documentation.
 - Continuous integration and tag-triggered release.
 
@@ -107,8 +117,8 @@ hash identically.
 - Rendering target: the 1996–1998 software renderer class instead of palette
   and affine texturing. True colour, mipmaps, lightmaps, 3D cells, tile-based
   rendering, fixed-point after projection.
-- The core is the repository's root package; C boundary, host and conformance
-  stay in `crates/`.
+- The core is the repository's root package; C boundary, Rust front end and
+  conformance stay in `crates/`.
 - C boundary settled: integer return codes in per-stage reserved ranges, English
   error message, object poisoned after a panic, frozen structures extended
   through reserved fields, RGBA output buffer. The header and the hosts are

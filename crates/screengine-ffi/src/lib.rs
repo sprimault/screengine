@@ -23,7 +23,7 @@ use std::ffi::c_char;
 use std::ptr;
 use std::slice;
 
-use screengine::{BYTES_PER_PIXEL, Context, Error};
+use screengine::{Argument, BYTES_PER_PIXEL, Context, Error};
 
 use entry::AbiError;
 
@@ -127,7 +127,7 @@ pub unsafe extern "C" fn scg_frame_end(ctx: *mut ScgContext, pixels: *mut u8, st
         let len = (stride as usize)
             .checked_mul(height as usize)
             .and_then(|pixels| pixels.checked_mul(BYTES_PER_PIXEL))
-            .ok_or(AbiError::from(Error::InvalidArgument))?;
+            .ok_or(AbiError::from(Error::InvalidArgument(Argument::Stride)))?;
 
         // SAFETY: précondition documentée dans le header — l'appelant garantit
         // `stride × hauteur` pixels de quatre octets accessibles en écriture,

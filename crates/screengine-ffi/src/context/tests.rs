@@ -45,7 +45,7 @@ fn refuse_un_champ_reserve_non_nul() {
     ] {
         let mut config = sane();
         set(&mut config);
-        assert_eq!(config.to_core().unwrap_err(), Error::InvalidArgument);
+        assert_eq!(config.to_core().unwrap_err(), AbiError::RESERVED);
     }
 }
 
