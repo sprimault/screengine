@@ -192,6 +192,14 @@ Dans l'ordre où les causes se rencontrent :
 - **`cbindgen.toml`**, à la racine, fixe le langage C, la garde d'inclusion, la
   recopie de la documentation et l'en-tête de licence par l'option `header`. Il
   n'inclut que `stddef.h` et `stdint.h` : aucun `bool` ne traverse la frontière.
+- **`cbindgen` ne prouve aucun décalage.** Il analyse la source syntaxiquement et
+  n'interroge jamais `rustc` : il ne connaît ni taille ni alignement, et recopie
+  l'ordre des champs tel qu'il le lit. Or une liaison JavaScript reproduit ces
+  décalages octet par octet. Ils se prouvent donc ailleurs — un test de
+  `screengine-ffi` sur `offset_of!`, et des `_Static_assert` sur `sizeof` et
+  `offsetof` injectés par l'option `trailer` de `cbindgen.toml`, compilés par
+  l'hôte C. C'est le seul contrôle qui échoue quand une structure change de
+  disposition sans que personne ne l'ait voulu.
 - **Le header est en LF**, déclaré dans `.gitattributes` : une conversion en CRLF
   sur un clone Windows ferait échouer `make header-verif` sans qu'une ligne de
   code ait bougé.

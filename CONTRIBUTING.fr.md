@@ -179,10 +179,15 @@ fonctions, champs. **La documentation est en français** : doc de module, doc
 d'élément, commentaires, messages d'erreur. L'API se lit en anglais parce que
 c'est du code ; le raisonnement se lit en français parce que c'est de la pensée.
 
-**Une exception, et elle est structurante : la documentation des éléments
-exportés en FFI.** `cbindgen` la recopie dans `include/screengine.h`, que lisent
-des auteurs de liaisons qui ne parlent pas français. Ces docstrings-là sont en
-anglais, et ce sont les seules.
+**Une exception, et elle est structurante : ce qui franchit la frontière C.**
+`cbindgen` recopie la documentation des éléments exportés dans
+`include/screengine.h`, que lisent des auteurs de liaisons qui ne parlent pas
+français ; le message rendu par `scg_last_error` est lu par les mêmes personnes.
+Ces docstrings et ce message sont en anglais, et ce sont les seuls.
+
+**Ce message n'est jamais localisé** — ni par `LC_MESSAGES`, ni par un paramètre
+de langue qu'on ajouterait plus tard. Un texte qui change avec l'environnement
+donne des journaux qu'on ne peut plus rapprocher d'un poste à l'autre.
 
 Messages de commit en français d'abord, anglais ensuite, dans un seul texte
 séparé par `***`. Jamais `---` : `git am` le traite comme un séparateur de patch

@@ -175,10 +175,15 @@ fields. **Documentation is in French**: module docs, item docs, comments, error
 messages. The API reads in English because it is code; the reasoning reads in
 French because it is thought.
 
-**One exception, and a structural one: documentation of items exported through
-FFI.** `cbindgen` copies it into `include/screengine.h`, read by binding authors
-who do not speak French. Those docstrings are in English, and they are the only
-ones.
+**One exception, and a structural one: whatever crosses the C boundary.**
+`cbindgen` copies the documentation of exported items into
+`include/screengine.h`, read by binding authors who do not speak French; the
+message returned by `scg_last_error` is read by the same people. Those
+docstrings and that message are in English, and they are the only ones.
+
+**That message is never localised** — not through `LC_MESSAGES`, not through a
+language parameter added later. Text that changes with the environment yields
+logs that can no longer be matched from one machine to the next.
 
 Commit messages in French first, English second, in a single text separated by
 `***`. Never `---`: `git am` treats it as a patch separator and truncates

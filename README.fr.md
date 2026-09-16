@@ -52,15 +52,24 @@ le reste, la bibliothèque expose une ABI C stable, préfixée `scg_`, dont le
 header est généré :
 
 ```c
-ScgContext* ctx = scg_create(640, 360);
-scg_camera_set(ctx, pos, yaw, pitch, fov);
-scg_frame_begin(ctx);
-scg_draw_mesh(ctx, mesh, matrix);
+ScgContextConfig config = {0};
+config.max_width = config.width  = 640;
+config.max_height = config.height = 360;
+config.tile_size = 64;
+
+ScgContext *ctx;
+if (scg_create(&config, &ctx) != SCG_OK) {
+    fprintf(stderr, "%s\n", scg_last_error(NULL));
+    return 1;
+}
+
 scg_frame_end(ctx, pixels, stride);
+scg_destroy(ctx);
 ```
 
-Dix-sept fonctions, des handles opaques, aucun callback, aucune allocation qui
-traverse la frontière. Les liaisons vivent dans des dépôts séparés et ne
+Des handles opaques, aucun callback, aucune allocation qui traverse la
+frontière. Toute fonction faillible rend un code, et ce qu'elle produit passe
+par un paramètre de sortie. Les liaisons vivent dans des dépôts séparés et ne
 contiennent que de la conversion de types.
 
 Sur le web, l'hôte ne peut pas fournir un pointeur arbitraire : il alloue son

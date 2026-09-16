@@ -51,15 +51,24 @@ else, the library exposes a stable C ABI prefixed `scg_`, whose header is
 generated:
 
 ```c
-ScgContext* ctx = scg_create(640, 360);
-scg_camera_set(ctx, pos, yaw, pitch, fov);
-scg_frame_begin(ctx);
-scg_draw_mesh(ctx, mesh, matrix);
+ScgContextConfig config = {0};
+config.max_width = config.width  = 640;
+config.max_height = config.height = 360;
+config.tile_size = 64;
+
+ScgContext *ctx;
+if (scg_create(&config, &ctx) != SCG_OK) {
+    fprintf(stderr, "%s\n", scg_last_error(NULL));
+    return 1;
+}
+
 scg_frame_end(ctx, pixels, stride);
+scg_destroy(ctx);
 ```
 
-Seventeen functions, opaque handles, no callbacks, no allocation crossing the
-boundary. Bindings live in separate repositories and hold nothing but type
+Opaque handles, no callbacks, no allocation crossing the boundary. Every
+fallible function returns a code, and whatever it produces goes through an out
+parameter. Bindings live in separate repositories and hold nothing but type
 conversion.
 
 On the web the host cannot pass an arbitrary pointer: it allocates its buffer
