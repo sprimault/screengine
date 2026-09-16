@@ -28,7 +28,7 @@ HOSTS ?= c web
 # tapée directement perd ces réglages, et l'écart ne se voit pas dans la sortie.
 -include makefile.local
 
-.PHONY: build lib run example test test-abi test-abi-run native-libs fmt lint lint-doc-tests nostd conform conform-update header \
+.PHONY: build lib run example test test-abi test-abi-run test-cpp test-cpp-run native-libs fmt lint lint-doc-tests nostd conform conform-update header \
         header-verif audit deny doc hosts host-c host-web host-android clean tools
 
 build:
@@ -55,6 +55,7 @@ RUN ?=
 test:
 	cargo test $(PKG) $(if $(RUN),-- $(RUN))
 	$(MAKE) test-abi
+	$(MAKE) test-cpp
 
 # L'hôte C franchit réellement la frontière, lié à la bibliothèque statique, et
 # son empreinte doit être celle du chemin Rust. Les tests de screengine-ffi
@@ -94,6 +95,38 @@ test-abi-run:
 	  echo "test-abi : empreinte $$c, identique au chemin Rust"; \
 	else \
 	  echo "test-abi : hote C '$$c', chemin Rust '$$rust'"; exit 1; \
+	fi
+
+# L'hôte C++, lié à la bibliothèque dynamique : le header compilé en C++ et le
+# chargement dynamique réel, que l'hôte C lié en statique ne voit pas. Même
+# règle de saut que test-abi.
+#
+# Ces deux cibles reprennent test-abi presque ligne à ligne. C'est la deuxième
+# occurrence : notée, pas extraite ; la troisième — l'hôte wasm — décidera de la
+# forme commune.
+CPP_OUT = $(abspath $(SORTIE))/host-cpp
+
+test-cpp:
+	@reason=$$($(MAKE) -s --no-print-directory -C hosts/cpp why-not); \
+	if [ -z "$$reason" ]; then \
+	  $(MAKE) test-cpp-run; \
+	elif [ -n "$$CI" ]; then \
+	  echo "test-cpp impossible en integration continue : $$reason"; exit 1; \
+	else \
+	  echo "test-cpp saute : $$reason"; \
+	fi
+
+test-cpp-run:
+	cargo build -p screengine-ffi --profile ffi-test
+	@mkdir -p $(CPP_OUT)
+	cargo run -q -p screengine-conformance --release -- --print triangle > $(CPP_OUT)/rust.txt
+	$(MAKE) -s --no-print-directory -C hosts/cpp PROFILE=ffi-test OUT=$(CPP_OUT) all
+	$(MAKE) -s --no-print-directory -C hosts/cpp PROFILE=ffi-test OUT=$(CPP_OUT) run > $(CPP_OUT)/cpp.txt
+	@rust=$$(tr -d '\r' < $(CPP_OUT)/rust.txt); cpp=$$(tr -d '\r' < $(CPP_OUT)/cpp.txt); \
+	if [ -n "$$cpp" ] && [ "$$cpp" = "$$rust" ]; then \
+	  echo "test-cpp : empreinte $$cpp, identique au chemin Rust"; \
+	else \
+	  echo "test-cpp : hote C++ '$$cpp', chemin Rust '$$rust'"; exit 1; \
 	fi
 
 # Les bibliothèques système que réclame la bibliothèque statique sur ce poste.

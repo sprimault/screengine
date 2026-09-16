@@ -69,6 +69,9 @@ hacher pareil.
   lancé par `make test` : il vérifie les refus, l'écriture hors du tampon,
   l'alignement et l'environnement flottant vus depuis C, et compare son
   empreinte du triangle à celle du chemin Rust.
+- Hôte C++ sans fenêtre, lié à la bibliothèque dynamique sous Windows et Linux,
+  et lancé par `make test` : mêmes contrôles, plus le header compilé en C++ et
+  la preuve que les fonctions viennent de la bibliothèque chargée.
 - Empreinte d'image : FNV-1a 64 bits sur les dimensions puis la zone utile,
   que chaque hôte recalcule dans son langage.
 - Espace de travail en quatre crates : noyau sans std, frontière C, étage
@@ -92,6 +95,8 @@ hacher pareil.
   message d'erreur en anglais, objet empoisonné après une panique, structures
   figées et complétées par des champs réservés, tampon de sortie en RGBA. Le
   header et les hôtes s'écrivent contre elle.
+- Le header s'inclut depuis C++ : gardes `extern "C"`, et assertions de
+  disposition vérifiées par un compilateur C++ comme par un compilateur C.
 
 ***
 
@@ -115,6 +120,9 @@ hash identically.
   run by `make test`: it checks rejections, writes outside the buffer,
   alignment and the floating-point environment as seen from C, and compares its
   triangle hash with the Rust path's.
+- Headless C++ host, linked against the shared library on Windows and Linux, and
+  run by `make test`: the same checks, plus the header compiled as C++ and proof
+  that the functions come from the loaded library.
 - Image hash: 64-bit FNV-1a over the dimensions then the visible area, which
   each host recomputes in its own language.
 - Four-crate workspace: std-free core, C boundary, Rust front end, conformance
@@ -138,3 +146,5 @@ hash identically.
   error message, object poisoned after a panic, frozen structures extended
   through reserved fields, RGBA output buffer. The header and the hosts are
   written against it.
+- The header can be included from C++: `extern "C"` guards, and layout
+  assertions checked by a C++ compiler as well as a C one.

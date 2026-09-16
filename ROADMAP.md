@@ -29,8 +29,9 @@ fichier n'en est que l'ordre d'exécution.
 
 ## 0 — La frontière
 
-Un triangle en dur, affiché depuis quatre hôtes : un programme C sous Windows, un
-script PHP en FFI, un navigateur en wasm, un téléphone Android via JNI.
+Un triangle en dur, affiché depuis quatre hôtes : un programme C lié à la
+bibliothèque statique, un programme C++ lié à la bibliothèque dynamique, un
+navigateur en wasm, un téléphone Android via JNI.
 
 Aucun moteur. Cinq fonctions : `scg_abi_version`, `scg_create`, `scg_destroy`,
 `scg_frame_end`, `scg_last_error`, plus `scg_buffer_alloc` et `scg_buffer_free`

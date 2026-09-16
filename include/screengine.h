@@ -85,6 +85,10 @@ typedef struct ScgContextConfig {
   uint32_t reserved2;
 } ScgContextConfig;
 
+#ifdef __cplusplus
+extern "C" {
+#endif // __cplusplus
+
 // Returns the ABI version of the loaded library.
 //
 // Callable from any thread, at any time. Bindings that receive it as a signed
@@ -176,20 +180,30 @@ uint8_t *scg_buffer_alloc(size_t len);
 // freed, with the same `len`.
 void scg_buffer_free(uint8_t *ptr, size_t len);
 
+#ifdef __cplusplus
+}  // extern "C"
+#endif  // __cplusplus
+
 #endif  /* SCREENGINE_H */
 
 /* cbindgen place ce bloc après la garde d'inclusion : il lui en faut une. */
 #ifndef SCREENGINE_LAYOUT_CHECKED
 #define SCREENGINE_LAYOUT_CHECKED
-#if !defined(__cplusplus) && defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112L
-_Static_assert(sizeof(ScgContextConfig) == 32, "ScgContextConfig changed size");
-_Static_assert(offsetof(ScgContextConfig, max_width) == 0, "max_width moved");
-_Static_assert(offsetof(ScgContextConfig, max_height) == 4, "max_height moved");
-_Static_assert(offsetof(ScgContextConfig, width) == 8, "width moved");
-_Static_assert(offsetof(ScgContextConfig, height) == 12, "height moved");
-_Static_assert(offsetof(ScgContextConfig, tile_size) == 16, "tile_size moved");
-_Static_assert(offsetof(ScgContextConfig, reserved0) == 20, "reserved0 moved");
-_Static_assert(offsetof(ScgContextConfig, reserved1) == 24, "reserved1 moved");
-_Static_assert(offsetof(ScgContextConfig, reserved2) == 28, "reserved2 moved");
+#if defined(__cplusplus) && (__cplusplus >= 201103L || (defined(_MSVC_LANG) && _MSVC_LANG >= 201103L))
+#define SCREENGINE_LAYOUT_ASSERT(cond, what) static_assert(cond, what)
+#elif !defined(__cplusplus) && defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112L
+#define SCREENGINE_LAYOUT_ASSERT(cond, what) _Static_assert(cond, what)
+#endif
+#ifdef SCREENGINE_LAYOUT_ASSERT
+SCREENGINE_LAYOUT_ASSERT(sizeof(ScgContextConfig) == 32, "ScgContextConfig changed size");
+SCREENGINE_LAYOUT_ASSERT(offsetof(ScgContextConfig, max_width) == 0, "max_width moved");
+SCREENGINE_LAYOUT_ASSERT(offsetof(ScgContextConfig, max_height) == 4, "max_height moved");
+SCREENGINE_LAYOUT_ASSERT(offsetof(ScgContextConfig, width) == 8, "width moved");
+SCREENGINE_LAYOUT_ASSERT(offsetof(ScgContextConfig, height) == 12, "height moved");
+SCREENGINE_LAYOUT_ASSERT(offsetof(ScgContextConfig, tile_size) == 16, "tile_size moved");
+SCREENGINE_LAYOUT_ASSERT(offsetof(ScgContextConfig, reserved0) == 20, "reserved0 moved");
+SCREENGINE_LAYOUT_ASSERT(offsetof(ScgContextConfig, reserved1) == 24, "reserved1 moved");
+SCREENGINE_LAYOUT_ASSERT(offsetof(ScgContextConfig, reserved2) == 28, "reserved2 moved");
+#undef SCREENGINE_LAYOUT_ASSERT
 #endif
 #endif
