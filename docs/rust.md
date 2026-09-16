@@ -132,6 +132,20 @@ seul.
   commentaire.
 - Un `unsafe` sans commentaire est un défaut, même correct. Le lint
   `clippy::undocumented_unsafe_blocks` le fait refuser par `make lint`.
+- **Le tampon de l'hôte s'écrit par accès non alignés**, chemins SIMD compris. Le
+  moteur ne contrôle pas son alignement — une section DIB sous Windows, le
+  pointeur rendu par le verrouillage d'un bitmap sur Android —, et `stride` étant
+  libre, celui de la base ne se propage pas aux lignes : une base sur seize
+  octets avec un `stride` impair en désaligne une sur deux. Donc
+  `_mm_storeu_si128`, jamais `_mm_store_si128` : un `movaps` désaligné est une
+  faute franche sous Windows x64, et armv7 est la cible qui la révélera.
+- **Aucune longueur avancée à travers un appel qui peut paniquer.** Sortir une
+  valeur d'un tampon ou allonger sa longueur avant d'avoir réinitialisé ce qu'on
+  laisse derrière ouvre une fenêtre où le dépliage libère deux fois — un défaut
+  qui a valu son avis de sécurité à plus d'une bibliothèque. Le
+  `#![deny(unsafe_code)]` du noyau le tient partout ailleurs ; dans un module
+  SIMD, une indexation, un `debug_assert!` ou un débordement sous
+  `overflow-checks` suffisent à ouvrir cette fenêtre.
 
 ## Frontière C, côté Rust
 
@@ -151,8 +165,18 @@ Le contrat est dans [`abi.md`](abi.md). Ce qui suit est la manière de l'écrire
   `Box::from_raw` à la destruction et jamais ailleurs. Le type pointé est opaque
   pour `cbindgen`.
 - **`AssertUnwindSafe` ne se pose qu'en un point**, dans l'utilitaire
-  d'enveloppe. C'est le poison de l'objet (A5 dans `abi.md`) qui rend cette
-  assertion honnête.
+  d'enveloppe. C'est le poison de l'objet, décrit dans `abi.md`, qui rend cette
+  assertion honnête : l'état non spécifié qu'une panique laisse derrière elle
+  n'est plus jamais observé.
+- **L'emplacement d'erreur par thread n'a pas de destructeur.** Un tableau
+  d'octets de taille fixe, pas un `String` ni un `RefCell` : un thread-local à
+  `Drop` coûte une clé pthread — Android en plafonne le nombre par processus — et
+  surtout son accès échoue pendant la destruction du TLS du thread. Ce serait une
+  panique dans `scg_last_error`, la seule fonction sans code de retour pour la
+  porter. Un message trop long est tronqué, jamais alloué.
+- **Le `Drop` d'un objet exporté ne panique jamais**, donc pas d'`assert!` en
+  destruction. `scg_destroy` rend `void` : une panique y surviendrait après le
+  poison, sans rien pour la transporter jusqu'à l'hôte.
 - **Le même utilitaire fixe l'environnement flottant** à l'entrée — arrondi au
   plus proche, DAZ et FTZ désactivés, dans MXCSR sur x86 et FPCR sur ARM — et
   rend celui de l'hôte à la sortie, panique comprise. Le noyau ne touche jamais
@@ -218,7 +242,8 @@ aux fonctions de bord.
 
 Les pires cas sont calculés pour une résolution interne de 2048 pixels de côté
 au plus, dans une bande de garde de ±4096 pixels. Chaque constante porte ce calcul
-en commentaire.
+en commentaire. C'est [`abi.md`](abi.md) qui rend cette borne opposable : au-delà,
+la création du contexte rend une erreur plutôt que de déborder en silence.
 
 | Grandeur | Format | Pourquoi |
 |---|---|---|

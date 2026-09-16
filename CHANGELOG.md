@@ -51,7 +51,7 @@ Aucun rendu : la bibliothèque compile mais n'expose encore aucune fonction.
 ### Ajouté
 - Espace de travail en quatre crates : noyau sans std, frontière C, hôte de
   développement, suite de conformance.
-- Contrat d'ABI, conventions Rust et documentation de construction, en brouillon.
+- Contrat d'ABI, conventions Rust et documentation de construction.
 - Intégration continue et publication sur tag.
 
 ### Modifié
@@ -61,6 +61,10 @@ Aucun rendu : la bibliothèque compile mais n'expose encore aucune fonction.
   rendu par tuiles, virgule fixe après la projection.
 - Le noyau est le paquet racine du dépôt ; frontière C, hôte et conformance
   restent dans `crates/`.
+- Frontière C arrêtée : codes de retour entiers à plages réservées par étape,
+  message d'erreur en anglais, objet empoisonné après une panique, structures
+  figées et complétées par des champs réservés, tampon de sortie en RGBA. Le
+  header et les hôtes s'écrivent contre elle.
 
 ***
 
@@ -69,7 +73,7 @@ No rendering yet: the library builds but exposes no function.
 ### Added
 - Four-crate workspace: std-free core, C boundary, development host,
   conformance suite.
-- Draft ABI contract, Rust conventions and build documentation.
+- ABI contract, Rust conventions and build documentation.
 - Continuous integration and tag-triggered release.
 
 ### Changed
@@ -79,3 +83,7 @@ No rendering yet: the library builds but exposes no function.
   rendering, fixed-point after projection.
 - The core is the repository's root package; C boundary, host and conformance
   stay in `crates/`.
+- C boundary settled: integer return codes in per-stage reserved ranges, English
+  error message, object poisoned after a panic, frozen structures extended
+  through reserved fields, RGBA output buffer. The header and the hosts are
+  written against it.
