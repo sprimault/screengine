@@ -423,12 +423,20 @@ teste quelque chose.
   `make lint` appelle.
 - **Tests de la frontière** dans `crates/screengine-ffi/tests/` : ils appellent
   les fonctions exportées comme le ferait un hôte, pointeurs nuls et séquences
-  invalides compris, et vérifient qu'aucune panique ne s'échappe.
+  invalides compris, et vérifient qu'aucune panique ne s'échappe. Ils restent du
+  Rust appelé depuis du Rust : ni l'édition de liens, ni la disposition vue par
+  un compilateur C, ni l'environnement flottant d'un vrai hôte n'y passent.
+- **L'hôte C, dans `make test-abi`**, franchit réellement la frontière : lié à la
+  bibliothèque statique, sans fenêtre, il vérifie refus, sentinelles autour du
+  tampon, alignement et registre flottant, puis compare son empreinte du triangle
+  à celle du chemin Rust (`screengine-conformance --print triangle`). Il fait
+  partie de `make test` ; sans compilateur C il saute en le disant, et ce saut
+  est une erreur en intégration continue.
 - **Conformance** dans `crates/screengine-conformance` : des scènes de référence,
   rendues sans fenêtre, dont le tampon est haché et comparé aux empreintes de
   `references/`.
 - **Aucun test n'exige de fenêtre ni de GPU.** Les runners d'intégration continue
-  n'ont pas d'écran ; un hôte n'est pas un test.
+  n'ont pas d'écran ; un hôte à fenêtre n'est pas un test.
 
 ### Conformance
 
@@ -449,9 +457,17 @@ teste quelque chose.
   les trois empreintes doivent être identiques ; puis ses tuiles dans un ordre
   mélangé. Une couture de tuile ne se voit que dans une configuration : sans ce
   contrôle, la conformance ne vaudrait que pour la sienne.
-- **L'environnement flottant de l'hôte ne change pas l'image.** Un test de la
-  frontière active DAZ et FTZ avant d'appeler le moteur, et compare l'empreinte à
-  celle de la conformance.
+- **L'empreinte est FNV-1a 64 bits**, écrite en seize chiffres hexadécimaux
+  minuscules. Elle hache la largeur puis la hauteur en `u32` petit-boutiste, puis
+  la zone utile ligne par ligne, `largeur × 4` octets alpha compris ; le `stride`
+  n'y entre pas. Chaque hôte la recalcule dans son langage — elle est native en
+  PHP (`hash('fnv1a64')`) et tient en dix lignes ailleurs. Écartés : xxHash, à
+  réimplémenter en JavaScript et en Java ; SHA-256, asynchrone dans un
+  navigateur, pour un détecteur de régression qui n'a rien à sécuriser.
+- **L'environnement flottant de l'hôte ne change pas l'image.** L'hôte C démasque
+  les exceptions, active DAZ, FZ et l'arrondi vers le haut avant d'appeler le
+  moteur, compare l'empreinte à celle du chemin Rust, et vérifie que son registre
+  lui revient intact.
 - Les empreintes sont comparées octet pour octet : `.gitattributes` les déclare
   binaires.
 

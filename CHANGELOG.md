@@ -65,6 +65,12 @@ hacher pareil.
 - Contrôle des décalages de `ScgContextConfig` des deux côtés de la frontière :
   un test Rust, et des assertions statiques que le compilateur de l'hôte vérifie
   sur sa propre cible.
+- Hôte C sans fenêtre, lié à la bibliothèque statique sous Windows et Linux, et
+  lancé par `make test` : il vérifie les refus, l'écriture hors du tampon,
+  l'alignement et l'environnement flottant vus depuis C, et compare son
+  empreinte du triangle à celle du chemin Rust.
+- Empreinte d'image : FNV-1a 64 bits sur les dimensions puis la zone utile,
+  que chaque hôte recalcule dans son langage.
 - Espace de travail en quatre crates : noyau sans std, frontière C, étage
   d'accueil, suite de conformance.
 - `screengine-play`, pour faire un jeu en Rust sans écrire d'hôte : fenêtre,
@@ -105,6 +111,12 @@ hash identically.
   them masked during the call, and untouched on return.
 - `ScgContextConfig` offsets checked on both sides of the boundary: a Rust test,
   and static assertions the host's compiler verifies on its own target.
+- Headless C host, linked against the static library on Windows and Linux, and
+  run by `make test`: it checks rejections, writes outside the buffer,
+  alignment and the floating-point environment as seen from C, and compares its
+  triangle hash with the Rust path's.
+- Image hash: 64-bit FNV-1a over the dimensions then the visible area, which
+  each host recomputes in its own language.
 - Four-crate workspace: std-free core, C boundary, Rust front end, conformance
   suite.
 - `screengine-play`, to make a game in Rust without writing a host: window,
