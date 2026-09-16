@@ -110,7 +110,7 @@ difference between platforms.
 make build     # core and shared library
 make run       # opens a window on the engine
 make header    # regenerates include/screengine.h
-make test
+make test      # including the statically linked C host, if a C compiler is present
 make conform   # replays the reference scenes and compares hashes
 make lint
 make nostd     # proof that the core builds without std

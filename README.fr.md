@@ -110,7 +110,7 @@ différence entre les plateformes.
 make build     # noyau et bibliothèque partagée
 make run       # ouvre une fenêtre sur le moteur
 make header    # régénère include/screengine.h
-make test
+make test      # dont l'hôte C, lié en statique, s'il y a un compilateur C
 make conform   # rejoue les scènes de référence et compare les empreintes
 make lint
 make nostd     # preuve que le noyau compile sans std

@@ -28,7 +28,7 @@ HOSTS ?= c web
 # tapée directement perd ces réglages, et l'écart ne se voit pas dans la sortie.
 -include makefile.local
 
-.PHONY: build lib run example test fmt lint lint-doc-tests nostd conform conform-update header \
+.PHONY: build lib run example test test-abi test-abi-run native-libs fmt lint lint-doc-tests nostd conform conform-update header \
         header-verif audit deny doc hosts host-c host-web host-android clean tools
 
 build:
@@ -54,6 +54,53 @@ RUN ?=
 
 test:
 	cargo test $(PKG) $(if $(RUN),-- $(RUN))
+	$(MAKE) test-abi
+
+# L'hôte C franchit réellement la frontière, lié à la bibliothèque statique, et
+# son empreinte doit être celle du chemin Rust. Les tests de screengine-ffi
+# appellent les fonctions exportées depuis Rust : ils ne voient ni l'édition de
+# liens, ni la disposition vue par un compilateur C, ni l'environnement
+# flottant d'un vrai hôte.
+#
+# Sans compilateur C, la cible saute et dit pourquoi. En intégration continue
+# (CI défini), le même saut est une erreur : un contrôle qui ne tourne pas sans
+# que personne le voie est pire que pas de contrôle.
+ABI_OUT = $(abspath $(SORTIE))/host-c
+
+test-abi:
+	@reason=$$($(MAKE) -s --no-print-directory -C hosts/c why-not); \
+	if [ -z "$$reason" ]; then \
+	  $(MAKE) test-abi-run; \
+	elif [ -n "$$CI" ]; then \
+	  echo "test-abi impossible en integration continue : $$reason"; exit 1; \
+	else \
+	  echo "test-abi saute : $$reason"; \
+	fi
+
+# Messages sans accents : la console Windows les reçoit dans une autre page de
+# code que celle du Makefile.
+#
+# --no-print-directory explicite sur chaque appel de hosts/c : GNU Make 4.3 ne
+# le déduit pas de -s, et la ligne « Entering directory » se retrouverait dans
+# la raison de why-not ou dans le fichier d'empreinte.
+test-abi-run:
+	cargo build -p screengine-ffi --profile ffi-test
+	@mkdir -p $(ABI_OUT)
+	cargo run -q -p screengine-conformance --release -- --print triangle > $(ABI_OUT)/rust.txt
+	$(MAKE) -s --no-print-directory -C hosts/c PROFILE=ffi-test OUT=$(ABI_OUT) all
+	$(MAKE) -s --no-print-directory -C hosts/c PROFILE=ffi-test OUT=$(ABI_OUT) run > $(ABI_OUT)/c.txt
+	@rust=$$(tr -d '\r' < $(ABI_OUT)/rust.txt); c=$$(tr -d '\r' < $(ABI_OUT)/c.txt); \
+	if [ -n "$$c" ] && [ "$$c" = "$$rust" ]; then \
+	  echo "test-abi : empreinte $$c, identique au chemin Rust"; \
+	else \
+	  echo "test-abi : hote C '$$c', chemin Rust '$$rust'"; exit 1; \
+	fi
+
+# Les bibliothèques système que réclame la bibliothèque statique sur ce poste.
+# Elles sont figées dans hosts/c : on relance ceci quand la liaison de l'hôte C
+# casse sur un symbole introuvable après une montée de Rust.
+native-libs:
+	cargo rustc -p screengine-ffi --profile ffi-test --crate-type staticlib -- --print native-static-libs
 
 # Doublon assumé avec les formatters de clippy : cargo fmt porte sur tout
 # l'arbre, sans exclusion ni configuration, et reste vrai le jour où quelqu'un

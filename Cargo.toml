@@ -69,3 +69,17 @@ panic = "abort"
 [profile.release-ffi]
 inherits = "release"
 panic = "unwind"
+
+# La bibliothèque statique contre laquelle `make test-abi` lie l'hôte C. Sans LTO
+# complète, qui ferait payer chaque modification du noyau à chaque `make test`.
+# Ce n'est pas l'artefact publié, et c'est admissible pour une seule raison :
+# l'image ne dépend pas du profil. Une empreinte qui diffère entre ce profil et
+# `release-ffi` est un défaut du moteur, pas une raison d'abandonner celui-ci.
+[profile.ffi-test]
+inherits = "release"
+panic = "unwind"
+lto = false
+codegen-units = 16
+incremental = true
+debug-assertions = true
+overflow-checks = true

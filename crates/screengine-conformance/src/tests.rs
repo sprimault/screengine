@@ -3,8 +3,8 @@
 
 //! L'analyse de la ligne de commande de la conformance.
 //!
-//! Le reste — les scènes et leurs empreintes — n'existe pas encore : il n'y a
-//! rien à rendre au-delà du triangle en dur, qui est celui des hôtes.
+//! Les références n'existent pas encore : il n'y a rien à rendre au-delà du
+//! triangle en dur, qui est celui des hôtes.
 
 use super::*;
 
@@ -31,4 +31,25 @@ fn rejects_missing_mode() {
 fn rejects_ambiguous_usage() {
     assert!(parse_mode(&args(&["--check", "--update"])).is_err());
     assert!(parse_mode(&args(&["--verify"])).is_err());
+}
+
+/// `--print` exige une scène connue : un nom mal orthographié rendrait sinon
+/// une empreinte vide, et la comparaison avec l'hôte échouerait sans dire
+/// pourquoi.
+#[test]
+fn print_exige_une_scene_connue() {
+    assert_eq!(
+        parse_mode(&args(&["--print", "triangle"])),
+        Ok(Mode::Print(Scene::Triangle))
+    );
+    assert!(parse_mode(&args(&["--print", "cube"])).is_err());
+    assert!(parse_mode(&args(&["--print"])).is_err());
+}
+
+/// Le triangle se rend, et deux rendus donnent la même empreinte : sans quoi
+/// il n'y aurait rien à comparer entre le chemin Rust et les hôtes.
+#[test]
+fn le_triangle_rend_une_empreinte_stable() {
+    let first = Scene::Triangle.render().expect("scène valide");
+    assert_eq!(Scene::Triangle.render(), Ok(first));
 }

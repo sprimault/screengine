@@ -42,6 +42,7 @@ plutôt que de les recopier.
 | `dev` | développement | `opt-level = 3` pour le noyau et les dépendances, assertions conservées |
 | `release` | binaires : exemples de l'étage d'accueil, conformance | `lto = "fat"`, `codegen-units = 1`, `panic = "abort"` |
 | `release-ffi` | bibliothèque partagée et statique | hérite de `release`, `panic = "unwind"` |
+| `ffi-test` | bibliothèque statique de `make test-abi` | hérite de `release`, `panic = "unwind"`, sans LTO, assertions conservées |
 
 - **Un rasteriseur logiciel non optimisé est inutilisable**, même pour déboguer :
   le profil de développement optimise le noyau, sans perdre `debug-assertions` ni
@@ -50,6 +51,10 @@ plutôt que de les recopier.
   `catch_unwind` ne rattrape rien, et une panique qui traverse la frontière C est
   un comportement indéfini. Ne pas unifier les deux profils pour simplifier le
   `Makefile` : `make lib` construit avec le bon.
+- **L'hôte C de `make test` se lie à `ffi-test`**, pas à l'artefact publié : la
+  LTO complète ferait payer chaque modification du noyau à chaque `make test`.
+  C'est admissible parce que l'image ne dépend pas du profil — une empreinte qui
+  diffère entre les deux est un défaut du moteur.
 - La conformance tourne en `release`, comme les binaires publiés. C'est pour cela
   qu'un débordement d'entier ne doit jamais dépendre du profil : voir
   [`rust.md`](rust.md), « Arithmétique et précision ».
@@ -80,7 +85,7 @@ dynamique par nom.
 | Cible | Triple | Artefact | Outillage | Hôtes | Contrôle |
 |---|---|---|---|---|---|
 | Windows x64 | `x86_64-pc-windows-msvc` | `.dll`, `.lib` | MSVC Build Tools | `screengine-play`, `hosts/c`, `hosts/php` | CI |
-| Linux x64 | `x86_64-unknown-linux-gnu` | `.so`, `.a` | gcc ou clang | `hosts/php`, conformance | CI |
+| Linux x64 | `x86_64-unknown-linux-gnu` | `.so`, `.a` | gcc ou clang | `hosts/c`, `hosts/php`, conformance | CI |
 | Navigateur | `wasm32-unknown-unknown` | `.wasm` | cible rustup | `hosts/web` | CI, avec son hôte |
 | Android arm64 | `aarch64-linux-android` | `.so` | NDK | `hosts/android` | CI, avec son hôte |
 | Android armv7 | `armv7-linux-androideabi` | `.so` | NDK | `hosts/android` | CI, avec son hôte |
@@ -100,17 +105,31 @@ et un cycle de retour lent depuis un poste Windows.
 
 ### Windows
 
+- **L'hôte C se compile avec MSVC**, `cl -MD -std:c17`. MinGW est écarté : il
+  ne se lie pas à une bibliothèque statique produite pour la cible MSVC.
+  `hosts/c/build.cmd` trouve `cl` dans le PATH, sinon par `vswhere` et
+  `vcvars64`, et place les outils MSVC devant le `link.exe` de Git Bash.
+- **L'environnement MSVC ne se charge que dans `build.cmd`**, jamais pour tout
+  un shell Git Bash. Quand il est chargé, rustc cherche `link.exe` par le PATH
+  au lieu de le trouver lui-même, et tombe sur le `link` de Git : toute la
+  compilation Rust échoue. C'est pourquoi l'intégration continue n'utilise pas
+  d'action d'invite développeur.
+- **`-std:c17` n'est pas un confort.** Sans lui, `cl` ne définit pas
+  `__STDC_VERSION__`, et les `_Static_assert` de disposition du header ne sont
+  pas compilés — sans rien signaler. L'hôte C s'arrête sur un `#error` dans ce
+  cas.
 - **L'hôte C se lie à la bibliothèque statique.** La liaison réclame les
-  bibliothèques système dont dépend `std`. Leur liste exacte se lit, plutôt que
-  de se deviner, par :
-
-  ```
-  cargo rustc -p screengine-ffi --profile release-ffi --crate-type staticlib -- --print native-static-libs
-  ```
-
+  bibliothèques système dont dépend `std` — aujourd'hui `kernel32 ntdll userenv
+  ws2_32 dbghelp`. Elles sont figées dans `hosts/c`, et `make native-libs` en
+  relit la liste quand une montée de Rust la change : une liste périmée échoue
+  bruyamment à l'édition de liens, jamais en silence.
 - **Rust se lie au CRT dynamique (`/MD`).** Un hôte C compilé en `/MT` échoue à
   l'édition de liens sur des symboles en double, ou pire, se lie avec deux tas
   distincts.
+- **Deux bibliothèques statiques Rust ne cohabitent pas dans un même binaire.**
+  Chacune embarque sa bibliothèque standard : un intégrateur qui lie déjà une
+  autre bibliothèque Rust en statique aura des symboles en double, et doit
+  passer par la bibliothèque dynamique.
 - **L'hôte PHP charge la DLL**, par FFI : voir « Liaisons ».
 
 ### Linux
@@ -120,6 +139,9 @@ et un cycle de retour lent depuis un poste Windows.
   hypothèse sur l'alignement ou un chemin SIMD sélectionné différemment — jamais
   une différence acceptable.
 - Sert aussi l'hôte PHP, dont l'outillage s'installe plus simplement sous Linux.
+- **L'hôte C se compile avec `cc -std=c11`**, lié à `libscreengine_ffi.a` puis
+  à `-lgcc_s -lutil -lrt -lpthread -lm -ldl -lc`. `gcc_s` porte le dépliage, sans
+  lequel `catch_unwind` ne rattraperait rien.
 - **`screengine-play` s'y compile sans paquet système** : X11, Wayland et
   xkbcommon sont chargés par `dlopen`, et seule l'exécution les exige. **À
   vérifier** : l'ouverture de la fenêtre sous X11 et sous Wayland. Sans les
@@ -238,7 +260,7 @@ et chaque semaine pour l'audit :
 | Job | Plateforme | Contrôles |
 |---|---|---|
 | vérification | Linux | `fmt`, `lint`, `nostd`, `header-verif`, `deny` |
-| tests | Linux et Windows | `test`, `conform` |
+| tests | Linux et Windows | `test`, hôte C compris, `conform` |
 | audit | Linux | `audit`, dans un job à part : un avis publié en amont n'est pas un défaut de la PR en cours |
 
 Tout passe par le `Makefile`, et les outils par `make tools`. Les actions sont
