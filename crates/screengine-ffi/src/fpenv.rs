@@ -4,7 +4,7 @@
 //! L'environnement flottant, fixé à l'entrée et rendu à l'hôte au retour.
 //!
 //! Le noyau suppose l'environnement par défaut — arrondi au plus proche, ni DAZ
-//! ni FTZ — et ne touche jamais ces registres. C'est la frontière qui le lui
+//! ni FTZ, exceptions masquées — et ne touche jamais ces registres. C'est la frontière qui le lui
 //! garantit, parce qu'une bibliothèque audio ou un moteur de jeu du même
 //! processus peut les avoir changés, et que l'image en dépendrait.
 //!
@@ -20,13 +20,16 @@ mod arch {
     /// Le mot de contrôle SSE de l'hôte.
     pub(super) type Saved = u32;
 
-    /// Efface FZ (bit 15), l'arrondi (14:13) et DAZ (bit 6).
+    /// Efface FZ (bit 15), l'arrondi (14:13) et DAZ (bit 6), et masque les six
+    /// exceptions (12:7).
     ///
-    /// Les masques d'exception de l'hôte (12:7) et ses drapeaux cumulés (5:0)
-    /// restent : ce sont son état, pas le nôtre, et le moteur ne lève aucune
-    /// exception flottante.
+    /// Les masques ne sont pas l'affaire de l'hôte seul : le moteur produit des
+    /// résultats inexacts à chaque calcul de sommet, et un hôte qui a démasqué
+    /// l'inexactitude — pour traquer un défaut chez lui — tomberait dès la
+    /// première image. Ses drapeaux cumulés (5:0) restent, puisque masquer
+    /// n'empêche pas de les lever.
     pub(super) fn normalize(control: Saved) -> Saved {
-        control & !0xE040
+        (control & !0xE040) | 0x1F80
     }
 
     /// Lit le mot de contrôle.
@@ -60,13 +63,17 @@ mod arch {
     /// Le registre de contrôle flottant de l'hôte.
     pub(super) type Saved = u64;
 
-    /// Efface AHP (26), DN (25), FZ (24), l'arrondi (23:22) et FZ16 (19).
+    /// Efface AHP (26), DN (25), FZ (24), l'arrondi (23:22) et FZ16 (19), et les
+    /// six autorisations de piège — IDE (15), IXE (12), UFE (11), OFE (10),
+    /// DZE (9), IOE (8).
     ///
     /// DN est dans le lot alors que x86 n'a pas d'équivalent : le laisser à 1
     /// ferait propager les NaN autrement sur ARM que sur x86, et l'empreinte de
-    /// conformance divergerait entre deux cibles pour cette seule raison.
+    /// conformance divergerait entre deux cibles pour cette seule raison. Les
+    /// pièges, pour la même raison qu'en x86 : le moteur produit des résultats
+    /// inexacts, et un piège autorisé par l'hôte tuerait l'appel.
     pub(super) fn normalize(control: Saved) -> Saved {
-        control & !0x07C8_0000
+        control & !0x07C8_9F00
     }
 
     /// Lit le registre de contrôle.
@@ -97,12 +104,13 @@ mod arch {
     /// Le registre d'état et de contrôle flottant de l'hôte.
     pub(super) type Saved = u32;
 
-    /// Mêmes champs qu'en 64 bits, aux mêmes positions.
+    /// Mêmes champs qu'en 64 bits, aux mêmes positions, autorisations de piège
+    /// comprises.
     ///
     /// FPSCR porte en plus NZCV (31:28) et les drapeaux cumulés, qui sont
     /// l'état de l'hôte et se restaurent avec le reste.
     pub(super) fn normalize(control: Saved) -> Saved {
-        control & !0x07C8_0000
+        control & !0x07C8_9F00
     }
 
     /// Lit le registre.

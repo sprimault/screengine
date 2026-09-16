@@ -198,6 +198,53 @@ fn rend_le_triangle_dans_le_tampon_de_l_hote() {
     unsafe { scg_destroy(ctx) };
 }
 
+/// Lit MXCSR sur le thread courant.
+#[cfg(target_arch = "x86_64")]
+fn mxcsr() -> u32 {
+    let mut control = 0u32;
+    // SAFETY: `stmxcsr` écrit quatre octets dans un `u32` vivant et aligné.
+    unsafe { std::arch::asm!("stmxcsr [{}]", in(reg) &mut control, options(nostack)) };
+    control
+}
+
+/// Écrit MXCSR sur le thread courant.
+#[cfg(target_arch = "x86_64")]
+fn set_mxcsr(control: u32) {
+    // SAFETY: `ldmxcsr` relit un `u32` vivant et aligné. Les valeurs écrites par
+    // ce fichier ne posent que des bits définis du registre.
+    unsafe { std::arch::asm!("ldmxcsr [{}]", in(reg) &control, options(nostack)) };
+}
+
+/// Un hôte qui a démasqué toutes les exceptions flottantes — inexactitude
+/// comprise — et changé l'arrondi et DAZ/FZ : la fin d'image aboutit quand
+/// même, et l'hôte retrouve exactement son registre. Sans masquage à
+/// l'entrée, ce test ne rougit pas : il fait tomber le processus de test sur
+/// la première multiplication inexacte du moteur.
+#[test]
+#[cfg(target_arch = "x86_64")]
+fn un_hote_aux_exceptions_demasquees_ne_tombe_pas() {
+    let ctx = create(&sane());
+    let mut pixels = [0u8; 64 * 32 * 4];
+
+    let default = mxcsr();
+    // Masques effacés (12:7), arrondi vers le haut (14:13 = 10), DAZ et FZ.
+    let hostile = (default & !0x7F80) | 0x4000 | 0x8040;
+    set_mxcsr(hostile);
+    // SAFETY: handle vivant, tampon d'au moins `stride × hauteur` pixels.
+    let code = unsafe { scg_frame_end(ctx, pixels.as_mut_ptr(), 64) };
+    let after = mxcsr();
+    set_mxcsr(default);
+
+    assert_eq!(code, SCG_OK);
+    assert_eq!(
+        after, hostile,
+        "le registre de l'hôte est rendu à l'identique"
+    );
+
+    // SAFETY: handle vivant, détruit une seule fois.
+    unsafe { scg_destroy(ctx) };
+}
+
 /// Jamais un pointeur nul : le header le promet, et une liaison qui
 /// déréférencerait sans vérifier tomberait dessus au premier appel réussi.
 #[test]
