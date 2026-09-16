@@ -27,6 +27,22 @@ fn ne_retient_rien_quand_l_hote_est_deja_conforme() {
     assert!(env.0.is_none());
 }
 
+/// Un hôte qui a démasqué toutes les exceptions les retrouve masquées pendant
+/// l'appel : le moteur produit des résultats inexacts, et un piège autorisé
+/// tuerait le processus à la première image.
+#[test]
+#[cfg(target_arch = "x86_64")]
+fn la_normalisation_masque_les_exceptions() {
+    assert_eq!(arch::normalize(0) & 0x1F80, 0x1F80);
+}
+
+/// L'équivalent ARM : les autorisations de piège de FPCR sont effacées.
+#[test]
+#[cfg(target_arch = "aarch64")]
+fn la_normalisation_masque_les_exceptions() {
+    assert_eq!(arch::normalize(0x9F00) & 0x9F00, 0);
+}
+
 /// Normaliser deux fois rend la même valeur : la normalisation est idempotente,
 /// sans quoi deux appels imbriqués ne restaureraient pas le même état.
 #[test]

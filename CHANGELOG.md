@@ -59,7 +59,9 @@ hacher pareil.
 - Sept points d'entrée : version d'ABI, création et destruction du contexte,
   fin d'image, dernier message d'erreur, allocation et libération d'un tampon.
   Chacun passe par une enveloppe unique qui fixe l'environnement flottant,
-  rattrape les paniques et traduit l'erreur en code de retour.
+  rattrape les paniques et traduit l'erreur en code de retour. Un hôte qui a
+  démasqué des exceptions flottantes les retrouve masquées pendant l'appel, et
+  intactes au retour.
 - Contrôle des décalages de `ScgContextConfig` des deux côtés de la frontière :
   un test Rust, et des assertions statiques que le compilateur de l'hôte vérifie
   sur sa propre cible.
@@ -99,7 +101,8 @@ hash identically.
 - Seven entry points: ABI version, context creation and destruction, frame end,
   last error message, buffer allocation and release. Each goes through a single
   wrapper that pins the floating-point environment, catches panics and turns
-  errors into return codes.
+  errors into return codes. A host that unmasked floating-point exceptions finds
+  them masked during the call, and untouched on return.
 - `ScgContextConfig` offsets checked on both sides of the boundary: a Rust test,
   and static assertions the host's compiler verifies on its own target.
 - Four-crate workspace: std-free core, C boundary, Rust front end, conformance

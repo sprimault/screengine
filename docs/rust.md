@@ -237,10 +237,10 @@ Le contrat est dans [`abi.md`](abi.md). Ce qui suit est la manière de l'écrire
   destruction. `scg_destroy` rend `void` : une panique y surviendrait après le
   poison, sans rien pour la transporter jusqu'à l'hôte.
 - **Le même utilitaire fixe l'environnement flottant** à l'entrée — arrondi au
-  plus proche, DAZ et FTZ désactivés, dans MXCSR sur x86 et FPCR sur ARM — et
-  rend celui de l'hôte à la sortie, panique comprise. Le noyau ne touche jamais
-  à ces registres : il suppose l'environnement par défaut, et c'est la frontière
-  qui le lui garantit.
+  plus proche, DAZ et FTZ désactivés, exceptions masquées, dans MXCSR sur x86
+  et FPCR sur ARM — et rend celui de l'hôte à la sortie, panique comprise. Le
+  noyau ne touche jamais à ces registres : il suppose l'environnement par
+  défaut, et c'est la frontière qui le lui garantit.
 - **La documentation des éléments exportés est en anglais**, et elle est la
   documentation du header : durée de vie du message d'erreur, préconditions sur
   les pointeurs, obligation de `scg_buffer_alloc` sur wasm. Ce qui n'y est pas

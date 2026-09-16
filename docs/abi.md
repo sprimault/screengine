@@ -35,10 +35,12 @@ Arrêtés. Ils découlent des invariants du projet et ne se rediscutent pas ici.
 - **Le moteur n'ouvre rien.** Cartes, maillages et textures arrivent en blocs
   d'octets. Le moteur n'a ni chemin de fichier, ni horloge, ni thread.
 - **L'environnement flottant de l'hôte est préservé.** Chaque point d'entrée
-  fixe le sien — arrondi au plus proche, DAZ et FTZ désactivés — et rend celui de
-  l'hôte au retour. Une bibliothèque audio ou un moteur de jeu qui a activé DAZ
-  dans le même processus ne change donc pas l'image, et le moteur ne change rien
-  pour eux.
+  fixe le sien — arrondi au plus proche, DAZ et FTZ désactivés, exceptions
+  masquées — et rend celui de l'hôte au retour, masques compris. Une bibliothèque
+  audio ou un moteur de jeu qui a activé DAZ dans le même processus ne change
+  donc pas l'image, et le moteur ne change rien pour eux. Un hôte qui a démasqué
+  une exception pour traquer un défaut chez lui ne tombe pas dans le moteur, qui
+  produit des résultats inexacts à chaque image.
 - **Toute allocation a lieu dans un appel nommé** : création, chargement d'une
   ressource, calcul de lightmaps, changement de résolution au-delà du maximum.
   Aucune entre le début et la fin d'une image.
