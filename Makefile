@@ -28,8 +28,8 @@ HOSTS ?= c web
 # tapée directement perd ces réglages, et l'écart ne se voit pas dans la sortie.
 -include makefile.local
 
-.PHONY: build lib run test fmt lint nostd conform conform-update header header-verif \
-        audit deny doc hosts host-c host-web host-android clean tools
+.PHONY: build lib run test fmt lint lint-doc-tests nostd conform conform-update header \
+        header-verif audit deny doc hosts host-c host-web host-android clean tools
 
 build:
 	cargo build --workspace
@@ -55,8 +55,17 @@ test:
 fmt:
 	cargo fmt --all --check
 
-lint:
+lint: lint-doc-tests
 	cargo clippy --workspace --all-targets --all-features -- -D warnings
+
+# missing_docs ne voit pas les fonctions privées d'un `mod tests`, alors que la
+# règle du projet ne fait pas d'exception pour elles. Sans ce contrôle, la
+# documentation des tests se dégrade sans que rien ne le dise : on en écrit
+# quelques-unes, puis plus, et personne ne s'en aperçoit à la relecture.
+lint-doc-tests:
+	@awk '/#\[test\]/ { if (prev !~ /\/\/\//) { print FILENAME ":" FNR ": #[test] sans documentation"; bad = 1 } } { prev = $$0 } END { exit bad }' \
+	  $$(git ls-files '*.rs') \
+	  || (echo "Chaque fonction de test porte sa documentation, comme toute declaration." && exit 1)
 
 # Le noyau seul, sur une cible sans std. Les autres crates en sont dispensés :
 # l'hôte ouvre une fenêtre, la conformance écrit des fichiers, la couche FFI

@@ -45,11 +45,16 @@ fn last_error(ctx: *const ScgContext) -> String {
     text.to_str().expect("UTF-8 valide").to_owned()
 }
 
+/// La constante et la fonction doivent dire la même chose : une liaison compare
+/// celle du header à celle de la bibliothèque chargée, et un écart entre les
+/// deux ici ferait refuser toute bibliothèque, y compris la bonne.
 #[test]
 fn la_version_d_abi_est_celle_du_crate() {
     assert_eq!(scg_abi_version(), SCG_ABI_VERSION);
 }
 
+/// Le cycle de vie complet, tel qu'un hôte l'écrit. Sous un détecteur de
+/// fuites, c'est aussi ce qui montre que le handle rend bien son allocation.
 #[test]
 fn cree_et_detruit_un_contexte() {
     let ctx = create(&sane());
@@ -57,12 +62,17 @@ fn cree_et_detruit_un_contexte() {
     unsafe { scg_destroy(ctx) };
 }
 
+/// Comme `free`, et le header le promet : une liaison qui libère en cascade
+/// après un échec de création compte dessus.
 #[test]
 fn detruire_un_pointeur_nul_ne_fait_rien() {
     // SAFETY: `scg_destroy` accepte explicitement le pointeur nul.
     unsafe { scg_destroy(ptr::null_mut()) };
 }
 
+/// Le pointeur nul se refuse au lieu d'être déréférencé, et le paramètre de
+/// sortie reste intact — une liaison qui teste `out` après l'échec ne doit pas
+/// tomber sur un handle à moitié écrit.
 #[test]
 fn refuse_une_configuration_nulle() {
     let mut ctx = ptr::null_mut();
@@ -74,6 +84,8 @@ fn refuse_une_configuration_nulle() {
     assert_eq!(last_error(ptr::null()), "null pointer argument");
 }
 
+/// L'autre pointeur, testé à part : une vérification qui n'en couvrirait qu'un
+/// des deux laisserait l'autre écrire à l'adresse nulle.
 #[test]
 fn refuse_un_parametre_de_sortie_nul() {
     let config = sane();
@@ -82,6 +94,9 @@ fn refuse_un_parametre_de_sortie_nul() {
     assert_eq!(code, SCG_ERR_NULL);
 }
 
+/// C'est l'appel où un intégrateur se trompe de configuration, et il n'a pas de
+/// contexte auquel rattacher la cause : sans l'emplacement par thread, elle
+/// serait perdue.
 #[test]
 fn refuse_une_configuration_invalide_et_dit_pourquoi() {
     let mut config = sane();
@@ -95,6 +110,8 @@ fn refuse_une_configuration_invalide_et_dit_pourquoi() {
     assert_eq!(last_error(ptr::null()), "invalid argument");
 }
 
+/// Le même refus que côté unitaire, mais vu depuis l'ABI : c'est là qu'il a son
+/// sens, puisqu'il ne sert qu'aux liaisons qui écrivent la structure elles-mêmes.
 #[test]
 fn refuse_un_champ_reserve_non_nul() {
     let mut config = sane();
@@ -106,6 +123,8 @@ fn refuse_un_champ_reserve_non_nul() {
     assert_eq!(code, SCG_ERR_INVALID_ARGUMENT);
 }
 
+/// Un handle nul sur une fonction qui prend aussi un tampon : le contexte se
+/// vérifie avant tout le reste, sinon l'enveloppe déréférencerait pour rien.
 #[test]
 fn refuse_une_fin_d_image_sans_contexte() {
     let mut pixels = [0u8; 64 * 32 * 4];
@@ -114,6 +133,9 @@ fn refuse_une_fin_d_image_sans_contexte() {
     assert_eq!(code, SCG_ERR_NULL);
 }
 
+/// Le tampon nul se refuse avant la construction de la tranche : après, c'est
+/// déjà un comportement indéfini. Le message va dans le contexte, pas dans
+/// l'emplacement par thread, parce qu'il y a un contexte auquel le rattacher.
 #[test]
 fn refuse_un_tampon_nul() {
     let ctx = create(&sane());
@@ -125,6 +147,8 @@ fn refuse_un_tampon_nul() {
     unsafe { scg_destroy(ctx) };
 }
 
+/// Le contrôle traverse bien la frontière : le noyau le fait, et l'hôte reçoit
+/// le code plutôt qu'une image tronquée sans avertissement.
 #[test]
 fn refuse_un_stride_plus_court_que_la_largeur() {
     let ctx = create(&sane());
@@ -138,32 +162,37 @@ fn refuse_un_stride_plus_court_que_la_largeur() {
     unsafe { scg_destroy(ctx) };
 }
 
-/// Le remplissage n'est pas écrit : l'appel panique, la frontière le rattrape,
-/// et c'est exactement le contrat qu'on veut voir tenir avant d'avoir un moteur.
+/// La séquence complète telle qu'un hôte l'écrira, et le seul test qui regarde
+/// ce qui sort du tampon. Deux clauses de l'ABI s'y vérifient : quelque chose
+/// est effectivement peint, et l'alpha est **écrit** partout — un octet laissé
+/// indéfini donnerait un rendu troué dans un navigateur, seule cible où ce canal
+/// est réellement composité.
 #[test]
-fn une_panique_devient_un_code_puis_empoisonne_le_contexte() {
+fn rend_le_triangle_dans_le_tampon_de_l_hote() {
     let ctx = create(&sane());
     let mut pixels = [0u8; 64 * 32 * 4];
 
     // SAFETY: handle vivant, tampon d'au moins `stride × hauteur` pixels.
     let code = unsafe { scg_frame_end(ctx, pixels.as_mut_ptr(), 64) };
-    assert_eq!(code, SCG_ERR_PANIC);
+    assert_eq!(code, SCG_OK);
+    assert_eq!(last_error(ctx), "");
+
+    let opaque_black = [0, 0, 0, 255];
     assert!(
-        last_error(ctx).contains("étape 0"),
-        "le message doit porter l'étape du stub"
+        pixels.chunks_exact(4).any(|p| p != opaque_black),
+        "le triangle doit peindre autre chose que le fond"
+    );
+    assert!(
+        pixels.chunks_exact(4).all(|p| p[3] == 255),
+        "l'alpha est écrit sur chaque pixel, fond compris"
     );
 
-    // SAFETY: même handle, toujours vivant.
-    let code = unsafe { scg_frame_end(ctx, pixels.as_mut_ptr(), 64) };
-    assert_eq!(code, SCG_ERR_POISONED);
-    assert!(last_error(ctx).contains("poisoned"));
-
-    // La destruction reste permise sur un objet empoisonné : c'est ce qui
-    // laisse l'hôte lire la cause puis libérer.
     // SAFETY: handle vivant, détruit une seule fois.
     unsafe { scg_destroy(ctx) };
 }
 
+/// Jamais un pointeur nul : le header le promet, et une liaison qui
+/// déréférencerait sans vérifier tomberait dessus au premier appel réussi.
 #[test]
 fn sans_erreur_le_message_est_la_chaine_vide() {
     let ctx = create(&sane());
@@ -172,6 +201,10 @@ fn sans_erreur_le_message_est_la_chaine_vide() {
     unsafe { scg_destroy(ctx) };
 }
 
+/// L'alignement est une constante de l'ABI, pas une propriété de l'allocateur
+/// du jour : une liaison wasm construit une vue typée dessus, et un chemin SSE
+/// le supposera à l'étape 9. L'écriture complète du tampon vérifie au passage
+/// que la longueur demandée est bien celle qu'on obtient.
 #[test]
 fn alloue_et_libere_un_tampon_aligne() {
     let len = 64 * 32 * 4;
@@ -189,11 +222,15 @@ fn alloue_et_libere_un_tampon_aligne() {
     unsafe { scg_buffer_free(ptr, len) };
 }
 
+/// Une allocation de taille nulle est indéfinie côté Rust : elle se refuse ici
+/// plutôt que de rendre un pointeur que personne ne saurait libérer.
 #[test]
 fn allouer_zero_octet_rend_un_pointeur_nul() {
     assert!(scg_buffer_alloc(0).is_null());
 }
 
+/// Le pendant du cas précédent : une liaison qui libère sans condition après un
+/// échec d'allocation ne doit pas avoir à tester elle-même.
 #[test]
 fn liberer_un_pointeur_nul_ne_fait_rien() {
     // SAFETY: `scg_buffer_free` accepte explicitement le pointeur nul.

@@ -16,6 +16,8 @@ extern crate alloc;
 
 mod context;
 mod error;
+mod math;
+mod raster;
 
 pub use context::{BYTES_PER_PIXEL, Config, Context, MAX_RESOLUTION, TILE_SIZES};
 pub use error::{Error, Result};

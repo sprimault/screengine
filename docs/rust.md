@@ -46,6 +46,38 @@ noyau. Et la frontière C exige `std` et `unsafe`, que le noyau refuse.
 | `screengine-host` | hôte de développement : fenêtre, blit, mise à l'échelle | oui | à choisir au lot 4 | non |
 | `screengine-conformance` | scènes de référence, empreintes | oui | `screengine` | non |
 
+**Un crate se crée pour une contrainte de compilation, jamais pour ranger.** Les
+quatre existants se justifient chacun par un besoin que les autres ne partagent
+pas : le noyau refuse `std` et les dépendances, la frontière exige les deux, la
+conformance et l'hôte portent les leurs. Ranger, c'est l'affaire des modules, qui
+ne coûtent ni `Cargo.toml`, ni arbre de dépendances, ni frontière publique à
+maintenir. Le module de collision de l'étape 7 en est le cas limite : il doit
+servir sans rendu, mais c'est l'ABI qui l'expose séparément, pas un crate — un
+serveur de jeu qui ne dessine rien n'embarque pas le rasteriseur, que l'édition
+de liens écarte.
+
+### Disposition du noyau
+
+Un sous-dossier par domaine, **créé avec l'étape qui écrit son premier fichier**.
+La carte est ici pour qu'une étape n'ait pas à choisir où poser ses fichiers ;
+elle ne crée aucun répertoire d'avance.
+
+```
+src/
+  lib.rs  error.rs  context.rs   ce qui existe avant tout domaine
+  math/       étape 1   vecteurs, matrices, quaternions, tables, virgule fixe
+  raster/     étape 1   fonctions de bord, profondeur, tuiles ; simd/ à l'étape 9
+  texture/    étape 2   mipmaps, filtrage, clipping du plan proche
+  light/      étape 3   lightmaps, brouillard, post-traitement de tuile
+  format/     étape 4   maillage et carte, versionnés
+  world/      étape 5   cellules, portails, traversée
+  collide/    étape 7   balayage de boîte contre les cellules
+```
+
+**`raster/simd/` est le seul endroit du noyau qui autorise `unsafe`**, et le
+scalaire qui lui sert de référence reste dans `raster/` : les fondre supprimerait
+la référence.
+
 **Le sens des dépendances ne s'inverse jamais.** Rien dans `screengine` n'importe
 `screengine-ffi`. Si le noyau en avait besoin, c'est que de la logique serait
 descendue dans la couche d'adaptation, ou que la frontière aurait fui vers le
@@ -348,8 +380,20 @@ teste quelque chose.
 
 ### Où vivent les tests
 
-- **Tests unitaires** dans le module qu'ils testent, `#[cfg(test)] mod tests`. Ils
-  peuvent déclarer `extern crate std;`.
+- **Tests unitaires dans leur propre fichier** : `#[cfg(test)] mod tests;` dans le
+  module, et `module/tests.rs` à côté. Sous-module et non fichier extérieur, ce
+  qui leur garde l'accès aux éléments privés — sans quoi une fonction de bord ou
+  un biais, qui ne sont pas publics, ne seraient testables que par leur effet.
+  Ils peuvent déclarer `extern crate std;`.
+
+  La forme usuelle en Rust met ce bloc à la fin du fichier testé. On l'en sort
+  parce qu'un module finit toujours par porter plus de tests que de code, et
+  qu'un fichier où il faut faire défiler trois cents lignes de tests pour relire
+  vingt lignes de rasteriseur se relit mal.
+- **La documentation d'un test dit ce que son nom ne dit pas** : le défaut qu'il
+  attrape, et pourquoi il existe à côté de son voisin. `missing_docs` ne voit pas
+  les fonctions privées d'un `mod tests`, d'où la cible `lint-doc-tests`, que
+  `make lint` appelle.
 - **Tests de la frontière** dans `crates/screengine-ffi/tests/` : ils appellent
   les fonctions exportées comme le ferait un hôte, pointeurs nuls et séquences
   invalides compris, et vérifient qu'aucune panique ne s'échappe.
