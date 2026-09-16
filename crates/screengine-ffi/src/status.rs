@@ -62,35 +62,4 @@ pub(crate) fn message_of(error: Error) -> &'static str {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// La catégorie d'un code est `(-code) / 100`, et les codes généraux sont
-    /// tous dans la catégorie 0.
-    #[test]
-    fn les_codes_generaux_sont_dans_la_premiere_plage() {
-        for code in [
-            SCG_ERR_NULL,
-            SCG_ERR_INVALID_ARGUMENT,
-            SCG_ERR_OUT_OF_MEMORY,
-            SCG_ERR_INVALID_STATE,
-            SCG_ERR_PANIC,
-            SCG_ERR_POISONED,
-        ] {
-            assert!(code < 0, "un code d'erreur est négatif");
-            assert_eq!((-code) / 100, 0, "code {code} hors de la plage générale");
-        }
-    }
-
-    /// Deux erreurs distinctes ne partagent jamais un code : un code publié ne
-    /// change pas de sens, et deux sens pour un code reviendrait au même.
-    #[test]
-    fn chaque_erreur_du_noyau_a_son_code() {
-        let errors = [Error::InvalidArgument, Error::OutOfMemory];
-        for (i, a) in errors.iter().enumerate() {
-            for b in &errors[i + 1..] {
-                assert_ne!(code_of(*a), code_of(*b));
-            }
-        }
-    }
-}
+mod tests;

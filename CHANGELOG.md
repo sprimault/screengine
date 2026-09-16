@@ -46,11 +46,16 @@ publié, et explique les conventions du dépôt à qui y contribue.
 
 ## [Non publié]
 
-Aucun rendu : la frontière C existe, mais la fin d'image panique — le
-remplissage n'est pas écrit. Un hôte reçoit `SCG_ERR_PANIC`, puis
-`SCG_ERR_POISONED` sur le contexte devenu inutilisable.
+Un triangle en dur, et rien d'autre : ni scène à soumettre, ni caméra, ni
+texture. La fin d'image rend une image complète, que les quatre hôtes doivent
+hacher pareil.
 
 ### Ajouté
+- Remplissage de triangle par fonctions de bord en virgule fixe, avec la règle
+  top-left : deux triangles qui partagent une arête se partagent ses pixels sans
+  trou ni recouvrement.
+- Tampons de couleur et de profondeur dimensionnés pour la résolution maximale à
+  la création du contexte, et jamais réalloués ensuite.
 - Sept points d'entrée : version d'ABI, création et destruction du contexte,
   fin d'image, dernier message d'erreur, allocation et libération d'un tampon.
   Chacun passe par une enveloppe unique qui fixe l'environnement flottant,
@@ -77,11 +82,15 @@ remplissage n'est pas écrit. Un hôte reçoit `SCG_ERR_PANIC`, puis
 
 ***
 
-No rendering yet: the C boundary exists, but ending a frame panics — the fill
-is not written. A host gets `SCG_ERR_PANIC`, then `SCG_ERR_POISONED` on the
-context, now unusable.
+A hardcoded triangle, and nothing else: no scene to submit, no camera, no
+texture. Ending a frame produces a complete image, which the four hosts must
+hash identically.
 
 ### Added
+- Triangle fill through fixed-point edge functions, with the top-left rule: two
+  triangles sharing an edge share its pixels, with neither gap nor overlap.
+- Colour and depth buffers sized for the maximum resolution at context creation,
+  and never reallocated afterwards.
 - Seven entry points: ABI version, context creation and destruction, frame end,
   last error message, buffer allocation and release. Each goes through a single
   wrapper that pins the floating-point environment, catches panics and turns
