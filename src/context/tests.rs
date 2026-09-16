@@ -34,7 +34,10 @@ fn accepte_une_configuration_saine() {
 fn refuse_une_dimension_nulle() {
     let mut config = sane();
     config.width = 0;
-    assert_eq!(Context::new(config).unwrap_err(), Error::InvalidArgument);
+    assert_eq!(
+        Context::new(config).unwrap_err(),
+        Error::InvalidArgument(Argument::Resolution)
+    );
 }
 
 /// Les tampons sont dimensionnés pour le maximum : une résolution initiale
@@ -43,7 +46,10 @@ fn refuse_une_dimension_nulle() {
 fn refuse_une_resolution_initiale_au_dela_du_maximum() {
     let mut config = sane();
     config.width = config.max_width + 1;
-    assert_eq!(Context::new(config).unwrap_err(), Error::InvalidArgument);
+    assert_eq!(
+        Context::new(config).unwrap_err(),
+        Error::InvalidArgument(Argument::Resolution)
+    );
 }
 
 /// La borne n'est pas un confort : au-delà, les pires cas des formats en
@@ -54,7 +60,10 @@ fn refuse_un_maximum_au_dela_de_la_borne_des_formats() {
     let mut config = sane();
     config.max_width = MAX_RESOLUTION + 1;
     config.width = MAX_RESOLUTION + 1;
-    assert_eq!(Context::new(config).unwrap_err(), Error::InvalidArgument);
+    assert_eq!(
+        Context::new(config).unwrap_err(),
+        Error::InvalidArgument(Argument::Resolution)
+    );
 }
 
 /// Une taille intermédiaire compilerait et rendrait une image : elle se
@@ -63,7 +72,10 @@ fn refuse_un_maximum_au_dela_de_la_borne_des_formats() {
 fn refuse_une_taille_de_tuile_hors_liste() {
     let mut config = sane();
     config.tile_size = 48;
-    assert_eq!(Context::new(config).unwrap_err(), Error::InvalidArgument);
+    assert_eq!(
+        Context::new(config).unwrap_err(),
+        Error::InvalidArgument(Argument::TileSize)
+    );
 }
 
 /// Le premier des trois messages d'erreur du premier jour. La frontière C
@@ -74,7 +86,7 @@ fn refuse_un_stride_plus_court_que_la_largeur() {
     let mut pixels = [0u8; 4];
     assert_eq!(
         ctx.frame_end(&mut pixels, 639).unwrap_err(),
-        Error::InvalidArgument
+        Error::InvalidArgument(Argument::Stride)
     );
 }
 
@@ -86,6 +98,6 @@ fn refuse_un_tampon_trop_court_pour_son_stride() {
     let mut pixels = [0u8; 4];
     assert_eq!(
         ctx.frame_end(&mut pixels, 640).unwrap_err(),
-        Error::InvalidArgument
+        Error::InvalidArgument(Argument::BufferLength)
     );
 }

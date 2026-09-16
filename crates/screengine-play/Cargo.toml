@@ -1,0 +1,36 @@
+[package]
+name = "screengine-play"
+description = "Étage d'accueil de Screengine : fenêtre, entrées, boucle à pas fixe, mise à l'échelle."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish.workspace = true
+
+# Sans les fonctionnalités par défaut, pour deux retraits : `kms` de softbuffer,
+# qui n'affiche pas dans une fenêtre, et les décorations dessinées de winit sous
+# Wayland, qui tirent un rasteriseur vectoriel et des polices pour une barre de
+# titre. Tout le reste passe par `dlopen` : la compilation n'exige aucun paquet
+# système sous Linux, seule l'exécution en exige.
+#
+# winit reste en 0.30 : la 0.31 est encore en bêta, exige Rust 1.86, et change
+# la forme du gestionnaire d'application.
+[dependencies]
+screengine.workspace = true
+softbuffer = { version = "0.4.8", default-features = false, features = [
+    "x11",
+    "x11-dlopen",
+    "wayland",
+    "wayland-dlopen",
+] }
+winit = { version = "0.30.13", default-features = false, features = [
+    "rwh_06",
+    "x11",
+    "wayland",
+    "wayland-dlopen",
+] }
+
+[lints]
+workspace = true

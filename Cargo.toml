@@ -1,7 +1,7 @@
 # Le noyau est le paquet racine : src/, tests/, examples/ et benches/ sont les
-# siens. La frontière C, l'hôte et la conformance vivent dans crates/, chacun son
-# paquet — les réunir au noyau lui ferait hériter de leurs dépendances, de std et
-# de unsafe.
+# siens. La frontière C, l'étage d'accueil et la conformance vivent dans crates/,
+# chacun son paquet — les réunir au noyau lui ferait hériter de leurs
+# dépendances, de std et de unsafe.
 #
 # Un `cargo test` tapé à la racine ne teste donc que le noyau. Le Makefile passe
 # --workspace ou -p partout, et c'est lui qu'on appelle.
@@ -23,7 +23,7 @@ workspace = true
 resolver = "2"
 members = [
     "crates/screengine-ffi",
-    "crates/screengine-host",
+    "crates/screengine-play",
     "crates/screengine-conformance",
 ]
 

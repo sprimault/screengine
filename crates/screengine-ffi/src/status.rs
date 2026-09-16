@@ -8,7 +8,7 @@
 //! qu'elle ne connaît pas l'y ramène, au lieu de le traiter en erreur
 //! générique. Voir `docs/abi.md`.
 
-use screengine::Error;
+use screengine::{Argument, Error};
 
 /// Success.
 pub const SCG_OK: i32 = 0;
@@ -44,7 +44,7 @@ pub const SCG_ERR_POISONED: i32 = -6;
 /// noyau gagne une variante que personne n'a pensé à traduire.
 pub(crate) fn code_of(error: Error) -> i32 {
     match error {
-        Error::InvalidArgument => SCG_ERR_INVALID_ARGUMENT,
+        Error::InvalidArgument(_) => SCG_ERR_INVALID_ARGUMENT,
         Error::OutOfMemory => SCG_ERR_OUT_OF_MEMORY,
     }
 }
@@ -53,10 +53,20 @@ pub(crate) fn code_of(error: Error) -> i32 {
 ///
 /// Anglais parce qu'il franchit la frontière, et jamais localisé : un message
 /// qui change avec l'environnement donne des journaux qu'on ne peut plus
-/// rapprocher d'un poste à l'autre.
+/// rapprocher d'un poste à l'autre. Le code dit la catégorie, le message dit
+/// quel argument : une liaison ne décide rien sur ce texte.
 pub(crate) fn message_of(error: Error) -> &'static str {
     match error {
-        Error::InvalidArgument => "invalid argument",
+        Error::InvalidArgument(Argument::Resolution) => {
+            "invalid resolution: each side must be between 1 and 2048, and the current resolution within the maximum"
+        }
+        Error::InvalidArgument(Argument::TileSize) => "invalid tile size: must be 32 or 64",
+        Error::InvalidArgument(Argument::Stride) => {
+            "invalid stride: must be at least the internal width"
+        }
+        Error::InvalidArgument(Argument::BufferLength) => {
+            "pixel buffer too short: needs stride x height x 4 bytes"
+        }
         Error::OutOfMemory => "out of memory",
     }
 }

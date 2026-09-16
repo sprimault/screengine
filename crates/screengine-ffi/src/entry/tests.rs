@@ -7,7 +7,7 @@
 //! échoue, ce n'est pas une assertion qui rougit, c'est le processus de test qui
 //! tombe — et c'est exactement ce qui arriverait à un hôte C.
 
-use screengine::Config;
+use screengine::{Argument, Config};
 
 use super::*;
 use crate::status::SCG_ERR_INVALID_ARGUMENT;
@@ -74,7 +74,7 @@ fn un_appel_qui_aboutit_rend_le_succes() {
 /// La traduction du noyau vers l'ABI, dans le sens où l'hôte la voit.
 #[test]
 fn une_erreur_du_noyau_devient_son_code() {
-    let code = without_context(|| Err(Error::InvalidArgument.into()));
+    let code = without_context(|| Err(Error::InvalidArgument(Argument::TileSize).into()));
     assert_eq!(code, SCG_ERR_INVALID_ARGUMENT);
 }
 

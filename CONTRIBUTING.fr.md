@@ -79,8 +79,8 @@ Les conventions de code et la doctrine de test sont dans
 - Rien dans le noyau n'importe `screengine-ffi`. Les runners sont sans
   écran ; un test qui exige une fenêtre n'a pas sa place dans la suite par
   défaut.
-- Une dépendance ajoutée entre dans `THIRD-PARTY-NOTICES` — et dans le noyau,
-  elle ne rentre pas.
+- Une dépendance qui voyage dans une archive publiée entre dans
+  `THIRD-PARTY-NOTICES` — et dans le noyau, elle ne rentre pas.
 
 ## Livraison
 

@@ -29,10 +29,33 @@ fn les_codes_generaux_sont_dans_la_premiere_plage() {
 /// change pas de sens, et deux sens pour un code reviendrait au même.
 #[test]
 fn chaque_erreur_du_noyau_a_son_code() {
-    let errors = [Error::InvalidArgument, Error::OutOfMemory];
+    let errors = [
+        Error::InvalidArgument(Argument::Resolution),
+        Error::OutOfMemory,
+    ];
     for (i, a) in errors.iter().enumerate() {
         for b in &errors[i + 1..] {
             assert_ne!(code_of(*a), code_of(*b));
+        }
+    }
+}
+
+/// L'inverse du précédent : les arguments refusés partagent un code, et
+/// seul le message les distingue. Deux messages identiques laisseraient
+/// l'intégrateur chercher lequel de ses arguments est en cause.
+#[test]
+fn chaque_argument_refuse_a_son_message() {
+    let arguments = [
+        Argument::Resolution,
+        Argument::TileSize,
+        Argument::Stride,
+        Argument::BufferLength,
+    ];
+    for (i, a) in arguments.iter().enumerate() {
+        let error = Error::InvalidArgument(*a);
+        assert_eq!(code_of(error), SCG_ERR_INVALID_ARGUMENT);
+        for b in &arguments[i + 1..] {
+            assert_ne!(message_of(error), message_of(Error::InvalidArgument(*b)));
         }
     }
 }

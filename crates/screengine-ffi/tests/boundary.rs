@@ -107,7 +107,10 @@ fn refuse_une_configuration_invalide_et_dit_pourquoi() {
     let code = unsafe { scg_create(&config, &mut ctx) };
     assert_eq!(code, SCG_ERR_INVALID_ARGUMENT);
     assert!(ctx.is_null());
-    assert_eq!(last_error(ptr::null()), "invalid argument");
+    assert_eq!(
+        last_error(ptr::null()),
+        "invalid tile size: must be 32 or 64"
+    );
 }
 
 /// Le même refus que côté unitaire, mais vu depuis l'ABI : c'est là qu'il a son
@@ -121,6 +124,7 @@ fn refuse_un_champ_reserve_non_nul() {
     // SAFETY: les deux pointeurs visent des valeurs locales vivantes.
     let code = unsafe { scg_create(&config, &mut ctx) };
     assert_eq!(code, SCG_ERR_INVALID_ARGUMENT);
+    assert_eq!(last_error(ptr::null()), "reserved fields must be zero");
 }
 
 /// Un handle nul sur une fonction qui prend aussi un tampon : le contexte se
@@ -157,7 +161,10 @@ fn refuse_un_stride_plus_court_que_la_largeur() {
     // puisque le stride est plus petit que la largeur.
     let code = unsafe { scg_frame_end(ctx, pixels.as_mut_ptr(), 63) };
     assert_eq!(code, SCG_ERR_INVALID_ARGUMENT);
-    assert_eq!(last_error(ctx), "invalid argument");
+    assert_eq!(
+        last_error(ctx),
+        "invalid stride: must be at least the internal width"
+    );
     // SAFETY: handle vivant, détruit une seule fois.
     unsafe { scg_destroy(ctx) };
 }

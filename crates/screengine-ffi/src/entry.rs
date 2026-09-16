@@ -16,14 +16,17 @@ use screengine::{Context, Error};
 use crate::context::ScgContext;
 use crate::fpenv::FpEnv;
 use crate::message;
-use crate::status::{SCG_ERR_NULL, SCG_ERR_PANIC, SCG_ERR_POISONED, SCG_OK, code_of, message_of};
+use crate::status::{
+    SCG_ERR_INVALID_ARGUMENT, SCG_ERR_NULL, SCG_ERR_PANIC, SCG_ERR_POISONED, SCG_OK, code_of,
+    message_of,
+};
 
 /// Une erreur qui porte son code d'ABI et son texte.
 ///
 /// Elle réunit ce que rend le noyau et ce que la frontière refuse elle-même —
 /// un pointeur nul n'a pas de sens pour le noyau, qui ne manipule jamais de
 /// pointeur.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct AbiError {
     code: i32,
     message: &'static str,
@@ -34,6 +37,15 @@ impl AbiError {
     pub(crate) const NULL: Self = Self {
         code: SCG_ERR_NULL,
         message: "null pointer argument",
+    };
+
+    /// Un champ réservé d'une structure n'est pas nul.
+    ///
+    /// Refusé ici et non par le noyau : les champs réservés n'existent que parce
+    /// que l'ABI est figée, et le noyau n'a pas à savoir qu'elle l'est.
+    pub(crate) const RESERVED: Self = Self {
+        code: SCG_ERR_INVALID_ARGUMENT,
+        message: "reserved fields must be zero",
     };
 }
 
