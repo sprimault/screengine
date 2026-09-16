@@ -11,4 +11,185 @@
 #include <stddef.h>
 #include <stdint.h>
 
+// ABI version this library implements.
+//
+// Compare it for equality with the constant from the header you compiled
+// against, before any other call, and refuse a library that differs. Adding a
+// function or an error code does not change it; everything else does, so a
+// different value is a breaking change in either direction.
+#define SCG_ABI_VERSION 1
+
+// Alignment, in bytes, guaranteed by `scg_buffer_alloc`.
+#define SCG_BUFFER_ALIGNMENT 16
+
+// Success.
+#define SCG_OK 0
+
+// A pointer argument was null where the call requires one.
+#define SCG_ERR_NULL -1
+
+// An argument is outside what the engine accepts.
+#define SCG_ERR_INVALID_ARGUMENT -2
+
+// An allocation failed.
+#define SCG_ERR_OUT_OF_MEMORY -3
+
+// The call came out of sequence, such as ending a frame that never began.
+#define SCG_ERR_INVALID_STATE -4
+
+// The engine panicked. The object is now poisoned; see `SCG_ERR_POISONED`.
+//
+// A panic is an engine defect, never a reaction to invalid input. Read the
+// message with `scg_last_error` and report it.
+#define SCG_ERR_PANIC -5
+
+// A previous call on this object panicked and left it in an unspecified state.
+//
+// Every call on a poisoned object returns this code, except `scg_last_error`
+// and the destructor, which stay available so the host can read the cause and
+// release the object.
+#define SCG_ERR_POISONED -6
+
+// An opaque rendering context.
+//
+// Created by `scg_create`, released by `scg_destroy`. Use it from one thread
+// at a time; two contexts are independent and may each serve their own.
+typedef struct ScgContext ScgContext;
+
+// Configuration passed to `scg_create`.
+//
+// Zero the whole structure before filling it in. The reserved fields must be
+// zero: that is what lets a later version give one a meaning without breaking
+// bindings already written against this header.
+//
+// Every field is a `uint32_t`, so the offsets are the same on every target —
+// including 32-bit ones, where a `size_t` field would not be.
+typedef struct ScgContextConfig {
+  // Widest internal resolution this context will ever render, in pixels.
+  // From 1 to 2048. Every per-frame buffer is sized for it at creation.
+  uint32_t max_width;
+  // Tallest internal resolution this context will ever render, in pixels.
+  // From 1 to 2048.
+  uint32_t max_height;
+  // Initial internal width in pixels, at most `max_width`.
+  uint32_t width;
+  // Initial internal height in pixels, at most `max_height`.
+  uint32_t height;
+  // Tile side in pixels: 32 or 64. Any other value is rejected.
+  uint32_t tile_size;
+  // Reserved. Must be zero.
+  uint32_t reserved0;
+  // Reserved. Must be zero.
+  uint32_t reserved1;
+  // Reserved. Must be zero.
+  uint32_t reserved2;
+} ScgContextConfig;
+
+// Returns the ABI version of the loaded library.
+//
+// Callable from any thread, at any time. Bindings that receive it as a signed
+// integer — JNI `jint`, JavaScript on wasm — must compare the unsigned value.
+uint32_t scg_abi_version(void);
+
+// Creates a rendering context and writes it to `out`.
+//
+// Zero `*config` entirely before filling it in: its reserved fields must be
+// zero. On failure nothing is written to `out`, and the reason is available
+// from `scg_last_error(NULL)` on this same thread, read immediately.
+//
+// # Safety
+//
+// `config` points to a readable `ScgContextConfig`, and `out` to a writable
+// pointer. Both must be non-null.
+int32_t scg_create(const struct ScgContextConfig *config, struct ScgContext **out);
+
+// Releases a context.
+//
+// Passing NULL does nothing, like `free`. A handle destroyed twice, or used
+// after destruction, is not detected: that is a precondition, not an error
+// case. Destroying a poisoned context is allowed.
+//
+// # Safety
+//
+// `ctx` is NULL, or a handle returned by `scg_create` and not yet destroyed.
+void scg_destroy(struct ScgContext *ctx);
+
+// Ends the frame and writes the result into the host buffer.
+//
+// `stride` is in pixels and must be at least the current internal width. The
+// buffer holds at least `stride × height` pixels of four bytes each, in R, G,
+// B, A order with alpha always written. The engine never receives the buffer
+// length and cannot check it: that is a documented precondition.
+//
+// # Safety
+//
+// `ctx` is a live handle, and `pixels` points to a writable buffer of at least
+// `stride × height × 4` bytes.
+int32_t scg_frame_end(struct ScgContext *ctx, uint8_t *pixels, uint32_t stride);
+
+// Returns the last error message, as a NUL-terminated UTF-8 string.
+//
+// The pointer is valid until the next call on the same context: copy the
+// message immediately if you need to keep it. It is never NULL — with no error
+// since the last call, the message is the empty string. The string belongs to
+// the engine; never free it.
+//
+// Pass NULL to read the message of calls that have no context to attach it to,
+// such as a failed `scg_create`. That slot is per thread, not per call: read it
+// on the thread that made the failing call, immediately after it. A coroutine
+// that resumes on another thread of a pool will find it empty.
+//
+// Allowed on a poisoned context, so the host can learn the cause.
+//
+// # Safety
+//
+// `ctx` is NULL, or a handle returned by `scg_create` and not yet destroyed.
+const char *scg_last_error(const struct ScgContext *ctx);
+
+// Allocates a buffer the host owns until `scg_buffer_free`.
+//
+// Returns NULL on failure, and for a length of zero. The block is aligned to
+// `SCG_BUFFER_ALIGNMENT` bytes.
+//
+// On wasm this is the only way to obtain a buffer the engine can write to: the
+// host cannot hand over an arbitrary pointer, since only the module's linear
+// memory is addressable. In JavaScript the returned pointer arrives signed —
+// test it with `ptr === 0`, never `ptr > 0`, and convert with `ptr >>> 0`
+// before building a view.
+//
+// Callable from any thread.
+uint8_t *scg_buffer_alloc(size_t len);
+
+// Releases a buffer obtained from `scg_buffer_alloc`.
+//
+// `len` must be exactly the length passed to the allocation: the allocator
+// rebuilds the block description from it, and a different value is undefined
+// behaviour. Passing NULL does nothing. These blocks are freed through this
+// function and no other — the engine's allocator is not the host's, on desktop
+// either.
+//
+// Callable from any thread.
+//
+// # Safety
+//
+// `ptr` is NULL, or a pointer returned by `scg_buffer_alloc` and not yet
+// freed, with the same `len`.
+void scg_buffer_free(uint8_t *ptr, size_t len);
+
 #endif  /* SCREENGINE_H */
+
+/* cbindgen place ce bloc après la garde d'inclusion : il lui en faut une. */
+#ifndef SCREENGINE_LAYOUT_CHECKED
+#define SCREENGINE_LAYOUT_CHECKED
+#if !defined(__cplusplus) && defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112L
+_Static_assert(sizeof(ScgContextConfig) == 32, "ScgContextConfig changed size");
+_Static_assert(offsetof(ScgContextConfig, max_width) == 0, "max_width moved");
+_Static_assert(offsetof(ScgContextConfig, max_height) == 4, "max_height moved");
+_Static_assert(offsetof(ScgContextConfig, width) == 8, "width moved");
+_Static_assert(offsetof(ScgContextConfig, height) == 12, "height moved");
+_Static_assert(offsetof(ScgContextConfig, tile_size) == 16, "tile_size moved");
+_Static_assert(offsetof(ScgContextConfig, reserved0) == 20, "reserved0 moved");
+_Static_assert(offsetof(ScgContextConfig, reserved1) == 24, "reserved1 moved");
+_Static_assert(offsetof(ScgContextConfig, reserved2) == 28, "reserved2 moved");
+#endif
+#endif

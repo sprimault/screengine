@@ -13,3 +13,9 @@
 #![deny(unsafe_code)]
 
 extern crate alloc;
+
+mod context;
+mod error;
+
+pub use context::{BYTES_PER_PIXEL, Config, Context, MAX_RESOLUTION, TILE_SIZES};
+pub use error::{Error, Result};

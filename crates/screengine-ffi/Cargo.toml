@@ -10,7 +10,9 @@ authors.workspace = true
 publish.workspace = true
 
 [lib]
-crate-type = ["cdylib", "staticlib"]
+# `rlib` en plus des deux artefacts publiés : sans lui, `tests/` ne peut pas se
+# lier au crate, et les tests de frontière n'existeraient pas.
+crate-type = ["cdylib", "staticlib", "rlib"]
 
 [dependencies]
 screengine.workspace = true

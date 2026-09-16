@@ -46,9 +46,18 @@ publié, et explique les conventions du dépôt à qui y contribue.
 
 ## [Non publié]
 
-Aucun rendu : la bibliothèque compile mais n'expose encore aucune fonction.
+Aucun rendu : la frontière C existe, mais la fin d'image panique — le
+remplissage n'est pas écrit. Un hôte reçoit `SCG_ERR_PANIC`, puis
+`SCG_ERR_POISONED` sur le contexte devenu inutilisable.
 
 ### Ajouté
+- Sept points d'entrée : version d'ABI, création et destruction du contexte,
+  fin d'image, dernier message d'erreur, allocation et libération d'un tampon.
+  Chacun passe par une enveloppe unique qui fixe l'environnement flottant,
+  rattrape les paniques et traduit l'erreur en code de retour.
+- Contrôle des décalages de `ScgContextConfig` des deux côtés de la frontière :
+  un test Rust, et des assertions statiques que le compilateur de l'hôte vérifie
+  sur sa propre cible.
 - Espace de travail en quatre crates : noyau sans std, frontière C, hôte de
   développement, suite de conformance.
 - Contrat d'ABI, conventions Rust et documentation de construction.
@@ -68,9 +77,17 @@ Aucun rendu : la bibliothèque compile mais n'expose encore aucune fonction.
 
 ***
 
-No rendering yet: the library builds but exposes no function.
+No rendering yet: the C boundary exists, but ending a frame panics — the fill
+is not written. A host gets `SCG_ERR_PANIC`, then `SCG_ERR_POISONED` on the
+context, now unusable.
 
 ### Added
+- Seven entry points: ABI version, context creation and destruction, frame end,
+  last error message, buffer allocation and release. Each goes through a single
+  wrapper that pins the floating-point environment, catches panics and turns
+  errors into return codes.
+- `ScgContextConfig` offsets checked on both sides of the boundary: a Rust test,
+  and static assertions the host's compiler verifies on its own target.
 - Four-crate workspace: std-free core, C boundary, development host,
   conformance suite.
 - ABI contract, Rust conventions and build documentation.
