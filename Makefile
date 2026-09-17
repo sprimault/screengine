@@ -27,6 +27,22 @@ CARGO_INSTALL_FLAGS ?=
 # cible sur ce qui manque.
 HOSTS ?= c cpp web
 
+# Les éditeurs de liens du NDK, par variables plutôt que par cargo-ndk : trois
+# chemins ne justifient pas un outil de plus à épingler. armv7 porte un `a` que
+# le triple Rust n'a pas. ANDROID_NDK_HOME vient de l'environnement ; le NDK est
+# r28 au moins, qui aligne sur des pages de 16 Ko sans option.
+ANDROID_API ?= 21
+NDK_BIN      = $(ANDROID_NDK_HOME)/toolchains/llvm/prebuilt/linux-x86_64/bin
+ANDROID_ENV  = CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER=$(NDK_BIN)/aarch64-linux-android$(ANDROID_API)-clang \
+               CARGO_TARGET_ARMV7_LINUX_ANDROIDEABI_LINKER=$(NDK_BIN)/armv7a-linux-androideabi$(ANDROID_API)-clang \
+               CARGO_TARGET_X86_64_LINUX_ANDROID_LINKER=$(NDK_BIN)/x86_64-linux-android$(ANDROID_API)-clang
+
+# La bibliothèque des trois ABI dans un profil : cdylib pour l'appareil,
+# staticlib pour les exécutables de test lancés sans appareil.
+android_build = for cible in $(CIBLES_ANDROID); do \
+	  $(ANDROID_ENV) cargo build -p screengine-ffi --profile $(1) --target $$cible || exit 1; \
+	done
+
 # makefile.local porte ce qui est propre au poste et n'est pas versionné. Inclus
 # ici et non en tête : une affectation immédiate qui y référencerait une variable
 # définie plus haut trouverait une chaîne vide.
@@ -35,7 +51,7 @@ HOSTS ?= c cpp web
 # tapée directement perd ces réglages, et l'écart ne se voit pas dans la sortie.
 -include makefile.local
 
-.PHONY: build lib lib-wasm run example web test native-libs fmt lint lint-doc-tests nostd conform conform-update \
+.PHONY: build lib lib-wasm lib-android run example web test native-libs fmt lint lint-doc-tests nostd conform conform-update \
         header header-verif audit deny doc hosts host-c host-cpp host-web host-android clean tools
 
 build:
@@ -55,6 +71,9 @@ lib:
 lib-wasm:
 	cargo rustc -p screengine-ffi --profile release-wasm --target $(CIBLE_WASM) --crate-type cdylib
 
+lib-android:
+	@$(call android_build,release-ffi)
+
 # Les exemples de l'étage d'accueil, qui ouvrent une fenêtre. `make run` lance
 # le plus petit ; `make example EXAMPLE=nom` en choisit un autre.
 EXAMPLE ?= hello
@@ -69,9 +88,7 @@ RUN ?=
 
 test:
 	cargo test $(PKG) $(if $(RUN),-- $(RUN))
-	$(MAKE) test-abi
-	$(MAKE) test-cpp
-	$(MAKE) test-wasm
+	@for hote in $(filter-out $(SANS),$(TEST_HOSTS)); do $(MAKE) test-$$hote || exit 1; done
 
 # Les hôtes qui franchissent réellement la frontière, chacun comparant son
 # empreinte du triangle à celle du chemin Rust. Les tests de screengine-ffi
@@ -82,13 +99,19 @@ test:
 #   abi   l'hôte C, lié à la bibliothèque statique
 #   cpp   l'hôte C++, lié à la bibliothèque dynamique : le header compilé en C++
 #         et le chargement dynamique réel
-#   wasm  l'hôte web sous Node, sans fenêtre : le module instancié sans import,
-#         la mémoire linéaire et scg_buffer_alloc
+#   wasm     l'hôte web sous Node, sans fenêtre : le module instancié sans
+#            import, la mémoire linéaire et scg_buffer_alloc
+#   android  les trois ABI sans appareil, x86_64 sur un émulateur par JNI
 #
 # Chaque hôte garde dans son Makefile `why-not`, `all` et `run`, avec PROFILE et
 # OUT ; ce qui suit ne connaît que son répertoire, son profil et la commande qui
 # construit ce qu'il charge.
-TEST_HOSTS   := abi cpp wasm
+#
+# SANS retire un hôte de `make test`, et c'est la seule façon de le faire : une
+# exclusion écrite là où on l'appelle, qui se lit dans le workflow. Un outil
+# manquant, lui, reste une erreur en intégration continue.
+TEST_HOSTS   := abi cpp wasm android
+SANS         ?=
 TEST_TARGETS := $(addprefix test-,$(TEST_HOSTS)) $(addsuffix -run,$(addprefix test-,$(TEST_HOSTS)))
 .PHONY: $(TEST_TARGETS)
 
@@ -106,6 +129,11 @@ host_dir_wasm     := web
 host_name_wasm    := wasm
 host_profile_wasm := wasm-test
 host_build_wasm    = cargo rustc -p screengine-ffi --profile wasm-test --target $(CIBLE_WASM) --crate-type cdylib
+
+host_dir_android     := android
+host_name_android    := Android
+host_profile_android := ffi-test
+host_build_android    = $(call android_build,ffi-test)
 
 HOST_OUT = $(abspath $(SORTIE))/host-$(host_dir_$*)
 
@@ -238,8 +266,8 @@ host-web: lib-wasm
 web: lib-wasm
 	$(MAKE) -C hosts/web serve
 
-host-android: lib
-	$(MAKE) -C hosts/android
+host-android: lib-android
+	$(MAKE) -C hosts/android apk
 
 clean:
 	cargo clean
