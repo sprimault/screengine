@@ -1,5 +1,5 @@
 // Copyright 2026 Stéphane Primault <sprimault@users.noreply.github.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: MIT OR Apache-2.0
 
 //! Le plus petit programme qui affiche le moteur : une fenêtre, le triangle de
 //! l'étape 0, Échap pour fermer. C'est celui que montrent les README.

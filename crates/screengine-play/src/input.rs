@@ -1,5 +1,5 @@
 // Copyright 2026 Stéphane Primault <sprimault@users.noreply.github.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: MIT OR Apache-2.0
 
 //! L'état du clavier et de la souris, vu depuis un pas de mise à jour.
 

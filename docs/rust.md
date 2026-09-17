@@ -375,7 +375,7 @@ la création du contexte rend une erreur plutôt que de déborder en silence.
 
   ```rust
   // Copyright 2026 Stéphane Primault <sprimault@users.noreply.github.com>
-  // SPDX-License-Identifier: MIT
+  // SPDX-License-Identifier: MIT OR Apache-2.0
   ```
 
   Côté Rust, il précède la doc de module `//!` et les attributs internes.

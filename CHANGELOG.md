@@ -85,7 +85,7 @@ hacher pareil.
 - Intégration continue et publication sur tag.
 
 ### Modifié
-- Licence MIT seule.
+- Double licence MIT ou Apache-2.0, au choix de l'utilisateur.
 - Cible de rendu : la classe des moteurs logiciels de 1996 à 1998 plutôt que
   palette et texture affine. Couleurs directes, mipmaps, lightmaps, cellules 3D,
   rendu par tuiles, virgule fixe après la projection.
@@ -136,7 +136,7 @@ hash identically.
 - Continuous integration and tag-triggered release.
 
 ### Changed
-- MIT licence only.
+- Dual licensed under MIT or Apache-2.0, at the user's option.
 - Rendering target: the 1996–1998 software renderer class instead of palette
   and affine texturing. True colour, mipmaps, lightmaps, 3D cells, tile-based
   rendering, fixed-point after projection.

@@ -1,5 +1,5 @@
 // Copyright 2026 Stéphane Primault <sprimault@users.noreply.github.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: MIT OR Apache-2.0
 
 //! Le seul arrondi du pipeline, éprouvé sur les deux signes.
 //!

@@ -5,7 +5,10 @@ English: [README.md](README.md)
 Un moteur de rendu 3D logiciel, appelable depuis n'importe quel langage. Pas de
 GPU, pas de fenêtre : on lui donne une scène et un tampon, il remplit le tampon.
 
-MIT — voir [`LICENSE`](LICENSE).
+MIT ou Apache-2.0, au choix — voir [`LICENSE-MIT`](LICENSE-MIT) et
+[`LICENSE-APACHE`](LICENSE-APACHE). Sauf mention contraire de son auteur, toute
+contribution proposée à l'inclusion est placée sous ces deux mêmes licences, sans
+condition supplémentaire.
 
 La cible est la classe des moteurs logiciels de 1996 à 1998, faite proprement :
 couleurs directes, perspective corrigée, mipmaps, lightmaps, brouillard, filtrage

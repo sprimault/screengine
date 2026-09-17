@@ -123,8 +123,8 @@ jobs:
 
       # Le nom de l'archive porte version, système et architecture : c'est ce
       # qui permet de choisir son fichier et d'en garder deux versions côte à
-      # côte. LICENSE va dans l'archive et non à côté : personne ne télécharge
-      # un asset séparé pour accompagner une bibliothèque.
+      # côte. Les deux licences vont dans l'archive et non à côté : personne ne
+      # télécharge un asset séparé pour accompagner une bibliothèque.
       - name: Empaqueter
         run: |
           paquet="screengine_${GITHUB_REF_NAME}_${{ matrix.cible }}"
@@ -133,7 +133,7 @@ jobs:
             cp "target/release-ffi/$fichier" "paquets/$paquet/lib/"
           done
           cp include/screengine.h "paquets/$paquet/include/"
-          cp LICENSE THIRD-PARTY-NOTICES "paquets/$paquet/"
+          cp LICENSE-MIT LICENSE-APACHE THIRD-PARTY-NOTICES "paquets/$paquet/"
 
           # Zip sous Windows, tar.gz ailleurs : ce que chaque système ouvre sans
           # rien installer.
