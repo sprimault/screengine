@@ -30,7 +30,14 @@ if not defined VS (
 )
 rem vcvars64 appelle lui-même vswhere, qu'il cherche dans le PATH.
 set "PATH=%ProgramFiles(x86)%\Microsoft Visual Studio\Installer;%PATH%"
-call "%VS%\VC\Auxiliary\Build\vcvars64.bat" >nul || exit /b 1
+rem vcvars64 écrit ses erreurs sur la sortie standard : jetée, un échec sortirait
+rem en code 1 sans un mot. Elle est gardée, et rendue seulement en cas d'échec.
+call "%VS%\VC\Auxiliary\Build\vcvars64.bat" >"%~2\vcvars.log" 2>&1
+if errorlevel 1 (
+  echo vcvars64 en echec, sa sortie suit : 1>&2
+  type "%~2\vcvars.log" 1>&2
+  exit /b 1
+)
 
 :compile
 rem -MD : Rust se lie au CRT dynamique, et deux CRT dans un même binaire

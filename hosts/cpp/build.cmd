@@ -26,7 +26,13 @@ if not defined VS (
   exit /b 1
 )
 set "PATH=%ProgramFiles(x86)%\Microsoft Visual Studio\Installer;%PATH%"
-call "%VS%\VC\Auxiliary\Build\vcvars64.bat" >nul || exit /b 1
+rem Sortie gardée et rendue en cas d'échec, comme dans hosts/c/build.cmd.
+call "%VS%\VC\Auxiliary\Build\vcvars64.bat" >"%~2\vcvars.log" 2>&1
+if errorlevel 1 (
+  echo vcvars64 en echec, sa sortie suit : 1>&2
+  type "%~2\vcvars.log" 1>&2
+  exit /b 1
+)
 
 :compile
 rem -EHsc : exceptions C++ standard. La DLL se lie par sa bibliothèque
