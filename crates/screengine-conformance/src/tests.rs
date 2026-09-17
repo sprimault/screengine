@@ -61,18 +61,19 @@ fn print_exige_une_scene_connue() {
 #[test]
 fn le_triangle_rend_une_empreinte_stable() {
     let first = Scene::Triangle
-        .render(Scene::HOST_TILE)
+        .render(Scene::HOST_PASS)
         .expect("scène valide");
-    assert_eq!(Scene::Triangle.render(Scene::HOST_TILE), Ok(first));
+    assert_eq!(Scene::Triangle.render(Scene::HOST_PASS), Ok(first));
 }
 
-/// Toutes les tailles de tuile rendent l'empreinte de `--print`, celle que les
-/// hôtes comparent : une référence écrite depuis une autre taille ne vaudrait
-/// que pour elle.
+/// Toutes les passes — tailles de tuile, image entière, ordre mélangé,
+/// threads — rendent l'empreinte de `--print`, celle que les hôtes
+/// comparent : une référence écrite depuis une autre passe ne vaudrait que
+/// pour elle.
 #[test]
-fn toutes_les_tuiles_rendent_l_empreinte_des_hotes() {
+fn toutes_les_passes_rendent_l_empreinte_des_hotes() {
     let host = Scene::Triangle
-        .render(Scene::HOST_TILE)
+        .render(Scene::HOST_PASS)
         .expect("scène valide");
     assert_eq!(Scene::Triangle.render_all(), Ok(host));
 }

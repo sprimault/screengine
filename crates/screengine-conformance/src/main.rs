@@ -22,7 +22,122 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::{fs, io};
 
-use screengine::{BYTES_PER_PIXEL, Config, Context, TILE_SIZES};
+use screengine::{BYTES_PER_PIXEL, Config, Context, Frame, Rect, Rows};
+
+/// Une façon de rendre une scène qui ne doit pas changer l'image.
+///
+/// Une couture de tuile ne se voit que dans une configuration : chaque scène
+/// passe par toutes, et toutes se comparent à une seule référence.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Pass {
+    /// Tuiles de 32, rendues par la seule fin d'image, dans l'ordre.
+    Tiles32,
+    /// Tuiles de 64, de même. C'est la configuration des hôtes.
+    Tiles64,
+    /// L'image entière d'un bloc, sans répartition : la référence des tuiles.
+    Whole,
+    /// Tuiles de 32, une moitié dans un ordre mélangé à graine fixe, l'autre
+    /// laissée à la fin d'image.
+    Shuffled,
+    /// Tuiles de 32, une bande de tuiles par thread.
+    Threads,
+}
+
+impl Pass {
+    /// Toutes les passes, dans l'ordre où la suite les rejoue.
+    const ALL: [Self; 5] = [
+        Self::Tiles32,
+        Self::Tiles64,
+        Self::Whole,
+        Self::Shuffled,
+        Self::Threads,
+    ];
+
+    /// Le nom de la passe, dans un message de divergence.
+    fn name(self) -> &'static str {
+        match self {
+            Self::Tiles32 => "tuiles de 32",
+            Self::Tiles64 => "tuiles de 64",
+            Self::Whole => "image entière",
+            Self::Shuffled => "ordre mélangé",
+            Self::Threads => "threads",
+        }
+    }
+
+    /// Le côté de tuile du contexte.
+    fn tile_size(self) -> u32 {
+        match self {
+            Self::Tiles64 | Self::Whole => 64,
+            Self::Tiles32 | Self::Shuffled | Self::Threads => 32,
+        }
+    }
+
+    /// Rend une image déjà commencée dans `pixels`, rangé par lignes de `width`.
+    fn render(
+        self,
+        frame: Frame<'_>,
+        pixels: &mut [u8],
+        width: u32,
+        height: u32,
+    ) -> screengine::Result<()> {
+        match self {
+            Self::Tiles32 | Self::Tiles64 => frame.end(&mut Rows::new(pixels, width)),
+            Self::Whole => {
+                let mut scratch = vec![0u32; width as usize * height as usize];
+                let image = Rect {
+                    x: 0,
+                    y: 0,
+                    width,
+                    height,
+                };
+                frame.region(image, &mut scratch, &mut Rows::new(pixels, width))
+            }
+            Self::Shuffled => {
+                let mut order: Vec<u32> = (0..frame.tile_count()).collect();
+                // xorshift à graine fixe : un ordre qui change d'un passage à
+                // l'autre ferait d'une divergence un échec qu'on ne rejoue pas.
+                let mut state = 0x9E37_79B9_7F4A_7C15u64;
+                for i in (1..order.len()).rev() {
+                    state ^= state << 13;
+                    state ^= state >> 7;
+                    state ^= state << 17;
+                    order.swap(i, (state % (i as u64 + 1)) as usize);
+                }
+                let mut rows = Rows::new(pixels, width);
+                for &index in &order[..order.len() / 2] {
+                    frame.tile(index, &mut rows)?;
+                }
+                frame.end(&mut rows)
+            }
+            Self::Threads => {
+                let tile = self.tile_size();
+                let columns = width.div_ceil(tile);
+                let band = tile as usize * width as usize * BYTES_PER_PIXEL;
+                std::thread::scope(|scope| {
+                    let workers: Vec<_> = pixels
+                        .chunks_mut(band)
+                        .enumerate()
+                        .map(|(row, chunk)| {
+                            let frame = &frame;
+                            scope.spawn(move || {
+                                let mut rows = Rows::band(chunk, width, row as u32 * tile);
+                                (0..columns).try_for_each(|column| {
+                                    frame.tile(row as u32 * columns + column, &mut rows)
+                                })
+                            })
+                        })
+                        .collect();
+                    workers.into_iter().try_for_each(|worker| {
+                        worker
+                            .join()
+                            .unwrap_or_else(|panic| std::panic::resume_unwind(panic))
+                    })
+                })?;
+                frame.end(&mut Rows::new(pixels, width))
+            }
+        }
+    }
+}
 
 /// Ce que la suite fait des empreintes calculées.
 #[derive(Debug, PartialEq, Eq)]
@@ -50,8 +165,8 @@ impl Scene {
     /// Toutes les scènes, dans l'ordre où `--check` les rejoue.
     const ALL: [Self; 1] = [Self::Triangle];
 
-    /// Le côté de tuile que `--print` utilise, celui des hôtes.
-    const HOST_TILE: u32 = 64;
+    /// La passe que `--print` utilise, celle des hôtes.
+    const HOST_PASS: Pass = Pass::Tiles64;
 
     /// Le nom de la scène, qui est aussi celui de sa référence.
     fn name(self) -> &'static str {
@@ -65,8 +180,8 @@ impl Scene {
         Self::ALL.into_iter().find(|scene| scene.name() == name)
     }
 
-    /// Rend la scène en tuiles de `tile_size` et rend son empreinte.
-    fn render(self, tile_size: u32) -> Result<u64, screengine::Error> {
+    /// Rend la scène par `pass` et rend son empreinte.
+    fn render(self, pass: Pass) -> Result<u64, screengine::Error> {
         match self {
             Self::Triangle => {
                 let (width, height) = (640, 360);
@@ -75,31 +190,38 @@ impl Scene {
                     max_height: height,
                     width,
                     height,
-                    tile_size,
+                    tile_size: pass.tile_size(),
                 })?;
                 let mut pixels = vec![0u8; width as usize * height as usize * BYTES_PER_PIXEL];
-                context.frame_end(&mut pixels, width)?;
+                pass.render(context.frame_begin()?, &mut pixels, width, height)?;
                 Ok(hash::image(&pixels, width, height, width))
             }
         }
     }
 
-    /// Rend la scène dans chaque taille de tuile, et rend l'empreinte commune.
+    /// Rend la scène par chaque passe, et rend l'empreinte commune.
     ///
-    /// Deux tailles qui divergent sont une erreur du moteur, pas une
-    /// différence à départager : l'image ne dépend pas du découpage.
+    /// Deux passes qui divergent sont une erreur du moteur, pas une
+    /// différence à départager : l'image ne dépend ni du découpage, ni de
+    /// l'ordre, ni des threads.
     fn render_all(self) -> Result<u64, String> {
-        let mut common = None;
-        for tile in TILE_SIZES {
-            let hash = self.render(tile).map_err(|error| {
-                format!("{} : le moteur a refusé la scène : {error:?}", self.name())
+        let mut common: Option<(Pass, u64)> = None;
+        for pass in Pass::ALL {
+            let hash = self.render(pass).map_err(|error| {
+                format!(
+                    "{} ({}) : le moteur a refusé la scène : {error:?}",
+                    self.name(),
+                    pass.name()
+                )
             })?;
             match common {
-                None => common = Some((tile, hash)),
+                None => common = Some((pass, hash)),
                 Some((first, expected)) if expected != hash => {
                     return Err(format!(
-                        "{} : tuiles de {first} et de {tile} divergent ({} contre {})",
+                        "{} : {} et {} divergent ({} contre {})",
                         self.name(),
+                        first.name(),
+                        pass.name(),
                         hash::format(expected),
                         hash::format(hash)
                     ));
@@ -107,7 +229,7 @@ impl Scene {
                 Some(_) => {}
             }
         }
-        // TILE_SIZES n'est pas vide : la boucle a fixé l'empreinte.
+        // Pass::ALL n'est pas vide : la boucle a fixé l'empreinte.
         Ok(common.map_or(0, |(_, hash)| hash))
     }
 }
@@ -203,7 +325,7 @@ fn main() -> ExitCode {
         Mode::Check => check,
         Mode::Update => update,
         Mode::Print(scene) => {
-            return match scene.render(Scene::HOST_TILE) {
+            return match scene.render(Scene::HOST_PASS) {
                 Ok(hash) => {
                     println!("{}", hash::format(hash));
                     ExitCode::SUCCESS

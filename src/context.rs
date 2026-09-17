@@ -3,23 +3,17 @@
 
 //! Le contexte de rendu et sa configuration.
 
-use alloc::vec::Vec;
+mod frame;
 
+use alloc::vec::Vec;
+use core::sync::atomic::AtomicBool;
+
+use crate::buffer::reserved;
 use crate::error::{Argument, Error, Result};
 use crate::math::fixed::to_subpixel;
-use crate::raster::{Clip, Point, Target, fill_triangle};
+use crate::raster::{Bins, Grid, Point, Prepared, prepare};
 
-/// Le tampon de couleur, vu comme un puits de remplissage.
-struct ColorTarget<'a> {
-    pixels: &'a mut [u32],
-    width: i32,
-}
-
-impl Target for ColorTarget<'_> {
-    fn put(&mut self, x: i32, y: i32, color: u32) {
-        self.pixels[(y * self.width + x) as usize] = color;
-    }
-}
+pub use frame::{Frame, Output, Rows};
 
 /// La plus grande résolution interne qu'un contexte accepte, en pixels de côté.
 ///
@@ -32,11 +26,18 @@ pub const MAX_RESOLUTION: u32 = 2048;
 /// Les deux tailles de tuile admises, en pixels de côté.
 ///
 /// Une tuile de 32 ou 64 tient en L1 avec sa profondeur. Au-delà, l'intérêt
-/// principal des tuiles — le cache — disparaît.
+/// principal des tuiles — le cache — disparaît, et le tampon de travail posé
+/// sur la pile de chaque appel grossirait avec elle.
 pub const TILE_SIZES: [u32; 2] = [32, 64];
 
 /// Quatre octets par pixel, R, G, B puis A en mémoire.
 pub const BYTES_PER_PIXEL: usize = 4;
+
+/// Les triangles qu'une image peut recevoir.
+///
+/// Ce que la frontière C annonce comme capacité par défaut, tant que la
+/// configuration ne permet pas de la choisir.
+pub const TRIANGLE_CAPACITY: usize = 16_384;
 
 /// Le noir opaque dont chaque image part.
 const CLEAR_COLOR: u32 = 0xFF00_0000;
@@ -49,7 +50,7 @@ const DEMO_COLOR: u32 = 0xFF30_A0E0;
 
 /// Ce que reçoit la création d'un contexte.
 ///
-/// La résolution maximale dimensionne tous les tampons propres à l'image dès la
+/// La résolution maximale dimensionne tout ce que l'image consomme dès la
 /// création. Changer de résolution sous ce maximum n'alloue donc rien, ce qui
 /// est la seule façon de tenir « zéro allocation par image » quand l'hôte
 /// ajuste sa résolution en cours de partie.
@@ -86,38 +87,25 @@ impl Config {
     }
 }
 
-/// Alloue un tampon de `len` mots nuls, ou rend [`Error::OutOfMemory`].
-///
-/// `try_reserve_exact` plutôt que la macro `vec!` : une allocation qui échoue en
-/// paniquant ne laisserait rien à traduire en code de retour, et la variante
-/// `OutOfMemory` n'aurait jamais de cas. Le `resize` qui suit ne réalloue pas.
-fn filled(len: usize) -> Result<Vec<u32>> {
-    let mut buffer = Vec::new();
-    buffer
-        .try_reserve_exact(len)
-        .map_err(|_| Error::OutOfMemory)?;
-    buffer.resize(len, 0);
-    Ok(buffer)
-}
-
 /// Un contexte de rendu.
 ///
-/// Ses tampons sont dimensionnés pour la résolution maximale dès la création, et
-/// ne sont plus jamais réalloués : c'est ce qui rend « zéro allocation par
-/// image » vrai même quand l'hôte change de résolution en cours de partie.
+/// Il ne porte aucun tampon à l'échelle de l'image : couleur et profondeur
+/// vivent sur la pile de l'appel qui rend une tuile. Ce qu'il réserve à la
+/// création — triangles préparés, répartition par tuile, drapeaux de tuile —
+/// l'est pour la capacité et la résolution maximales, et plus jamais réalloué.
 #[derive(Debug)]
 pub struct Context {
     config: Config,
     width: u32,
     height: u32,
-    /// Couleur, un pixel par `u32`, `r | g << 8 | b << 16 | a << 24`.
+    /// Les triangles de l'image en cours, dans l'ordre de soumission.
+    triangles: Vec<Prepared>,
+    bins: Bins,
+    /// Vrai pour chaque tuile déjà prise dans l'image en cours.
     ///
-    /// L'ordre des octets en mémoire ne dépend pas de la cible : la recopie
-    /// écrit `to_le_bytes`, ce qui donne R, G, B, A partout et ne suppose rien
-    /// de l'ordre natif.
-    color: Vec<u32>,
-    /// Profondeur, `near/w` en 0.32 : plus grand est plus proche.
-    depth: Vec<u32>,
+    /// Atomique parce que des tuiles distinctes se rendent depuis des threads
+    /// distincts, et que c'est lui qui dit à la fin ce qui reste à rendre.
+    taken: Vec<AtomicBool>,
 }
 
 impl Context {
@@ -128,16 +116,17 @@ impl Context {
     pub fn new(config: Config) -> Result<Self> {
         config.validate()?;
 
-        // `validate` a borné les deux dimensions à `MAX_RESOLUTION`, donc le
-        // produit tient largement dans un `usize`, y compris sur 32 bits.
-        let capacity = config.max_width as usize * config.max_height as usize;
+        let tiles = Grid::new(config.max_width, config.max_height, config.tile_size).count();
+        let mut taken = reserved(tiles as usize)?;
+        taken.resize_with(tiles as usize, AtomicBool::default);
 
         Ok(Self {
             config,
             width: config.width,
             height: config.height,
-            color: filled(capacity)?,
-            depth: filled(capacity)?,
+            triangles: reserved(TRIANGLE_CAPACITY)?,
+            bins: Bins::new(tiles as usize, TRIANGLE_CAPACITY)?,
+            taken,
         })
     }
 
@@ -151,46 +140,30 @@ impl Context {
         (self.width, self.height)
     }
 
-    /// Le nombre de pixels de l'image courante.
+    /// Commence une image : scelle la scène, la répartit par tuile, et rend de
+    /// quoi rendre les tuiles.
     ///
-    /// Les tampons sont rangés serré sur la largeur courante, pas sur la
-    /// largeur maximale : la localité reste la même à toute résolution, et le
-    /// calcul d'index ne dépend jamais du budget reçu à la création. Ce qui
-    /// dépasse est de la capacité inutilisée, pas un trou entre les lignes.
-    fn pixel_count(&self) -> usize {
-        self.width as usize * self.height as usize
+    /// La répartition est la seule phase qui écrit dans un état partagé, et
+    /// elle se termine ici, avant toute tuile. La [`Frame`] emprunte le
+    /// contexte : aucun autre appel n'est possible tant qu'elle vit.
+    pub fn frame_begin(&mut self) -> Result<Frame<'_>> {
+        self.triangles.clear();
+        self.draw_demo_triangle()?;
+        Ok(self.seal())
     }
 
-    /// Remet la couleur au noir opaque et la profondeur au plus loin.
-    ///
-    /// Par `fill` sur la tranche utile, jamais par réaffectation : le tampon
-    /// garde son allocation d'un bout à l'autre de la vie du contexte.
-    fn clear(&mut self) {
-        let count = self.pixel_count();
-        self.color[..count].fill(CLEAR_COLOR);
-        self.depth[..count].fill(0);
-    }
-
-    /// Recopie l'image vers le tampon de l'hôte, ligne par ligne.
-    ///
-    /// `to_le_bytes` plutôt qu'une réinterprétation du tampon : l'ordre R, G, B,
-    /// A en mémoire est celui de l'ABI, et le déduire de l'ordre natif de la
-    /// cible marcherait partout aujourd'hui pour de mauvaises raisons.
-    fn blit(&self, pixels: &mut [u8], stride: u32) {
-        let row_pixels = self.width as usize;
-        let host_row = stride as usize * BYTES_PER_PIXEL;
-
-        for y in 0..self.height as usize {
-            let source = &self.color[y * row_pixels..][..row_pixels];
-            let target = &mut pixels[y * host_row..][..row_pixels * BYTES_PER_PIXEL];
-
-            for (pixel, slot) in source.iter().zip(target.chunks_exact_mut(BYTES_PER_PIXEL)) {
-                slot.copy_from_slice(&pixel.to_le_bytes());
-            }
+    /// Répartit les triangles soumis et ouvre le rendu des tuiles.
+    fn seal(&mut self) -> Frame<'_> {
+        let grid = Grid::new(self.width, self.height, self.config.tile_size);
+        self.bins.build(&grid, &self.triangles);
+        for flag in &mut self.taken[..grid.count() as usize] {
+            *flag.get_mut() = false;
         }
+
+        Frame::new(self, grid)
     }
 
-    /// Termine l'image et écrit le résultat dans le tampon de l'hôte.
+    /// Rend une image entière dans le tampon de l'hôte, tuile par tuile.
     ///
     /// `stride` est en pixels et vaut au moins la largeur courante. Le tampon
     /// fait au moins `stride × hauteur` pixels de quatre octets ; la frontière C
@@ -198,31 +171,28 @@ impl Context {
     /// appelant Rust la porte avec la tranche — c'est le seul contrôle des deux
     /// qui distingue les deux chemins.
     pub fn frame_end(&mut self, pixels: &mut [u8], stride: u32) -> Result<()> {
-        if stride < self.width {
-            return Err(Error::InvalidArgument(Argument::Stride));
-        }
+        self.frame_begin()?.end(&mut Rows::new(pixels, stride))
+    }
 
-        let needed = (stride as usize)
-            .checked_mul(self.height as usize)
-            .and_then(|p| p.checked_mul(BYTES_PER_PIXEL))
-            .ok_or(Error::InvalidArgument(Argument::Stride))?;
-        if pixels.len() < needed {
-            return Err(Error::InvalidArgument(Argument::BufferLength));
+    /// Ajoute un triangle à l'image en cours.
+    fn submit(&mut self, v: [Point; 3], color: u32) -> Result<()> {
+        let Some(triangle) = prepare(v, color) else {
+            return Ok(());
+        };
+        if self.triangles.len() >= TRIANGLE_CAPACITY {
+            return Err(Error::InvalidArgument(Argument::TriangleCapacity));
         }
-
-        self.clear();
-        self.draw_demo_triangle();
-        self.blit(pixels, stride);
+        self.triangles.push(triangle);
         Ok(())
     }
 
-    /// Dessine le triangle en dur de l'étape 0.
+    /// Soumet le triangle en dur de l'étape 0.
     ///
     /// Il n'y a pas encore de scène à soumettre : ce triangle existe pour que
     /// les hôtes aient quelque chose à afficher, et il est rempli par les
     /// fonctions de bord et la règle top-left définitives — c'est le premier
     /// remplissage, et il est déjà celui de tout le moteur.
-    fn draw_demo_triangle(&mut self) {
+    fn draw_demo_triangle(&mut self) -> Result<()> {
         let (w, h) = (self.width as f32, self.height as f32);
 
         // Sens horaire à l'écran, Y vers le bas : sommet en haut, puis
@@ -242,16 +212,7 @@ impl Context {
             },
         ];
 
-        let clip = Clip {
-            width: self.width as i32,
-            height: self.height as i32,
-        };
-        let mut target = ColorTarget {
-            pixels: &mut self.color,
-            width: self.width as i32,
-        };
-
-        fill_triangle(&mut target, clip, vertices, DEMO_COLOR);
+        self.submit(vertices, DEMO_COLOR)
     }
 }
 

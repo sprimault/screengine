@@ -14,10 +14,17 @@
 
 extern crate alloc;
 
+mod buffer;
 mod context;
 mod error;
 mod math;
 mod raster;
+#[cfg(test)]
+mod testing;
 
-pub use context::{BYTES_PER_PIXEL, Config, Context, MAX_RESOLUTION, TILE_SIZES};
+pub use context::{
+    BYTES_PER_PIXEL, Config, Context, Frame, MAX_RESOLUTION, Output, Rows, TILE_SIZES,
+    TRIANGLE_CAPACITY,
+};
 pub use error::{Argument, Error, Result};
+pub use raster::Rect;

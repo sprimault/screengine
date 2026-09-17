@@ -18,7 +18,7 @@
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::cell::Cell;
 
-use screengine::{BYTES_PER_PIXEL, Config, Context};
+use screengine::{BYTES_PER_PIXEL, Config, Context, Rows};
 
 /// L'allocateur du système, qui compte au passage.
 struct Counting;
@@ -114,4 +114,56 @@ fn aucune_image_n_alloue() {
         }
     });
     assert_eq!(seen, 0, "{seen} allocation(s) pendant trois images");
+}
+
+/// Des tuiles rendues sur d'autres threads n'allouent pas davantage : chaque
+/// thread arme sa propre mesure autour de ses tuiles, puisque la création
+/// des threads, elle, alloue.
+#[test]
+fn aucune_tuile_n_alloue_sur_un_autre_thread() {
+    let (width, height) = (640u32, 360u32);
+    let tile = 32;
+    let mut context = Context::new(Config {
+        max_width: width,
+        max_height: height,
+        width,
+        height,
+        tile_size: tile,
+    })
+    .expect("configuration valide");
+    let mut pixels = vec![0u8; width as usize * height as usize * BYTES_PER_PIXEL];
+    let columns = width.div_ceil(tile);
+    let band = tile as usize * width as usize * BYTES_PER_PIXEL;
+
+    for _ in 0..2 {
+        let mut frame = None;
+        let begun = allocations(|| frame = Some(context.frame_begin().expect("début")));
+        let frame = frame.expect("début");
+        assert_eq!(begun, 0, "{begun} allocation(s) au début d'image");
+
+        let seen: usize = std::thread::scope(|scope| {
+            let workers: Vec<_> = pixels
+                .chunks_mut(band)
+                .enumerate()
+                .map(|(row, chunk)| {
+                    let frame = &frame;
+                    scope.spawn(move || {
+                        let mut rows = Rows::band(chunk, width, row as u32 * tile);
+                        allocations(|| {
+                            for column in 0..columns {
+                                frame
+                                    .tile(row as u32 * columns + column, &mut rows)
+                                    .expect("tuile");
+                            }
+                        })
+                    })
+                })
+                .collect();
+            workers
+                .into_iter()
+                .map(|worker| worker.join().expect("thread de rendu"))
+                .sum()
+        });
+        assert_eq!(seen, 0, "{seen} allocation(s) dans les threads de rendu");
+    }
 }
