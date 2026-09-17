@@ -72,6 +72,11 @@ hacher pareil.
 - Hôte C++ sans fenêtre, lié à la bibliothèque dynamique sous Windows et Linux,
   et lancé par `make test` : mêmes contrôles, plus le header compilé en C++ et
   la preuve que les fonctions viennent de la bibliothèque chargée.
+- Hôte wasm, en JavaScript sans dépendance : un test sans fenêtre sous Node,
+  lancé par `make test`, et une page servie par `make web`. Il charge le module
+  sans aucun import, alloue par `scg_buffer_alloc`, vérifie les mêmes refus et
+  les vues détachées par la croissance de la mémoire, et compare son empreinte à
+  celle du chemin Rust. Le module wasm est publié avec les autres archives.
 - Empreinte d'image : FNV-1a 64 bits sur les dimensions puis la zone utile,
   que chaque hôte recalcule dans son langage.
 - Espace de travail en quatre crates : noyau sans std, frontière C, étage
@@ -97,6 +102,11 @@ hacher pareil.
   header et les hôtes s'écrivent contre elle.
 - Le header s'inclut depuis C++ : gardes `extern "C"`, et assertions de
   disposition vérifiées par un compilateur C++ comme par un compilateur C.
+- Sur wasm, une panique est un trap et non un code de retour : la chaîne stable
+  n'y déroule pas la pile, et `SCG_ERR_PANIC` comme le poison n'y sont jamais
+  observés. Le texte de la panique est écrit avant le trap dans l'emplacement
+  d'erreur sans contexte, que l'hôte lit dans la mémoire ; l'instance ne se
+  réutilise pas.
 
 ***
 
@@ -123,6 +133,11 @@ hash identically.
 - Headless C++ host, linked against the shared library on Windows and Linux, and
   run by `make test`: the same checks, plus the header compiled as C++ and proof
   that the functions come from the loaded library.
+- wasm host, in dependency-free JavaScript: a headless test under Node, run by
+  `make test`, and a page served by `make web`. It loads the module with no
+  imports at all, allocates through `scg_buffer_alloc`, checks the same
+  rejections and the views detached when memory grows, and compares its hash
+  with the Rust path's. The wasm module ships alongside the other archives.
 - Image hash: 64-bit FNV-1a over the dimensions then the visible area, which
   each host recomputes in its own language.
 - Four-crate workspace: std-free core, C boundary, Rust front end, conformance
@@ -148,3 +163,7 @@ hash identically.
   written against it.
 - The header can be included from C++: `extern "C"` guards, and layout
   assertions checked by a C++ compiler as well as a C one.
+- On wasm, a panic is a trap, not a return code: the stable toolchain does not
+  unwind there, so neither `SCG_ERR_PANIC` nor poisoning is ever observed. The
+  panic text is written before the trap into the context-free error slot, which
+  the host reads from memory; the instance is not reused.

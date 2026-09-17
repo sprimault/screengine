@@ -247,6 +247,11 @@ Le contrat est dans [`abi.md`](abi.md). Ce qui suit est la manière de l'écrire
   n'existe pas pour un auteur de liaison.
 - `panic = "abort"` rendrait tout cela inopérant : la bibliothèque se construit
   avec le profil `release-ffi`. Voir [`construction.md`](construction.md).
+- **Sur wasm, une panique est un trap**, quel que soit le profil, et rien de ce
+  qui précède ne la rattrape. Un crochet de panique, posé une seule fois par
+  l'utilitaire d'enveloppe sous `cfg(target_arch = "wasm32")`, en écrit le texte
+  dans l'emplacement sans contexte avant l'arrêt : c'est la seule trace que
+  l'hôte en garde. Une fois, parce que `set_hook` alloue.
 
 ## Arithmétique et précision
 
@@ -437,6 +442,15 @@ teste quelque chose.
   header compilé en C++ — gardes `extern "C"`, assertions de disposition — et la
   preuve que `scg_abi_version` vient bien de la bibliothèque chargée. Même
   règle de saut.
+- **L'hôte wasm, dans `make test-wasm`**, charge le module sous Node, sans
+  fenêtre et sans aucun import. Il reprend les refus, les sentinelles et
+  l'alignement, dans la mémoire linéaire, et ajoute ce que le web seul impose :
+  les exports réels du `.wasm`, les constantes recopiées en JavaScript comparées
+  au header, et une vue détachée par la croissance de la mémoire. Ni registre
+  flottant ni poison : wasm n'a pas le premier, et une panique y est un trap.
+- **Les trois cibles `test-*` ont une forme commune** dans le `Makefile` : chaque
+  hôte fournit `why-not`, `all` et `run`, et la règle compare son empreinte à
+  celle du chemin Rust.
 - **Conformance** dans `crates/screengine-conformance` : des scènes de référence,
   rendues sans fenêtre, dont le tampon est haché et comparé aux empreintes de
   `references/`.

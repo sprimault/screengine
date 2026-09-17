@@ -35,9 +35,9 @@ for those making a game, and the engine does not know it exists.
 ## Status
 
 **Step 0 in progress: a hardcoded triangle, and no engine.** The C boundary is
-written, and the triangle is filled by the final fixed-point edge functions. The C
-and C++ hosts display it and produce the same hash as the Rust path; wasm and
-Android remain before any other line of engine.
+written, and the triangle is filled by the final fixed-point edge functions. The C,
+C++ and wasm hosts display it and produce the same hash as the Rust path;
+Android remains before any other line of engine.
 
 The roadmap has ten steps, each one published.
 
@@ -114,17 +114,19 @@ difference between platforms.
 make build     # core and shared library
 make run       # opens a window on the engine
 make header    # regenerates include/screengine.h
-make test      # including the C and C++ hosts, if a compiler is present
+make test      # including the C, C++ and wasm hosts, if their tooling is present
 make conform   # replays the reference scenes and compares hashes
 make lint
 make nostd     # proof that the core builds without std
+make web       # serves the wasm host page on http://127.0.0.1:8080/
 ```
 
 The core is `no_std` and has no dependencies. A fresh clone builds with nothing
 installed beyond a Rust toolchain; only `screengine-play` carries dependencies,
 `winit` and `softbuffer`.
 
-The Android and wasm targets each need their own tooling and go through CI. iOS
+The wasm host needs Node and the `wasm32-unknown-unknown` target, which
+`make tools` installs; the Android target needs its own tooling. iOS
 waits until the rest is stable — see the roadmap.
 [`docs/construction.md`](docs/construction.md) carries the full matrix (in
 French).

@@ -222,12 +222,21 @@ destruction, qui restent permises pour que l'hôte lise la cause et libère.
 défaut du moteur, pas une entrée invalide ; repartir le masquerait, et aucune
 réinitialisation n'est fiable depuis un état inconnu.
 
-**Le poison ne sera pas observé sur wasm.** La bibliothèque standard y est
-aujourd'hui précompilée en `panic = "abort"` : une panique est un trap,
-`catch_unwind` n'y rattrape rien, et c'est l'instance entière qui meurt.
-`SCG_ERR_POISONED` est donc une garantie de bureau et d'Android, et une liaison
-JavaScript ne doit pas compter dessus. C'est ce que C2 doit établir contre la
-chaîne en usage au lot 7 — voir [`construction.md`](construction.md).
+**Le poison n'est pas observé sur wasm.** La bibliothèque standard de
+`wasm32-unknown-unknown` est précompilée en `panic = "abort"` et la chaîne
+stable n'y déroule pas la pile : une panique est un trap, que `catch_unwind` ne
+rattrape pas, même dans un profil en `panic = "unwind"`. `SCG_ERR_PANIC` et
+`SCG_ERR_POISONED` sont donc des garanties de bureau et d'Android, et une
+liaison JavaScript ne compte sur aucun des deux.
+
+Après un trap, l'instance reste appelable, mais l'état du moteur est inconnu :
+sa pile n'a pas été rétablie, son allocateur a pu être interrompu. **Elle ne se
+réutilise pas**, l'hôte en crée une autre. Le message n'est pas perdu pour
+autant : un crochet écrit le texte de la panique, avant le trap, dans
+l'emplacement sans contexte. Sur wasm, cet emplacement a une adresse fixe pour
+la vie de l'instance — faute de threads, le stockage local y est un statique —,
+que l'hôte prend par `scg_last_error(NULL)` avant tout appel risqué et relit
+dans la mémoire linéaire après le trap, sans rappeler le module.
 
 ## Durées de vie et propriété
 
@@ -447,9 +456,11 @@ noms ne le sont pas.
   alloue peut agrandir la mémoire linéaire, ce qui détache le `ArrayBuffer`
   existant : une `Uint8ClampedArray` construite avant l'appel ne voit plus rien
   après, sans lever d'erreur à sa création.
-- **Sur wasm, une panique peut être un trap** plutôt qu'un code de retour, selon
-  ce que la chaîne de compilation permet — voir
-  [`construction.md`](construction.md). Une instance qui a levé un trap ne se
-  réutilise pas.
+- **Sur wasm, une panique est un trap**, jamais un code de retour. Une instance
+  qui a levé un trap ne se réutilise pas ; le texte de la panique se lit dans la
+  mémoire à l'adresse que `scg_last_error(NULL)` a rendue avant l'appel — voir
+  « Après une panique ».
+- **Sur wasm, le module s'instancie sans aucun import.** Il n'en réclame pas, et
+  exporte `memory` avec les fonctions `scg_`.
 - **Ne rien calculer.** Une liaison convertit des types. Ce qui devrait être
   partagé entre deux liaisons remonte dans le noyau.
