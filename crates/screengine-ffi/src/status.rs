@@ -25,7 +25,7 @@ pub const SCG_ERR_OUT_OF_MEMORY: i32 = -3;
 /// The call came out of sequence, such as ending a frame that never began.
 pub const SCG_ERR_INVALID_STATE: i32 = -4;
 
-/// The engine panicked. The object is now poisoned; see `SCG_ERR_POISONED`.
+/// The engine panicked. The object is now faulted; see `SCG_ERR_FAULTED`.
 ///
 /// A panic is an engine defect, never a reaction to invalid input. Read the
 /// message with `scg_last_error` and report it.
@@ -33,9 +33,15 @@ pub const SCG_ERR_PANIC: i32 = -5;
 
 /// A previous call on this object panicked and left it in an unspecified state.
 ///
-/// Every call on a poisoned object returns this code, except `scg_last_error`
+/// Every call on a faulted object returns this code, except `scg_last_error`
 /// and the destructor, which stay available so the host can read the cause and
 /// release the object.
+pub const SCG_ERR_FAULTED: i32 = -6;
+
+/// Deprecated name of `SCG_ERR_FAULTED`, same value. Kept so that hosts written
+/// against an earlier header still compile; it will not be removed before 1.0.
+// Écrit en littéral et non par renvoi à `SCG_ERR_FAULTED` : les liaisons qui
+// lisent les `#define` du header, JavaScript et PHP, n'évaluent pas un nom.
 pub const SCG_ERR_POISONED: i32 = -6;
 
 /// Traduit une erreur du noyau en code d'ABI.

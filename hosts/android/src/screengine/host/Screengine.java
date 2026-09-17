@@ -30,7 +30,7 @@ public final class Screengine {
     /** Argument hors de ce que le moteur accepte. */
     public static final int ERR_INVALID_ARGUMENT = -2;
 
-    /** Le moteur a paniqué ; l'objet est empoisonné. */
+    /** Le moteur a paniqué ; l'objet est défaillant. */
     public static final int ERR_PANIC = -5;
 
     /** Octets par pixel du tampon de sortie, R, G, B, A. */

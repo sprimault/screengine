@@ -24,11 +24,11 @@ fn context() -> ScgContext {
     ScgContext::new(Context::new(config).expect("configuration saine"))
 }
 
-/// Le poison, au niveau où il est décidé. Ce test vit ici et non dans les
-/// tests de frontière parce que plus aucun point d'entrée ne panique : il
+/// L'état défaillant, au niveau où il est décidé. Ce test vit ici et non dans
+/// les tests de frontière parce que plus aucun point d'entrée ne panique : il
 /// faut provoquer la panique soi-même pour éprouver ce que l'ABI promet.
 #[test]
-fn une_panique_empoisonne_le_contexte() {
+fn une_panique_rend_le_contexte_defaillant() {
     let mut ctx = context();
     let handle: *mut ScgContext = &mut ctx;
 
@@ -40,15 +40,15 @@ fn une_panique_empoisonne_le_contexte() {
     // SAFETY: même handle, toujours vivant.
     let code = unsafe { with_context(handle, |_| Ok(())) };
     assert_eq!(
-        code, SCG_ERR_POISONED,
+        code, SCG_ERR_FAULTED,
         "un appel qui aboutirait après une panique lirait un état inconnu"
     );
 }
 
-/// Le message survit au poison : c'est ce qui laisse l'hôte apprendre la
-/// cause avant de détruire l'objet.
+/// Le message survit à la défaillance : c'est ce qui laisse l'hôte apprendre
+/// la cause avant de détruire l'objet.
 #[test]
-fn le_message_survit_au_poison() {
+fn le_message_survit_a_la_defaillance() {
     let mut ctx = context();
     let handle: *mut ScgContext = &mut ctx;
 

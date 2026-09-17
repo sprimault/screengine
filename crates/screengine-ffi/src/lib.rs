@@ -29,8 +29,8 @@ use entry::AbiError;
 
 pub use context::{ScgContext, ScgContextConfig};
 pub use status::{
-    SCG_ERR_INVALID_ARGUMENT, SCG_ERR_INVALID_STATE, SCG_ERR_NULL, SCG_ERR_OUT_OF_MEMORY,
-    SCG_ERR_PANIC, SCG_ERR_POISONED, SCG_OK,
+    SCG_ERR_FAULTED, SCG_ERR_INVALID_ARGUMENT, SCG_ERR_INVALID_STATE, SCG_ERR_NULL,
+    SCG_ERR_OUT_OF_MEMORY, SCG_ERR_PANIC, SCG_ERR_POISONED, SCG_OK,
 };
 
 /// ABI version this library implements.
@@ -86,7 +86,7 @@ pub unsafe extern "C" fn scg_create(
 ///
 /// Passing NULL does nothing, like `free`. A handle destroyed twice, or used
 /// after destruction, is not detected: that is a precondition, not an error
-/// case. Destroying a poisoned context is allowed.
+/// case. Destroying a faulted context is allowed.
 ///
 /// # Safety
 ///
@@ -154,7 +154,7 @@ pub unsafe extern "C" fn scg_frame_end(ctx: *mut ScgContext, pixels: *mut u8, st
 /// on the thread that made the failing call, immediately after it. A coroutine
 /// that resumes on another thread of a pool will find it empty.
 ///
-/// Allowed on a poisoned context, so the host can learn the cause.
+/// Allowed on a faulted context, so the host can learn the cause.
 ///
 /// # Safety
 ///
@@ -163,7 +163,7 @@ pub unsafe extern "C" fn scg_frame_end(ctx: *mut ScgContext, pixels: *mut u8, st
 pub unsafe extern "C" fn scg_last_error(ctx: *const ScgContext) -> *const c_char {
     // SAFETY: précondition de la fonction — `ctx` est nul ou valide. Cette
     // fonction ne passe pas par l'enveloppe : elle ne peut pas paniquer, et
-    // elle doit rester permise sur un objet empoisonné.
+    // elle doit rester permise sur un objet défaillant.
     match unsafe { ctx.as_ref() } {
         Some(ctx) => ctx.message().as_ptr(),
         None => message::orphan_ptr(),

@@ -66,7 +66,7 @@ impl ScgContextConfig {
 /// at a time; two contexts are independent and may each serve their own.
 pub struct ScgContext {
     inner: Context,
-    poisoned: bool,
+    faulted: bool,
     message: Message,
 }
 
@@ -75,7 +75,7 @@ impl ScgContext {
     pub(crate) fn new(inner: Context) -> Self {
         Self {
             inner,
-            poisoned: false,
+            faulted: false,
             message: Message::new(),
         }
     }
@@ -86,16 +86,16 @@ impl ScgContext {
     }
 
     /// Vrai si un appel précédent a paniqué.
-    pub(crate) fn poisoned(&self) -> bool {
-        self.poisoned
+    pub(crate) fn faulted(&self) -> bool {
+        self.faulted
     }
 
-    /// Marque le contexte comme empoisonné.
+    /// Marque le contexte comme défaillant.
     ///
     /// Sans retour en arrière : une panique signale un défaut du moteur, et
     /// aucune réinitialisation n'est fiable depuis un état inconnu.
-    pub(crate) fn poison(&mut self) {
-        self.poisoned = true;
+    pub(crate) fn mark_faulted(&mut self) {
+        self.faulted = true;
     }
 
     /// Le message de ce contexte.
