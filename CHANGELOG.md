@@ -57,6 +57,10 @@ publié, et explique les conventions du dépôt à qui y contribue.
   mêmes bits sur toutes les cibles.
 
 ### Modifié
+- Tampon de profondeur : `near/w` en 0.32 interpolé en virgule fixe, test
+  strict, et à égalité le premier triangle soumis reste. L'image du triangle en
+  dur est inchangée. API Rust : `Frame::region` reçoit un tampon de profondeur à
+  côté du tampon de couleur, de même longueur.
 - L'image se rend par tuiles de la taille choisie à la création : les triangles
   sont répartis une fois par image, et chaque tuile tient sa couleur sur la pile
   de l'appel. Le contexte ne réserve plus de tampon à la taille de l'image.
@@ -79,6 +83,10 @@ publié, et explique les conventions du dépôt à qui y contribue.
   same bits on every target.
 
 ### Changed
+- Depth buffer: `near/w` in 0.32 interpolated in fixed point, strict test, and
+  on a tie the first submitted triangle stays. The image of the hard-coded
+  triangle is unchanged. Rust API: `Frame::region` takes a depth buffer next to
+  the colour buffer, of the same length.
 - The image is rendered in tiles of the size chosen at creation: triangles are
   binned once per frame, and each tile keeps its colour on the stack of the
   call. The context no longer reserves image-sized buffers. The rendered image

@@ -203,9 +203,9 @@ impl Bins {
 /// Les références propres à une tuile et la liste des grands triangles,
 /// fusionnées par index croissant.
 ///
-/// L'ordre n'est pas un détail : tant que rien ne départage deux triangles qui
-/// se recouvrent, c'est le dernier soumis qui reste, et l'image d'une tuile
-/// doit être celle de l'image entière.
+/// L'ordre n'est pas un détail : à profondeur égale, le test strict garde le
+/// premier triangle soumis, et l'image d'une tuile doit être celle de l'image
+/// entière.
 #[derive(Debug, Clone)]
 pub struct Merge<'a> {
     small: &'a [u32],

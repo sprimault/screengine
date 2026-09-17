@@ -11,15 +11,30 @@
 
 use crate::math::fixed::{PIXEL_CENTER, SUBPIXEL_SCALE};
 
+use super::plane::{GRADIENT_BITS, Plane};
 use super::{Rect, Target};
 
-/// Un sommet projeté, en sous-pixels.
+/// Une position projetée, en sous-pixels.
+///
+/// Deux dimensions seulement : c'est sur elle que portent les fonctions de bord
+/// et la règle top-left, et leurs tests ne dépendent ainsi de rien de ce que
+/// [`Vertex`] porte en plus.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Point {
     /// Abscisse en sous-pixels, dans la bande de garde.
     pub x: i32,
     /// Ordonnée en sous-pixels, Y vers le bas.
     pub y: i32,
+}
+
+/// Un sommet projeté : sa position et ses attributs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Vertex {
+    /// La position, en sous-pixels.
+    pub position: Point,
+    /// La profondeur, `near/w` en 0.32, plus grand est plus proche, bornée par
+    /// `to_depth`.
+    pub z: u32,
 }
 
 /// Un triangle prêt à être parcouru dans n'importe quelle fenêtre.
@@ -38,6 +53,7 @@ pub struct Prepared {
     x1: i32,
     y0: i32,
     y1: i32,
+    depth: Plane,
     color: u32,
 }
 
@@ -112,7 +128,8 @@ fn last_pixel(subpixel: i32) -> i32 {
 /// serait revendiquée deux fois.
 ///
 /// Rend `None` pour un triangle qui ne peut couvrir aucun centre de pixel.
-pub fn prepare(v: [Point; 3], color: u32) -> Option<Prepared> {
+pub fn prepare(vertices: [Vertex; 3], color: u32) -> Option<Prepared> {
+    let v = vertices.map(|vertex| vertex.position);
     let area = edge(v[0].x, v[0].y, v[1].x, v[1].y, v[2].x, v[2].y);
     // Un seul test pour le dos et pour le dégénéré. Obligatoire et non
     // défensif : les équations de plan des attributs diviseront par cette aire,
@@ -133,6 +150,7 @@ pub fn prepare(v: [Point; 3], color: u32) -> Option<Prepared> {
         x1: last_pixel(max_x),
         y0: first_pixel(min_y),
         y1: last_pixel(max_y),
+        depth: Plane::new(v, vertices.map(|vertex| vertex.z), area),
         color,
     };
     (prepared.x0 <= prepared.x1 && prepared.y0 <= prepared.y1).then_some(prepared)
@@ -176,21 +194,34 @@ pub fn fill<T: Target>(target: &mut T, window: Rect, triangle: &Prepared) {
         step_y[i] = (dx as i64) * SUBPIXEL_SCALE as i64;
     }
 
+    // La profondeur au centre du premier pixel, par la forme close, puis par
+    // pas entiers : mêmes bits que l'évaluation directe en chaque pixel.
+    let plane = &triangle.depth;
+    let mut depth_row = plane.at(px, py);
+    let depth_x = plane.step_x(SUBPIXEL_SCALE);
+    let depth_y = plane.step_y(SUBPIXEL_SCALE);
+
     for y in y0..=y1 {
         let mut cell = row;
+        let mut depth = depth_row;
         for x in x0..=x1 {
             // Un point est intérieur quand les trois valeurs sont positives ou
             // nulles : leur OU binaire porte alors un bit de signe à zéro.
             if (cell[0] | cell[1] | cell[2]) >= 0 {
-                target.put(x, y, color);
+                // En un pixel couvert, la valeur tient dans [0, 2³²) : les
+                // sommets sont bornés par `to_depth` avec une marge qui couvre
+                // l'arrondi des gradients.
+                target.put(x, y, (depth >> GRADIENT_BITS) as u32, color);
             }
             for i in 0..3 {
                 cell[i] += step_x[i];
             }
+            depth = depth.wrapping_add(depth_x);
         }
         for i in 0..3 {
             row[i] += step_y[i];
         }
+        depth_row = depth_row.wrapping_add(depth_y);
     }
 }
 

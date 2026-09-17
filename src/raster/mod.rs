@@ -9,10 +9,11 @@
 //! calcule toujours par la forme close, au coin global.
 
 mod bins;
+mod plane;
 mod triangle;
 
 pub use bins::{Bins, Grid};
-pub use triangle::{Point, Prepared, fill, prepare};
+pub use triangle::{Point, Prepared, Vertex, fill, prepare};
 
 /// Un rectangle de l'image, en pixels.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -38,9 +39,12 @@ pub struct Rect {
 /// La généricité est résolue à la compilation : il n'y a pas d'appel indirect
 /// dans la boucle de remplissage.
 pub trait Target {
-    /// Écrit un pixel, en coordonnées entières de l'image.
+    /// Propose un pixel couvert, en coordonnées entières de l'image, avec sa
+    /// profondeur en 0.32.
     ///
     /// Les coordonnées sont toujours dans la fenêtre passée au remplissage :
-    /// l'implémentation n'a pas à les vérifier.
-    fn put(&mut self, x: i32, y: i32, color: u32);
+    /// l'implémentation n'a pas à les vérifier. C'est elle qui fait le test de
+    /// profondeur, pour que le puits de comptage des tests d'étanchéité voie
+    /// toutes les écritures proposées.
+    fn put(&mut self, x: i32, y: i32, z: u32, color: u32);
 }

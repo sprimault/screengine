@@ -53,3 +53,28 @@ fn l_erreur_reste_sous_le_demi_pas() {
 fn la_bande_de_garde_tient_dans_ses_bornes() {
     assert_eq!(to_subpixel(4096.0), 1 << 16);
 }
+
+/// La profondeur reste à la marge des bornes aux deux extrémités, et ce qui
+/// ne devrait jamais arriver — zéro, négatif, NaN, au-delà de un — y est
+/// ramené par comparaison, pas par la saturation d'une conversion.
+#[test]
+fn la_profondeur_reste_dans_la_marge() {
+    let (low, high) = (DEPTH_MARGIN, u32::MAX - DEPTH_MARGIN);
+    for (depth, expected) in [
+        (0.0, low),
+        (-1.0, low),
+        (f32::NAN, low),
+        (1.0e-12, low),
+        (1.0, high),
+        (7.0, high),
+        (f32::INFINITY, high),
+        (0.5, 1 << 31),
+        (0.25, 1 << 30),
+    ] {
+        assert_eq!(to_depth(depth), expected, "{depth}");
+    }
+    // Le plus grand `f32` sous un donne 2³² − 256 : la conversion ne déborde
+    // pas, et la valeur, sous la marge haute, passe telle quelle.
+    let below_one = f32::from_bits(1.0f32.to_bits() - 1);
+    assert_eq!(to_depth(below_one), u32::MAX - 255);
+}

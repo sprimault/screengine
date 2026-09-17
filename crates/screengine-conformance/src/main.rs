@@ -83,14 +83,16 @@ impl Pass {
         match self {
             Self::Tiles32 | Self::Tiles64 => frame.end(&mut Rows::new(pixels, width)),
             Self::Whole => {
-                let mut scratch = vec![0u32; width as usize * height as usize];
+                let mut color = vec![0u32; width as usize * height as usize];
+                let mut depth = color.clone();
                 let image = Rect {
                     x: 0,
                     y: 0,
                     width,
                     height,
                 };
-                frame.region(image, &mut scratch, &mut Rows::new(pixels, width))
+                let mut out = Rows::new(pixels, width);
+                frame.region(image, &mut color, &mut depth, &mut out)
             }
             Self::Shuffled => {
                 let mut order: Vec<u32> = (0..frame.tile_count()).collect();
