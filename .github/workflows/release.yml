@@ -39,9 +39,14 @@ jobs:
       # Le tag et la version du Cargo.toml disent la même chose, ou rien ne part :
       # une bibliothèque publiée sous v0.1.0 qui se déclare 0.0.0 ment à chaque
       # outil qui lit ses métadonnées.
+      #
+      # Un tag `vX.Y.Z-essai.N` éprouve le workflow entier sur la section de
+      # X.Y.Z sans occuper le vrai tag : sa release est un brouillon marqué
+      # préversion, qu'on supprime avec le tag.
       - name: Vérifier la version du Cargo.toml
         run: |
           version="${GITHUB_REF_NAME#v}"
+          version="${version%%-essai*}"
           declaree=$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -n 1)
           if [ "$declaree" != "$version" ]; then
             echo "Cargo.toml déclare $declaree, le tag est $GITHUB_REF_NAME" >&2
@@ -52,6 +57,7 @@ jobs:
         id: notes
         run: |
           version="${GITHUB_REF_NAME#v}"
+          version="${version%%-essai*}"
 
           # index et non une expression régulière : les crochets du titre de
           # section formeraient une classe de caractères, et « [0.4.0] » ne
@@ -203,6 +209,39 @@ jobs:
           else
             tar -czf "publication/$paquet.tar.gz" -C paquets "$paquet"
           fi
+          echo "PAQUET=paquets/$paquet" >> "$GITHUB_ENV"
+
+      # L'archive elle-même, pas l'arbre de construction : un hôte C lié à la
+      # bibliothèque statique et un hôte C++ lié à la dynamique, contre le seul
+      # contenu du paquet, doivent rendre l'empreinte de référence. C'est la
+      # seule preuve qu'un intégrateur qui ouvre l'archive obtient une
+      # bibliothèque qui se lie, se charge sous son nom, et rend la même image.
+      - name: Éprouver l'archive
+        if: matrix.cible == 'windows_x64' || matrix.cible == 'linux_x64'
+        run: |
+          attendu=$(cat crates/screengine-conformance/references/triangle)
+          mkdir -p essai
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            w() { cygpath -w "$1"; }
+            hosts/c/build.cmd "$(w essai/c.exe)" "$(w essai)" "$(w "$PAQUET/lib/screengine.lib")" "$(w "$PAQUET/include")" hosts/c/main.c
+            hosts/cpp/build.cmd "$(w essai/cpp.exe)" "$(w essai)" "$(w "$PAQUET/lib/screengine.dll.lib")" "$(w "$PAQUET/include")" hosts/cpp/main.cpp
+            cp "$PAQUET/lib/screengine.dll" essai/
+          else
+            cc -std=c11 -O2 -I"$PAQUET/include" hosts/c/main.c "$PAQUET/lib/libscreengine.a" \
+              -lgcc_s -lutil -lrt -lpthread -lm -ldl -lc -o essai/c.exe
+            c++ -std=c++17 -O2 -I"$PAQUET/include" hosts/cpp/main.cpp -L"$PAQUET/lib" \
+              -Wl,-rpath,"$PWD/$PAQUET/lib" -lscreengine -ldl -o essai/cpp.exe
+            readelf -d "$PAQUET/lib/libscreengine.so" | grep -q 'SONAME.*\[libscreengine.so\]'
+            readelf -d essai/cpp.exe | grep -q 'NEEDED.*\[libscreengine.so\]'
+          fi
+          for hote in c cpp; do
+            obtenu=$(./essai/$hote.exe | tr -d '\r')
+            if [ "$obtenu" != "$attendu" ]; then
+              echo "archive, hôte $hote : $obtenu, référence $attendu" >&2
+              exit 1
+            fi
+            echo "archive, hôte $hote : $obtenu"
+          done
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
@@ -248,9 +287,13 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          case "$GITHUB_REF_NAME" in
+            *-essai*) preversion=--prerelease ;;
+            *) preversion= ;;
+          esac
           gh release create "$GITHUB_REF_NAME" \
             --repo "$GITHUB_REPOSITORY" \
-            --draft \
+            --draft $preversion \
             --title "${{ needs.notes.outputs.titre }}" \
             --notes-file notes.md \
             publication/*

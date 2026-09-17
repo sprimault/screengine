@@ -1,0 +1,147 @@
+Third-party notices for the Screengine libraries
+================================================
+
+Screengine itself is licensed under MIT OR Apache-2.0; see LICENSE-MIT and
+LICENSE-APACHE. It has no third-party dependencies. The compiled libraries in
+this archive (screengine.dll, screengine.lib, libscreengine.so,
+libscreengine.a, screengine.wasm) nevertheless contain parts of the Rust
+toolchain, listed below with the notices their licenses require.
+
+The same file ships with every target. Some components are present only on
+some targets; each section says which.
+
+
+1. The Rust standard library
+----------------------------
+
+Present in every library: core, alloc, std, panic_unwind, unwind, hashbrown,
+rustc-demangle, cfg-if, std_detect, and, depending on the target, libc,
+addr2line, gimli, object, memchr, miniz_oxide, adler2 and dlmalloc.
+
+Copyright (c) The Rust Project Contributors
+https://github.com/rust-lang/rust/blob/master/COPYRIGHT
+
+These components are dual-licensed under Apache-2.0 or MIT, at your option,
+and are redistributed here under the MIT license:
+
+    Permission is hereby granted, free of charge, to any person obtaining a
+    copy of this software and associated documentation files (the
+    "Software"), to deal in the Software without restriction, including
+    without limitation the rights to use, copy, modify, merge, publish,
+    distribute, sublicense, and/or sell copies of the Software, and to permit
+    persons to whom the Software is furnished to do so, subject to the
+    following conditions:
+
+    The above copyright notice and this permission notice shall be included
+    in all copies or substantial portions of the Software.
+
+    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+    OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+    MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN
+    NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+    DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
+    OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
+    USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+
+2. compiler-builtins
+--------------------
+
+Present in every library. https://github.com/rust-lang/compiler-builtins
+
+The compiler-builtins crate is available for use under both the MIT license
+and the Apache-2.0 license with the LLVM exception (MIT AND Apache-2.0 WITH
+LLVM-exception). The MIT license is reproduced in section 1. The Apache-2.0
+license is reproduced in LICENSE-APACHE, and the LLVM exception reads:
+
+    ---- LLVM Exceptions to the Apache 2.0 License ----
+
+    As an exception, if, as a result of your compiling your source code,
+    portions of this Software are embedded into an Object form of such source
+    code, you may redistribute such embedded portions in such Object form
+    without complying with the conditions of Sections 4(a), 4(b) and 4(d) of
+    the License.
+
+    In addition, if you combine or link compiled forms of this Software with
+    software that is licensed under the GPLv2 ("Combined Software") and if a
+    court of competent jurisdiction determines that the patent provision
+    (Section 3), the indemnity provision (Section 9) or other Section of the
+    License conflicts with the conditions of the GPLv2, you may retroactively
+    and prospectively choose to deem waived or otherwise exclude such
+    Section(s) of the License, but only in their entirety and only with
+    respect to the Combined Software.
+
+
+3. libm
+-------
+
+Present in every library, most visibly in screengine.wasm, where no system
+math library exists. Part of compiler-builtins, available under the MIT
+license, whose text is reproduced in section 1.
+
+    Copyright (c) 2018 Jorge Aparicio
+
+    Portions of this software are derived from third-party works licensed
+    under terms compatible with the above MIT license:
+
+    * musl libc https://www.musl-libc.org/. This library contains the
+      following copyright:
+
+          Copyright © 2005-2020 Rich Felker, et al.
+
+    * The CORE-MATH project https://core-math.gitlabpages.inria.fr/.
+      CORE-MATH routines are available under the MIT license on a per-file
+      basis.
+
+    The musl libc COPYRIGHT file also includes the following notice relevant
+    to math portions of the library:
+
+    Much of the math library code (src/math/* and src/complex/*) is
+    Copyright © 1993,2004 Sun Microsystems or
+    Copyright © 2003-2011 David Schultz or
+    Copyright © 2003-2009 Steven G. Kargl or
+    Copyright © 2003-2009 Bruce D. Evans or
+    Copyright © 2008 Stephen L. Moshier or
+    Copyright © 2017-2018 Arm Limited
+    and labelled as such in comments in the individual source files. All
+    have been licensed under extremely permissive terms.
+
+
+4. libunwind (LLVM)
+-------------------
+
+Present in the Android libraries only, statically linked from the Android
+NDK. https://github.com/llvm/llvm-project/tree/main/libunwind
+
+The LLVM Project is under the Apache License v2.0 with LLVM Exceptions,
+reproduced in LICENSE-APACHE and section 2. Code contributed before the
+relicensing is also available under the MIT license:
+
+    Copyright (c) 2009-2014 by the contributors listed in CREDITS.TXT
+
+    Permission is hereby granted, free of charge, to any person obtaining a
+    copy of this software and associated documentation files (the
+    "Software"), to deal in the Software without restriction, including
+    without limitation the rights to use, copy, modify, merge, publish,
+    distribute, sublicense, and/or sell copies of the Software, and to permit
+    persons to whom the Software is furnished to do so, subject to the
+    following conditions:
+
+    The above copyright notice and this permission notice shall be included
+    in all copies or substantial portions of the Software.
+
+    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+    OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+    MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN
+    NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+    DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
+    OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
+    USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+
+5. Referenced, not included
+---------------------------
+
+These are loaded from the system at run time and are not part of this
+archive: the Microsoft C runtime (/MD) on Windows, glibc and libgcc_s on
+Linux, bionic libc, libdl and liblog on Android.

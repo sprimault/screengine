@@ -7,7 +7,7 @@ Un auteur de liaison qui ne lit pas le français trouve l'essentiel dans
 `include/screengine.h`, dont la documentation est en anglais : ce qui ne peut pas
 être ignoré à l'appel y figure, fonction par fonction.
 
-**État : ce que le lot 1 devait fixer est fixé, le code n'est pas écrit.** Chaque
+**État : les sept points d'entrée de l'étape 0 sont écrits et publiés.** Chaque
 décision garde ci-dessous l'option écartée et pourquoi. Trois points restent
 marqués **À trancher** : deux d'échéance plus tardive, et celui de la
 dépréciation, qui attend le gel de l'ABI en 1.0.

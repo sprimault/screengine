@@ -35,11 +35,11 @@ ces hôtes, écrit en Rust pour qui fait un jeu, et le moteur ignore son existen
 
 ## État
 
-**Étape 0 en cours : un triangle en dur, et aucun moteur.** La frontière C est
-écrite, et le triangle est rempli par les fonctions de bord en virgule fixe
-définitives. Les quatre hôtes — C, C++, wasm et Android — le rendent, avec la
-même empreinte que le chemin Rust ; restent leur comparaison dans la suite de
-conformance et la première publication, avant toute autre ligne de moteur.
+**Étape 0 franchie, publiée en 0.0.0 : un triangle en dur, et aucun moteur.**
+La frontière C est écrite, et le triangle est rempli par les fonctions de bord
+en virgule fixe définitives. Les quatre hôtes — C, C++, wasm et Android — le
+rendent avec l'empreinte de référence de la suite de conformance. L'étape 1, le
+pipeline, commence.
 
 La feuille de route compte dix étapes, publiées à chacune.
 

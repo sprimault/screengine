@@ -80,7 +80,10 @@ Les conventions de code et la doctrine de test sont dans
   écran ; un test qui exige une fenêtre n'a pas sa place dans la suite par
   défaut.
 - Une dépendance qui voyage dans une archive publiée entre dans
-  `THIRD-PARTY-NOTICES` — et dans le noyau, elle ne rentre pas.
+  `THIRD-PARTY-NOTICES` — et dans le noyau, elle ne rentre pas. Le fichier
+  couvre aussi la bibliothèque standard de Rust, liée dans chaque
+  bibliothèque : à chaque relèvement de `rust-version`, relire les dépendances
+  de `library/std/Cargo.toml` et y reporter ce qui change.
 
 ## Livraison
 

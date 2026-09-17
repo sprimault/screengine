@@ -76,7 +76,10 @@ What follows is the enforceable summary.
 - Nothing in the core imports `screengine-ffi`. Runners are headless;
   a test that needs a window has no place in the default suite.
 - A dependency that ships in a published archive goes into
-  `THIRD-PARTY-NOTICES` — and in the core, it does not go in at all.
+  `THIRD-PARTY-NOTICES` — and in the core, it does not go in at all. The file
+  also covers the Rust standard library, linked into every library: whenever
+  `rust-version` is raised, reread the dependencies in
+  `library/std/Cargo.toml` and carry over what changed.
 
 ## Delivery
 
