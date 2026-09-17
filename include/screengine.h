@@ -37,7 +37,7 @@
 // The call came out of sequence, such as ending a frame that never began.
 #define SCG_ERR_INVALID_STATE -4
 
-// The engine panicked. The object is now poisoned; see `SCG_ERR_POISONED`.
+// The engine panicked. The object is now faulted; see `SCG_ERR_FAULTED`.
 //
 // A panic is an engine defect, never a reaction to invalid input. Read the
 // message with `scg_last_error` and report it.
@@ -45,9 +45,13 @@
 
 // A previous call on this object panicked and left it in an unspecified state.
 //
-// Every call on a poisoned object returns this code, except `scg_last_error`
+// Every call on a faulted object returns this code, except `scg_last_error`
 // and the destructor, which stay available so the host can read the cause and
 // release the object.
+#define SCG_ERR_FAULTED -6
+
+// Deprecated name of `SCG_ERR_FAULTED`, same value. Kept so that hosts written
+// against an earlier header still compile; it will not be removed before 1.0.
 #define SCG_ERR_POISONED -6
 
 // An opaque rendering context.
@@ -111,7 +115,7 @@ int32_t scg_create(const struct ScgContextConfig *config, struct ScgContext **ou
 //
 // Passing NULL does nothing, like `free`. A handle destroyed twice, or used
 // after destruction, is not detected: that is a precondition, not an error
-// case. Destroying a poisoned context is allowed.
+// case. Destroying a faulted context is allowed.
 //
 // # Safety
 //
@@ -143,7 +147,7 @@ int32_t scg_frame_end(struct ScgContext *ctx, uint8_t *pixels, uint32_t stride);
 // on the thread that made the failing call, immediately after it. A coroutine
 // that resumes on another thread of a pool will find it empty.
 //
-// Allowed on a poisoned context, so the host can learn the cause.
+// Allowed on a faulted context, so the host can learn the cause.
 //
 // # Safety
 //

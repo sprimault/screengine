@@ -39,7 +39,10 @@ export const SCG_ERR_INVALID_STATE = -4;
 /** Le moteur a paniqué. Sur wasm, ce code n'arrive jamais : la panique est un trap. */
 export const SCG_ERR_PANIC = -5;
 
-/** Objet empoisonné par une panique antérieure. Inobservable sur wasm, pour la même raison. */
+/** Objet défaillant après une panique antérieure. Inobservable sur wasm, pour la même raison. */
+export const SCG_ERR_FAULTED = -6;
+
+/** Ancien nom de `SCG_ERR_FAULTED`, gardé comme dans le header. */
 export const SCG_ERR_POISONED = -6;
 
 /** Les fonctions que le module doit exporter, en plus de `memory`. */

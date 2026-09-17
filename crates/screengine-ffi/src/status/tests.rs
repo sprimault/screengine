@@ -18,11 +18,18 @@ fn les_codes_generaux_sont_dans_la_premiere_plage() {
         SCG_ERR_OUT_OF_MEMORY,
         SCG_ERR_INVALID_STATE,
         SCG_ERR_PANIC,
-        SCG_ERR_POISONED,
+        SCG_ERR_FAULTED,
     ] {
         assert!(code < 0, "un code d'erreur est négatif");
         assert_eq!((-code) / 100, 0, "code {code} hors de la plage générale");
     }
+}
+
+/// L'ancien nom reste un alias exact : un hôte compilé contre le header de la
+/// 0.0.0 doit recevoir le même code qu'avant le renommage.
+#[test]
+fn l_ancien_nom_du_code_defaillant_garde_sa_valeur() {
+    assert_eq!(SCG_ERR_POISONED, SCG_ERR_FAULTED);
 }
 
 /// Deux erreurs distinctes ne partagent jamais un code : un code publié ne

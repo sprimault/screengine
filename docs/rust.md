@@ -231,7 +231,7 @@ Le contrat est dans [`abi.md`](abi.md). Ce qui suit est la manière de l'écrire
   `Box::from_raw` à la destruction et jamais ailleurs. Le type pointé est opaque
   pour `cbindgen`.
 - **`AssertUnwindSafe` ne se pose qu'en un point**, dans l'utilitaire
-  d'enveloppe. C'est le poison de l'objet, décrit dans `abi.md`, qui rend cette
+  d'enveloppe. C'est l'état défaillant de l'objet, décrit dans `abi.md`, qui rend cette
   assertion honnête : l'état non spécifié qu'une panique laisse derrière elle
   n'est plus jamais observé.
 - **L'emplacement d'erreur par thread n'a pas de destructeur.** Un tableau
@@ -242,7 +242,7 @@ Le contrat est dans [`abi.md`](abi.md). Ce qui suit est la manière de l'écrire
   porter. Un message trop long est tronqué, jamais alloué.
 - **Le `Drop` d'un objet exporté ne panique jamais**, donc pas d'`assert!` en
   destruction. `scg_destroy` rend `void` : une panique y surviendrait après le
-  poison, sans rien pour la transporter jusqu'à l'hôte.
+  défaillance, sans rien pour la transporter jusqu'à l'hôte.
 - **Le même utilitaire fixe l'environnement flottant** à l'entrée — arrondi au
   plus proche, DAZ et FTZ désactivés, exceptions masquées, dans MXCSR sur x86
   et FPCR sur ARM — et rend celui de l'hôte à la sortie, panique comprise. Le
@@ -454,7 +454,7 @@ teste quelque chose.
   l'alignement, dans la mémoire linéaire, et ajoute ce que le web seul impose :
   les exports réels du `.wasm`, les constantes recopiées en JavaScript comparées
   au header, et une vue détachée par la croissance de la mémoire. Ni registre
-  flottant ni poison : wasm n'a pas le premier, et une panique y est un trap.
+  flottant ni état défaillant : wasm n'a pas le premier, et une panique y est un trap.
 - **L'hôte Android, dans `make test-android`**, rend l'empreinte en deux paliers
   qui doivent concorder : `hosts/c/main.c` lié en statique pour les trois ABI,
   sans appareil — aarch64 et armv7 sous `qemu-user`, seul endroit où FPCR et

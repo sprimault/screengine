@@ -17,7 +17,7 @@ use crate::context::ScgContext;
 use crate::fpenv::FpEnv;
 use crate::message;
 use crate::status::{
-    SCG_ERR_INVALID_ARGUMENT, SCG_ERR_NULL, SCG_ERR_PANIC, SCG_ERR_POISONED, SCG_OK, code_of,
+    SCG_ERR_FAULTED, SCG_ERR_INVALID_ARGUMENT, SCG_ERR_NULL, SCG_ERR_PANIC, SCG_OK, code_of,
     message_of,
 };
 
@@ -119,7 +119,7 @@ where
 
     let _fpenv = FpEnv::enter();
 
-    // `AssertUnwindSafe` ne se pose qu'ici : c'est le poison qui la rend
+    // `AssertUnwindSafe` ne se pose qu'ici : c'est l'état défaillant qui la rend
     // honnête, puisque l'état laissé par une panique n'est plus jamais observé.
     match catch_unwind(AssertUnwindSafe(f)) {
         Ok(Ok(())) => Ok(()),
@@ -150,10 +150,10 @@ where
 
     ctx.message_mut().clear();
 
-    if ctx.poisoned() {
+    if ctx.faulted() {
         ctx.message_mut()
-            .set("a previous call panicked; this object is poisoned");
-        return SCG_ERR_POISONED;
+            .set("a previous call panicked; this object is faulted");
+        return SCG_ERR_FAULTED;
     }
 
     match guarded(|| f(ctx.inner_mut())) {
@@ -163,7 +163,7 @@ where
             error.code
         }
         Err(Failure::Panic(payload)) => {
-            ctx.poison();
+            ctx.mark_faulted();
             ctx.message_mut().set(panic_text(&*payload));
             SCG_ERR_PANIC
         }

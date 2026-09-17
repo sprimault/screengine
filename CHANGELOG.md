@@ -44,6 +44,21 @@ de version sont ce que lit un auteur de liaison étranger avant de savoir s'il
 doit reprendre son travail. Ce préambule reste en français : il n'est jamais
 publié, et explique les conventions du dépôt à qui y contribue.
 
+## [Non publié]
+
+### Modifié
+- Le code `-6` se nomme désormais `SCG_ERR_FAULTED`, et un objet dont un appel a
+  paniqué est dit défaillant. `SCG_ERR_POISONED` reste défini avec la même
+  valeur, déprécié : aucun hôte n'est à reprendre, et `SCG_ABI_VERSION` ne
+  change pas.
+
+***
+
+### Changed
+- Code `-6` is now named `SCG_ERR_FAULTED`, and an object whose call panicked
+  is called faulted. `SCG_ERR_POISONED` stays defined with the same value,
+  deprecated: no host needs changes, and `SCG_ABI_VERSION` is unchanged.
+
 ## [0.0.0] — 2026-09-17 — La frontière
 
 **Ce que cette version ne fait pas : elle ne rend aucune scène.** Un triangle

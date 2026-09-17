@@ -144,7 +144,7 @@ ce dont une liaison a besoin pour traiter celui qu'elle ne connaît pas.
 | Plage | Domaine | Codes proposés |
 |---|---|---|
 | `0` | succès | `SCG_OK` |
-| `-1` à `-99` | généraux | `-1` `SCG_ERR_NULL`, `-2` `SCG_ERR_INVALID_ARGUMENT`, `-3` `SCG_ERR_OUT_OF_MEMORY`, `-4` `SCG_ERR_INVALID_STATE`, `-5` `SCG_ERR_PANIC`, `-6` `SCG_ERR_POISONED` |
+| `-1` à `-99` | généraux | `-1` `SCG_ERR_NULL`, `-2` `SCG_ERR_INVALID_ARGUMENT`, `-3` `SCG_ERR_OUT_OF_MEMORY`, `-4` `SCG_ERR_INVALID_STATE`, `-5` `SCG_ERR_PANIC`, `-6` `SCG_ERR_FAULTED` |
 | `-100` à `-199` | données (étape 4) | `-100` `SCG_ERR_UNKNOWN_RESOURCE`, `-101` `SCG_ERR_INVALID_FORMAT`, `-102` `SCG_ERR_UNSUPPORTED_FORMAT_VERSION` |
 | `-200` à `-299` | monde (étape 5) | — |
 | `-300` à `-399` | collision (étape 7) | — |
@@ -213,20 +213,23 @@ lire ici :
 
 ### Après une panique
 
-Un objet dont un appel a paniqué est **empoisonné**. Une panique interrompt le
+Un objet dont un appel a paniqué est **défaillant**. Une panique interrompt le
 moteur au milieu d'une mise à jour et rien ne garantit qu'il soit encore cohérent :
-tout appel suivant rend `SCG_ERR_POISONED`, sauf `scg_last_error` et la
+tout appel suivant rend `SCG_ERR_FAULTED`, sauf `scg_last_error` et la
 destruction, qui restent permises pour que l'hôte lise la cause et libère.
 
-Écarté : réinitialiser l'objet plutôt que l'empoisonner. Une panique signale un
-défaut du moteur, pas une entrée invalide ; repartir le masquerait, et aucune
-réinitialisation n'est fiable depuis un état inconnu.
+Écarté : réinitialiser l'objet plutôt que le déclarer défaillant. Une panique
+signale un défaut du moteur, pas une entrée invalide ; repartir le masquerait, et
+aucune réinitialisation n'est fiable depuis un état inconnu.
 
-**Le poison n'est pas observé sur wasm.** La bibliothèque standard de
+`SCG_ERR_POISONED`, le nom de ce code dans la 0.0.0, reste défini dans le header
+avec la même valeur. Il est déprécié, et ne sera pas retiré en `0.x`.
+
+**L'état défaillant n'est pas observé sur wasm.** La bibliothèque standard de
 `wasm32-unknown-unknown` est précompilée en `panic = "abort"` et la chaîne
 stable n'y déroule pas la pile : une panique est un trap, que `catch_unwind` ne
 rattrape pas, même dans un profil en `panic = "unwind"`. `SCG_ERR_PANIC` et
-`SCG_ERR_POISONED` sont donc des garanties de bureau et d'Android, et une
+`SCG_ERR_FAULTED` sont donc des garanties de bureau et d'Android, et une
 liaison JavaScript ne compte sur aucun des deux.
 
 Après un trap, l'instance reste appelable, mais l'état du moteur est inconnu :
