@@ -12,6 +12,10 @@ CIBLE_NOSTD ?= thumbv7em-none-eabihf
 # La cible du navigateur : exports C bruts, sans wasm-bindgen.
 CIBLE_WASM ?= wasm32-unknown-unknown
 
+# Les trois ABI Android. Chacune prend son module d'environnement flottant dans
+# screengine-ffi, et armv7 est celle où un `cfg` faux passait sans bruit.
+CIBLES_ANDROID ?= aarch64-linux-android armv7-linux-androideabi x86_64-linux-android
+
 # cargo install construit dans un répertoire temporaire du système et n'honore
 # pas CARGO_TARGET_DIR. Sur un poste où ce répertoire est surveillé, la variable
 # reçoit un --target-dir dans makefile.local ; ailleurs elle reste vide.
@@ -148,9 +152,15 @@ native-libs:
 fmt:
 	cargo fmt --all --check
 
+# Le noyau et la frontière passent aussi clippy sur les cibles qu'aucune machine
+# de développement n'exécute : leurs `cfg` propres ne sont vérifiés par aucune
+# autre commande, et une cible sans module flottant y échoue sur le
+# `compile_error!` de screengine-ffi.
 lint: lint-doc-tests
 	cargo clippy --workspace --all-targets --all-features -- -D warnings
-	cargo clippy -p screengine -p screengine-ffi --lib --target $(CIBLE_WASM) -- -D warnings
+	for cible in $(CIBLE_WASM) $(CIBLES_ANDROID); do \
+	  cargo clippy -p screengine -p screengine-ffi --lib --target $$cible -- -D warnings || exit 1; \
+	done
 
 # missing_docs ne voit pas les fonctions privées d'un `mod tests`, alors que la
 # règle du projet ne fait pas d'exception pour elles. Sans ce contrôle, la
@@ -260,4 +270,4 @@ tools:
 	# avis, et son intérêt est de connaître les derniers. L'épingler figerait
 	# ce qu'il sait lire des avis publiés depuis.
 	cargo install cargo-audit --locked $(CARGO_INSTALL_FLAGS)
-	rustup target add $(CIBLE_NOSTD) $(CIBLE_WASM)
+	rustup target add $(CIBLE_NOSTD) $(CIBLE_WASM) $(CIBLES_ANDROID)

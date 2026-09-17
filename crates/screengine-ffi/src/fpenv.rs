@@ -97,7 +97,12 @@ mod arch {
     }
 }
 
-#[cfg(all(target_arch = "arm", target_feature = "vfp2"))]
+// Pas `target_feature = "vfp2"` : les fonctionnalités ARM 32 bits sont
+// instables, et sur une chaîne stable leur `cfg` n'est jamais vrai — la frontière
+// tombait en silence dans le module neutre sur armv7. L'ABI garantit VFP à la
+// place : `armeabi-v7a` impose VFPv3-D16, et `eabihf` passe les flottants dans
+// ses registres.
+#[cfg(all(target_arch = "arm", any(target_os = "android", target_abi = "eabihf")))]
 mod arch {
     use core::arch::asm;
 
@@ -135,13 +140,9 @@ mod arch {
 // wasm n'a aucun registre de contrôle flottant : sa spécification impose
 // l'arrondi au plus proche et un sous-dépassement graduel, sans mode qui les
 // change, et `asm!` n'y est pas stable. Le module neutre garde une enveloppe
-// unique qui se compile partout et disparaît à l'optimisation. Il couvre aussi
-// une cible ARM sans VFP, où les instructions ci-dessus seraient indéfinies.
-#[cfg(not(any(
-    target_arch = "x86_64",
-    target_arch = "aarch64",
-    all(target_arch = "arm", target_feature = "vfp2")
-)))]
+// unique qui disparaît à l'optimisation — et il ne sert qu'à wasm. Ouvert à
+// toute cible, il avait absorbé armv7 sans que rien ne le signale.
+#[cfg(target_family = "wasm")]
 mod arch {
     /// Un état toujours nul.
     ///
@@ -162,6 +163,17 @@ mod arch {
     /// Sans objet.
     pub(super) fn write(_control: Saved) {}
 }
+
+// Une cible qu'aucun module ne couvre ne compile pas : l'image y dépendrait de
+// l'environnement flottant de l'hôte, et la seule trace serait une empreinte
+// divergente.
+#[cfg(not(any(
+    target_arch = "x86_64",
+    target_arch = "aarch64",
+    all(target_arch = "arm", any(target_os = "android", target_abi = "eabihf")),
+    target_family = "wasm"
+)))]
+compile_error!("screengine-ffi ne sait pas fixer l'environnement flottant de cette cible");
 
 /// Impose l'environnement par défaut le temps d'un appel.
 ///
