@@ -91,8 +91,11 @@ hacher pareil.
   sur le même fichier.
 - Un test prouve qu'aucune image n'alloue une fois le contexte créé, la
   première comprise.
-- Espace de travail en quatre crates : noyau sans std, frontière C, étage
-  d'accueil, suite de conformance.
+- Espace de travail en cinq crates : noyau sans std, frontière C, bibliothèques
+  publiées, étage d'accueil, suite de conformance.
+- Les bibliothèques s'appellent `screengine` : `screengine.dll`,
+  `libscreengine.so`, `libscreengine.a`, `screengine.wasm`. Sous Linux et
+  Android, la bibliothèque dynamique porte le SONAME `libscreengine.so`.
 - `screengine-play`, pour faire un jeu en Rust sans écrire d'hôte : fenêtre,
   clavier et souris, boucle à pas fixe, image remontée par facteur entier ou
   remplissant la fenêtre. `make run` ouvre l'exemple.
@@ -164,8 +167,11 @@ hash identically.
   same file.
 - A test proves that no frame allocates once the context exists, the first one
   included.
-- Four-crate workspace: std-free core, C boundary, Rust front end, conformance
-  suite.
+- Five-crate workspace: std-free core, C boundary, published libraries, Rust
+  front end, conformance suite.
+- The libraries are named `screengine`: `screengine.dll`, `libscreengine.so`,
+  `libscreengine.a`, `screengine.wasm`. On Linux and Android the shared library
+  carries the `libscreengine.so` SONAME.
 - `screengine-play`, to make a game in Rust without writing a host: window,
   keyboard and mouse, fixed-step loop, image scaled up by an integer factor or
   filling the window. `make run` opens the example.

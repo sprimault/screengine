@@ -4,7 +4,7 @@
 /*
  * Couche JNI de l'hôte Android : conversion de types, rien d'autre.
  *
- * Bibliothèque séparée, liée dynamiquement à libscreengine_ffi.so : c'est la
+ * Bibliothèque séparée, liée dynamiquement à libscreengine.so : c'est la
  * bibliothèque publiée qu'on charge, pas une copie liée ici. Seul JNI_OnLoad est
  * exporté ; les méthodes s'enregistrent par RegisterNatives, pour qu'un nom ou
  * une signature fausse fasse échouer le chargement au lieu du premier appel.

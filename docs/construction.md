@@ -72,24 +72,31 @@ plutôt que de les recopier.
 
 ## Artefacts
 
-`screengine-ffi` produit une bibliothèque dynamique (`cdylib`) et une bibliothèque
-statique (`staticlib`).
+`screengine-lib` produit une bibliothèque dynamique (`cdylib`) et une
+bibliothèque statique (`staticlib`), sous le nom `screengine`. Il ne contient
+aucun code : il ré-exporte les points d'entrée de `screengine-ffi`, qui ne
+produit plus qu'une rlib.
 
 | Plateforme | Dynamique | Statique |
 |---|---|---|
-| Windows (MSVC) | `screengine_ffi.dll` et sa bibliothèque d'importation `screengine_ffi.dll.lib` | `screengine_ffi.lib` |
-| Linux, Android | `libscreengine_ffi.so` | `libscreengine_ffi.a` |
-| wasm | `screengine_ffi.wasm` | — |
+| Windows (MSVC) | `screengine.dll` et sa bibliothèque d'importation `screengine.dll.lib` | `screengine.lib` |
+| Linux, Android | `libscreengine.so` | `libscreengine.a` |
+| wasm | `screengine.wasm` | — |
 
-**À trancher — C1** : le nom publié. Le nom de bibliothèque suit celui du crate,
-d'où `screengine_ffi`. Le renommer en `screengine` dans le `Cargo.toml` de la
-couche FFI entre en collision avec le noyau, qui porte déjà ce nom et dont elle
-dépend. Recommandation : garder `screengine_ffi` dans l'arbre de construction, et
-renommer en `screengine` à l'empaquetage. Sous Linux et Android, Rust ne pose pas
-de `SONAME` et le renommage du fichier suffit. Sous Windows, la bibliothèque
-d'importation garde le nom de la DLL d'origine : elle se régénère, ou la
-distribution Windows s'en tient à la liaison statique et au chargement
-dynamique par nom.
+**Un crate de plus, pour le nom.** Nommer `screengine` la bibliothèque de
+`screengine-ffi` ferait entrer sa rlib en collision avec celle du noyau, qui
+porte déjà ce nom. Écarté aussi : renommer les fichiers à l'empaquetage. Sous
+Windows, la bibliothèque d'importation désigne la DLL par son nom d'origine et
+devrait être régénérée, et l'archive ne contiendrait plus ce que rustc a
+produit. Avec le crate, les noms sont natifs partout, et les hôtes du dépôt
+chargent le même nom que les intégrateurs.
+
+**Sous Linux et Android, la bibliothèque dynamique porte le SONAME
+`libscreengine.so`**, posé par le `build.rs` de `screengine-lib` : rustc n'en pose
+aucun, et sans lui l'entrée DT_NEEDED d'un programme prend ce que l'éditeur de
+liens a reçu — un chemin relatif quand CMake passe la bibliothèque par son
+chemin. Aucun numéro de version dans le nom : la compatibilité se vérifie à
+l'exécution par `scg_abi_version`.
 
 ## Matrice
 
@@ -142,11 +149,11 @@ et un cycle de retour lent depuis un poste Windows.
   autre bibliothèque Rust en statique aura des symboles en double, et doit
   passer par la bibliothèque dynamique.
 - **L'hôte C++ se lie à la DLL** par sa bibliothèque d'importation
-  `screengine_ffi.dll.lib`, avec `cl -MD -std:c++17`, et sans aucune
+  `screengine.dll.lib`, avec `cl -MD -std:c++17`, et sans aucune
   bibliothèque système : c'est la DLL qui les porte. La DLL est copiée à côté de
   l'exécutable, seul emplacement de recherche qui ne dépende ni du PATH ni du
   répertoire courant. L'hôte vérifie que `scg_abi_version` vient bien du module
-  `screengine_ffi.dll` : `&scg_abi_version` y désigne le thunk d'import de
+  `screengine.dll` : `&scg_abi_version` y désigne le thunk d'import de
   l'exécutable, pas la fonction.
 - **`windows.h` définit une macro `small`**, héritée de `rpcndr.h`. Un
   intégrateur C++ qui nomme ainsi une variable obtient une erreur de syntaxe
@@ -159,11 +166,10 @@ et un cycle de retour lent depuis un poste Windows.
   hypothèse sur l'alignement ou un chemin SIMD sélectionné différemment — jamais
   une différence acceptable.
 - **L'hôte C++ se compile avec `c++ -std=c++17`**, lié par
-  `-L… -lscreengine_ffi` : l'éditeur de liens y préfère la bibliothèque partagée
-  à l'archive voisine. Rust ne pose pas de `SONAME` ; un `rpath` vers le
-  répertoire de construction la retrouve à l'exécution, sans
-  `LD_LIBRARY_PATH`.
-- **L'hôte C se compile avec `cc -std=c11`**, lié à `libscreengine_ffi.a` puis
+  `-L… -lscreengine` : l'éditeur de liens y préfère la bibliothèque partagée
+  à l'archive voisine. Un `rpath` vers le répertoire de construction la retrouve
+  à l'exécution, sans `LD_LIBRARY_PATH`.
+- **L'hôte C se compile avec `cc -std=c11`**, lié à `libscreengine.a` puis
   à `-lgcc_s -lutil -lrt -lpthread -lm -ldl -lc`. `gcc_s` porte le dépliage, sans
   lequel `catch_unwind` ne rattraperait rien.
 - **`screengine-play` s'y compile sans paquet système** : X11, Wayland et
@@ -184,8 +190,8 @@ et un cycle de retour lent depuis un poste Windows.
   après chaque appel : voir [`abi.md`](abi.md), « Ce qu'un auteur de liaison doit
   savoir ».
 - **`make lib-wasm`** construit le module par `cargo rustc --crate-type cdylib`,
-  pour ne produire ni la bibliothèque statique ni la rlib, et le dépose dans
-  `target/wasm32-unknown-unknown/release-wasm/screengine_ffi.wasm`. Il
+  pour ne pas produire la bibliothèque statique, et le dépose dans
+  `target/wasm32-unknown-unknown/release-wasm/screengine.wasm`. Il
   s'instancie sans aucun import et exporte `memory` avec les fonctions `scg_`.
 - **Une panique est un trap.** Constaté avec Rust 1.98 : la bibliothèque
   standard de la cible est précompilée en `panic = "abort"`, et un profil en
@@ -232,7 +238,7 @@ et un cycle de retour lent depuis un poste Windows.
   libunwind du NDK d'elle-même, et `release-ffi` s'applique tel quel.
 - **La couche JNI est en C**, dans `hosts/android/jni.c`, compilée par le NDK en
   une bibliothèque séparée, `libscreengine_jni.so`, liée dynamiquement à
-  `libscreengine_ffi.so` — c'est la bibliothèque publiée qui est chargée, pas une
+  `libscreengine.so` — c'est la bibliothèque publiée qui est chargée, pas une
   copie. Elle n'exporte que `JNI_OnLoad`, qui enregistre les méthodes par
   `RegisterNatives` : un nom ou une signature fausse fait échouer le chargement
   au lieu du premier appel. Écarté : le crate `jni`, qui ferait entrer une

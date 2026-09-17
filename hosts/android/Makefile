@@ -90,19 +90,19 @@ why-not:
 $(OUT)/%/screengine-abi-static: ../c/main.c $(INCLUDE)/screengine.h FORCE
 	@mkdir -p $(@D)
 	$(NDK_BIN)/$(clang_$*) $(CFLAGS) -static ../c/main.c \
-	  $(TARGET)/$(triple_$*)/$(PROFILE)/libscreengine_ffi.a $(STATIC_LIBS) -o $@
+	  $(TARGET)/$(triple_$*)/$(PROFILE)/libscreengine.a $(STATIC_LIBS) -o $@
 
 # Palier 2 : la couche JNI et l'exécutable dynamique, pour l'ABI de l'émulateur
-# comme pour l'APK. Rust ne pose pas de SONAME : l'entrée DT_NEEDED prend le nom
-# du fichier, que l'appareil retrouve à côté.
+# comme pour l'APK. L'entrée DT_NEEDED prend le SONAME `libscreengine.so` que
+# screengine-lib pose, et l'appareil retrouve la bibliothèque à côté.
 $(OUT)/%/libscreengine_jni.so: jni.c $(INCLUDE)/screengine.h FORCE
 	@mkdir -p $(@D)
-	cp $(TARGET)/$(triple_$*)/$(PROFILE)/libscreengine_ffi.so $(@D)/
+	cp $(TARGET)/$(triple_$*)/$(PROFILE)/libscreengine.so $(@D)/
 	$(NDK_BIN)/$(clang_$*) $(CFLAGS) -shared -fPIC -fvisibility=hidden -Wl,-soname,libscreengine_jni.so \
-	  jni.c -L$(@D) -lscreengine_ffi -ljnigraphics -o $@
+	  jni.c -L$(@D) -lscreengine -ljnigraphics -o $@
 
 $(OUT)/%/screengine-abi: ../c/main.c $(INCLUDE)/screengine.h $(OUT)/%/libscreengine_jni.so FORCE
-	$(NDK_BIN)/$(clang_$*) $(CFLAGS) ../c/main.c -L$(@D) -lscreengine_ffi -o $@
+	$(NDK_BIN)/$(clang_$*) $(CFLAGS) ../c/main.c -L$(@D) -lscreengine -o $@
 
 FORCE:
 
@@ -144,7 +144,7 @@ run: all
 	  echo "$(abi) statique : $$h" >&2; hashes="$$hashes $$h"; ) \
 	adb shell rm -rf $(DEVICE_DIR) >/dev/null; \
 	adb shell mkdir -p $(DEVICE_DIR) >/dev/null; \
-	adb push $(OUT)/x86_64/libscreengine_ffi.so $(OUT)/x86_64/libscreengine_jni.so \
+	adb push $(OUT)/x86_64/libscreengine.so $(OUT)/x86_64/libscreengine_jni.so \
 	  $(OUT)/x86_64/screengine-abi $(OUT)/dex/classes.dex $(DEVICE_DIR)/ >/dev/null; \
 	h=$$(adb shell "LD_LIBRARY_PATH=$(DEVICE_DIR) $(DEVICE_DIR)/screengine-abi" | tr -d '\r'); \
 	echo "x86_64 appareil, C : $$h" >&2; hashes="$$hashes $$h"; \

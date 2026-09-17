@@ -13,8 +13,8 @@ INCLUDE := ../../include
 
 ifeq ($(OS),Windows_NT)
 
-IMPLIB  := $(TARGET)/$(PROFILE)/screengine_ffi.dll.lib
-DLL     := $(TARGET)/$(PROFILE)/screengine_ffi.dll
+IMPLIB  := $(TARGET)/$(PROFILE)/screengine.dll.lib
+DLL     := $(TARGET)/$(PROFILE)/screengine.dll
 EXE     := $(OUT)/screengine-cpp.exe
 VSWHERE := /c/Program Files (x86)/Microsoft Visual Studio/Installer/vswhere.exe
 
@@ -40,12 +40,12 @@ why-not:
 
 # -L et -l plutôt que le chemin du .so : l'éditeur de liens y préfère la
 # bibliothèque partagée à l'archive voisine, comme chez un intégrateur. Le rpath
-# la retrouve à l'exécution sans LD_LIBRARY_PATH ; Rust ne pose pas de SONAME,
-# donc c'est le chemin qui compte.
-$(EXE): main.cpp $(TARGET)/$(PROFILE)/libscreengine_ffi.so $(INCLUDE)/screengine.h
+# la retrouve à l'exécution sans LD_LIBRARY_PATH, par le SONAME
+# `libscreengine.so` que screengine-lib pose.
+$(EXE): main.cpp $(TARGET)/$(PROFILE)/libscreengine.so $(INCLUDE)/screengine.h
 	@mkdir -p $(OUT)
 	$(CXX) -std=c++17 -Wall -Wextra -Werror -O2 -I$(INCLUDE) main.cpp \
-	  -L$(abspath $(TARGET)/$(PROFILE)) -Wl,-rpath,$(abspath $(TARGET)/$(PROFILE)) -lscreengine_ffi -ldl -o $@
+	  -L$(abspath $(TARGET)/$(PROFILE)) -Wl,-rpath,$(abspath $(TARGET)/$(PROFILE)) -lscreengine -ldl -o $@
 
 endif
 

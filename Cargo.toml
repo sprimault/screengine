@@ -23,6 +23,7 @@ workspace = true
 resolver = "2"
 members = [
     "crates/screengine-ffi",
+    "crates/screengine-lib",
     "crates/screengine-play",
     "crates/screengine-conformance",
 ]

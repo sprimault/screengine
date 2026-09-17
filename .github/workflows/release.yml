@@ -94,17 +94,17 @@ jobs:
             cible: windows_x64
             construire: make lib
             repertoire: target/release-ffi
-            fichiers: screengine_ffi.dll screengine_ffi.dll.lib screengine_ffi.lib
+            fichiers: screengine.dll screengine.dll.lib screengine.lib
           - os: ubuntu-latest
             cible: linux_x64
             construire: make lib
             repertoire: target/release-ffi
-            fichiers: libscreengine_ffi.so libscreengine_ffi.a
+            fichiers: libscreengine.so libscreengine.a
           - os: ubuntu-latest
             cible: wasm32
             construire: make lib-wasm
             repertoire: target/wasm32-unknown-unknown/release-wasm
-            fichiers: screengine_ffi.wasm
+            fichiers: screengine.wasm
           # Une entrée `abi:triple` range la bibliothèque de ce triple sous
           # lib/<abi>/, la disposition de jniLibs/ qu'un projet Android reprend
           # telle quelle.
@@ -188,7 +188,7 @@ jobs:
             case "$fichier" in
               *:*)
                 mkdir -p "paquets/$paquet/lib/${fichier%%:*}"
-                cp "${{ matrix.repertoire }}/${fichier#*:}/release-ffi/libscreengine_ffi.so" "paquets/$paquet/lib/${fichier%%:*}/" ;;
+                cp "${{ matrix.repertoire }}/${fichier#*:}/release-ffi/libscreengine.so" "paquets/$paquet/lib/${fichier%%:*}/" ;;
               *)
                 cp "${{ matrix.repertoire }}/$fichier" "paquets/$paquet/lib/" ;;
             esac

@@ -27,12 +27,13 @@ examples/           usage de l'API Rust du noyau
 benches/            mesures du noyau
 crates/
   screengine-ffi/           src/, tests/
+  screengine-lib/           src/, build.rs
   screengine-play/          src/, examples/
   screengine-conformance/   src/, references/
 ```
 
 **Le noyau est le paquet racine**, avec la disposition standard de Cargo ; les
-trois autres crates la reprennent chacun dans `crates/`. Un répertoire naît avec
+quatre autres crates la reprennent chacun dans `crates/`. Un répertoire naît avec
 son premier fichier : pas de `tests/` vide en attendant le premier test.
 
 **Un seul paquet ne suffirait pas.** Les dépendances d'un paquet valent pour
@@ -42,14 +43,17 @@ leurs dans le noyau. Et la frontière C exige `std` et `unsafe`, que le noyau re
 | Crate | Rôle | `std` | Dépendances | `unsafe` |
 |---|---|---|---|---|
 | `screengine` | le noyau : maths, pipeline, rasteriseur, formats, monde | non | aucune | chemins SIMD seulement |
-| `screengine-ffi` | la frontière C, `cdylib` + `staticlib` | oui | `screengine` | oui |
+| `screengine-ffi` | la frontière C, en rlib | oui | `screengine` | oui |
+| `screengine-lib` | les bibliothèques publiées, `cdylib` + `staticlib`, sous le nom `screengine` | oui | `screengine-ffi` | non |
 | `screengine-play` | étage d'accueil : fenêtre, entrées, boucle à pas fixe, mise à l'échelle | oui | `winit`, `softbuffer` | non |
 | `screengine-conformance` | scènes de référence, empreintes | oui | `screengine` | l'allocateur qui compte, dans son test seulement |
 
 **Un crate se crée pour une contrainte de compilation, jamais pour ranger.** Les
-quatre existants se justifient chacun par un besoin que les autres ne partagent
+cinq existants se justifient chacun par un besoin que les autres ne partagent
 pas : le noyau refuse `std` et les dépendances, la frontière exige `std`, la
-conformance et l'étage d'accueil portent les leurs. Ranger, c'est l'affaire des modules, qui
+conformance et l'étage d'accueil portent les leurs, et `screengine-lib` donne
+aux bibliothèques publiées le nom `screengine`, que la rlib de la frontière ne
+peut pas porter sans entrer en collision avec celle du noyau. Ranger, c'est l'affaire des modules, qui
 ne coûtent ni `Cargo.toml`, ni arbre de dépendances, ni frontière publique à
 maintenir. Le module de collision de l'étape 7 en est le cas limite : il doit
 servir sans rendu, mais c'est l'ABI qui l'expose séparément, pas un crate — un
