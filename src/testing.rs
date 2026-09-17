@@ -3,6 +3,13 @@
 
 //! Ce que les tests du noyau partagent.
 
+/// FNV-1a 64 bits, l'empreinte de la conformance, sur une suite d'octets.
+pub(crate) fn fnv1a(bytes: impl IntoIterator<Item = u8>) -> u64 {
+    bytes.into_iter().fold(0xcbf2_9ce4_8422_2325, |hash, byte| {
+        (hash ^ byte as u64).wrapping_mul(0x0100_0000_01b3)
+    })
+}
+
 /// Le générateur des tests aléatoires : xorshift64*, écrit ici parce que le
 /// noyau n'a aucune dépendance, et parce qu'un échec qui ne se rejoue pas
 /// n'a pas été trouvé.
@@ -20,6 +27,12 @@ impl Rng {
         self.0 ^= self.0 << 25;
         self.0 ^= self.0 >> 27;
         self.0.wrapping_mul(0x2545_F491_4F6C_DD1D)
+    }
+
+    /// Un `f32` dans [0, 1), par les 24 bits de poids fort : la conversion est
+    /// exacte.
+    pub(crate) fn unit_f32(&mut self) -> f32 {
+        (self.next() >> 40) as f32 / (1u32 << 24) as f32
     }
 
     /// Un entier entre `lo` et `hi`, bornes comprises.

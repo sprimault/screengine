@@ -302,11 +302,56 @@ aux fonctions de bord.
   libm ; sur une autre, il ne rend pas les mêmes bits qu'une multiplication
   suivie d'une addition.
 - **Opérations admises sur les flottants** : addition, soustraction,
-  multiplication, division, comparaisons, conversions. IEEE 754 les définit au
-  bit près, et Rust ne contracte jamais d'expression flottante de lui-même.
+  multiplication, division, comparaisons, conversions, et `abs`, `copysign`, la
+  négation, qui ne touchent que le bit de signe. IEEE 754 les définit au bit
+  près, et Rust ne contracte ni ne réassocie jamais d'expression flottante de
+  lui-même. `min`, `max`, `clamp` et `signum` s'écrivent en comparaisons
+  explicites : leur traitement de NaN et de −0 n'est pas celui des chemins SIMD.
+- **`clippy.toml` refuse le reste**, par `disallowed-methods` : libm, arrondis de
+  bibliothèque, `mul_add`, `min` et consorts. Un invariant qui ne tient qu'à la
+  relecture ne tient pas. L'étage d'accueil a le sien, vide, parce que ses
+  calculs flottants n'entrent dans aucune empreinte.
 - **Conversion flottant → entier par `as`**, dont Rust définit la saturation. Pas
   de `floor` ni de `round` de bibliothèque : l'arrondi s'écrit sur la conversion,
-  et son sens est commenté.
+  et son sens est commenté. **La valeur est ramenée dans l'intervalle de l'entier
+  avant la conversion**, par un test écrit : un dépassement sature en Rust
+  scalaire et rend `0x80000000` en SSE, et la saturation ne sert jamais de
+  bornage.
+- **NaN se teste nommément**, par `is_nan`, avant les comparaisons : toute
+  comparaison avec lui est fausse, et un refus écrit `x <= seuil` le laisserait
+  passer.
+
+### Repère et transformations
+
+- **Monde en main droite, Z en haut.** La vue de dessus de l'éditeur est
+  directement (x, y), et la gravité suit un seul axe. Un format en Y vers le haut
+  se convertit dans son chargeur, jamais dans le noyau.
+- **Vecteur colonne, `M·v`, stockage par colonnes.** Le noyau travaille en
+  `Affine3`, 3×4 : trois colonnes puis la translation. La projection n'est pas
+  une matrice, c'est `(sx, sy, near)` appliqué à part, avec un plan lointain
+  infini : `z_c = near` et `w_c = z_vue` donnent directement la profondeur
+  `near/w`. Une composition se lit `parent.product(local)`, la droite
+  s'appliquant d'abord.
+- **Chaque somme s'écrit de gauche à droite, dans l'ordre des colonnes** :
+  `((m0·x + m3·y) + m6·z) + m9`. Jamais d'arbre équilibré `(a+b)+(c+d)`, ni de
+  boucle générique : c'est l'ordre qu'un chemin SIMD reproduit en accumulant
+  colonne par colonne, et un test compare les bits à l'expression écrite.
+- **Orientations en quaternions**, normalisés à la réception plutôt qu'exigés
+  unitaires, interpolés par `nlerp` : pour dix degrés par pas, l'écart au
+  sphérique reste sous le millième de degré, sans arc cosinus.
+- **Face avant en sens antihoraire** dans les données. Le retournement que
+  produit l'axe Y de l'écran, vers le bas, se traite dans le signe des fonctions
+  de bord, sans permuter de sommets.
+- **Les angles sont binaires**, un `u32` où 2³² vaut un tour : le tour boucle
+  par l'arithmétique modulaire, et les symétries entre quadrants sont exactes.
+  Le sinus se lit dans une table d'un quart de cercle, 1024 intervalles
+  interpolés, calculée par une `const fn` : le calcul flottant à la compilation
+  est exact au bit près depuis Rust 1.82, là où un `build.rs` dépendrait de la
+  libm de la machine qui construit.
+- **La racine inverse** décompose le nombre par ses bits, estime par une table
+  de 64 entrées et fait deux itérations de Newton, en forme corrective. Une
+  longueur au carré sous 10⁻³⁰ rend le vecteur nul : aucun dénormal n'entre dans
+  un calcul.
 - **Dans les chemins SIMD, aucune intrinsèque fusionnée, relâchée ou
   approximative.** Rust ne fusionne jamais `a*b+c` de lui-même ; les intrinsèques,
   si : `vfmaq_f32` fusionne quand `vmlaq_f32` ne le fait pas. `relaxed_madd` et

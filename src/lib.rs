@@ -27,4 +27,5 @@ pub use context::{
     TRIANGLE_CAPACITY,
 };
 pub use error::{Argument, Error, Result};
+pub use math::{Affine3, Angle, Quat, Vec3};
 pub use raster::Rect;

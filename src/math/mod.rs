@@ -6,6 +6,20 @@
 //! Elles n'appellent jamais la libm : `sinf`, `cosf` et `sqrtf` ne rendent pas
 //! les mêmes bits d'une implémentation à l'autre, et l'empreinte de conformance
 //! s'en trouverait dépendante de la bibliothèque C de la cible. Trigonométrie et
-//! racine inverse passeront par les tables de ce module.
+//! racine inverse passent par les tables de ce module, et `clippy.toml` refuse
+//! les méthodes flottantes qui y mèneraient.
 
+mod affine;
+mod angle;
 pub mod fixed;
+mod quat;
+mod rsqrt;
+mod vector;
+
+pub use affine::Affine3;
+pub use angle::Angle;
+pub use quat::Quat;
+pub use vector::Vec3;
+
+#[cfg(test)]
+mod tests;

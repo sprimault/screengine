@@ -1,0 +1,6 @@
+# Sans méthode interdite, à dessein.
+#
+# Clippy lit le premier `clippy.toml` qu'il trouve en remontant depuis le
+# crate : celui-ci masque celui de la racine. L'étage d'accueil calcule en
+# flottant sa mise à l'échelle vers la fenêtre, qui n'entre dans aucune
+# empreinte ; les invariants de déterminisme du noyau ne s'y appliquent pas.
