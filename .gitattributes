@@ -29,6 +29,7 @@ Makefile text eol=lf
 # sont comparées octet pour octet, et s'en remettre à l'heuristique de
 # `text=auto` ferait dépendre le contrôle d'une détection au lieu d'une
 # déclaration.
+crates/screengine-conformance/references/* binary
 *.png binary
 *.bin binary
 *.wasm binary
