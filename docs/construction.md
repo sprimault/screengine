@@ -32,8 +32,9 @@ Sans lui, un clone se construit dans `target/`.
 | Node | 22 au minimum | exécute l'hôte wasm de `make test` et sert sa page ; aucun paquet npm. Présent sur les images d'intégration continue |
 
 Les versions sont épinglées dans le `Makefile` et nulle part ailleurs.
-`make tools` les installe, avec les cibles `thumbv7em-none-eabihf` et
-`wasm32-unknown-unknown`. L'intégration
+`make tools` les installe, avec les cibles `thumbv7em-none-eabihf`,
+`wasm32-unknown-unknown` et les trois cibles Android, sur lesquelles `make lint`
+passe aussi clippy. L'intégration
 continue appelle `make tools` et lit les versions par `make print-CBINDGEN_VERSION`
 plutôt que de les recopier.
 
@@ -210,6 +211,12 @@ et un cycle de retour lent depuis un poste Windows.
 - **Trois ABI** : `arm64-v8a` pour les appareils, `armeabi-v7a` pour les anciens,
   `x86_64` pour l'émulateur. armv7 est la cible la plus susceptible de révéler un
   défaut d'alignement ou une hypothèse 64 bits.
+- **armv7 ne se reconnaît pas à ses `target_feature`.** Les fonctionnalités ARM
+  32 bits sont instables, et leur `cfg` n'est jamais vrai sur une chaîne stable :
+  `rustc --print cfg --target armv7-linux-androideabi` n'en liste aucune. La
+  frontière choisit donc son module flottant par l'ABI — `target_os = "android"`
+  ou `target_abi = "eabihf"` —, et une cible qu'aucun module ne couvre échoue à
+  la compilation plutôt que de passer sans fixer son environnement.
 - **Le NDK fournit l'éditeur de liens.** Le niveau d'API minimal est celui de
   l'éditeur choisi (`aarch64-linux-android21-clang` pour l'API 21), et Rust exige
   un NDK récent — r25 au minimum depuis Rust 1.68.
