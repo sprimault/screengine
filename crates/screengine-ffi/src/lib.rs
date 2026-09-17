@@ -16,16 +16,17 @@ mod context;
 mod entry;
 mod fpenv;
 mod message;
+mod output;
 mod status;
 
 use std::alloc::{self, Layout};
 use std::ffi::c_char;
 use std::ptr;
-use std::slice;
 
-use screengine::{Argument, BYTES_PER_PIXEL, Context, Error};
+use screengine::Context;
 
 use entry::AbiError;
+use output::HostRows;
 
 pub use context::{ScgContext, ScgContextConfig};
 pub use status::{
@@ -102,7 +103,92 @@ pub unsafe extern "C" fn scg_destroy(ctx: *mut ScgContext) {
     drop(unsafe { Box::from_raw(ctx) });
 }
 
+/// Begins a frame: seals the submitted scene, bins it into tiles, and writes
+/// the tile count to `tile_count`.
+///
+/// Tiles are numbered row by row, left to right then top to bottom; those of
+/// the last column and row are partial when the internal resolution is not a
+/// multiple of the tile size. A frame already begun returns
+/// `SCG_ERR_INVALID_STATE`.
+///
+/// Rendering the tiles is optional: `scg_frame_end` renders every tile nobody
+/// rendered.
+///
+/// # Safety
+///
+/// `ctx` is a live handle used by no other thread during the call, and
+/// `tile_count` is NULL or writable.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn scg_frame_begin(ctx: *mut ScgContext, tile_count: *mut u32) -> i32 {
+    let begin = |mut core: entry::Core<'_>| {
+        if tile_count.is_null() {
+            return Err(AbiError::NULL);
+        }
+        let count = core.exclusive()?.begin()?;
+        // SAFETY: précondition de la fonction — `tile_count` est accessible en
+        // écriture, et vient d'être vérifié non nul.
+        unsafe { tile_count.write(count) };
+        Ok(())
+    };
+
+    // SAFETY: précondition de la fonction — `ctx` est nul ou un handle vivant.
+    unsafe { entry::with_context(ctx, begin) }
+}
+
+/// Renders tile `index` of the frame begun by `scg_frame_begin` into the host
+/// buffer.
+///
+/// Callable from several threads at once on the same context, for distinct
+/// indices, and only between `scg_frame_begin` and `scg_frame_end`; no other
+/// call on the context is allowed meanwhile. A tile renders once per frame: an
+/// index already taken, even by a concurrent call, returns
+/// `SCG_ERR_INVALID_STATE`, as does a tile outside a begun frame. An index at or
+/// beyond the tile count returns `SCG_ERR_INVALID_ARGUMENT`.
+///
+/// The error message of this call goes to the per-thread slot: read it with
+/// `scg_last_error(NULL)` on the calling thread, immediately after the call.
+/// A panic faults the context; the other tiles already running complete, and
+/// `scg_frame_end` reports it.
+///
+/// Each tile keeps its colour and depth on the stack of the call: the calling
+/// thread needs at least 128 KiB of stack.
+///
+/// `pixels` and `stride` are those of the whole image, the same for every tile
+/// and for `scg_frame_end` of the frame: the tile writes only its own rectangle.
+///
+/// # Safety
+///
+/// `ctx` is a live handle, and `pixels` points to a writable buffer of at least
+/// `stride × height × 4` bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn scg_frame_tile(
+    ctx: *mut ScgContext,
+    index: u32,
+    pixels: *mut u8,
+    stride: u32,
+) -> i32 {
+    let render = |core: &Context| {
+        if pixels.is_null() {
+            return Err(AbiError::NULL);
+        }
+        // SAFETY: précondition de la fonction — le tampon couvre l'image, et
+        // chaque tuile n'en écrit que son rectangle, disjoint des autres.
+        let mut out = unsafe { HostRows::new(pixels, stride) };
+        core.tile(index, &mut out)?;
+        Ok(())
+    };
+
+    // SAFETY: précondition de la fonction — `ctx` est nul ou un handle vivant.
+    unsafe { entry::with_tile(ctx, render) }
+}
+
 /// Ends the frame and writes the result into the host buffer.
+///
+/// It renders every tile nobody rendered, then closes the frame. Without
+/// `scg_frame_begin`, it begins the frame itself: a host that only ever calls
+/// this function always receives the whole image. While a tile is still being
+/// rendered on another thread, it returns `SCG_ERR_INVALID_STATE` and leaves
+/// the frame open. Its return code is what tells whether the image is good.
 ///
 /// `stride` is in pixels and must be at least the current internal width. The
 /// buffer holds at least `stride × height` pixels of four bytes each, in R, G,
@@ -115,30 +201,21 @@ pub unsafe extern "C" fn scg_destroy(ctx: *mut ScgContext) {
 /// `stride × height × 4` bytes.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn scg_frame_end(ctx: *mut ScgContext, pixels: *mut u8, stride: u32) -> i32 {
-    let render = |core: &mut Context| {
+    let render = |mut core: entry::Core<'_>| {
         if pixels.is_null() {
             return Err(AbiError::NULL);
         }
-
-        let (_, height) = core.resolution();
-        // Avant la tranche, pas après : un produit qui déborde donnerait une
-        // longueur repliée, et une tranche plus courte que le tampon qu'elle
-        // décrit est un accès hors limites en puissance.
-        let len = (stride as usize)
-            .checked_mul(height as usize)
-            .and_then(|pixels| pixels.checked_mul(BYTES_PER_PIXEL))
-            .ok_or(AbiError::from(Error::InvalidArgument(Argument::Stride)))?;
-
-        // SAFETY: précondition documentée dans le header — l'appelant garantit
-        // `stride × hauteur` pixels de quatre octets accessibles en écriture,
-        // et le moteur n'en conserve rien au retour.
-        let buffer = unsafe { slice::from_raw_parts_mut(pixels, len) };
-        core.frame_end(buffer, stride)?;
+        if !core.shared().is_rendering() {
+            core.exclusive()?.begin()?;
+        }
+        // SAFETY: précondition de la fonction — le tampon couvre l'image. Une
+        // tuile qui tournerait encore fait refuser la fin avant toute écriture.
+        let mut out = unsafe { HostRows::new(pixels, stride) };
+        core.shared().end(&mut out)?;
         Ok(())
     };
 
-    // SAFETY: précondition de la fonction — `ctx` est nul ou un handle vivant,
-    // utilisé par ce seul thread pendant l'appel.
+    // SAFETY: précondition de la fonction — `ctx` est nul ou un handle vivant.
     unsafe { entry::with_context(ctx, render) }
 }
 

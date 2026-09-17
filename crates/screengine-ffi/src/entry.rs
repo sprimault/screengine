@@ -9,6 +9,7 @@
 //! manifeste que le jour où quelque chose panique, chez quelqu'un d'autre.
 
 use std::any::Any;
+use std::cell::UnsafeCell;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
 use screengine::{Context, Error};
@@ -128,43 +129,127 @@ where
     }
 }
 
-/// Enveloppe un appel qui porte sur un contexte.
+/// L'accès au contexte du noyau que reçoit un appel exclusif.
+///
+/// Le partage est toujours permis ; l'exclusivité ne l'est que hors du rendu
+/// des tuiles, et c'est l'état atomique du noyau qui le dit avant qu'aucune
+/// référence exclusive n'existe. Une tuile qui tournerait pendant ce temps
+/// serait un appel hors du contrat de l'ABI.
+pub(crate) struct Core<'a> {
+    cell: &'a UnsafeCell<Context>,
+}
+
+impl Core<'_> {
+    /// Le contexte en partage, tel que les tuiles le voient.
+    pub(crate) fn shared(&self) -> &Context {
+        // SAFETY: aucune référence exclusive ne vit tant que `self` est
+        // emprunté en partage : `exclusive` exige `&mut self`.
+        unsafe { &*self.cell.get() }
+    }
+
+    /// Le contexte en exclusivité, ou [`Error::InvalidState`] pendant le rendu
+    /// des tuiles.
+    pub(crate) fn exclusive(&mut self) -> Result<&mut Context, AbiError> {
+        if self.shared().is_rendering() {
+            return Err(Error::InvalidState.into());
+        }
+        // SAFETY: hors du rendu, le contrat de l'ABI interdit tout autre appel
+        // sur le contexte, et `&mut self` empêche une référence partagée issue
+        // de ce même accès de survivre.
+        Ok(unsafe { &mut *self.cell.get() })
+    }
+}
+
+/// Enveloppe un appel qui porte sur un contexte, hors rendu d'une tuile.
+///
+/// Son message va dans le contexte. Il ne s'exécute pas en même temps qu'un
+/// autre appel sur le même contexte ; seule la fin d'image peut croiser des
+/// tuiles, qu'elle refuse d'attendre.
 ///
 /// # Safety
 ///
 /// `ctx` est nul, ou un handle rendu par `scg_create` et pas encore détruit.
 pub(crate) unsafe fn with_context<F>(ctx: *mut ScgContext, f: F) -> i32
 where
-    F: FnOnce(&mut Context) -> Result<(), AbiError>,
+    F: FnOnce(Core<'_>) -> Result<(), AbiError>,
 {
     // Vidé en entrant, pour qu'un thread recyclé ne rende jamais le message
     // d'une tâche précédente.
     message::clear_orphan();
 
-    // SAFETY: précondition de la fonction — `ctx` est nul ou valide, et
-    // l'appelant garantit qu'aucun autre thread ne s'en sert pendant l'appel.
-    let Some(ctx) = (unsafe { ctx.as_mut() }) else {
+    // SAFETY: précondition de la fonction — `ctx` est nul ou valide.
+    let Some(ctx) = (unsafe { ctx.as_ref() }) else {
         message::set_orphan(AbiError::NULL.message);
         return SCG_ERR_NULL;
     };
 
-    ctx.message_mut().clear();
+    // SAFETY: un appel exclusif est seul à écrire le message du contexte.
+    unsafe { ctx.message_mut() }.clear();
 
     if ctx.faulted() {
-        ctx.message_mut()
-            .set("a previous call panicked; this object is faulted");
+        // SAFETY: même raisonnement.
+        if !unsafe { ctx.take_tile_panic() } {
+            // SAFETY: idem.
+            unsafe { ctx.message_mut() }.set("a previous call panicked; this object is faulted");
+        }
         return SCG_ERR_FAULTED;
     }
 
-    match guarded(|| f(ctx.inner_mut())) {
+    let core = Core { cell: ctx.core() };
+    match guarded(|| f(core)) {
         Ok(()) => SCG_OK,
         Err(Failure::Abi(error)) => {
-            ctx.message_mut().set(error.message);
+            // SAFETY: un appel exclusif est seul à écrire le message.
+            unsafe { ctx.message_mut() }.set(error.message);
             error.code
         }
         Err(Failure::Panic(payload)) => {
             ctx.mark_faulted();
-            ctx.message_mut().set(panic_text(&*payload));
+            // SAFETY: idem.
+            unsafe { ctx.message_mut() }.set(panic_text(&*payload));
+            SCG_ERR_PANIC
+        }
+    }
+}
+
+/// Enveloppe le rendu d'une tuile, appelable depuis plusieurs threads à la
+/// fois sur le même contexte.
+///
+/// Rien ne s'y écrit dans le contexte hors de ses atomiques : le message va
+/// dans l'emplacement par thread, et une panique ne laisse son texte que par
+/// [`ScgContext::fault_from_tile`].
+///
+/// # Safety
+///
+/// `ctx` est nul, ou un handle rendu par `scg_create` et pas encore détruit.
+pub(crate) unsafe fn with_tile<F>(ctx: *mut ScgContext, f: F) -> i32
+where
+    F: FnOnce(&Context) -> Result<(), AbiError>,
+{
+    message::clear_orphan();
+
+    // SAFETY: précondition de la fonction — `ctx` est nul ou valide.
+    let Some(ctx) = (unsafe { ctx.as_ref() }) else {
+        message::set_orphan(AbiError::NULL.message);
+        return SCG_ERR_NULL;
+    };
+
+    if ctx.faulted() {
+        message::set_orphan("a previous call panicked; this object is faulted");
+        return SCG_ERR_FAULTED;
+    }
+
+    let core = Core { cell: ctx.core() };
+    match guarded(|| f(core.shared())) {
+        Ok(()) => SCG_OK,
+        Err(Failure::Abi(error)) => {
+            message::set_orphan(error.message);
+            error.code
+        }
+        Err(Failure::Panic(payload)) => {
+            let text = panic_text(&*payload);
+            ctx.fault_from_tile(text);
+            message::set_orphan(text);
             SCG_ERR_PANIC
         }
     }

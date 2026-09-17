@@ -7,8 +7,8 @@ Un auteur de liaison qui ne lit pas le français trouve l'essentiel dans
 `include/screengine.h`, dont la documentation est en anglais : ce qui ne peut pas
 être ignoré à l'appel y figure, fonction par fonction.
 
-**État : les sept points d'entrée de l'étape 0 sont écrits et publiés ; la forme
-du rendu par tuiles de l'étape 1 est arrêtée, pas encore écrite.** Chaque
+**État : les sept points d'entrée de l'étape 0 sont publiés ; le rendu par
+tuiles de l'étape 1 est écrit, pas encore publié.** Chaque
 décision garde ci-dessous l'option écartée et pourquoi. Deux points restent
 marqués **À trancher** : celui des ressources, d'échéance plus tardive, et celui
 de la dépréciation, qui attend le gel de l'ABI en 1.0.
@@ -352,7 +352,8 @@ tranche avec A8.
 
 ### Rendu par tuiles
 
-Arrêté pour l'étape 1, pas encore écrit.
+Écrit à l'étape 1. Les deux premières fonctions s'ajoutent à l'ABI publiée, et
+la troisième garde sa signature et son sens : `SCG_ABI_VERSION` ne change pas.
 
 ```c
 int32_t scg_frame_begin(ScgContext *ctx, uint32_t *tile_count);
@@ -497,6 +498,18 @@ thread, celui des fonctions qui n'ont pas de contexte auquel se rattacher.
 n'y a pas encore de scène à soumettre, ni de tuiles. Ce triangle est pourtant
 rempli par les fonctions de bord en virgule fixe et la règle top-left
 définitives — c'est le premier remplissage.
+
+### Étape 1
+
+Écrites à ce jour, en attendant la caméra et la soumission de triangles :
+
+```c
+int32_t scg_frame_begin(ScgContext *ctx, uint32_t *tile_count);
+int32_t scg_frame_tile(ScgContext *ctx, uint32_t index, uint8_t *pixels, uint32_t stride);
+```
+
+Leur contrat est dans « Rendu par tuiles ». Tant qu'aucune scène ne se soumet,
+l'image est le triangle en dur de l'étape 0, rendu par tuiles.
 
 ### Étapes suivantes
 

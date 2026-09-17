@@ -44,7 +44,7 @@ why-not:
 # `libscreengine.so` que screengine-lib pose.
 $(EXE): main.cpp $(TARGET)/$(PROFILE)/libscreengine.so $(INCLUDE)/screengine.h
 	@mkdir -p $(OUT)
-	$(CXX) -std=c++17 -Wall -Wextra -Werror -O2 -I$(INCLUDE) main.cpp \
+	$(CXX) -std=c++17 -Wall -Wextra -Werror -O2 -pthread -I$(INCLUDE) main.cpp \
 	  -L$(abspath $(TARGET)/$(PROFILE)) -Wl,-rpath,$(abspath $(TARGET)/$(PROFILE)) -lscreengine -ldl -o $@
 
 endif

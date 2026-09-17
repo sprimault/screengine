@@ -7,6 +7,9 @@
 //! la règle d'extension : figée, complétée par des champs réservés, et faite de
 //! champs dont aucun ne change de largeur selon la cible.
 
+use std::cell::UnsafeCell;
+use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
+
 use screengine::{Config, Context};
 
 use crate::entry::AbiError;
@@ -63,49 +66,122 @@ impl ScgContextConfig {
 /// An opaque rendering context.
 ///
 /// Created by `scg_create`, released by `scg_destroy`. Use it from one thread
-/// at a time; two contexts are independent and may each serve their own.
+/// at a time, with a single exception: between `scg_frame_begin` and
+/// `scg_frame_end`, distinct tiles may be rendered by `scg_frame_tile` from
+/// distinct threads. Two contexts are independent and may each serve their own
+/// thread.
 pub struct ScgContext {
-    inner: Context,
-    faulted: bool,
-    message: Message,
+    /// Le contexte du noyau, partagé par les tuiles et pris en exclusivité hors
+    /// du rendu. C'est l'état de rendu du noyau, atomique, qui départage.
+    core: UnsafeCell<Context>,
+    /// [`HEALTHY`], [`WRITING`] ou [`FAULTED`].
+    fault: AtomicU8,
+    /// Vrai quand le texte d'une panique de tuile attend d'être rendu par le
+    /// message du contexte.
+    pending: AtomicBool,
+    /// Le texte de la première panique survenue dans une tuile.
+    panic: UnsafeCell<Message>,
+    /// Le message de `scg_last_error(ctx)`, écrit par les seuls appels
+    /// exclusifs.
+    message: UnsafeCell<Message>,
 }
+
+/// Aucun appel n'a paniqué.
+const HEALTHY: u8 = 0;
+
+/// Une tuile a paniqué et écrit son texte.
+const WRITING: u8 = 1;
+
+/// Un appel a paniqué : le contexte ne sert plus.
+const FAULTED: u8 = 2;
 
 impl ScgContext {
     /// Enveloppe un contexte du noyau.
-    pub(crate) fn new(inner: Context) -> Self {
+    pub(crate) fn new(core: Context) -> Self {
         Self {
-            inner,
-            faulted: false,
-            message: Message::new(),
+            core: UnsafeCell::new(core),
+            fault: AtomicU8::new(HEALTHY),
+            pending: AtomicBool::new(false),
+            panic: UnsafeCell::new(Message::new()),
+            message: UnsafeCell::new(Message::new()),
         }
     }
 
-    /// Le contexte du noyau, pour un appel qui va s'exécuter.
-    pub(crate) fn inner_mut(&mut self) -> &mut Context {
-        &mut self.inner
+    /// Le contexte du noyau, en partage.
+    pub(crate) fn core(&self) -> &UnsafeCell<Context> {
+        &self.core
     }
 
     /// Vrai si un appel précédent a paniqué.
     pub(crate) fn faulted(&self) -> bool {
-        self.faulted
+        self.fault.load(Ordering::SeqCst) != HEALTHY
     }
 
-    /// Marque le contexte comme défaillant.
+    /// Marque le contexte comme défaillant, depuis un appel exclusif.
     ///
     /// Sans retour en arrière : une panique signale un défaut du moteur, et
     /// aucune réinitialisation n'est fiable depuis un état inconnu.
-    pub(crate) fn mark_faulted(&mut self) {
-        self.faulted = true;
+    pub(crate) fn mark_faulted(&self) {
+        self.fault.store(FAULTED, Ordering::SeqCst);
     }
 
-    /// Le message de ce contexte.
-    pub(crate) fn message_mut(&mut self) -> &mut Message {
-        &mut self.message
+    /// Marque le contexte comme défaillant depuis une tuile, et garde le texte
+    /// de la première panique pour la fin d'image.
+    ///
+    /// Plusieurs tuiles peuvent paniquer à la fois : seule celle qui passe le
+    /// contexte de sain à l'écriture touche au tampon, et elle ne signale le
+    /// texte qu'une fois écrit.
+    pub(crate) fn fault_from_tile(&self, text: &str) {
+        if self
+            .fault
+            .compare_exchange(HEALTHY, WRITING, Ordering::SeqCst, Ordering::SeqCst)
+            .is_err()
+        {
+            return;
+        }
+        // SAFETY: le passage de sain à l'écriture ne réussit qu'une fois dans la
+        // vie du contexte, et le tampon n'est lu qu'après `pending`, posé plus
+        // bas : ce thread est le seul à y accéder.
+        unsafe { (*self.panic.get()).set(text) };
+        self.pending.store(true, Ordering::SeqCst);
+        self.fault.store(FAULTED, Ordering::SeqCst);
+    }
+
+    /// Le message de ce contexte, pour un appel exclusif.
+    ///
+    /// # Safety
+    ///
+    /// Aucune autre référence au message ne vit : l'appelant est un appel
+    /// exclusif sur le contexte, que les tuiles ne touchent pas.
+    // Le lint vise une `&mut` tirée d'une `&self` sans cellule ; ici, elle
+    // passe par l'`UnsafeCell`, et la précondition tient l'exclusivité.
+    #[allow(clippy::mut_from_ref)]
+    pub(crate) unsafe fn message_mut(&self) -> &mut Message {
+        // SAFETY: précondition de la fonction.
+        unsafe { &mut *self.message.get() }
     }
 
     /// Le message de ce contexte, en lecture.
     pub(crate) fn message(&self) -> &Message {
-        &self.message
+        // SAFETY: le message n'est écrit que par les appels exclusifs, et un
+        // lecteur concurrent d'un appel exclusif est hors du contrat de l'ABI.
+        unsafe { &*self.message.get() }
+    }
+
+    /// Recopie dans le message le texte d'une panique de tuile en attente, et
+    /// rend vrai s'il y en avait un.
+    ///
+    /// # Safety
+    ///
+    /// Comme [`ScgContext::message_mut`].
+    pub(crate) unsafe fn take_tile_panic(&self) -> bool {
+        if !self.pending.swap(false, Ordering::SeqCst) {
+            return false;
+        }
+        // SAFETY: `pending` n'est posé qu'une fois le texte écrit, et plus rien
+        // ne l'écrit ensuite ; le message relève de la précondition.
+        unsafe { (*self.message.get()).copy_from(&*self.panic.get()) };
+        true
     }
 }
 

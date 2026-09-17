@@ -64,6 +64,38 @@ fn le_message_survit_a_la_defaillance() {
     );
 }
 
+/// Une panique dans une tuile rend le contexte défaillant sans toucher à son
+/// message, que d'autres tuiles pourraient croiser ; la fin d'image, appel
+/// exclusif, en rend le texte.
+#[test]
+fn une_panique_de_tuile_est_rapportee_par_la_fin() {
+    let mut ctx = context();
+    let handle: *mut ScgContext = &mut ctx;
+
+    // SAFETY: le handle vise une valeur locale vivante.
+    let code = unsafe { with_tile(handle, |_| panic!("défaut simulé d'une tuile")) };
+    assert_eq!(code, SCG_ERR_PANIC);
+    assert_eq!(read(message::orphan_ptr()), "défaut simulé d'une tuile");
+    assert_eq!(read(ctx.message().as_ptr()), "", "message du contexte");
+
+    // SAFETY: même handle, toujours vivant.
+    let code = unsafe { with_tile(handle, |_| Ok(())) };
+    assert_eq!(code, SCG_ERR_FAULTED, "une tuile suivante est refusée");
+
+    // SAFETY: même handle, toujours vivant.
+    let code = unsafe { with_context(handle, |_| Ok(())) };
+    assert_eq!(code, SCG_ERR_FAULTED);
+    assert_eq!(read(ctx.message().as_ptr()), "défaut simulé d'une tuile");
+}
+
+/// Lit une chaîne terminée par un octet nul.
+fn read(text: *const std::ffi::c_char) -> String {
+    // SAFETY: les messages du moteur sont terminés, et vivent au moins jusqu'au
+    // prochain appel ; la copie a lieu avant.
+    let text = unsafe { std::ffi::CStr::from_ptr(text) };
+    text.to_str().expect("UTF-8 valide").to_owned()
+}
+
 /// Le chemin nominal : sans lui, une enveloppe qui échouerait toujours
 /// passerait les trois tests suivants.
 #[test]

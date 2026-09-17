@@ -277,6 +277,46 @@ static uint64_t render(int *ok)
     return hash;
 }
 
+/* Le rendu par tuiles, vu depuis C : la séquence et ses refus, puis une image
+ * dont une partie des tuiles est rendue dans l'ordre inverse et le reste laissé
+ * à la fin. Son empreinte doit être celle de la fin seule. */
+static void check_tiles(uint64_t expected)
+{
+    ScgContextConfig config = scene_config();
+    ScgContext *ctx = NULL;
+    uint8_t *pixels = malloc((size_t)STRIDE * HEIGHT * 4);
+    uint32_t count = 0;
+
+    if (pixels == NULL || scg_create(&config, &ctx) != SCG_OK) {
+        check(0, "création du contexte des tuiles");
+        free(pixels);
+        return;
+    }
+
+    check(scg_frame_tile(ctx, 0, pixels, STRIDE) == SCG_ERR_INVALID_STATE, "tuile avant le début refusée");
+    check(message_ok(scg_last_error(NULL), 1), "message de la tuile dans l'emplacement du thread");
+    check(message_ok(scg_last_error(ctx), 0), "message du contexte intact après une tuile refusée");
+
+    check(scg_frame_begin(ctx, NULL) == SCG_ERR_NULL, "compteur de tuiles nul refusé");
+    check(scg_frame_begin(ctx, &count) == SCG_OK, "scg_frame_begin aboutit");
+    check(count == (WIDTH + TILE - 1) / TILE * ((HEIGHT + TILE - 1) / TILE), "nombre de tuiles de l'image");
+    check(scg_frame_begin(ctx, &count) == SCG_ERR_INVALID_STATE, "second début refusé");
+    check(scg_frame_tile(ctx, count, pixels, STRIDE) == SCG_ERR_INVALID_ARGUMENT, "index hors de l'image refusé");
+
+    for (uint32_t i = count; i-- > 0;) {
+        if (i % 3 != 0) {
+            check(scg_frame_tile(ctx, i, pixels, STRIDE) == SCG_OK, "tuile rendue");
+        }
+    }
+    check(scg_frame_tile(ctx, 1, pixels, STRIDE) == SCG_ERR_INVALID_STATE, "tuile rendue deux fois refusée");
+
+    check(scg_frame_end(ctx, pixels, STRIDE) == SCG_OK, "la fin complète les tuiles manquantes");
+    check(fingerprint(pixels, WIDTH, HEIGHT, STRIDE) == expected, "les tuiles rendent l'image de la fin seule");
+
+    scg_destroy(ctx);
+    free(pixels);
+}
+
 #if HAS_FP_CONTROL
 /* Un hôte hostile : exceptions démasquées, arrondi vers le haut, zéro forcé. Le
  * moteur doit rendre la même image, et rendre le registre intact.
@@ -319,6 +359,9 @@ int main(void)
         check_float_environment(hash);
     }
 #endif
+    if (ok) {
+        check_tiles(hash);
+    }
 
     if (failures > 0 || !ok) {
         fprintf(stderr, "%d vérification(s) en échec\n", failures);

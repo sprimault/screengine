@@ -15,11 +15,13 @@
 
 #include "screengine.h"
 
+#include <atomic>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
 #include <memory>
 #include <string>
+#include <thread>
 #include <vector>
 
 #if defined(_WIN32)
@@ -243,6 +245,53 @@ uint64_t render(bool &ok)
     return fingerprint(pixels, WIDTH, HEIGHT, STRIDE);
 }
 
+/// Le rendu par tuiles depuis plusieurs threads, comme un moteur C++ le fera
+/// avec son propre pool : chaque thread prend les tuiles d'un indice modulo le
+/// nombre de threads, une sur quatre est laissée à la fin, et l'empreinte doit
+/// être celle de la fin seule. Chaque thread vérifie aussi que son message se
+/// lit dans son propre emplacement.
+void check_tiles(uint64_t expected)
+{
+    ScgContextConfig config = scene_config();
+    ScgContext *raw = nullptr;
+    if (scg_create(&config, &raw) != SCG_OK) {
+        check(false, "création du contexte des tuiles");
+        return;
+    }
+    Context ctx(raw);
+    std::vector<uint8_t> pixels(size_t{STRIDE} * HEIGHT * 4);
+
+    uint32_t count = 0;
+    check(scg_frame_begin(ctx.get(), &count) == SCG_OK, "scg_frame_begin aboutit");
+
+    const unsigned workers = 4;
+    std::atomic<int> refused{0};
+    std::vector<std::thread> threads;
+    for (unsigned w = 0; w < workers; ++w) {
+        threads.emplace_back([&, w] {
+            for (uint32_t i = 0; i < count; ++i) {
+                if (i % workers != w || i % 4 == 0) {
+                    continue;
+                }
+                if (scg_frame_tile(ctx.get(), i, pixels.data(), STRIDE) != SCG_OK) {
+                    ++refused;
+                }
+            }
+            if (scg_frame_tile(ctx.get(), count, pixels.data(), STRIDE) != SCG_ERR_INVALID_ARGUMENT
+                || std::strlen(scg_last_error(nullptr)) == 0) {
+                ++refused;
+            }
+        });
+    }
+    for (std::thread &thread : threads) {
+        thread.join();
+    }
+    check(refused == 0, "chaque thread rend ses tuiles et lit son propre message");
+
+    check(scg_frame_end(ctx.get(), pixels.data(), STRIDE) == SCG_OK, "la fin complète les tuiles manquantes");
+    check(fingerprint(pixels.data(), WIDTH, HEIGHT, STRIDE) == expected, "les tuiles rendues sur plusieurs threads donnent l'image de la fin seule");
+}
+
 #if HAS_MXCSR
 /// Un hôte hostile : exceptions démasquées, arrondi vers le haut, DAZ et FZ. Le
 /// moteur doit rendre la même image, et rendre le registre intact. Comme pour
@@ -284,6 +333,9 @@ int main()
         check_float_environment(hash);
     }
 #endif
+    if (ok) {
+        check_tiles(hash);
+    }
 
     if (failures > 0 || !ok) {
         std::fprintf(stderr, "%d vérification(s) en échec\n", failures);

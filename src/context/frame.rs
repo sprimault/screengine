@@ -7,11 +7,11 @@
 //! threads distincts : la [`Frame`] ne se lit qu'en partage, et chaque tuile
 //! n'écrit que dans sa pile et dans son rectangle du tampon de l'hôte.
 
-use core::sync::atomic::Ordering;
+use core::sync::atomic::{AtomicU32, Ordering};
 
-use crate::context::{BYTES_PER_PIXEL, CLEAR_COLOR, Context};
+use crate::context::{BYTES_PER_PIXEL, CLEAR_COLOR, CLOSING, Context, RECORDING, RENDERING};
 use crate::error::{Argument, Error, Result};
-use crate::raster::{Grid, Rect, Target, fill};
+use crate::raster::{Rect, Target, fill};
 
 /// Le plus grand côté de tuile, qui dimensionne le tampon de travail posé sur
 /// la pile.
@@ -110,41 +110,45 @@ impl Target for Scratch<'_> {
     }
 }
 
-/// Une image entre son début et sa fin.
-///
-/// `Sync` : des tuiles d'index distincts se rendent depuis des threads
-/// distincts. Elle emprunte le contexte, donc rien d'autre ne le touche tant
-/// qu'elle vit.
-#[derive(Debug)]
-pub struct Frame<'a> {
-    context: &'a Context,
-    grid: Grid,
+/// Décompte une tuile en cours, y compris quand son rendu panique.
+struct InFlight<'a>(&'a AtomicU32);
+
+impl Drop for InFlight<'_> {
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, Ordering::SeqCst);
+    }
 }
 
-impl<'a> Frame<'a> {
-    /// Ouvre le rendu d'une image déjà répartie.
-    pub(super) fn new(context: &'a Context, grid: Grid) -> Self {
-        Self { context, grid }
-    }
-
-    /// Le nombre de tuiles de l'image, numérotées ligne par ligne.
-    pub fn tile_count(&self) -> u32 {
-        self.grid.count()
-    }
-
-    /// Rend la tuile `index` dans `out`.
+impl Context {
+    /// Rend la tuile `index` de l'image commencée dans `out`.
     ///
+    /// Appelable depuis plusieurs threads à la fois, pour des index distincts.
     /// Une tuile se rend une fois par image : un index déjà pris, y compris
-    /// par un appel simultané sur un autre thread, rend
-    /// [`Error::InvalidState`]. La sortie est vérifiée avant la prise, pour
+    /// par un appel simultané, rend [`Error::InvalidState`], comme une tuile
+    /// hors d'une image commencée. La sortie est vérifiée avant la prise, pour
     /// qu'un refus ne consomme pas la tuile.
     pub fn tile<O: Output>(&self, index: u32, out: &mut O) -> Result<()> {
+        // Compter avant de lire l'état, et la fin fait l'inverse : avec des
+        // opérations séquentiellement cohérentes, une tuile qui voit encore le
+        // rendu ouvert est forcément vue par la fin.
+        self.in_flight.fetch_add(1, Ordering::SeqCst);
+        let _in_flight = InFlight(&self.in_flight);
+        if self.state.load(Ordering::SeqCst) != RENDERING {
+            return Err(Error::InvalidState);
+        }
         if index >= self.grid.count() {
             return Err(Error::InvalidArgument(Argument::TileIndex));
         }
         let rect = self.grid.rect(index);
-        out.check(rect)?;
-        if self.context.taken[index as usize].swap(true, Ordering::SeqCst) {
+        // Les lignes de la tuile sur toute la largeur de l'image, pas le seul
+        // rectangle : un `stride` plus court que l'image est une erreur de
+        // l'hôte même pour une tuile qui n'atteint pas le bord.
+        out.check(Rect {
+            x: 0,
+            width: self.grid.image().width,
+            ..rect
+        })?;
+        if self.taken[index as usize].swap(true, Ordering::SeqCst) {
             return Err(Error::InvalidState);
         }
         self.render_tile(index, rect, out)
@@ -152,52 +156,43 @@ impl<'a> Frame<'a> {
 
     /// Rend les tuiles que personne n'a prises, puis clôt l'image.
     ///
-    /// Appelée seule, elle rend l'image entière : c'est ce qui garde valide un
-    /// hôte qui n'appelle jamais [`Frame::tile`].
-    pub fn end<O: Output>(self, out: &mut O) -> Result<()> {
+    /// Refuse par [`Error::InvalidState`] une image qui n'est pas commencée, ou
+    /// dont une tuile se rend encore sur un autre thread ; l'image reste alors
+    /// ouverte. Une sortie refusée la laisse ouverte aussi, pour que l'appelant
+    /// corrige son tampon et recommence.
+    pub fn end<O: Output>(&self, out: &mut O) -> Result<()> {
+        if self
+            .state
+            .compare_exchange(RENDERING, CLOSING, Ordering::SeqCst, Ordering::SeqCst)
+            .is_err()
+        {
+            return Err(Error::InvalidState);
+        }
+        let result = self.finish(out);
+        let next = if result.is_ok() { RECORDING } else { RENDERING };
+        self.state.store(next, Ordering::SeqCst);
+        result
+    }
+
+    /// Le corps de [`Context::end`], une fois la main prise.
+    fn finish<O: Output>(&self, out: &mut O) -> Result<()> {
+        if self.in_flight.load(Ordering::SeqCst) != 0 {
+            return Err(Error::InvalidState);
+        }
         out.check(self.grid.image())?;
         for index in 0..self.grid.count() {
-            if !self.context.taken[index as usize].swap(true, Ordering::SeqCst) {
+            if !self.taken[index as usize].swap(true, Ordering::SeqCst) {
                 self.render_tile(index, self.grid.rect(index), out)?;
             }
         }
         Ok(())
     }
 
-    /// Rend une région quelconque de l'image, sans passer par la répartition.
-    ///
-    /// Le chemin de référence des tuiles : tous les triangles, dans l'ordre de
-    /// soumission, dans un tampon de travail fourni par l'appelant et aussi
-    /// grand que la région. Une tuile qui en diffère a perdu un triangle à la
-    /// répartition, ou dépend de son découpage. Ne prend aucune tuile.
-    pub fn region<O: Output>(&self, rect: Rect, scratch: &mut [u32], out: &mut O) -> Result<()> {
-        let image = self.grid.image();
-        let inside = rect
-            .x
-            .checked_add(rect.width)
-            .zip(rect.y.checked_add(rect.height))
-            .is_some_and(|(right, bottom)| right <= image.width && bottom <= image.height);
-        if !inside {
-            return Err(Error::InvalidArgument(Argument::Region));
-        }
-        let pixels = rect.width as usize * rect.height as usize;
-        let scratch = scratch
-            .get_mut(..pixels)
-            .ok_or(Error::InvalidArgument(Argument::ScratchLength))?;
-        out.check(rect)?;
-        self.draw(rect, scratch, 0..self.context.triangles.len() as u32, out)
-    }
-
     /// Rend une tuile dans un tampon de travail posé sur la pile.
     fn render_tile<O: Output>(&self, index: u32, rect: Rect, out: &mut O) -> Result<()> {
         let mut scratch = [0u32; MAX_TILE * MAX_TILE];
         let pixels = rect.width as usize * rect.height as usize;
-        self.draw(
-            rect,
-            &mut scratch[..pixels],
-            self.context.bins.tile(index),
-            out,
-        )
+        self.draw(rect, &mut scratch[..pixels], self.bins.tile(index), out)
     }
 
     /// Dessine `triangles` dans `scratch`, puis recopie la région dans `out`.
@@ -218,7 +213,7 @@ impl<'a> Frame<'a> {
             rect,
         };
         for index in triangles {
-            fill(&mut target, rect, &self.context.triangles[index as usize]);
+            fill(&mut target, rect, &self.triangles[index as usize]);
         }
 
         let width = rect.width as usize;
@@ -231,6 +226,76 @@ impl<'a> Frame<'a> {
             }
         }
         Ok(())
+    }
+}
+
+/// Une image entre son début et sa fin.
+///
+/// `Sync` : des tuiles d'index distincts se rendent depuis des threads
+/// distincts. Elle emprunte le contexte, donc rien d'autre ne le touche tant
+/// qu'elle vit, et le compilateur tient la séquence que la frontière C doit
+/// vérifier à l'exécution.
+#[derive(Debug)]
+pub struct Frame<'a> {
+    context: &'a Context,
+}
+
+impl<'a> Frame<'a> {
+    /// Ouvre le rendu d'une image déjà répartie.
+    pub(super) fn new(context: &'a Context) -> Self {
+        Self { context }
+    }
+
+    /// Le nombre de tuiles de l'image, numérotées ligne par ligne.
+    pub fn tile_count(&self) -> u32 {
+        self.context.grid.count()
+    }
+
+    /// Rend la tuile `index` dans `out`. Voir [`Context::tile`].
+    pub fn tile<O: Output>(&self, index: u32, out: &mut O) -> Result<()> {
+        self.context.tile(index, out)
+    }
+
+    /// Rend les tuiles que personne n'a prises, puis clôt l'image.
+    ///
+    /// Appelée seule, elle rend l'image entière : c'est ce qui garde valide un
+    /// hôte qui n'appelle jamais [`Frame::tile`].
+    pub fn end<O: Output>(self, out: &mut O) -> Result<()> {
+        self.context.end(out)
+    }
+
+    /// Rend une région quelconque de l'image, sans passer par la répartition.
+    ///
+    /// Le chemin de référence des tuiles : tous les triangles, dans l'ordre de
+    /// soumission, dans un tampon de travail fourni par l'appelant et aussi
+    /// grand que la région. Une tuile qui en diffère a perdu un triangle à la
+    /// répartition, ou dépend de son découpage. Ne prend aucune tuile.
+    pub fn region<O: Output>(&self, rect: Rect, scratch: &mut [u32], out: &mut O) -> Result<()> {
+        let image = self.context.grid.image();
+        let inside = rect
+            .x
+            .checked_add(rect.width)
+            .zip(rect.y.checked_add(rect.height))
+            .is_some_and(|(right, bottom)| right <= image.width && bottom <= image.height);
+        if !inside {
+            return Err(Error::InvalidArgument(Argument::Region));
+        }
+        let pixels = rect.width as usize * rect.height as usize;
+        let scratch = scratch
+            .get_mut(..pixels)
+            .ok_or(Error::InvalidArgument(Argument::ScratchLength))?;
+        out.check(rect)?;
+        let triangles = 0..self.context.triangles.len() as u32;
+        self.context.draw(rect, scratch, triangles, out)
+    }
+}
+
+/// Une `Frame` abandonnée sans fin referme l'image, pour que le contexte en
+/// accepte une autre. Rien n'a pu la lire entre-temps : elle empruntait le
+/// contexte.
+impl Drop for Frame<'_> {
+    fn drop(&mut self) {
+        self.context.state.store(RECORDING, Ordering::SeqCst);
     }
 }
 

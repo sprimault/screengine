@@ -57,7 +57,10 @@
 // An opaque rendering context.
 //
 // Created by `scg_create`, released by `scg_destroy`. Use it from one thread
-// at a time; two contexts are independent and may each serve their own.
+// at a time, with a single exception: between `scg_frame_begin` and
+// `scg_frame_end`, distinct tiles may be rendered by `scg_frame_tile` from
+// distinct threads. Two contexts are independent and may each serve their own
+// thread.
 typedef struct ScgContext ScgContext;
 
 // Configuration passed to `scg_create`.
@@ -122,7 +125,57 @@ int32_t scg_create(const struct ScgContextConfig *config, struct ScgContext **ou
 // `ctx` is NULL, or a handle returned by `scg_create` and not yet destroyed.
 void scg_destroy(struct ScgContext *ctx);
 
+// Begins a frame: seals the submitted scene, bins it into tiles, and writes
+// the tile count to `tile_count`.
+//
+// Tiles are numbered row by row, left to right then top to bottom; those of
+// the last column and row are partial when the internal resolution is not a
+// multiple of the tile size. A frame already begun returns
+// `SCG_ERR_INVALID_STATE`.
+//
+// Rendering the tiles is optional: `scg_frame_end` renders every tile nobody
+// rendered.
+//
+// # Safety
+//
+// `ctx` is a live handle used by no other thread during the call, and
+// `tile_count` is NULL or writable.
+int32_t scg_frame_begin(struct ScgContext *ctx, uint32_t *tile_count);
+
+// Renders tile `index` of the frame begun by `scg_frame_begin` into the host
+// buffer.
+//
+// Callable from several threads at once on the same context, for distinct
+// indices, and only between `scg_frame_begin` and `scg_frame_end`; no other
+// call on the context is allowed meanwhile. A tile renders once per frame: an
+// index already taken, even by a concurrent call, returns
+// `SCG_ERR_INVALID_STATE`, as does a tile outside a begun frame. An index at or
+// beyond the tile count returns `SCG_ERR_INVALID_ARGUMENT`.
+//
+// The error message of this call goes to the per-thread slot: read it with
+// `scg_last_error(NULL)` on the calling thread, immediately after the call.
+// A panic faults the context; the other tiles already running complete, and
+// `scg_frame_end` reports it.
+//
+// Each tile keeps its colour and depth on the stack of the call: the calling
+// thread needs at least 128 KiB of stack.
+//
+// `pixels` and `stride` are those of the whole image, the same for every tile
+// and for `scg_frame_end` of the frame: the tile writes only its own rectangle.
+//
+// # Safety
+//
+// `ctx` is a live handle, and `pixels` points to a writable buffer of at least
+// `stride × height × 4` bytes.
+int32_t scg_frame_tile(struct ScgContext *ctx, uint32_t index, uint8_t *pixels, uint32_t stride);
+
 // Ends the frame and writes the result into the host buffer.
+//
+// It renders every tile nobody rendered, then closes the frame. Without
+// `scg_frame_begin`, it begins the frame itself: a host that only ever calls
+// this function always receives the whole image. While a tile is still being
+// rendered on another thread, it returns `SCG_ERR_INVALID_STATE` and leaves
+// the frame open. Its return code is what tells whether the image is good.
 //
 // `stride` is in pixels and must be at least the current internal width. The
 // buffer holds at least `stride × height` pixels of four bytes each, in R, G,

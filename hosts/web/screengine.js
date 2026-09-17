@@ -50,6 +50,8 @@ export const EXPORTS = [
   "scg_abi_version",
   "scg_create",
   "scg_destroy",
+  "scg_frame_begin",
+  "scg_frame_tile",
   "scg_frame_end",
   "scg_last_error",
   "scg_buffer_alloc",

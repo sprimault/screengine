@@ -10,6 +10,7 @@
 
 use alloc::vec;
 use alloc::vec::Vec;
+use core::sync::atomic::Ordering;
 
 use super::*;
 use crate::context::{Config, TRIANGLE_CAPACITY};
@@ -66,13 +67,23 @@ fn pixels() -> Vec<u8> {
     vec![0; W as usize * H as usize * BYTES_PER_PIXEL]
 }
 
+/// Ouvre une image sur la scène déjà soumise, sans le triangle en dur.
+fn open(context: &mut Context) -> Frame<'_> {
+    context.seal();
+    Frame::new(context)
+}
+
 /// La référence : l'image entière rendue d'une région, sans répartition.
 fn reference(context: &mut Context) -> Vec<u8> {
     let mut out = pixels();
     let mut scratch = vec![0u32; W as usize * H as usize];
-    let frame = context.seal();
-    let image = frame.grid.image();
-    frame
+    let image = Rect {
+        x: 0,
+        y: 0,
+        width: W,
+        height: H,
+    };
+    open(context)
         .region(image, &mut scratch, &mut Rows::new(&mut out, W))
         .expect("région");
     out
@@ -89,8 +100,7 @@ fn les_tuiles_de_32_et_de_64_rendent_la_reference() {
             let expected = reference(&mut context);
 
             let mut out = pixels();
-            context
-                .seal()
+            open(&mut context)
                 .end(&mut Rows::new(&mut out, W))
                 .expect("image");
             assert!(out == expected, "graine {seed}, tuiles de {tile_size}");
@@ -108,7 +118,7 @@ fn l_ordre_des_tuiles_ne_change_rien() {
         let expected = reference(&mut context);
 
         let mut out = pixels();
-        let frame = context.seal();
+        let frame = open(&mut context);
         let mut order: Vec<u32> = (0..frame.tile_count()).collect();
         let mut rng = Rng::new(seed);
         for i in (1..order.len()).rev() {
@@ -134,7 +144,7 @@ fn des_threads_rendent_la_reference() {
     let expected = reference(&mut context);
 
     let mut out = pixels();
-    let frame = context.seal();
+    let frame = open(&mut context);
     let columns = W.div_ceil(32);
     let band = 32 * W as usize * BYTES_PER_PIXEL;
     std::thread::scope(|scope| {
@@ -164,6 +174,82 @@ fn une_tuile_prise_deux_fois_est_refusee() {
     let mut rows = Rows::new(&mut out, W);
     frame.tile(2, &mut rows).expect("première prise");
     assert_eq!(frame.tile(2, &mut rows), Err(Error::InvalidState));
+}
+
+/// Hors d'une image commencée, une tuile et une fin sont des appels hors
+/// séquence, et un second début aussi : sa répartition écraserait celle
+/// qu'une tuile lit peut-être sur un autre thread.
+#[test]
+fn la_sequence_de_l_image_est_verifiee() {
+    let mut context = context(64);
+    let mut out = pixels();
+    assert_eq!(
+        context.tile(0, &mut Rows::new(&mut out, W)),
+        Err(Error::InvalidState)
+    );
+    assert_eq!(
+        context.end(&mut Rows::new(&mut out, W)),
+        Err(Error::InvalidState)
+    );
+
+    assert_eq!(context.begin(), Ok(12), "4 colonnes et 3 lignes de 64");
+    assert_eq!(context.begin(), Err(Error::InvalidState));
+    assert_eq!(context.end(&mut Rows::new(&mut out, W)), Ok(()));
+    assert_eq!(
+        context.tile(0, &mut Rows::new(&mut out, W)),
+        Err(Error::InvalidState),
+        "une tuile après la fin"
+    );
+}
+
+/// La fin attend que plus aucune tuile ne tourne : elle refuse, laisse
+/// l'image ouverte, et aboutit une fois la tuile terminée.
+#[test]
+fn la_fin_refuse_pendant_qu_une_tuile_tourne() {
+    let mut context = context(64);
+    let mut out = pixels();
+    context.begin().expect("début");
+
+    context.in_flight.fetch_add(1, Ordering::SeqCst);
+    assert_eq!(
+        context.end(&mut Rows::new(&mut out, W)),
+        Err(Error::InvalidState)
+    );
+    assert!(context.is_rendering(), "l'image reste ouverte");
+
+    context.in_flight.fetch_sub(1, Ordering::SeqCst);
+    assert_eq!(context.end(&mut Rows::new(&mut out, W)), Ok(()));
+    assert!(!context.is_rendering());
+}
+
+/// Une fin d'image après quelques tuiles rend exactement l'image d'une fin
+/// seule : c'est la garantie qu'un hôte qui oublie une tuile ne reçoit pas
+/// d'image trouée.
+#[test]
+fn la_fin_complete_les_tuiles_manquantes() {
+    let mut full = pixels();
+    context(32).frame_end(&mut full, W).expect("image seule");
+
+    let mut context = context(32);
+    let mut out = pixels();
+    let count = context.begin().expect("début");
+    for index in (0..count).step_by(3) {
+        context
+            .tile(index, &mut Rows::new(&mut out, W))
+            .expect("tuile");
+    }
+    context.frame_end(&mut out, W).expect("fin");
+    assert!(out == full);
+}
+
+/// Une `Frame` abandonnée sans fin rend le contexte à l'enregistrement : sans
+/// quoi un `?` entre le début et la fin bloquerait le contexte pour toujours.
+#[test]
+fn une_frame_abandonnee_referme_l_image() {
+    let mut context = context(64);
+    drop(context.frame_begin().expect("début"));
+    assert!(!context.is_rendering());
+    assert!(context.frame_begin().is_ok());
 }
 
 /// Un index au-delà du nombre de tuiles est refusé, pas ramené dans
