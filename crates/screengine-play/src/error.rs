@@ -50,9 +50,20 @@ impl fmt::Display for Error {
                 Argument::BufferLength => {
                     f.write_str("pixel buffer is shorter than stride x height x 4 bytes")
                 }
+                Argument::TileIndex => f.write_str("tile index beyond the tile count of the frame"),
+                Argument::Region => f.write_str("region extends beyond the image"),
+                Argument::ScratchLength => {
+                    f.write_str("scratch buffer is shorter than the pixels of its region")
+                }
+                Argument::TriangleCapacity => {
+                    f.write_str("more triangles submitted than the engine reserved")
+                }
             },
             Self::Engine(screengine::Error::OutOfMemory) => {
                 f.write_str("the engine could not allocate its buffers")
+            }
+            Self::Engine(screengine::Error::InvalidState) => {
+                f.write_str("a tile was rendered twice in the same frame")
             }
             Self::Setting(what) => f.write_str(what),
             Self::ScaleTooLarge {

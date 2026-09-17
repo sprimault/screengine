@@ -11,7 +11,7 @@
 
 use crate::math::fixed::{PIXEL_CENTER, SUBPIXEL_SCALE};
 
-use super::Target;
+use super::{Rect, Target};
 
 /// Un sommet projeté, en sous-pixels.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -22,13 +22,31 @@ pub struct Point {
     pub y: i32,
 }
 
-/// La fenêtre de l'image, en pixels.
+/// Un triangle prêt à être parcouru dans n'importe quelle fenêtre.
+///
+/// Ce qui ne dépend pas de la fenêtre se calcule une fois, à la soumission ;
+/// ce qui en dépend — le point de départ du parcours — se recalcule par la
+/// forme close à chaque fenêtre. C'est ce partage qui rend l'image
+/// indépendante du découpage : une tuile ne reprend jamais une valeur
+/// accumulée par sa voisine.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Clip {
-    /// Largeur, en pixels.
-    pub width: i32,
-    /// Hauteur, en pixels.
-    pub height: i32,
+pub struct Prepared {
+    v: [Point; 3],
+    /// Pixels extrêmes dont le centre peut être couvert, bornes comprises, sans
+    /// limitation par l'image.
+    x0: i32,
+    x1: i32,
+    y0: i32,
+    y1: i32,
+    color: u32,
+}
+
+impl Prepared {
+    /// Les pixels extrêmes que le triangle peut couvrir : `(x0, y0, x1, y1)`,
+    /// bornes comprises.
+    pub fn bounds(&self) -> (i32, i32, i32, i32) {
+        (self.x0, self.y0, self.x1, self.y1)
+    }
 }
 
 /// Produit vectoriel en deux dimensions, positif du côté intérieur de `a → b`.
@@ -84,7 +102,7 @@ fn last_pixel(subpixel: i32) -> i32 {
     (subpixel - PIXEL_CENTER) >> 4
 }
 
-/// Remplit un triangle, sommets donnés en sous-pixels.
+/// Prépare un triangle, sommets donnés en sous-pixels.
 ///
 /// Les sommets sont en ordre horaire à l'écran, Y vers le bas. Un triangle
 /// d'orientation inverse est le dos d'une face et n'est pas rendu ; pour une
@@ -92,14 +110,16 @@ fn last_pixel(subpixel: i32) -> i32 {
 /// nie pas les fonctions de bord — la négation laisserait la classification
 /// haut-gauche calculée sur l'ancien sens de parcours, et l'arête partagée
 /// serait revendiquée deux fois.
-pub fn fill_triangle<T: Target>(target: &mut T, clip: Clip, v: [Point; 3], color: u32) {
+///
+/// Rend `None` pour un triangle qui ne peut couvrir aucun centre de pixel.
+pub fn prepare(v: [Point; 3], color: u32) -> Option<Prepared> {
     let area = edge(v[0].x, v[0].y, v[1].x, v[1].y, v[2].x, v[2].y);
     // Un seul test pour le dos et pour le dégénéré. Obligatoire et non
     // défensif : les équations de plan des attributs diviseront par cette aire,
     // et un triangle plat verrait ses trois fonctions de bord s'annuler le long
     // d'un segment, que les biais pourraient toutes satisfaire.
     if area <= 0 {
-        return;
+        return None;
     }
 
     let min_x = v[0].x.min(v[1].x).min(v[2].x);
@@ -107,12 +127,30 @@ pub fn fill_triangle<T: Target>(target: &mut T, clip: Clip, v: [Point; 3], color
     let min_y = v[0].y.min(v[1].y).min(v[2].y);
     let max_y = v[0].y.max(v[1].y).max(v[2].y);
 
+    let prepared = Prepared {
+        v,
+        x0: first_pixel(min_x),
+        x1: last_pixel(max_x),
+        y0: first_pixel(min_y),
+        y1: last_pixel(max_y),
+        color,
+    };
+    (prepared.x0 <= prepared.x1 && prepared.y0 <= prepared.y1).then_some(prepared)
+}
+
+/// Remplit la partie d'un triangle préparé qui tombe dans `window`.
+///
+/// `window` est en pixels de l'image, et tient dans la bande de garde.
+pub fn fill<T: Target>(target: &mut T, window: Rect, triangle: &Prepared) {
+    let v = triangle.v;
+    let color = triangle.color;
+
     // La fenêtre borne la boucle, jamais les valeurs : une fonction de bord
     // évaluée en un pixel ne dépend pas du rectangle dans lequel on la parcourt.
-    let x0 = first_pixel(min_x).max(0);
-    let x1 = last_pixel(max_x).min(clip.width - 1);
-    let y0 = first_pixel(min_y).max(0);
-    let y1 = last_pixel(max_y).min(clip.height - 1);
+    let x0 = triangle.x0.max(window.x as i32);
+    let x1 = triangle.x1.min((window.x + window.width) as i32 - 1);
+    let y0 = triangle.y0.max(window.y as i32);
+    let y1 = triangle.y1.min((window.y + window.height) as i32 - 1);
     if x0 > x1 || y0 > y1 {
         return;
     }

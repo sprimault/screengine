@@ -52,6 +52,7 @@ pub(crate) fn code_of(error: Error) -> i32 {
     match error {
         Error::InvalidArgument(_) => SCG_ERR_INVALID_ARGUMENT,
         Error::OutOfMemory => SCG_ERR_OUT_OF_MEMORY,
+        Error::InvalidState => SCG_ERR_INVALID_STATE,
     }
 }
 
@@ -73,7 +74,18 @@ pub(crate) fn message_of(error: Error) -> &'static str {
         Error::InvalidArgument(Argument::BufferLength) => {
             "pixel buffer too short: needs stride x height x 4 bytes"
         }
+        Error::InvalidArgument(Argument::TileIndex) => {
+            "invalid tile index: must be less than the tile count of the frame"
+        }
+        Error::InvalidArgument(Argument::Region) => "invalid region: must lie within the image",
+        Error::InvalidArgument(Argument::ScratchLength) => {
+            "scratch buffer too short: needs one word per pixel of the region"
+        }
+        Error::InvalidArgument(Argument::TriangleCapacity) => {
+            "too many triangles submitted for the capacity reserved at creation"
+        }
         Error::OutOfMemory => "out of memory",
+        Error::InvalidState => "call out of sequence: this tile was already rendered in this frame",
     }
 }
 

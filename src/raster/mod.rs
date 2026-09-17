@@ -8,9 +8,24 @@
 //! exacte parce qu'une translation entière l'est, mais son point de départ se
 //! calcule toujours par la forme close, au coin global.
 
+mod bins;
 mod triangle;
 
-pub use triangle::{Clip, Point, fill_triangle};
+pub use bins::{Bins, Grid};
+pub use triangle::{Point, Prepared, fill, prepare};
+
+/// Un rectangle de l'image, en pixels.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Rect {
+    /// Abscisse du coin haut gauche.
+    pub x: u32,
+    /// Ordonnée du coin haut gauche.
+    pub y: u32,
+    /// Largeur.
+    pub width: u32,
+    /// Hauteur.
+    pub height: u32,
+}
 
 /// Où le remplissage écrit ses pixels.
 ///

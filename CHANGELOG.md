@@ -47,6 +47,10 @@ publié, et explique les conventions du dépôt à qui y contribue.
 ## [Non publié]
 
 ### Modifié
+- L'image se rend par tuiles de la taille choisie à la création : les triangles
+  sont répartis une fois par image, et chaque tuile tient sa couleur sur la pile
+  de l'appel. Le contexte ne réserve plus de tampon à la taille de l'image.
+  L'image rendue est inchangée, octet pour octet.
 - Le code `-6` se nomme désormais `SCG_ERR_FAULTED`, et un objet dont un appel a
   paniqué est dit défaillant. `SCG_ERR_POISONED` reste défini avec la même
   valeur, déprécié : aucun hôte n'est à reprendre, et `SCG_ABI_VERSION` ne
@@ -55,6 +59,10 @@ publié, et explique les conventions du dépôt à qui y contribue.
 ***
 
 ### Changed
+- The image is rendered in tiles of the size chosen at creation: triangles are
+  binned once per frame, and each tile keeps its colour on the stack of the
+  call. The context no longer reserves image-sized buffers. The rendered image
+  is unchanged, byte for byte.
 - Code `-6` is now named `SCG_ERR_FAULTED`, and an object whose call panicked
   is called faulted. `SCG_ERR_POISONED` stays defined with the same value,
   deprecated: no host needs changes, and `SCG_ABI_VERSION` is unchanged.

@@ -68,7 +68,7 @@ elle ne crée aucun répertoire d'avance.
 
 ```
 src/
-  lib.rs  error.rs  context.rs   ce qui existe avant tout domaine
+  lib.rs  error.rs  buffer.rs  context.rs   ce qui existe avant tout domaine
   math/       étape 1   vecteurs, matrices, quaternions, tables, virgule fixe
   raster/     étape 1   clipping, fonctions de bord, profondeur, tuiles ; simd/ à l'étape 9
   texture/    étape 2   mipmaps, filtrage
@@ -503,10 +503,9 @@ teste quelque chose.
   threads**, et les cinq empreintes doivent être identiques. Une couture de
   tuile ne se voit que dans une configuration : sans ce contrôle, la conformance
   ne vaudrait que pour la sienne. L'image entière passe par l'API Rust du noyau,
-  qui rend une région quelconque ; l'ABI n'accepte que 32 et 64. Aujourd'hui la
-  suite passe `tile_size` à 32 et à 64, mais le noyau ne le lit pas encore : les
-  deux empreintes sont égales par construction, et la comparaison ne prouve
-  rien avant le découpage en tuiles.
+  qui rend une région quelconque sans passer par la répartition ; l'ABI
+  n'accepte que 32 et 64. Les tests du noyau font la même comparaison octet pour
+  octet sur des scènes tirées au hasard, où les triangles se recouvrent.
 - **Une scène, une référence**, `references/<scène>` : seize chiffres et un saut
   de ligne, comparés octet pour octet. Toutes les configurations se comparent à
   la même. Une référence absente fait échouer `--check`, jamais un « rien à

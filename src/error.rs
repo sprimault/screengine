@@ -21,6 +21,8 @@ pub enum Error {
     InvalidArgument(Argument),
     /// Un tampon du contexte n'a pas pu être alloué.
     OutOfMemory,
+    /// Un appel hors séquence : une tuile déjà rendue dans cette image.
+    InvalidState,
 }
 
 /// L'argument qu'une [`Error::InvalidArgument`] refuse.
@@ -41,6 +43,14 @@ pub enum Argument {
     /// Seul un appelant Rust le rencontre : la frontière C ne reçoit pas la
     /// longueur du tampon et en fait une précondition.
     BufferLength,
+    /// Un index de tuile au-delà du nombre de tuiles de l'image.
+    TileIndex,
+    /// Une région qui déborde de l'image.
+    Region,
+    /// Un tampon de travail plus court que la région qu'il doit porter.
+    ScratchLength,
+    /// Plus de triangles soumis que la capacité réservée à la création.
+    TriangleCapacity,
 }
 
 /// Le résultat d'un appel du noyau.

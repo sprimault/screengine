@@ -39,6 +39,7 @@ fn chaque_erreur_du_noyau_a_son_code() {
     let errors = [
         Error::InvalidArgument(Argument::Resolution),
         Error::OutOfMemory,
+        Error::InvalidState,
     ];
     for (i, a) in errors.iter().enumerate() {
         for b in &errors[i + 1..] {
@@ -57,6 +58,10 @@ fn chaque_argument_refuse_a_son_message() {
         Argument::TileSize,
         Argument::Stride,
         Argument::BufferLength,
+        Argument::TileIndex,
+        Argument::Region,
+        Argument::ScratchLength,
+        Argument::TriangleCapacity,
     ];
     for (i, a) in arguments.iter().enumerate() {
         let error = Error::InvalidArgument(*a);

@@ -15,13 +15,64 @@ use alloc::vec;
 use alloc::vec::Vec;
 
 use super::*;
+use crate::testing::Rng;
 
-/// La fenêtre des tests : assez petite pour que le balayage de référence
-/// reste instantané, assez grande pour porter des arêtes obliques.
-const CLIP: Clip = Clip {
-    width: 50,
-    height: 40,
+/// Largeur de la fenêtre des tests : assez petite pour que le balayage de
+/// référence reste instantané, assez grande pour porter des arêtes obliques.
+const W: i32 = 50;
+
+/// Hauteur de la fenêtre des tests.
+const H: i32 = 40;
+
+/// La fenêtre des tests, à l'origine de l'image.
+const CLIP: Rect = Rect {
+    x: 0,
+    y: 0,
+    width: W as u32,
+    height: H as u32,
 };
+
+/// Prépare puis remplit, comme le fait une image entière.
+fn fill_triangle<T: Target>(target: &mut T, window: Rect, v: [Point; 3], color: u32) {
+    if let Some(triangle) = prepare(v, color) {
+        fill(target, window, &triangle);
+    }
+}
+
+/// Une fenêtre qui ne part pas de l'origine borne le parcours sans changer
+/// un seul pixel : la couverture d'un triangle découpé en quatre quarts est
+/// exactement celle du triangle entier. C'est la propriété dont les tuiles
+/// dépendent.
+#[test]
+fn quatre_fenetres_couvrent_comme_une_seule() {
+    let v = [
+        shift([p(25, 2)], 3, 11)[0],
+        shift([p(47, 37)], 5, 1)[0],
+        shift([p(3, 30)], 7, 9)[0],
+    ];
+    let mut whole = Coverage::new();
+    fill_triangle(&mut whole, CLIP, v, 1);
+
+    let mut quarters = Coverage::new();
+    let quarter = [
+        (0, 0, 17, 13),
+        (17, 0, 33, 13),
+        (0, 13, 17, 27),
+        (17, 13, 33, 27),
+    ];
+    for (x, y, width, height) in quarter {
+        let window = Rect {
+            x,
+            y,
+            width,
+            height,
+        };
+        fill_triangle(&mut quarters, window, v, 1);
+    }
+
+    assert!(whole.stats().1 > 0, "le cas de test ne couvre rien");
+    assert_eq!(quarters.hits, whole.hits);
+}
 
 /// Compte les écritures par pixel.
 ///
@@ -36,7 +87,7 @@ impl Coverage {
     /// Une couverture vide, à la taille de la fenêtre.
     fn new() -> Self {
         Self {
-            hits: vec![0; (CLIP.width * CLIP.height) as usize],
+            hits: vec![0; (W * H) as usize],
         }
     }
 
@@ -55,10 +106,10 @@ impl Coverage {
 impl Target for Coverage {
     fn put(&mut self, x: i32, y: i32, _color: u32) {
         assert!(
-            (0..CLIP.width).contains(&x) && (0..CLIP.height).contains(&y),
+            (0..W).contains(&x) && (0..H).contains(&y),
             "écriture hors fenêtre en ({x}, {y})"
         );
-        self.hits[(y * CLIP.width + x) as usize] += 1;
+        self.hits[(y * W + x) as usize] += 1;
     }
 }
 
@@ -86,8 +137,8 @@ fn shift<const N: usize>(poly: [Point; N], dx: i32, dy: i32) -> [Point; N] {
 /// exactement, l'arête qu'ils partagent est étanche.
 fn quad_area(q: [Point; 4]) -> u32 {
     let mut count = 0;
-    for y in 0..CLIP.height {
-        for x in 0..CLIP.width {
+    for y in 0..H {
+        for x in 0..W {
             let px = x * SUBPIXEL_SCALE + PIXEL_CENTER;
             let py = y * SUBPIXEL_SCALE + PIXEL_CENTER;
             let inside = (0..4).all(|i| {
@@ -303,31 +354,6 @@ fn un_triangle_sans_centre_couvert_n_ecrit_rien() {
     let mut cov = Coverage::new();
     fill_triangle(&mut cov, CLIP, v, 1);
     assert_eq!(cov.stats().1, 0);
-}
-
-/// Le générateur des tests aléatoires : xorshift64*, écrit ici parce que le
-/// noyau n'a aucune dépendance, et parce qu'un échec qui ne se rejoue pas
-/// n'a pas été trouvé.
-struct Rng(u64);
-
-impl Rng {
-    /// La graine ne peut pas être nulle : la suite y resterait bloquée.
-    fn new(seed: u64) -> Self {
-        Self(seed | 1)
-    }
-
-    /// L'entier suivant.
-    fn next(&mut self) -> u64 {
-        self.0 ^= self.0 >> 12;
-        self.0 ^= self.0 << 25;
-        self.0 ^= self.0 >> 27;
-        self.0.wrapping_mul(0x2545_F491_4F6C_DD1D)
-    }
-
-    /// Une coordonnée en sous-pixels, bornes comprises.
-    fn coord(&mut self, lo: i32, hi: i32) -> i32 {
-        lo + (self.next() % (hi - lo + 1) as u64) as i32
-    }
 }
 
 /// Des quadrilatères convexes tirés au hasard, chacun découpé selon ses deux
