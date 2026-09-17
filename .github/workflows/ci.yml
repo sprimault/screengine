@@ -102,6 +102,14 @@ jobs:
         if: runner.os == 'Windows'
         run: choco install make --no-progress
 
+      # L'hôte wasm de make test tourne sous Node, que les deux images
+      # fournissent. Il lui faut la cible, que ce job n'installe pas par
+      # make tools : recompiler les outils ici ne servirait qu'au lint.
+      - name: Cible wasm
+        run: |
+          rustup target add "$(make -s print-CIBLE_WASM)"
+          node --version
+
       - name: Tests
         run: make test
 

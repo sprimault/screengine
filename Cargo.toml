@@ -83,3 +83,19 @@ codegen-units = 16
 incremental = true
 debug-assertions = true
 overflow-checks = true
+
+# Le module wasm publié. `wasm32-unknown-unknown` ne déroule pas la pile sur une
+# chaîne stable : sa bibliothèque standard est précompilée en abort, et le
+# `panic = "unwind"` de release-ffi y est ignoré sans avertissement — une panique
+# rattrapée par `catch_unwind` finit quand même en trap. Ce profil écrit ce qui
+# se passe vraiment, et c'est le crochet de screengine-ffi qui garde le texte.
+[profile.release-wasm]
+inherits = "release"
+panic = "abort"
+strip = true
+
+# Le module contre lequel `make test-wasm` lance l'hôte web, pour la même raison
+# que ffi-test.
+[profile.wasm-test]
+inherits = "ffi-test"
+panic = "abort"

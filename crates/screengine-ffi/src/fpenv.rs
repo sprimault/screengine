@@ -133,24 +133,31 @@ mod arch {
 }
 
 // wasm n'a aucun registre de contrôle flottant : sa spécification impose
-// l'arrondi au plus proche et interdit d'écraser les sous-normaux, et `asm!`
-// n'y existe pas. Le module neutre garde une enveloppe unique qui se compile
-// partout et disparaît à l'optimisation. Il couvre aussi une cible ARM sans
-// VFP, où les instructions ci-dessus seraient indéfinies.
+// l'arrondi au plus proche et un sous-dépassement graduel, sans mode qui les
+// change, et `asm!` n'y est pas stable. Le module neutre garde une enveloppe
+// unique qui se compile partout et disparaît à l'optimisation. Il couvre aussi
+// une cible ARM sans VFP, où les instructions ci-dessus seraient indéfinies.
 #[cfg(not(any(
     target_arch = "x86_64",
     target_arch = "aarch64",
     all(target_arch = "arm", target_feature = "vfp2")
 )))]
 mod arch {
-    /// Rien à sauvegarder.
-    pub(super) type Saved = ();
+    /// Un état toujours nul.
+    ///
+    /// Un octet et non `()` : `make lint` passe clippy sur wasm, qui refuse de
+    /// comparer deux unités dans `FpEnv::enter`.
+    pub(super) type Saved = u8;
 
     /// Sans objet.
-    pub(super) fn normalize(_control: Saved) -> Saved {}
+    pub(super) fn normalize(control: Saved) -> Saved {
+        control
+    }
 
     /// Sans objet.
-    pub(super) fn read() -> Saved {}
+    pub(super) fn read() -> Saved {
+        0
+    }
 
     /// Sans objet.
     pub(super) fn write(_control: Saved) {}

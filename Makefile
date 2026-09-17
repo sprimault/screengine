@@ -9,6 +9,9 @@ SORTIE    ?= .tmp
 # tout, donc l'oubli échoue à la compilation plutôt qu'au portage.
 CIBLE_NOSTD ?= thumbv7em-none-eabihf
 
+# La cible du navigateur : exports C bruts, sans wasm-bindgen.
+CIBLE_WASM ?= wasm32-unknown-unknown
+
 # cargo install construit dans un répertoire temporaire du système et n'honore
 # pas CARGO_TARGET_DIR. Sur un poste où ce répertoire est surveillé, la variable
 # reçoit un --target-dir dans makefile.local ; ailleurs elle reste vide.
@@ -18,7 +21,7 @@ CARGO_INSTALL_FLAGS ?=
 # compilateur C, php, la cible wasm, le NDK — et aucun poste ne les a tous.
 # La liste se surcharge dans makefile.local plutôt que de faire échouer la
 # cible sur ce qui manque.
-HOSTS ?= c web
+HOSTS ?= c cpp web
 
 # makefile.local porte ce qui est propre au poste et n'est pas versionné. Inclus
 # ici et non en tête : une affectation immédiate qui y référencerait une variable
@@ -28,8 +31,8 @@ HOSTS ?= c web
 # tapée directement perd ces réglages, et l'écart ne se voit pas dans la sortie.
 -include makefile.local
 
-.PHONY: build lib run example test test-abi test-abi-run test-cpp test-cpp-run native-libs fmt lint lint-doc-tests nostd conform conform-update header \
-        header-verif audit deny doc hosts host-c host-web host-android clean tools
+.PHONY: build lib lib-wasm run example web test native-libs fmt lint lint-doc-tests nostd conform conform-update \
+        header header-verif audit deny doc hosts host-c host-cpp host-web host-android clean tools
 
 build:
 	cargo build --workspace
@@ -39,6 +42,14 @@ build:
 # panique traverserait la frontière C — comportement indéfini, pas plantage.
 lib:
 	cargo build -p screengine-ffi --profile release-ffi
+
+# Le module wasm, par son propre profil : la cible n'a pas de dépliage sur une
+# chaîne stable, et le panic = "unwind" de release-ffi y serait ignoré sans
+# avertissement. `cargo rustc`
+# plutôt que `cargo build`, pour ne produire que le cdylib : la bibliothèque
+# statique et la rlib n'ont rien à faire sur cette cible.
+lib-wasm:
+	cargo rustc -p screengine-ffi --profile release-wasm --target $(CIBLE_WASM) --crate-type cdylib
 
 # Les exemples de l'étage d'accueil, qui ouvrent une fenêtre. `make run` lance
 # le plus petit ; `make example EXAMPLE=nom` en choisit un autre.
@@ -56,77 +67,73 @@ test:
 	cargo test $(PKG) $(if $(RUN),-- $(RUN))
 	$(MAKE) test-abi
 	$(MAKE) test-cpp
+	$(MAKE) test-wasm
 
-# L'hôte C franchit réellement la frontière, lié à la bibliothèque statique, et
-# son empreinte doit être celle du chemin Rust. Les tests de screengine-ffi
+# Les hôtes qui franchissent réellement la frontière, chacun comparant son
+# empreinte du triangle à celle du chemin Rust. Les tests de screengine-ffi
 # appellent les fonctions exportées depuis Rust : ils ne voient ni l'édition de
-# liens, ni la disposition vue par un compilateur C, ni l'environnement
-# flottant d'un vrai hôte.
+# liens, ni la disposition vue par un autre compilateur, ni l'environnement d'un
+# vrai hôte.
 #
-# Sans compilateur C, la cible saute et dit pourquoi. En intégration continue
-# (CI défini), le même saut est une erreur : un contrôle qui ne tourne pas sans
-# que personne le voie est pire que pas de contrôle.
-ABI_OUT = $(abspath $(SORTIE))/host-c
+#   abi   l'hôte C, lié à la bibliothèque statique
+#   cpp   l'hôte C++, lié à la bibliothèque dynamique : le header compilé en C++
+#         et le chargement dynamique réel
+#   wasm  l'hôte web sous Node, sans fenêtre : le module instancié sans import,
+#         la mémoire linéaire et scg_buffer_alloc
+#
+# Chaque hôte garde dans son Makefile `why-not`, `all` et `run`, avec PROFILE et
+# OUT ; ce qui suit ne connaît que son répertoire, son profil et la commande qui
+# construit ce qu'il charge.
+TEST_HOSTS   := abi cpp wasm
+TEST_TARGETS := $(addprefix test-,$(TEST_HOSTS)) $(addsuffix -run,$(addprefix test-,$(TEST_HOSTS)))
+.PHONY: $(TEST_TARGETS)
 
-test-abi:
-	@reason=$$($(MAKE) -s --no-print-directory -C hosts/c why-not); \
-	if [ -z "$$reason" ]; then \
-	  $(MAKE) test-abi-run; \
-	elif [ -n "$$CI" ]; then \
-	  echo "test-abi impossible en integration continue : $$reason"; exit 1; \
-	else \
-	  echo "test-abi saute : $$reason"; \
-	fi
+host_dir_abi      := c
+host_name_abi     := C
+host_profile_abi  := ffi-test
+host_build_abi     = cargo build -p screengine-ffi --profile ffi-test
 
+host_dir_cpp      := cpp
+host_name_cpp     := C++
+host_profile_cpp  := ffi-test
+host_build_cpp     = cargo build -p screengine-ffi --profile ffi-test
+
+host_dir_wasm     := web
+host_name_wasm    := wasm
+host_profile_wasm := wasm-test
+host_build_wasm    = cargo rustc -p screengine-ffi --profile wasm-test --target $(CIBLE_WASM) --crate-type cdylib
+
+HOST_OUT = $(abspath $(SORTIE))/host-$(host_dir_$*)
+
+# Sans l'outillage de l'hôte, la cible saute et dit pourquoi. En intégration
+# continue (CI défini), le même saut est une erreur : un contrôle qui ne tourne
+# pas sans que personne le voie est pire que pas de contrôle.
+#
 # Messages sans accents : la console Windows les reçoit dans une autre page de
-# code que celle du Makefile.
-#
-# --no-print-directory explicite sur chaque appel de hosts/c : GNU Make 4.3 ne
-# le déduit pas de -s, et la ligne « Entering directory » se retrouverait dans
-# la raison de why-not ou dans le fichier d'empreinte.
-test-abi-run:
-	cargo build -p screengine-ffi --profile ffi-test
-	@mkdir -p $(ABI_OUT)
-	cargo run -q -p screengine-conformance --release -- --print triangle > $(ABI_OUT)/rust.txt
-	$(MAKE) -s --no-print-directory -C hosts/c PROFILE=ffi-test OUT=$(ABI_OUT) all
-	$(MAKE) -s --no-print-directory -C hosts/c PROFILE=ffi-test OUT=$(ABI_OUT) run > $(ABI_OUT)/c.txt
-	@rust=$$(tr -d '\r' < $(ABI_OUT)/rust.txt); c=$$(tr -d '\r' < $(ABI_OUT)/c.txt); \
-	if [ -n "$$c" ] && [ "$$c" = "$$rust" ]; then \
-	  echo "test-abi : empreinte $$c, identique au chemin Rust"; \
-	else \
-	  echo "test-abi : hote C '$$c', chemin Rust '$$rust'"; exit 1; \
-	fi
-
-# L'hôte C++, lié à la bibliothèque dynamique : le header compilé en C++ et le
-# chargement dynamique réel, que l'hôte C lié en statique ne voit pas. Même
-# règle de saut que test-abi.
-#
-# Ces deux cibles reprennent test-abi presque ligne à ligne. C'est la deuxième
-# occurrence : notée, pas extraite ; la troisième — l'hôte wasm — décidera de la
-# forme commune.
-CPP_OUT = $(abspath $(SORTIE))/host-cpp
-
-test-cpp:
-	@reason=$$($(MAKE) -s --no-print-directory -C hosts/cpp why-not); \
+# code que celle du Makefile. --no-print-directory explicite sur chaque appel
+# d'un hôte : GNU Make 4.3 ne le déduit pas de -s, et la ligne « Entering
+# directory » se retrouverait dans la raison de why-not ou dans l'empreinte.
+$(addprefix test-,$(TEST_HOSTS)): test-%:
+	@reason=$$($(MAKE) -s --no-print-directory -C hosts/$(host_dir_$*) why-not); \
 	if [ -z "$$reason" ]; then \
-	  $(MAKE) test-cpp-run; \
+	  $(MAKE) test-$*-run; \
 	elif [ -n "$$CI" ]; then \
-	  echo "test-cpp impossible en integration continue : $$reason"; exit 1; \
+	  echo "test-$* impossible en integration continue : $$reason"; exit 1; \
 	else \
-	  echo "test-cpp saute : $$reason"; \
+	  echo "test-$* saute : $$reason"; \
 	fi
 
-test-cpp-run:
-	cargo build -p screengine-ffi --profile ffi-test
-	@mkdir -p $(CPP_OUT)
-	cargo run -q -p screengine-conformance --release -- --print triangle > $(CPP_OUT)/rust.txt
-	$(MAKE) -s --no-print-directory -C hosts/cpp PROFILE=ffi-test OUT=$(CPP_OUT) all
-	$(MAKE) -s --no-print-directory -C hosts/cpp PROFILE=ffi-test OUT=$(CPP_OUT) run > $(CPP_OUT)/cpp.txt
-	@rust=$$(tr -d '\r' < $(CPP_OUT)/rust.txt); cpp=$$(tr -d '\r' < $(CPP_OUT)/cpp.txt); \
-	if [ -n "$$cpp" ] && [ "$$cpp" = "$$rust" ]; then \
-	  echo "test-cpp : empreinte $$cpp, identique au chemin Rust"; \
+$(addsuffix -run,$(addprefix test-,$(TEST_HOSTS))): test-%-run:
+	$(host_build_$*)
+	@mkdir -p $(HOST_OUT)
+	cargo run -q -p screengine-conformance --release -- --print triangle > $(HOST_OUT)/rust.txt
+	$(MAKE) -s --no-print-directory -C hosts/$(host_dir_$*) PROFILE=$(host_profile_$*) OUT=$(HOST_OUT) all
+	$(MAKE) -s --no-print-directory -C hosts/$(host_dir_$*) PROFILE=$(host_profile_$*) OUT=$(HOST_OUT) run > $(HOST_OUT)/host.txt
+	@rust=$$(tr -d '\r' < $(HOST_OUT)/rust.txt); host=$$(tr -d '\r' < $(HOST_OUT)/host.txt); \
+	if [ -n "$$host" ] && [ "$$host" = "$$rust" ]; then \
+	  echo "test-$* : empreinte $$host, identique au chemin Rust"; \
 	else \
-	  echo "test-cpp : hote C++ '$$cpp', chemin Rust '$$rust'"; exit 1; \
+	  echo "test-$* : hote $(host_name_$*) '$$host', chemin Rust '$$rust'"; exit 1; \
 	fi
 
 # Les bibliothèques système que réclame la bibliothèque statique sur ce poste.
@@ -143,6 +150,7 @@ fmt:
 
 lint: lint-doc-tests
 	cargo clippy --workspace --all-targets --all-features -- -D warnings
+	cargo clippy -p screengine -p screengine-ffi --lib --target $(CIBLE_WASM) -- -D warnings
 
 # missing_docs ne voit pas les fonctions privées d'un `mod tests`, alors que la
 # règle du projet ne fait pas d'exception pour elles. Sans ce contrôle, la
@@ -209,8 +217,16 @@ hosts: $(addprefix host-,$(HOSTS))
 host-c: lib
 	$(MAKE) -C hosts/c
 
-host-web: lib
+host-cpp: lib
+	$(MAKE) -C hosts/cpp
+
+host-web: lib-wasm
 	$(MAKE) -C hosts/web
+
+# La page du navigateur, servie en local : `fetch` ne lit pas un .wasm en
+# file://. PORT se choisit sur la ligne de commande.
+web: lib-wasm
+	$(MAKE) -C hosts/web serve
 
 host-android: lib
 	$(MAKE) -C hosts/android
@@ -244,4 +260,4 @@ tools:
 	# avis, et son intérêt est de connaître les derniers. L'épingler figerait
 	# ce qu'il sait lire des avis publiés depuis.
 	cargo install cargo-audit --locked $(CARGO_INSTALL_FLAGS)
-	rustup target add $(CIBLE_NOSTD)
+	rustup target add $(CIBLE_NOSTD) $(CIBLE_WASM)

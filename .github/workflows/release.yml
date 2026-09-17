@@ -85,15 +85,26 @@ jobs:
     name: Bibliothèque — ${{ matrix.cible }}
     needs: notes
     runs-on: ${{ matrix.os }}
+    # `construire` et `repertoire` parce que le module wasm a sa propre cible et
+    # son propre profil : le panic = "unwind" de release-ffi y serait ignoré.
     strategy:
       matrix:
         include:
           - os: windows-latest
             cible: windows_x64
+            construire: make lib
+            repertoire: target/release-ffi
             fichiers: screengine_ffi.dll screengine_ffi.dll.lib screengine_ffi.lib
           - os: ubuntu-latest
             cible: linux_x64
+            construire: make lib
+            repertoire: target/release-ffi
             fichiers: libscreengine_ffi.so libscreengine_ffi.a
+          - os: ubuntu-latest
+            cible: wasm32
+            construire: make lib-wasm
+            repertoire: target/wasm32-unknown-unknown/release-wasm
+            fichiers: screengine_ffi.wasm
     defaults:
       run:
         shell: bash
@@ -109,6 +120,10 @@ jobs:
         if: runner.os == 'Windows'
         run: choco install make --no-progress
 
+      # make test lance l'hôte wasm, sur chaque entrée de la matrice.
+      - name: Cible wasm
+        run: rustup target add "$(make -s print-CIBLE_WASM)"
+
       # ci.yml n'écoute que les branches et les PR : sans ce garde-fou, un tag
       # posé sur un commit rouge publierait quand même. La conformance en fait
       # partie — une bibliothèque qui ne rend pas les empreintes de référence
@@ -116,10 +131,11 @@ jobs:
       - name: Tests et conformance
         run: make test && make conform
 
-      # make lib et non cargo build : c'est lui qui porte le profil release-ffi,
-      # sans lequel catch_unwind ne rattraperait rien.
+      # Par le Makefile et non cargo build : c'est lui qui porte le profil —
+      # release-ffi, sans lequel catch_unwind ne rattraperait rien, ou
+      # release-wasm.
       - name: Construire
-        run: make lib
+        run: ${{ matrix.construire }}
 
       # Le nom de l'archive porte version, système et architecture : c'est ce
       # qui permet de choisir son fichier et d'en garder deux versions côte à
@@ -130,7 +146,7 @@ jobs:
           paquet="screengine_${GITHUB_REF_NAME}_${{ matrix.cible }}"
           mkdir -p "paquets/$paquet/lib" "paquets/$paquet/include" publication
           for fichier in ${{ matrix.fichiers }}; do
-            cp "target/release-ffi/$fichier" "paquets/$paquet/lib/"
+            cp "${{ matrix.repertoire }}/$fichier" "paquets/$paquet/lib/"
           done
           cp include/screengine.h "paquets/$paquet/include/"
           cp LICENSE-MIT LICENSE-APACHE THIRD-PARTY-NOTICES "paquets/$paquet/"

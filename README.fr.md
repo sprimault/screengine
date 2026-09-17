@@ -37,8 +37,8 @@ ces hôtes, écrit en Rust pour qui fait un jeu, et le moteur ignore son existen
 
 **Étape 0 en cours : un triangle en dur, et aucun moteur.** La frontière C est
 écrite, et le triangle est rempli par les fonctions de bord en virgule fixe
-définitives. Les hôtes C et C++ l'affichent, et rendent la même empreinte que le
-chemin Rust ; restent wasm et Android avant toute autre ligne de moteur.
+définitives. Les hôtes C, C++ et wasm l'affichent, et rendent la même empreinte
+que le chemin Rust ; reste Android avant toute autre ligne de moteur.
 
 La feuille de route compte dix étapes, publiées à chacune.
 
@@ -114,17 +114,18 @@ différence entre les plateformes.
 make build     # noyau et bibliothèque partagée
 make run       # ouvre une fenêtre sur le moteur
 make header    # régénère include/screengine.h
-make test      # dont les hôtes C et C++, s'il y a un compilateur
+make test      # dont les hôtes C, C++ et wasm, si leur outillage est là
 make conform   # rejoue les scènes de référence et compare les empreintes
 make lint
 make nostd     # preuve que le noyau compile sans std
+make web       # sert la page de l'hôte wasm sur http://127.0.0.1:8080/
 ```
 
 Le noyau est `no_std` et n'a aucune dépendance. Un dépôt fraîchement cloné
 compile sans rien installer d'autre qu'une chaîne Rust ; seul `screengine-play`
 porte des dépendances, `winit` et `softbuffer`.
 
-Les cibles Android et wasm exigent chacune leur outillage et passent par
-l'intégration continue. iOS attend que le reste soit stable — voir la feuille de
+L'hôte wasm demande Node et la cible `wasm32-unknown-unknown`, que
+`make tools` installe ; la cible Android exige son propre outillage. iOS attend que le reste soit stable — voir la feuille de
 route. [`docs/construction.md`](docs/construction.md) porte la
 matrice complète.

@@ -29,9 +29,11 @@ Sans lui, un clone se construit dans `target/`.
 | `cbindgen` | `0.29.0`, épinglé | un générateur : une autre version produit un autre header, et `make header-verif` échouerait sur un dépôt propre |
 | `cargo-deny` | `0.19.4`, épinglé | ses règles changent de sens d'une version à l'autre ; en deçà de 0.19.1, il ne lit pas les scores CVSS 4.0 de la base d'avis |
 | `cargo-audit` | la dernière | il lit des avis publiés en continu ; l'épingler figerait ce qu'il sait lire |
+| Node | 22 au minimum | exécute l'hôte wasm de `make test` et sert sa page ; aucun paquet npm. Présent sur les images d'intégration continue |
 
 Les versions sont épinglées dans le `Makefile` et nulle part ailleurs.
-`make tools` les installe, avec la cible `thumbv7em-none-eabihf`. L'intégration
+`make tools` les installe, avec les cibles `thumbv7em-none-eabihf` et
+`wasm32-unknown-unknown`. L'intégration
 continue appelle `make tools` et lit les versions par `make print-CBINDGEN_VERSION`
 plutôt que de les recopier.
 
@@ -42,7 +44,9 @@ plutôt que de les recopier.
 | `dev` | développement | `opt-level = 3` pour le noyau et les dépendances, assertions conservées |
 | `release` | binaires : exemples de l'étage d'accueil, conformance | `lto = "fat"`, `codegen-units = 1`, `panic = "abort"` |
 | `release-ffi` | bibliothèque partagée et statique | hérite de `release`, `panic = "unwind"` |
-| `ffi-test` | bibliothèque statique de `make test-abi` | hérite de `release`, `panic = "unwind"`, sans LTO, assertions conservées |
+| `ffi-test` | bibliothèques de `make test-abi` et `make test-cpp` | hérite de `release`, `panic = "unwind"`, sans LTO, assertions conservées |
+| `release-wasm` | module wasm publié | hérite de `release`, `panic = "abort"`, `strip = true` |
+| `wasm-test` | module de `make test-wasm` | hérite de `ffi-test`, `panic = "abort"` |
 
 - **Un rasteriseur logiciel non optimisé est inutilisable**, même pour déboguer :
   le profil de développement optimise le noyau, sans perdre `debug-assertions` ni
@@ -51,7 +55,10 @@ plutôt que de les recopier.
   `catch_unwind` ne rattrape rien, et une panique qui traverse la frontière C est
   un comportement indéfini. Ne pas unifier les deux profils pour simplifier le
   `Makefile` : `make lib` construit avec le bon.
-- **L'hôte C de `make test` se lie à `ffi-test`**, pas à l'artefact publié : la
+- **Sauf sur wasm, qui passe par `release-wasm`.** La chaîne stable n'y déroule
+  pas la pile, et `panic = "unwind"` y est ignoré sans avertissement : le profil
+  écrit ce qui se passe vraiment. Voir « wasm » plus bas.
+- **Les hôtes de `make test` se lient à `ffi-test`**, pas à l'artefact publié : la
   LTO complète ferait payer chaque modification du noyau à chaque `make test`.
   C'est admissible parce que l'image ne dépend pas du profil — une empreinte qui
   diffère entre les deux est un défaut du moteur.
@@ -86,7 +93,7 @@ dynamique par nom.
 |---|---|---|---|---|---|
 | Windows x64 | `x86_64-pc-windows-msvc` | `.dll`, `.lib` | MSVC Build Tools | `screengine-play`, `hosts/c`, `hosts/cpp` | CI |
 | Linux x64 | `x86_64-unknown-linux-gnu` | `.so`, `.a` | gcc ou clang | `hosts/c`, `hosts/cpp`, conformance | CI |
-| Navigateur | `wasm32-unknown-unknown` | `.wasm` | cible rustup | `hosts/web` | CI, avec son hôte |
+| Navigateur | `wasm32-unknown-unknown` | `.wasm` | cible rustup, Node | `hosts/web` | CI, `make test-wasm` sous Linux et Windows |
 | Android arm64 | `aarch64-linux-android` | `.so` | NDK | `hosts/android` | CI, avec son hôte |
 | Android armv7 | `armv7-linux-androideabi` | `.so` | NDK | `hosts/android` | CI, avec son hôte |
 | Android x64 | `x86_64-linux-android` | `.so` | NDK | émulateur | CI, avec son hôte |
@@ -172,13 +179,31 @@ et un cycle de retour lent depuis un poste Windows.
 - **`scg_buffer_alloc` est obligatoire**, et toute vue sur la mémoire se recrée
   après chaque appel : voir [`abi.md`](abi.md), « Ce qu'un auteur de liaison doit
   savoir ».
-- **À vérifier — C2 : les paniques sur wasm.** Au moment de l'écriture, la chaîne
-  stable ne déroule pas la pile sur `wasm32-unknown-unknown` : la bibliothèque
-  standard y est précompilée en `panic = "abort"`, une panique y est un trap, et
-  `catch_unwind` n'y rattrape rien. Le profil `release-ffi` ne s'y applique donc
-  probablement pas tel quel. À établir contre la version de Rust en usage au
-  lot 7 : si c'est confirmé, le web a son propre profil, et `abi.md` dit qu'une
-  panique y rend l'instance inutilisable.
+- **`make lib-wasm`** construit le module par `cargo rustc --crate-type cdylib`,
+  pour ne produire ni la bibliothèque statique ni la rlib, et le dépose dans
+  `target/wasm32-unknown-unknown/release-wasm/screengine_ffi.wasm`. Il
+  s'instancie sans aucun import et exporte `memory` avec les fonctions `scg_`.
+- **Une panique est un trap.** Constaté avec Rust 1.98 : la bibliothèque
+  standard de la cible est précompilée en `panic = "abort"`, et un profil en
+  `panic = "unwind"` se construit sans erreur ni avertissement, mais une panique
+  rattrapée par `catch_unwind` finit quand même en `RuntimeError: unreachable`.
+  Seule une chaîne nightly avec `-Zbuild-std` déroulerait la pile. D'où le
+  profil `release-wasm`, et le crochet de `screengine-ffi` qui écrit le texte de
+  la panique avant le trap ; ce qu'en fait l'hôte est dans [`abi.md`](abi.md),
+  « Après une panique ».
+- **wasm n'a pas d'environnement flottant à fixer.** Sa spécification impose
+  l'arrondi au plus proche et un sous-dépassement graduel, sans mode qui les
+  change : la frontière y passe par son module neutre.
+- **`make lint` passe aussi clippy sur la cible**, pour le noyau et la couche
+  FFI : un `cfg` propre à wasm n'est vérifié par aucune autre commande.
+- **L'hôte est en JavaScript, sans paquet npm.** `hosts/web/screengine.js` est
+  commun au test et à la page, sans API de Node ni du DOM. `make test-wasm` le
+  lance sous Node, sans fenêtre ; `make web` sert la page sur
+  `http://127.0.0.1:8080/`, puisque `fetch` ne lit pas un `.wasm` en `file://`.
+  Écarté : TypeScript, que Node exécute désormais sans compilation mais qu'un
+  navigateur ne lit pas — la page exigerait alors un compilateur, donc npm.
+  **À vérifier** : la page n'a été vue dans aucun navigateur en intégration
+  continue, seul le test sous Node y tourne.
 
 ### Android
 
@@ -280,7 +305,7 @@ et chaque semaine pour l'audit :
 | Job | Plateforme | Contrôles |
 |---|---|---|
 | vérification | Linux | `fmt`, `lint`, `nostd`, `header-verif`, `deny` |
-| tests | Linux et Windows | `test`, hôtes C et C++ compris, `conform` |
+| tests | Linux et Windows | `test`, hôtes C, C++ et wasm compris, `conform` |
 | audit | Linux | `audit`, dans un job à part : un avis publié en amont n'est pas un défaut de la PR en cours |
 
 Tout passe par le `Makefile`, et les outils par `make tools`. Les actions sont
@@ -305,9 +330,10 @@ leurs empreintes se comparent par leurs hôtes.
 - **`.github/workflows/release.yml`**, sur un tag `v*` : vérifie que le tag et la
   version du `Cargo.toml` concordent, lit la section du `CHANGELOG`, repasse les
   tests et la conformance — un tag posé sur un commit rouge ne publie pas —,
-  construit par `make lib`, puis crée la release en brouillon. Les notes se
-  relisent avant de publier.
-- **Une archive par cible**, `screengine_<tag>_<cible>`, contenant la
+  construit par `make lib` — `make lib-wasm` pour le module wasm —, puis crée la
+  release en brouillon. Les notes se relisent avant de publier.
+- **Une archive par cible** — `windows_x64`, `linux_x64`, `wasm32` —,
+  `screengine_<tag>_<cible>`, contenant la
   bibliothèque, le header, `LICENSE-MIT`, `LICENSE-APACHE` et
   `THIRD-PARTY-NOTICES` ; un `SHA256SUMS`
   calculé sur les archives, et une attestation de provenance vérifiable par

@@ -82,6 +82,28 @@ fn panic_text(payload: &(dyn Any + Send)) -> &str {
     }
 }
 
+/// Installe, une fois, le crochet qui garde le texte d'une panique sur wasm.
+///
+/// Sans dépliage sur une chaîne stable, une panique y est un trap :
+/// `catch_unwind` ne rattrape rien, et le texte serait perdu. Le crochet
+/// s'exécute avant l'arrêt et l'écrit dans l'emplacement sans contexte, dont
+/// l'adresse ne change pas pendant la vie de l'instance — faute de threads, le
+/// stockage local y est un statique. L'hôte le lit dans la mémoire linéaire
+/// après avoir attrapé l'erreur, sans rappeler un module dont la pile est dans
+/// un état inconnu.
+///
+/// Une fois et non à chaque appel : `set_hook` alloue, et une allocation par
+/// image est ce que l'invariant interdit.
+#[cfg(target_arch = "wasm32")]
+fn install_panic_hook() {
+    static HOOK: std::sync::Once = std::sync::Once::new();
+    HOOK.call_once(|| {
+        std::panic::set_hook(Box::new(|info| {
+            message::set_orphan(panic_text(info.payload()));
+        }));
+    });
+}
+
 /// Exécute un appel sous l'environnement du moteur, paniques rattrapées.
 ///
 /// La garde d'environnement flottant enveloppe `catch_unwind` et non l'inverse :
@@ -92,6 +114,9 @@ fn guarded<F>(f: F) -> Result<(), Failure>
 where
     F: FnOnce() -> Result<(), AbiError>,
 {
+    #[cfg(target_arch = "wasm32")]
+    install_panic_hook();
+
     let _fpenv = FpEnv::enter();
 
     // `AssertUnwindSafe` ne se pose qu'ici : c'est le poison qui la rend
