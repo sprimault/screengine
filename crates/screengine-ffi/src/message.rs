@@ -44,6 +44,11 @@ impl Message {
         self.bytes[end] = 0;
     }
 
+    /// Remplace le message par une copie d'un autre.
+    pub(crate) fn copy_from(&mut self, other: &Message) {
+        self.bytes = other.bytes;
+    }
+
     /// Vide le message.
     pub(crate) fn clear(&mut self) {
         self.bytes[0] = 0;

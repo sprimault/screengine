@@ -164,10 +164,11 @@ et un cycle de retour lent depuis un poste Windows.
   CRT de MSVC doivent être identiques. Un écart désigne un appel à la libm, une
   hypothèse sur l'alignement ou un chemin SIMD sélectionné différemment — jamais
   une différence acceptable.
-- **L'hôte C++ se compile avec `c++ -std=c++17`**, lié par
+- **L'hôte C++ se compile avec `c++ -std=c++17 -pthread`**, lié par
   `-L… -lscreengine` : l'éditeur de liens y préfère la bibliothèque partagée
   à l'archive voisine. Un `rpath` vers le répertoire de construction la retrouve
-  à l'exécution, sans `LD_LIBRARY_PATH`.
+  à l'exécution, sans `LD_LIBRARY_PATH`. `-pthread` sert ses tuiles rendues sur
+  plusieurs threads.
 - **L'hôte C se compile avec `cc -std=c11`**, lié à `libscreengine.a` puis
   à `-lgcc_s -lutil -lrt -lpthread -lm -ldl -lc`. `gcc_s` porte le dépliage, sans
   lequel `catch_unwind` ne rattraperait rien.

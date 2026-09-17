@@ -227,6 +227,13 @@ Le contrat est dans [`abi.md`](abi.md). Ce qui suit est la manière de l'écrire
   comportement indéfini, avant même la première ligne de vérification. On reçoit
   un entier, on le convertit en `enum` par `TryFrom`, et l'échec rend
   `SCG_ERR_INVALID_ARGUMENT`.
+- **Les tuiles partagent le handle entre threads.** Le contexte du noyau y vit
+  dans un `UnsafeCell`, et l'état de rendu du noyau, atomique, décide de
+  l'accès : les tuiles ne forment jamais qu'une référence partagée, et un appel
+  exclusif ne forme la sienne qu'après avoir vu le rendu fermé. Une tuile écrit
+  son message dans l'emplacement par thread et sa défaillance dans des
+  atomiques ; le tampon de l'hôte lui est remis ligne par ligne, jamais en une
+  tranche qui chevaucherait celle d'une autre tuile.
 - **Un handle est un `Box` converti** par `Box::into_raw`, rendu par
   `Box::from_raw` à la destruction et jamais ailleurs. Le type pointé est opaque
   pour `cbindgen`.
@@ -456,6 +463,9 @@ teste quelque chose.
   à celle du chemin Rust (`screengine-conformance --print triangle`). Il fait
   partie de `make test` ; sans compilateur C il saute en le disant, et ce saut
   est une erreur en intégration continue.
+- **Les hôtes rendent aussi par tuiles** : une partie des tuiles, dans un ordre
+  qui n'est pas celui des index, puis la fin qui complète, et l'empreinte doit
+  être celle de la fin seule. L'hôte C++ les rend sur plusieurs threads.
 - **L'hôte C++, dans `make test-cpp`**, se lie à la bibliothèque dynamique et
   reprend les mêmes contrôles. Il ajoute ce que le C statique ne voit pas : le
   header compilé en C++ — gardes `extern "C"`, assertions de disposition — et la

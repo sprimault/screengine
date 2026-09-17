@@ -305,3 +305,122 @@ fn un_appel_reussi_efface_le_message_sans_contexte() {
     // SAFETY: handle vivant, détruit une seule fois.
     unsafe { scg_destroy(ctx) };
 }
+
+/// Largeur de l'image des tests de tuiles : 7 colonnes de 32, la dernière
+/// partielle.
+const TILES_W: u32 = 203;
+
+/// Hauteur de l'image des tests de tuiles : 5 lignes de 32, la dernière
+/// partielle.
+const TILES_H: u32 = 150;
+
+/// Un contexte pour les tests de tuiles.
+fn tiled() -> *mut ScgContext {
+    create(&ScgContextConfig {
+        max_width: TILES_W,
+        max_height: TILES_H,
+        width: TILES_W,
+        height: TILES_H,
+        ..sane()
+    })
+}
+
+/// Un tampon d'hôte à la taille de l'image des tests de tuiles.
+fn tiles_buffer() -> Vec<u8> {
+    vec![0; TILES_W as usize * TILES_H as usize * 4]
+}
+
+/// Un pointeur que les threads d'un test se partagent.
+///
+/// Les pointeurs bruts ne sont pas `Send` ; ce qui rend le partage sain est le
+/// contrat de l'ABI — des tuiles d'index distincts sur des rectangles
+/// disjoints —, que le test respecte.
+#[derive(Clone, Copy)]
+struct Shared(*mut ScgContext, *mut u8);
+
+// SAFETY: voir la documentation de `Shared`.
+unsafe impl Send for Shared {}
+
+/// Des tuiles rendues depuis plusieurs threads par la frontière, puis la
+/// fin : l'image est celle de la fin seule, octet pour octet.
+#[test]
+fn des_tuiles_sur_plusieurs_threads_rendent_l_image_de_la_fin_seule() {
+    let reference_ctx = tiled();
+    let mut expected = tiles_buffer();
+    // SAFETY: handle vivant, tampon à la taille de l'image.
+    let code = unsafe { scg_frame_end(reference_ctx, expected.as_mut_ptr(), TILES_W) };
+    assert_eq!(code, SCG_OK);
+
+    let ctx = tiled();
+    let mut pixels = tiles_buffer();
+    let mut count = 0;
+    // SAFETY: handle vivant, compteur local.
+    assert_eq!(unsafe { scg_frame_begin(ctx, &mut count) }, SCG_OK);
+    assert_eq!(count, 35);
+
+    let shared = Shared(ctx, pixels.as_mut_ptr());
+    std::thread::scope(|scope| {
+        for worker in 0..4 {
+            scope.spawn(move || {
+                let shared = shared;
+                // Un tiers des tuiles seulement : la fin rend le reste.
+                for index in (0..count).filter(|i| i % 4 == worker && i % 3 != 0) {
+                    // SAFETY: handle vivant, index propre à ce thread, tampon
+                    // à la taille de l'image.
+                    let code = unsafe { scg_frame_tile(shared.0, index, shared.1, TILES_W) };
+                    assert_eq!(code, SCG_OK, "tuile {index}");
+                }
+            });
+        }
+    });
+
+    // SAFETY: handle vivant, plus aucune tuile en cours.
+    let code = unsafe { scg_frame_end(ctx, pixels.as_mut_ptr(), TILES_W) };
+    assert_eq!(code, SCG_OK);
+    assert!(pixels == expected);
+
+    // SAFETY: handles vivants, détruits une seule fois.
+    unsafe {
+        scg_destroy(ctx);
+        scg_destroy(reference_ctx);
+    }
+}
+
+/// La séquence de l'image vue par un hôte : chaque appel hors séquence a son
+/// code, et le message d'une tuile se lit sur l'emplacement du thread, pas
+/// sur celui du contexte.
+#[test]
+fn la_sequence_de_l_image_est_verifiee_a_la_frontiere() {
+    let ctx = tiled();
+    let mut pixels = tiles_buffer();
+    let mut count = 0;
+
+    let base = pixels.as_mut_ptr();
+    // SAFETY: pour tout ce test, handle vivant, tampon à la taille de l'image
+    // et compteur local.
+    let tile = |index, stride| unsafe { scg_frame_tile(ctx, index, base, stride) };
+
+    assert_eq!(tile(0, TILES_W), SCG_ERR_INVALID_STATE);
+    assert_ne!(last_error(ptr::null()), "", "message de la tuile");
+    assert_eq!(last_error(ctx), "", "message du contexte intact");
+
+    // SAFETY: comme ci-dessus.
+    unsafe {
+        assert_eq!(scg_frame_begin(ctx, ptr::null_mut()), SCG_ERR_NULL);
+        assert_eq!(scg_frame_begin(ctx, &mut count), SCG_OK);
+        assert_eq!(scg_frame_begin(ctx, &mut count), SCG_ERR_INVALID_STATE);
+        let null = ptr::null_mut();
+        assert_eq!(scg_frame_tile(ctx, 0, null, TILES_W), SCG_ERR_NULL);
+    }
+
+    assert_eq!(tile(count, TILES_W), SCG_ERR_INVALID_ARGUMENT);
+    assert_eq!(tile(0, TILES_W - 1), SCG_ERR_INVALID_ARGUMENT);
+    assert_eq!(tile(0, TILES_W), SCG_OK);
+    assert_eq!(tile(0, TILES_W), SCG_ERR_INVALID_STATE);
+
+    // SAFETY: comme ci-dessus.
+    assert_eq!(unsafe { scg_frame_end(ctx, base, TILES_W) }, SCG_OK);
+    assert_eq!(tile(1, TILES_W), SCG_ERR_INVALID_STATE, "après la fin");
+    // SAFETY: handle vivant, détruit une seule fois.
+    unsafe { scg_destroy(ctx) };
+}

@@ -46,6 +46,13 @@ publié, et explique les conventions du dépôt à qui y contribue.
 
 ## [Non publié]
 
+### Ajouté
+- `scg_frame_begin` et `scg_frame_tile` : l'hôte commence l'image, puis rend
+  ses tuiles depuis ses propres threads. `scg_frame_end` garde sa signature et
+  rend les tuiles que personne n'a rendues : un hôte qui n'appelle qu'elle
+  reçoit toujours l'image entière. `SCG_ABI_VERSION` ne change pas. Le thread
+  qui rend une tuile doit disposer de 128 Kio de pile.
+
 ### Modifié
 - L'image se rend par tuiles de la taille choisie à la création : les triangles
   sont répartis une fois par image, et chaque tuile tient sa couleur sur la pile
@@ -57,6 +64,13 @@ publié, et explique les conventions du dépôt à qui y contribue.
   change pas.
 
 ***
+
+### Added
+- `scg_frame_begin` and `scg_frame_tile`: the host begins the frame, then
+  renders its tiles from its own threads. `scg_frame_end` keeps its signature
+  and renders every tile nobody rendered: a host that only calls it still
+  receives the whole image. `SCG_ABI_VERSION` is unchanged. A thread rendering
+  a tile needs 128 KiB of stack.
 
 ### Changed
 - The image is rendered in tiles of the size chosen at creation: triangles are

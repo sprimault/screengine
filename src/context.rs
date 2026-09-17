@@ -6,7 +6,7 @@
 mod frame;
 
 use alloc::vec::Vec;
-use core::sync::atomic::AtomicBool;
+use core::sync::atomic::{AtomicBool, AtomicU8, AtomicU32, Ordering};
 
 use crate::buffer::reserved;
 use crate::error::{Argument, Error, Result};
@@ -106,7 +106,22 @@ pub struct Context {
     /// Atomique parce que des tuiles distinctes se rendent depuis des threads
     /// distincts, et que c'est lui qui dit à la fin ce qui reste à rendre.
     taken: Vec<AtomicBool>,
+    /// Le découpage de l'image en cours, fixé au début.
+    grid: Grid,
+    /// [`RECORDING`], [`RENDERING`] ou [`CLOSING`].
+    state: AtomicU8,
+    /// Les tuiles en cours de rendu, que la fin attend à zéro.
+    in_flight: AtomicU32,
 }
+
+/// Le contexte accepte la scène : aucune image n'est commencée.
+const RECORDING: u8 = 0;
+
+/// L'image est répartie, et ses tuiles se rendent.
+const RENDERING: u8 = 1;
+
+/// La fin d'image a pris la main : plus aucune tuile ne commence.
+const CLOSING: u8 = 2;
 
 impl Context {
     /// Crée un contexte, ou refuse la configuration.
@@ -127,6 +142,9 @@ impl Context {
             triangles: reserved(TRIANGLE_CAPACITY)?,
             bins: Bins::new(tiles as usize, TRIANGLE_CAPACITY)?,
             taken,
+            grid: Grid::new(config.width, config.height, config.tile_size),
+            state: AtomicU8::new(RECORDING),
+            in_flight: AtomicU32::new(0),
         })
     }
 
@@ -140,30 +158,55 @@ impl Context {
         (self.width, self.height)
     }
 
-    /// Commence une image : scelle la scène, la répartit par tuile, et rend de
-    /// quoi rendre les tuiles.
+    /// Commence une image : scelle la scène, la répartit par tuile, et rend le
+    /// nombre de tuiles.
     ///
     /// La répartition est la seule phase qui écrit dans un état partagé, et
-    /// elle se termine ici, avant toute tuile. La [`Frame`] emprunte le
-    /// contexte : aucun autre appel n'est possible tant qu'elle vit.
-    pub fn frame_begin(&mut self) -> Result<Frame<'_>> {
+    /// elle se termine ici, avant toute tuile. Une image déjà commencée rend
+    /// [`Error::InvalidState`] : sa répartition est peut-être lue par une tuile
+    /// sur un autre thread.
+    ///
+    /// C'est la forme qu'emploie la frontière C, qui garde l'image ouverte d'un
+    /// appel à l'autre. Un appelant Rust lui préfère [`Context::frame_begin`],
+    /// dont la [`Frame`] rend la séquence vérifiable à la compilation.
+    pub fn begin(&mut self) -> Result<u32> {
+        if *self.state.get_mut() != RECORDING {
+            return Err(Error::InvalidState);
+        }
         self.triangles.clear();
         self.draw_demo_triangle()?;
-        Ok(self.seal())
+        self.seal();
+        Ok(self.grid.count())
+    }
+
+    /// Commence une image et rend de quoi en rendre les tuiles.
+    ///
+    /// La [`Frame`] emprunte le contexte : aucun autre appel n'est possible tant
+    /// qu'elle vit, et sa destruction referme l'image si personne ne l'a fait.
+    pub fn frame_begin(&mut self) -> Result<Frame<'_>> {
+        self.begin()?;
+        Ok(Frame::new(self))
+    }
+
+    /// Vrai entre le début et la fin d'une image.
+    pub fn is_rendering(&self) -> bool {
+        self.state.load(Ordering::SeqCst) != RECORDING
     }
 
     /// Répartit les triangles soumis et ouvre le rendu des tuiles.
-    fn seal(&mut self) -> Frame<'_> {
-        let grid = Grid::new(self.width, self.height, self.config.tile_size);
-        self.bins.build(&grid, &self.triangles);
-        for flag in &mut self.taken[..grid.count() as usize] {
+    fn seal(&mut self) {
+        self.grid = Grid::new(self.width, self.height, self.config.tile_size);
+        self.bins.build(&self.grid, &self.triangles);
+        for flag in &mut self.taken[..self.grid.count() as usize] {
             *flag.get_mut() = false;
         }
-
-        Frame::new(self, grid)
+        *self.state.get_mut() = RENDERING;
     }
 
     /// Rend une image entière dans le tampon de l'hôte, tuile par tuile.
+    ///
+    /// Sans début, elle le fait elle-même ; après un début, elle rend les tuiles
+    /// que personne n'a prises.
     ///
     /// `stride` est en pixels et vaut au moins la largeur courante. Le tampon
     /// fait au moins `stride × hauteur` pixels de quatre octets ; la frontière C
@@ -171,7 +214,10 @@ impl Context {
     /// appelant Rust la porte avec la tranche — c'est le seul contrôle des deux
     /// qui distingue les deux chemins.
     pub fn frame_end(&mut self, pixels: &mut [u8], stride: u32) -> Result<()> {
-        self.frame_begin()?.end(&mut Rows::new(pixels, stride))
+        if !self.is_rendering() {
+            self.begin()?;
+        }
+        self.end(&mut Rows::new(pixels, stride))
     }
 
     /// Ajoute un triangle à l'image en cours.
