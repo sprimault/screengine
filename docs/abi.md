@@ -7,10 +7,11 @@ Un auteur de liaison qui ne lit pas le français trouve l'essentiel dans
 `include/screengine.h`, dont la documentation est en anglais : ce qui ne peut pas
 être ignoré à l'appel y figure, fonction par fonction.
 
-**État : les sept points d'entrée de l'étape 0 sont écrits et publiés.** Chaque
-décision garde ci-dessous l'option écartée et pourquoi. Trois points restent
-marqués **À trancher** : deux d'échéance plus tardive, et celui de la
-dépréciation, qui attend le gel de l'ABI en 1.0.
+**État : les sept points d'entrée de l'étape 0 sont écrits et publiés ; la forme
+du rendu par tuiles de l'étape 1 est arrêtée, pas encore écrite.** Chaque
+décision garde ci-dessous l'option écartée et pourquoi. Deux points restent
+marqués **À trancher** : celui des ressources, d'échéance plus tardive, et celui
+de la dépréciation, qui attend le gel de l'ABI en 1.0.
 
 ## Principes
 
@@ -42,8 +43,8 @@ Arrêtés. Ils découlent des invariants du projet et ne se rediscutent pas ici.
   une exception pour traquer un défaut chez lui ne tombe pas dans le moteur, qui
   produit des résultats inexacts à chaque image.
 - **Toute allocation a lieu dans un appel nommé** : création, chargement d'une
-  ressource, calcul de lightmaps, changement de résolution au-delà du maximum.
-  Aucune entre le début et la fin d'une image.
+  ressource, calcul de lightmaps. Aucune entre le début et la fin d'une image, ni
+  au changement de résolution, qui reste sous le maximum fixé à la création.
 - **Rien du jeu ne traverse.** Aucune fonction ne prend un joueur, une arme ou un
   score. Une fonction de rendu qui en réclame un manque d'un paramètre générique.
 
@@ -150,8 +151,9 @@ ce dont une liaison a besoin pour traiter celui qu'elle ne connaît pas.
 | `-300` à `-399` | collision (étape 7) | — |
 | `-400` à `-499` | édition (étape 8) | — |
 
-`SCG_ERR_INVALID_STATE` couvre un appel hors séquence, par exemple une fin
-d'image sans début.
+`SCG_ERR_INVALID_STATE` couvre un appel hors séquence, par exemple une tuile
+rendue avant le début de l'image. Une fin d'image sans début n'en est pas un :
+elle fait le début elle-même, voir « Rendu par tuiles ».
 
 **La plage est une règle arithmétique, pas une convention de rédaction** : la
 catégorie d'un code est `(-code) / 100`. Une liaison qui rencontre un code
@@ -169,7 +171,9 @@ recopie les constantes à la main. Elle en aura donc toujours en retard.
 Arrêté :
 
 - Le pointeur rendu est **valide jusqu'au prochain appel sur le même contexte**.
-  Une liaison qui veut garder le message le copie immédiatement.
+  Une liaison qui veut garder le message le copie immédiatement. Le rendu d'une
+  tuile n'écrit pas dans ce message, mais dans l'emplacement par thread : voir
+  « Rendu par tuiles ».
 - La chaîne est en UTF-8, terminée par un octet nul, et appartient au moteur.
   L'hôte ne la libère jamais.
 - Sans erreur depuis le dernier appel, le message est la chaîne vide, jamais un
@@ -273,18 +277,30 @@ dans la mémoire linéaire après le trap, sans rappeler le module.
   feuille de route réclame entre maintenant ou impose une seconde structure et
   une seconde fonction.
 
+  **À l'étape 1, `_reserved0` devient `max_triangles`**, la capacité de
+  triangles soumis par image, et `0` y vaut 16 384. C'est l'usage prévu des
+  champs réservés : un hôte de l'étape 0 qui passe des zéros obtient la
+  capacité par défaut, les décalages ne bougent pas, et `SCG_ABI_VERSION` non
+  plus. Une soumission au-delà de la capacité rend `SCG_ERR_INVALID_ARGUMENT`
+  au moment où elle est faite, jamais pendant le rendu. Écartée : une constante
+  du noyau, trop petite pour un niveau détaillé ou trop coûteuse sur téléphone
+  selon la valeur qu'on lui donne.
+
   **`max_width` et `max_height` sont plafonnés à 2048**, au-delà la création rend
   `SCG_ERR_INVALID_ARGUMENT`. Ce n'est pas un confort : les pires cas des formats
   en virgule fixe de [`rust.md`](rust.md) — coordonnées 28.4, bande de garde,
   fonctions de bord en `i64` — sont calculés sur cette borne.
 
-  Tous les tampons propres à l'image — couleur, profondeur, listes de faces,
-  tampons de clipping — sont dimensionnés pour le maximum dès la création.
-  Changer de résolution sous ce maximum n'alloue rien ; au-delà, c'est une
-  erreur. La mémoire qui dépend de la scène — textures, mipmaps, lightmaps —
+  Tous les tampons propres à l'image — triangles préparés, répartition par
+  tuile, tampons de clipping — sont dimensionnés dès la création, pour la
+  capacité de triangles et pour le nombre de tuiles de la résolution maximale.
+  Couleur et profondeur n'existent pas à l'échelle de l'image : chaque tuile les
+  tient sur la pile de l'appel qui la rend. Changer de résolution sous le
+  maximum n'alloue rien ; au-delà, c'est une erreur. La mémoire qui dépend de la scène — textures, mipmaps, lightmaps —
   appartient aux ressources, pas au contexte.
 - **Tampon de sortie.** Appartient à l'hôte. Le moteur y écrit pendant
-  `scg_frame_end` et n'en garde aucune référence au retour.
+  `scg_frame_tile` et `scg_frame_end`, et n'en garde aucune référence au retour
+  de chaque appel.
 - **Tampons alloués par `scg_buffer_alloc`.** Appartiennent à l'hôte entre
   l'allocation et `scg_buffer_free`. Ils se libèrent par `scg_buffer_free` et par
   rien d'autre : l'allocateur du moteur n'est pas celui de l'hôte, sur bureau non
@@ -324,21 +340,80 @@ Arrêté :
 - Les fonctions sans objet — `scg_abi_version`, `scg_buffer_alloc`,
   `scg_buffer_free` — sont appelables depuis n'importe quel thread.
 - **Une exception, et une seule : le rendu des tuiles.** Entre le début et la fin
-  d'une image, l'hôte peut rendre des tuiles distinctes depuis des threads
+  d'une image, l'hôte peut rendre des tuiles d'index distincts depuis des threads
   distincts. Aucun autre appel sur le contexte n'est permis pendant ce temps.
   Chaque tuile écrit un rectangle disjoint du tampon de l'hôte : le partage du
   tampon entre threads est sûr par construction.
 - **L'image ne dépend ni de la taille des tuiles, ni du nombre de threads, ni de
   l'ordre dans lequel les tuiles sont rendues.**
 
-**À trancher — A13**, échéance étape 1 : la forme de l'API de tuiles.
-Recommandation : `scg_frame_begin` prépare l'image et rend le nombre de tuiles ;
-`scg_frame_tile(ctx, index, pixels, stride)` rend une tuile et y applique le
-post-traitement ; `scg_frame_end` clôt l'image. Un hôte sans threads appelle les
-tuiles dans une boucle. Le noyau ne crée aucun thread et ne rappelle personne.
-
 Le partage d'une ressource en lecture entre deux contextes sur deux threads se
 tranche avec A8.
+
+### Rendu par tuiles
+
+Arrêté pour l'étape 1, pas encore écrit.
+
+```c
+int32_t scg_frame_begin(ScgContext *ctx, uint32_t *tile_count);
+int32_t scg_frame_tile(ScgContext *ctx, uint32_t index, uint8_t *pixels, uint32_t stride);
+int32_t scg_frame_end(ScgContext *ctx, uint8_t *pixels, uint32_t stride);
+```
+
+- **La scène se soumet avant `scg_frame_begin`.** Le début scelle la soumission,
+  transforme, découpe et répartit les triangles par tuile, sur le thread de
+  l'appel et en exclusif, puis écrit le nombre de tuiles. Écarté : soumettre
+  entre le début et les tuiles, et répartir à la première tuile. La répartition
+  est la seule phase qui écrit dans un état partagé ; faite paresseusement, elle
+  imposerait un verrou au chemin des tuiles, et une panique y tomberait sur un
+  thread quelconque de l'hôte.
+- **Le contexte a deux états.** En enregistrement, il accepte la soumission, la
+  caméra et le changement de résolution ; `scg_frame_begin` le fait passer au
+  rendu ; `scg_frame_end` le ramène à l'enregistrement, liste de dessin vidée,
+  caméra conservée. Rend `SCG_ERR_INVALID_STATE` : une tuile hors du rendu, un
+  second début, une soumission ou un changement de résolution pendant le rendu,
+  une fin pendant qu'une tuile tourne encore. Un index au-delà du nombre de
+  tuiles rend `SCG_ERR_INVALID_ARGUMENT`.
+- **Les tuiles se numérotent ligne par ligne**, de gauche à droite puis de haut
+  en bas, et c'est contractuel. Celles de la dernière colonne et de la dernière
+  ligne sont partielles quand la résolution n'est pas un multiple de
+  `tile_size`. Une tuile vide se rend aussi : fond, alpha et post-traitement
+  s'écrivent partout. Aucune fonction ne rend le rectangle d'une tuile ; elle
+  pourra s'ajouter sans changer la version d'ABI.
+- **`scg_frame_end` garde sa signature et son sens de l'étape 0.** Elle rend les
+  tuiles que l'hôte n'a pas rendues, puis clôt l'image ; appelée sans début, elle
+  fait le début elle-même. Un hôte qui n'appelle qu'elle obtient donc toujours
+  une image complète, et un hôte écrit contre la 0.0.0 reste valide. Écarté : une
+  clôture sans tampon, qui laisserait passer une tuile oubliée en rendant une
+  image trouée sans rien dire.
+- **Le tampon et le `stride` sont les mêmes** pour toutes les tuiles et pour la
+  fin d'une même image. C'est une précondition, comme sa longueur.
+- **Une tuile se rend une fois par image.** Un index déjà pris, y compris par un
+  appel simultané sur un autre thread, rend `SCG_ERR_INVALID_STATE` : la prise
+  est atomique, et c'est elle qui permet à la fin de savoir ce qui reste à
+  rendre.
+- **Le handle n'est pas `const`.** Chaque tuile écrit dans l'état du contexte, et
+  un `const` annoncerait en C une lecture seule qui n'existe pas ; le contrat de
+  concurrence est dans la documentation de la fonction.
+- **Le message d'erreur d'une tuile va dans l'emplacement par thread**, et se lit
+  par `scg_last_error(NULL)` sur le thread de l'appel. Celui du contexte n'est
+  écrit que par les appels exclusifs : sa durée de vie reste celle écrite plus
+  haut, même pendant le rendu. Écarté : le message du contexte sous verrou,
+  dont « valide jusqu'au prochain appel » n'a plus de sens avec plusieurs appels
+  simultanés.
+- **Une panique dans une tuile rend le contexte défaillant.** Les tuiles déjà
+  lancées se terminent ; les suivantes et `scg_frame_end` rendent
+  `SCG_ERR_FAULTED`, et le texte de la panique se lit par `scg_last_error(ctx)`
+  après la fin. C'est le code de `scg_frame_end` qui dit si l'image est bonne.
+- **Chaque tuile tient sa couleur et sa profondeur sur la pile de l'appel.** Le
+  thread qui appelle `scg_frame_tile` ou `scg_frame_end` doit disposer d'au
+  moins 128 Ko de pile. Écartés : des tampons par tuile dans le contexte, jusqu'à
+  32 Mo à la résolution maximale, et des tampons par thread, qui imposeraient un
+  nombre de threads dans la configuration et un index de thread à chaque appel.
+- **La profondeur ne survit pas à la tuile.** Rien ne la relit après l'image ;
+  l'interrogation de la scène de l'étape 8 passe par la géométrie.
+- **Un hôte sans threads appelle les tuiles dans une boucle**, ou `scg_frame_end`
+  seule. C'est le cas du web.
 
 ## Tampon de sortie
 
@@ -430,7 +505,7 @@ noms ne le sont pas.
 
 | Étape | Ce qui doit être exposé |
 |---|---|
-| 1 | début d'image, rendu d'une tuile (A13), caméra et projection, soumission de triangles avec une matrice |
+| 1 | début d'image et rendu d'une tuile (voir « Rendu par tuiles »), caméra et projection, soumission de triangles avec une matrice |
 | 2 | chargement d'une texture depuis un bloc de pixels, mipmaps générés au chargement, niveau de qualité du filtrage |
 | 3 | changement de résolution interne, calcul des lightmaps d'une cellule et reprise d'un cache, lumières dynamiques, brouillard, post-traitement |
 | 4 | chargement d'un maillage et d'une carte depuis un bloc d'octets, libération |
@@ -449,6 +524,8 @@ noms ne le sont pas.
 - **Mettre une structure de configuration entièrement à zéro avant de la
   remplir.** Ses champs `_reserved` doivent être nuls, et c'est ce qui permettra
   d'en utiliser un sans casser les liaisons déjà écrites.
+- **Réserver au moins 128 Ko de pile** au thread qui rend des tuiles, et lire le
+  message d'une tuile par `scg_last_error(NULL)`, sur ce thread.
 - **Sur wasm, passer par `scg_buffer_alloc`.** L'hôte ne peut pas fournir un
   pointeur arbitraire : seule la mémoire linéaire du module est adressable.
 - **Sur wasm, un pointeur revient signé en JavaScript.** Un `i32` exporté y est

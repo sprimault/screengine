@@ -70,8 +70,8 @@ elle ne crée aucun répertoire d'avance.
 src/
   lib.rs  error.rs  context.rs   ce qui existe avant tout domaine
   math/       étape 1   vecteurs, matrices, quaternions, tables, virgule fixe
-  raster/     étape 1   fonctions de bord, profondeur, tuiles ; simd/ à l'étape 9
-  texture/    étape 2   mipmaps, filtrage, clipping du plan proche
+  raster/     étape 1   clipping, fonctions de bord, profondeur, tuiles ; simd/ à l'étape 9
+  texture/    étape 2   mipmaps, filtrage
   light/      étape 3   lightmaps, brouillard, post-traitement de tuile
   format/     étape 4   maillage et carte, versionnés
   world/      étape 5   cellules, portails, traversée
@@ -322,7 +322,7 @@ la création du contexte rend une erreur plutôt que de déborder en silence.
 | Bande de garde | ±4096 pixels, soit ±2¹⁶ en 28.4 | au-delà, le sommet est clippé en espace homogène |
 | Fonctions de bord | `i64` | un écart entre sommets atteint 2¹⁷ en 28.4, un produit 2³⁴ : `i32` déborde dès que la bande de garde sert |
 | Règle top-left | biais de −1 sur les arêtes ni hautes ni gauches | deux triangles partageant une arête se partagent ses pixels, sans trou ni recouvrement |
-| Profondeur | `u32`, `near/w` en 0.32, saturé | plus grand est plus proche ; `1/w` est affine en espace écran, donc s'interpole exactement |
+| Profondeur | `u32`, `near/w` en 0.32, saturé | plus grand est plus proche ; `1/w` est affine en espace écran, donc s'interpole exactement. Test strict : à égalité, le premier triangle soumis reste |
 | Attributs (`1/w`, `u/w`, `v/w`, lightmap) | `i64`, 32.32 | équations de plan établies à la mise en place du triangle, par division entière |
 | Coordonnées de texture après division | `i32`, 16.16 | textures en puissance de deux, repli par masque |
 | Poids du bilinéaire | 8 bits, tirés des bits fractionnaires | mélange entier, arrondi `(… + 128) >> 8` |
@@ -342,6 +342,13 @@ la création du contexte rend une erreur plutôt que de déborder en silence.
   décalage sous-texel tiré d'une table fixe indexée par la position du pixel dans
   l'image. C'est le filtrage par défaut ; le bilinéaire est le niveau au-dessus.
   La table et son motif sont figés à l'étape 2, et testés.
+- **Dans une tuile, les triangles se dessinent dans l'ordre de soumission.** Avec
+  le test de profondeur strict, c'est l'ordre qui tranche une égalité : une
+  répartition qui le perdrait rendrait une image différente selon la taille des
+  tuiles. La liste des grands triangles, testés par tuile plutôt que référencés
+  dans chacune, se fusionne donc avec celle de la tuile par index croissant. Le
+  rejet d'une tuile est conservateur : une référence de trop ne change rien, une
+  tuile oubliée troue l'image dans une seule configuration.
 - **Toute division est entière et arrondie dans un sens écrit** : la division
   `i64` de Rust tronque vers zéro, et une équation de plan dont le signe du
   dénominateur change doit rester continue.
@@ -360,9 +367,14 @@ la création du contexte rend une erreur plutôt que de déborder en silence.
   premier affichage. C'est le défaut type : il transforme « zéro allocation par
   image » en « une réallocation au premier niveau chargé », sans que rien ne le
   signale.
-- **Le contexte dimensionne ses tampons pour la résolution interne maximale**
-  reçue à la création : couleur, profondeur, listes de faces, pile de matrices,
-  tampons de clipping. Changer de résolution sous ce maximum n'alloue rien.
+- **Le contexte dimensionne ses tampons à la création** : triangles préparés pour
+  la capacité reçue, répartition par tuile pour la résolution interne maximale,
+  pile de matrices, tampons de clipping. Changer de résolution sous ce maximum
+  n'alloue rien.
+- **Couleur et profondeur vivent sur la pile de l'appel de tuile**, en tableaux
+  de taille fixe pour une tuile de 64 de côté. Autant de tampons que d'appels
+  simultanés, sans que le noyau connaisse les threads de l'hôte ; `abi.md` en
+  tire le minimum de pile exigé. La profondeur ne survit pas à la tuile.
 - **Les ressources portent la mémoire qui dépend de la scène** : une texture
   alloue ses mipmaps à son chargement, une cellule ses lightmaps à leur calcul.
 - **Un tampon de travail se vide par `clear()`**, jamais par une réaffectation ni
@@ -486,12 +498,15 @@ teste quelque chose.
   modification du remplissage, à toutes les résolutions internes prévues. C'est
   le défaut le plus coûteux du projet : invisible à l'arrêt, visible en
   mouvement.
-- **Chaque scène se rend en tuiles de 32, en tuiles de 64 et en image entière**, et
-  les trois empreintes doivent être identiques ; puis ses tuiles dans un ordre
-  mélangé. Une couture de tuile ne se voit que dans une configuration : sans ce
-  contrôle, la conformance ne vaudrait que pour la sienne. Aujourd'hui la suite
-  rend chaque scène en tuiles de 32 et de 64 ; l'image entière et l'ordre
-  mélangé attendent l'API de tuiles de l'étape 1.
+- **Chaque scène se rend en tuiles de 32, en tuiles de 64, en image entière, en
+  tuiles dans un ordre mélangé à graine fixe et en tuiles réparties sur plusieurs
+  threads**, et les cinq empreintes doivent être identiques. Une couture de
+  tuile ne se voit que dans une configuration : sans ce contrôle, la conformance
+  ne vaudrait que pour la sienne. L'image entière passe par l'API Rust du noyau,
+  qui rend une région quelconque ; l'ABI n'accepte que 32 et 64. Aujourd'hui la
+  suite passe `tile_size` à 32 et à 64, mais le noyau ne le lit pas encore : les
+  deux empreintes sont égales par construction, et la comparaison ne prouve
+  rien avant le découpage en tuiles.
 - **Une scène, une référence**, `references/<scène>` : seize chiffres et un saut
   de ligne, comparés octet pour octet. Toutes les configurations se comparent à
   la même. Une référence absente fait échouer `--check`, jamais un « rien à
@@ -525,8 +540,9 @@ qui ne dépende pas de l'attention du relecteur.
 
 Il vit dans `crates/screengine-conformance/tests/allocation.rs`, binaire de test
 à part : un allocateur global vaut pour tout le binaire. Le compte est par
-thread, armé autour des images seulement — le harnais de test alloue sur ses
-propres threads pendant la mesure. Aujourd'hui la scène est le triangle en dur,
+thread, armé autour des images seulement, y compris dans les threads qui rendent
+des tuiles — le harnais de test alloue sur ses propres threads pendant la
+mesure. Aujourd'hui la scène est le triangle en dur,
 sur trois images ; chaque ressource chargeable y entrera avec son étape.
 
 ### Tests aléatoires
