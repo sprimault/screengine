@@ -96,17 +96,30 @@ impl Output for Rows<'_> {
     }
 }
 
-/// Le tampon de couleur d'une région, vu comme un puits de remplissage.
+/// Les tampons de couleur et de profondeur d'une région, vus comme un puits de
+/// remplissage.
+///
+/// Deux tableaux et non un tableau de paires : le test de profondeur lit et
+/// écrit une rangée de `u32` contigus, ce que le SIMD de l'étape 9 chargera d'un
+/// bloc.
 struct Scratch<'a> {
-    pixels: &'a mut [u32],
+    color: &'a mut [u32],
+    depth: &'a mut [u32],
     rect: Rect,
 }
 
 impl Target for Scratch<'_> {
-    fn put(&mut self, x: i32, y: i32, color: u32) {
+    fn put(&mut self, x: i32, y: i32, z: u32, color: u32) {
         let row = (y - self.rect.y as i32) as usize;
         let column = (x - self.rect.x as i32) as usize;
-        self.pixels[row * self.rect.width as usize + column] = color;
+        let i = row * self.rect.width as usize + column;
+        // Strict : à profondeur égale, le triangle soumis le premier reste. Les
+        // triangles se dessinent dans l'ordre de soumission, quelle que soit la
+        // tuile, et c'est ce qui rend l'égalité indépendante du découpage.
+        if z > self.depth[i] {
+            self.depth[i] = z;
+            self.color[i] = color;
+        }
     }
 }
 
@@ -188,11 +201,18 @@ impl Context {
         Ok(())
     }
 
-    /// Rend une tuile dans un tampon de travail posé sur la pile.
+    /// Rend une tuile dans des tampons de travail posés sur la pile : 32 Kio,
+    /// sous le minimum que l'ABI exige du thread appelant.
     fn render_tile<O: Output>(&self, index: u32, rect: Rect, out: &mut O) -> Result<()> {
-        let mut scratch = [0u32; MAX_TILE * MAX_TILE];
+        let mut color = [0u32; MAX_TILE * MAX_TILE];
+        let mut depth = [0u32; MAX_TILE * MAX_TILE];
         let pixels = rect.width as usize * rect.height as usize;
-        self.draw(rect, &mut scratch[..pixels], self.bins.tile(index), out)
+        let scratch = Scratch {
+            color: &mut color[..pixels],
+            depth: &mut depth[..pixels],
+            rect,
+        };
+        self.draw(scratch, self.bins.tile(index), out)
     }
 
     /// Dessine `triangles` dans `scratch`, puis recopie la région dans `out`.
@@ -202,22 +222,21 @@ impl Context {
     /// cible marcherait partout aujourd'hui pour de mauvaises raisons.
     fn draw<O: Output>(
         &self,
-        rect: Rect,
-        scratch: &mut [u32],
+        mut scratch: Scratch<'_>,
         triangles: impl Iterator<Item = u32>,
         out: &mut O,
     ) -> Result<()> {
-        scratch.fill(CLEAR_COLOR);
-        let mut target = Scratch {
-            pixels: scratch,
-            rect,
-        };
+        let rect = scratch.rect;
+        scratch.color.fill(CLEAR_COLOR);
+        // Zéro est infiniment loin : toute profondeur bornée par `to_depth`
+        // le bat.
+        scratch.depth.fill(0);
         for index in triangles {
-            fill(&mut target, rect, &self.triangles[index as usize]);
+            fill(&mut scratch, rect, &self.triangles[index as usize]);
         }
 
         let width = rect.width as usize;
-        for (row, source) in target.pixels.chunks_exact(width.max(1)).enumerate() {
+        for (row, source) in scratch.color.chunks_exact(width.max(1)).enumerate() {
             let span = out
                 .span(rect.x, rect.y + row as u32, rect.width)
                 .ok_or(Error::InvalidArgument(Argument::BufferLength))?;
@@ -267,10 +286,21 @@ impl<'a> Frame<'a> {
     /// Rend une région quelconque de l'image, sans passer par la répartition.
     ///
     /// Le chemin de référence des tuiles : tous les triangles, dans l'ordre de
-    /// soumission, dans un tampon de travail fourni par l'appelant et aussi
-    /// grand que la région. Une tuile qui en diffère a perdu un triangle à la
-    /// répartition, ou dépend de son découpage. Ne prend aucune tuile.
-    pub fn region<O: Output>(&self, rect: Rect, scratch: &mut [u32], out: &mut O) -> Result<()> {
+    /// soumission, dans des tampons de couleur et de profondeur fournis par
+    /// l'appelant, au moins aussi grands que la région. Une tuile qui en
+    /// diffère a perdu un triangle à la répartition, ou dépend de son
+    /// découpage. Ne prend aucune tuile.
+    ///
+    /// Deux tampons de longueurs différentes sont refusés plutôt que ramenés
+    /// au plus court : c'est la même erreur d'appelant qu'un `stride` faux, et
+    /// elle se dit au même endroit.
+    pub fn region<O: Output>(
+        &self,
+        rect: Rect,
+        color: &mut [u32],
+        depth: &mut [u32],
+        out: &mut O,
+    ) -> Result<()> {
         let image = self.context.grid.image();
         let inside = rect
             .x
@@ -281,12 +311,17 @@ impl<'a> Frame<'a> {
             return Err(Error::InvalidArgument(Argument::Region));
         }
         let pixels = rect.width as usize * rect.height as usize;
-        let scratch = scratch
-            .get_mut(..pixels)
-            .ok_or(Error::InvalidArgument(Argument::ScratchLength))?;
+        if color.len() != depth.len() || color.len() < pixels {
+            return Err(Error::InvalidArgument(Argument::ScratchLength));
+        }
         out.check(rect)?;
+        let scratch = Scratch {
+            color: &mut color[..pixels],
+            depth: &mut depth[..pixels],
+            rect,
+        };
         let triangles = 0..self.context.triangles.len() as u32;
-        self.context.draw(rect, scratch, triangles, out)
+        self.context.draw(scratch, triangles, out)
     }
 }
 

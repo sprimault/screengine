@@ -374,8 +374,8 @@ la création du contexte rend une erreur plutôt que de déborder en silence.
 | Bande de garde | ±4096 pixels, soit ±2¹⁶ en 28.4 | au-delà, le sommet est clippé en espace homogène |
 | Fonctions de bord | `i64` | un écart entre sommets atteint 2¹⁷ en 28.4, un produit 2³⁴ : `i32` déborde dès que la bande de garde sert |
 | Règle top-left | biais de −1 sur les arêtes ni hautes ni gauches | deux triangles partageant une arête se partagent ses pixels, sans trou ni recouvrement |
-| Profondeur | `u32`, `near/w` en 0.32, saturé | plus grand est plus proche ; `1/w` est affine en espace écran, donc s'interpole exactement. Test strict : à égalité, le premier triangle soumis reste |
-| Attributs (`1/w`, `u/w`, `v/w`, lightmap) | `i64`, 32.32 | équations de plan établies à la mise en place du triangle, par division entière |
+| Profondeur | `u32`, `near/w` en 0.32, bornée par `to_depth` à 64 unités des bornes | plus grand est plus proche ; `near/w` est affine en espace écran, donc s'interpole par une équation de plan. La marge couvre l'arrondi des gradients : aucun bornage par pixel. Test strict : à égalité, le premier triangle soumis reste |
+| Attributs interpolés | valeurs de sommet bornées à ±2³², gradients par sous-pixel en `i64` à 12 bits fractionnaires | équation de plan établie à la mise en place du triangle, gradients arrondis vers le bas par `div_euclid` sur une aire positive, point de référence au plus petit sommet en (y, x) ; évaluation en forme close, enveloppante, exacte sur les pixels couverts, à moins de 64 unités de la valeur exacte. Ce qui s'interpole pour les textures — `u·z` et `v·z` divisés par `z`, ou un `1/w` séparé — se tranche à l'étape 2 |
 | Coordonnées de texture après division | `i32`, 16.16 | textures en puissance de deux, repli par masque |
 | Poids du bilinéaire | 8 bits, tirés des bits fractionnaires | mélange entier, arrondi `(… + 128) >> 8` |
 

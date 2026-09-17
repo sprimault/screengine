@@ -14,8 +14,8 @@ use core::sync::atomic::Ordering;
 
 use super::*;
 use crate::context::{Config, TRIANGLE_CAPACITY};
-use crate::math::fixed::SUBPIXEL_SCALE;
-use crate::raster::Point;
+use crate::math::fixed::{DEPTH_MARGIN, SUBPIXEL_SCALE};
+use crate::raster::{Point, Vertex};
 use crate::testing::Rng;
 
 /// Largeur de l'image des tests, multiple ni de 32 ni de 64 : les tuiles de
@@ -39,19 +39,29 @@ fn context(tile_size: u32) -> Context {
 
 /// Remplace la scène par des triangles tirés au hasard.
 ///
-/// Petits et grands mêlés, débordant de l'image, et qui se recouvrent : sans
-/// profondeur, c'est l'ordre de soumission qui décide du pixel, et la
+/// Petits et grands mêlés, débordant de l'image, qui se recouvrent et
+/// s'interpénètrent. Un quart sont plats, à l'une de deux profondeurs seulement :
+/// à égalité, c'est l'ordre de soumission qui décide du pixel, et la
 /// répartition doit le conserver.
 fn scene(context: &mut Context, seed: u64) {
     let mut rng = Rng::new(seed);
     context.triangles.clear();
+    let span = (u32::MAX - 2 * DEPTH_MARGIN) as u64;
     for _ in 0..300 {
         let reach = if rng.next() % 4 == 0 { 400 } else { 40 };
         let cx = rng.coord(-20, W as i32 + 20);
         let cy = rng.coord(-20, H as i32 + 20);
-        let mut vertex = || Point {
-            x: (cx + rng.coord(-reach, reach)) * SUBPIXEL_SCALE + rng.coord(0, 15),
-            y: (cy + rng.coord(-reach, reach)) * SUBPIXEL_SCALE + rng.coord(0, 15),
+        let flat = match rng.next() % 8 {
+            0 => Some(1 << 30),
+            1 => Some(3 << 30),
+            _ => None,
+        };
+        let mut vertex = || Vertex {
+            position: Point {
+                x: (cx + rng.coord(-reach, reach)) * SUBPIXEL_SCALE + rng.coord(0, 15),
+                y: (cy + rng.coord(-reach, reach)) * SUBPIXEL_SCALE + rng.coord(0, 15),
+            },
+            z: flat.unwrap_or(DEPTH_MARGIN + (rng.next() % span) as u32),
         };
         let (a, b, c) = (vertex(), vertex(), vertex());
         let color = rng.next() as u32 | 0xFF00_0000;
@@ -76,7 +86,8 @@ fn open(context: &mut Context) -> Frame<'_> {
 /// La référence : l'image entière rendue d'une région, sans répartition.
 fn reference(context: &mut Context) -> Vec<u8> {
     let mut out = pixels();
-    let mut scratch = vec![0u32; W as usize * H as usize];
+    let mut color = vec![0u32; W as usize * H as usize];
+    let mut depth = color.clone();
     let image = Rect {
         x: 0,
         y: 0,
@@ -84,7 +95,7 @@ fn reference(context: &mut Context) -> Vec<u8> {
         height: H,
     };
     open(context)
-        .region(image, &mut scratch, &mut Rows::new(&mut out, W))
+        .region(image, &mut color, &mut depth, &mut Rows::new(&mut out, W))
         .expect("région");
     out
 }
@@ -303,7 +314,7 @@ fn une_region_invalide_est_refusee() {
     let mut context = context(64);
     let mut out = pixels();
     let frame = context.frame_begin().expect("début");
-    let mut scratch = vec![0u32; 100];
+    let (mut color, mut depth) = (vec![0u32; 100], vec![0u32; 100]);
     let mut rows = Rows::new(&mut out, W);
 
     let rect = |x, width| Rect {
@@ -312,18 +323,103 @@ fn une_region_invalide_est_refusee() {
         width,
         height: 10,
     };
-    assert_eq!(
-        frame.region(rect(W - 5, 10), &mut scratch, &mut rows),
-        Err(Error::InvalidArgument(Argument::Region))
+    let mut region =
+        |r, color: &mut [u32], depth: &mut [u32]| frame.region(r, color, depth, &mut rows);
+    let (region_err, length_err) = (
+        Err(Error::InvalidArgument(Argument::Region)),
+        Err(Error::InvalidArgument(Argument::ScratchLength)),
     );
-    assert_eq!(
-        frame.region(rect(u32::MAX, 2), &mut scratch, &mut rows),
-        Err(Error::InvalidArgument(Argument::Region))
-    );
-    assert_eq!(
-        frame.region(rect(0, 20), &mut scratch, &mut rows),
-        Err(Error::InvalidArgument(Argument::ScratchLength))
-    );
+    assert_eq!(region(rect(W - 5, 10), &mut color, &mut depth), region_err);
+    let wraps = rect(u32::MAX, 2);
+    assert_eq!(region(wraps, &mut color, &mut depth), region_err);
+    assert_eq!(region(rect(0, 20), &mut color, &mut depth), length_err);
+    // Deux tampons de longueurs différentes, chacun assez long pour la région :
+    // refusés quand même, jamais ramenés au plus court.
+    let mut longer = vec![0u32; 101];
+    assert_eq!(region(rect(0, 5), &mut color, &mut longer), length_err);
+    assert_eq!(region(rect(0, 5), &mut color, &mut depth), Ok(()));
+}
+
+/// Un sommet à une profondeur donnée, en pixels entiers.
+fn at(x: i32, y: i32, z: u32) -> Vertex {
+    Vertex {
+        position: Point {
+            x: x * SUBPIXEL_SCALE,
+            y: y * SUBPIXEL_SCALE,
+        },
+        z,
+    }
+}
+
+/// La couleur rendue au pixel `(x, y)` de la référence.
+fn color_at(image: &[u8], x: u32, y: u32) -> u32 {
+    let i = (y * W + x) as usize * BYTES_PER_PIXEL;
+    u32::from_le_bytes([image[i], image[i + 1], image[i + 2], image[i + 3]])
+}
+
+/// Deux triangles inclinés qui se croisent : chacun passe devant l'autre d'un
+/// côté de la ligne d'intersection, quel que soit l'ordre de soumission.
+#[test]
+fn deux_triangles_inclines_s_interpenetrent() {
+    let (red, blue) = (0xFF00_00FF, 0xFFFF_0000);
+    let (near, far) = (3 << 30, 1 << 30);
+    // Le rouge se rapproche vers la droite, le bleu s'en éloigne.
+    let a = [at(10, 10, far), at(190, 10, near), at(10, 140, far)];
+    let b = [at(10, 20, near), at(190, 20, far), at(10, 130, near)];
+    for order in [[(a, red), (b, blue)], [(b, blue), (a, red)]] {
+        let mut context = context(32);
+        context.triangles.clear();
+        for (triangle, color) in order {
+            context.submit(triangle, color).expect("capacité");
+        }
+        let image = reference(&mut context);
+        assert_eq!(color_at(&image, 20, 30), blue, "bleu devant à gauche");
+        assert_eq!(color_at(&image, 150, 30), red, "rouge devant à droite");
+    }
+}
+
+/// À profondeur égale, le premier triangle soumis reste : le test est strict,
+/// et inverser l'ordre inverse le résultat.
+#[test]
+fn a_egalite_le_premier_soumis_reste() {
+    let (red, blue) = (0xFF00_00FF, 0xFFFF_0000);
+    let z = 1 << 31;
+    let triangle = [at(10, 10, z), at(190, 10, z), at(10, 140, z)];
+    for (first, second) in [(red, blue), (blue, red)] {
+        let mut context = context(64);
+        context.triangles.clear();
+        context.submit(triangle, first).expect("capacité");
+        context.submit(triangle, second).expect("capacité");
+        assert_eq!(color_at(&reference(&mut context), 30, 30), first);
+    }
+}
+
+/// Quand les profondeurs sont toutes distinctes, l'ordre de soumission ne
+/// change rien à l'image.
+#[test]
+fn l_ordre_de_soumission_ne_compte_pas_a_profondeurs_distinctes() {
+    let mut rng = Rng::new(31);
+    let triangles: Vec<([Vertex; 3], u32)> = (0..40u32)
+        .map(|i| {
+            let z = DEPTH_MARGIN + (i + 1) * 97_000_000;
+            let (x, y) = (rng.coord(0, 150), rng.coord(0, 100));
+            let v = [at(x, y, z), at(x + 60, y, z), at(x, y + 50, z)];
+            (v, rng.next() as u32 | 0xFF00_0000)
+        })
+        .collect();
+    let render = |reverse: bool| {
+        let mut context = context(32);
+        context.triangles.clear();
+        let mut list = triangles.clone();
+        if reverse {
+            list.reverse();
+        }
+        for (v, color) in list {
+            context.submit(v, color).expect("capacité");
+        }
+        reference(&mut context)
+    };
+    assert!(render(false) == render(true));
 }
 
 /// La capacité réservée est une limite rendue, pas une croissance : le
@@ -332,11 +428,7 @@ fn une_region_invalide_est_refusee() {
 fn la_capacite_de_triangles_est_une_limite() {
     let mut context = context(64);
     context.triangles.clear();
-    let p = |x: i32, y: i32| Point {
-        x: x * SUBPIXEL_SCALE,
-        y: y * SUBPIXEL_SCALE,
-    };
-    let v = [p(0, 0), p(10, 0), p(0, 10)];
+    let v = [at(0, 0, 1 << 31), at(10, 0, 1 << 31), at(0, 10, 1 << 31)];
     for _ in 0..TRIANGLE_CAPACITY {
         context.submit(v, 0).expect("sous la capacité");
     }

@@ -10,8 +10,8 @@ use core::sync::atomic::{AtomicBool, AtomicU8, AtomicU32, Ordering};
 
 use crate::buffer::reserved;
 use crate::error::{Argument, Error, Result};
-use crate::math::fixed::to_subpixel;
-use crate::raster::{Bins, Grid, Point, Prepared, prepare};
+use crate::math::fixed::{to_depth, to_subpixel};
+use crate::raster::{Bins, Grid, Point, Prepared, Vertex, prepare};
 
 pub use frame::{Frame, Output, Rows};
 
@@ -221,7 +221,7 @@ impl Context {
     }
 
     /// Ajoute un triangle à l'image en cours.
-    fn submit(&mut self, v: [Point; 3], color: u32) -> Result<()> {
+    fn submit(&mut self, v: [Vertex; 3], color: u32) -> Result<()> {
         let Some(triangle) = prepare(v, color) else {
             return Ok(());
         };
@@ -242,20 +242,20 @@ impl Context {
         let (w, h) = (self.width as f32, self.height as f32);
 
         // Sens horaire à l'écran, Y vers le bas : sommet en haut, puis
-        // bas-droite, puis bas-gauche.
+        // bas-droite, puis bas-gauche. Une profondeur quelconque : seul contre
+        // le fond, le triangle rend la même image à toute profondeur.
+        let z = to_depth(0.5);
+        let vertex = |x: f32, y: f32| Vertex {
+            position: Point {
+                x: to_subpixel(x),
+                y: to_subpixel(y),
+            },
+            z,
+        };
         let vertices = [
-            Point {
-                x: to_subpixel(w * 0.5),
-                y: to_subpixel(h * 0.12),
-            },
-            Point {
-                x: to_subpixel(w * 0.88),
-                y: to_subpixel(h * 0.86),
-            },
-            Point {
-                x: to_subpixel(w * 0.12),
-                y: to_subpixel(h * 0.86),
-            },
+            vertex(w * 0.5, h * 0.12),
+            vertex(w * 0.88, h * 0.86),
+            vertex(w * 0.12, h * 0.86),
         ];
 
         self.submit(vertices, DEMO_COLOR)

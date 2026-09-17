@@ -32,9 +32,14 @@ const CLIP: Rect = Rect {
     height: H as u32,
 };
 
-/// Prépare puis remplit, comme le fait une image entière.
+/// Prépare puis remplit, comme le fait une image entière. La profondeur est
+/// constante : l'étanchéité ne porte que sur les positions.
 fn fill_triangle<T: Target>(target: &mut T, window: Rect, v: [Point; 3], color: u32) {
-    if let Some(triangle) = prepare(v, color) {
+    let vertices = v.map(|position| Vertex {
+        position,
+        z: 1 << 31,
+    });
+    if let Some(triangle) = prepare(vertices, color) {
         fill(target, window, &triangle);
     }
 }
@@ -104,7 +109,7 @@ impl Coverage {
 }
 
 impl Target for Coverage {
-    fn put(&mut self, x: i32, y: i32, _color: u32) {
+    fn put(&mut self, x: i32, y: i32, _z: u32, _color: u32) {
         assert!(
             (0..W).contains(&x) && (0..H).contains(&y),
             "écriture hors fenêtre en ({x}, {y})"

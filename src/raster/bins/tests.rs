@@ -7,14 +7,17 @@ use alloc::vec::Vec;
 
 use super::*;
 use crate::math::fixed::SUBPIXEL_SCALE;
-use crate::raster::{Point, prepare};
+use crate::raster::{Point, Vertex, prepare};
 
 /// Un triangle rectangle qui couvre les pixels `x0..x1` × `y0..y1`, en
 /// ordre horaire.
 fn triangle(x0: i32, y0: i32, x1: i32, y1: i32) -> Prepared {
-    let p = |x: i32, y: i32| Point {
-        x: x * SUBPIXEL_SCALE,
-        y: y * SUBPIXEL_SCALE,
+    let p = |x: i32, y: i32| Vertex {
+        position: Point {
+            x: x * SUBPIXEL_SCALE,
+            y: y * SUBPIXEL_SCALE,
+        },
+        z: 1 << 31,
     };
     prepare([p(x0, y0), p(x1, y0), p(x0, y1)], 0).expect("triangle visible")
 }
