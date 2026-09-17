@@ -1,5 +1,5 @@
 // Copyright 2026 Stéphane Primault <sprimault@users.noreply.github.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: MIT OR Apache-2.0
 
 //! L'environnement flottant, fixé à l'entrée et rendu à l'hôte au retour.
 //!

@@ -1,5 +1,5 @@
 // Copyright 2026 Stéphane Primault <sprimault@users.noreply.github.com>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: MIT OR Apache-2.0
 
 //! La mise à l'échelle de l'image interne vers la fenêtre, au CPU.
 //!

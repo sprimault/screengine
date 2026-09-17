@@ -1,6 +1,6 @@
 @echo off
 rem Copyright 2026 Stéphane Primault <sprimault@users.noreply.github.com>
-rem SPDX-License-Identifier: MIT
+rem SPDX-License-Identifier: MIT OR Apache-2.0
 rem
 rem Compile l'hôte C avec MSVC. Appelé par le Makefile, depuis Git Bash.
 rem

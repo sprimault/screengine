@@ -308,7 +308,8 @@ leurs empreintes se comparent par leurs hôtes.
   construit par `make lib`, puis crée la release en brouillon. Les notes se
   relisent avant de publier.
 - **Une archive par cible**, `screengine_<tag>_<cible>`, contenant la
-  bibliothèque, le header, `LICENSE` et `THIRD-PARTY-NOTICES` ; un `SHA256SUMS`
+  bibliothèque, le header, `LICENSE-MIT`, `LICENSE-APACHE` et
+  `THIRD-PARTY-NOTICES` ; un `SHA256SUMS`
   calculé sur les archives, et une attestation de provenance vérifiable par
   `gh attestation verify`.
 - Les notes d'une version qui ne rend encore rien disent ce qu'elle ne fait pas.

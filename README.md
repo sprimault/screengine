@@ -5,7 +5,10 @@ Français : [README.fr.md](README.fr.md)
 A software 3D rendering engine, callable from any language. No GPU, no window:
 you hand it a scene and a buffer, it fills the buffer.
 
-MIT — see [`LICENSE`](LICENSE).
+MIT or Apache-2.0, at your option — see [`LICENSE-MIT`](LICENSE-MIT) and
+[`LICENSE-APACHE`](LICENSE-APACHE). Unless you state otherwise, any contribution
+you submit for inclusion is dual licensed the same way, without additional terms
+or conditions.
 
 The target is the class of 1996–1998 software renderers, done properly: true
 colour, perspective-correct texturing, mipmaps, lightmaps, fog, ordered-dither
