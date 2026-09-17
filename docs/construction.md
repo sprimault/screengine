@@ -3,10 +3,9 @@
 Cibles, matrice de compilation, génération du header, liaisons. Toute question
 du genre « pourquoi le `.so` Android ne se charge pas » se tranche ici.
 
-**État : l'étape 0 n'est pas livrée.** Ce document décrit ce que la construction
-doit être. Ce qui est déjà en place est dit comme tel ; les points que l'outillage
-réel doit encore confirmer sont marqués **À vérifier**, et les choix restants
-**À trancher**.
+**État : l'étape 0 est livrée.** Ce document décrit la construction telle
+qu'elle est ; les points que l'outillage réel doit encore confirmer sont marqués
+**À vérifier**, et les choix restants **À trancher**.
 
 ## Passer par le `Makefile`
 
@@ -212,8 +211,8 @@ et un cycle de retour lent depuis un poste Windows.
   `http://127.0.0.1:8080/`, puisque `fetch` ne lit pas un `.wasm` en `file://`.
   Écarté : TypeScript, que Node exécute désormais sans compilation mais qu'un
   navigateur ne lit pas — la page exigerait alors un compilateur, donc npm.
-  **À vérifier** : la page n'a été vue dans aucun navigateur en intégration
-  continue, seul le test sous Node y tourne.
+  La page a été vue dans un navigateur avant la 0.0.0 ; l'intégration continue
+  n'en fait tourner que le test sous Node.
 
 ### Android
 
@@ -396,4 +395,16 @@ leurs empreintes se comparent par leurs hôtes.
   `THIRD-PARTY-NOTICES` ; un `SHA256SUMS`
   calculé sur les archives, et une attestation de provenance vérifiable par
   `gh attestation verify`.
+- **`THIRD-PARTY-NOTICES` couvre ce que les bibliothèques embarquent** sans que
+  le projet en dépende : la bibliothèque standard de Rust, `compiler-builtins`
+  et son libm, et la libunwind de LLVM sur Android. Un seul fichier pour toutes
+  les cibles. Écarté : `cargo-about`, qui ne lit que le graphe de Cargo — vide
+  ici — et ne verrait rien de la bibliothèque standard.
+- **L'archive est éprouvée avant d'être publiée**, sous Windows et Linux : un
+  hôte C lié à la bibliothèque statique et un hôte C++ lié à la dynamique,
+  contre le seul contenu du paquet, doivent rendre l'empreinte de référence ;
+  sous Linux, le SONAME et l'entrée DT_NEEDED se vérifient aussi.
+- **Un tag `vX.Y.Z-essai.N` éprouve le workflow** sans occuper le vrai tag : même
+  section du `CHANGELOG`, release en brouillon marquée préversion, à supprimer
+  avec le tag.
 - Les notes d'une version qui ne rend encore rien disent ce qu'elle ne fait pas.

@@ -44,11 +44,16 @@ de version sont ce que lit un auteur de liaison étranger avant de savoir s'il
 doit reprendre son travail. Ce préambule reste en français : il n'est jamais
 publié, et explique les conventions du dépôt à qui y contribue.
 
-## [Non publié]
+## [0.0.0] — 2026-09-17 — La frontière
 
-Un triangle en dur, et rien d'autre : ni scène à soumettre, ni caméra, ni
-texture. La fin d'image rend une image complète, que les quatre hôtes doivent
-hacher pareil.
+**Ce que cette version ne fait pas : elle ne rend aucune scène.** Un triangle
+en dur, et rien d'autre : ni scène à soumettre, ni caméra, ni texture. La fin
+d'image rend une image complète, que les quatre hôtes — C, C++, wasm et
+Android — hachent pareil.
+
+**Première ABI publiée : `SCG_ABI_VERSION` vaut 1.** Une liaison compare cette
+valeur à celle de la bibliothèque chargée, par égalité, avant tout autre appel.
+Aucun format de fichier n'existe encore : `version_format` n'a pas de valeur.
 
 ### Ajouté
 - Remplissage de triangle par fonctions de bord en virgule fixe, avec la règle
@@ -125,9 +130,14 @@ hacher pareil.
 
 ***
 
-A hardcoded triangle, and nothing else: no scene to submit, no camera, no
-texture. Ending a frame produces a complete image, which the four hosts must
-hash identically.
+**What this version does not do: it renders no scene.** A hardcoded
+triangle, and nothing else: no scene to submit, no camera, no texture. Ending a
+frame produces a complete image, which the four hosts — C, C++, wasm and
+Android — hash identically.
+
+**First published ABI: `SCG_ABI_VERSION` is 1.** A binding compares this value
+with the loaded library's, for equality, before any other call. No file format
+exists yet: `version_format` has no value.
 
 ### Added
 - Triangle fill through fixed-point edge functions, with the top-left rule: two

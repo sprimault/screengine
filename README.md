@@ -34,11 +34,10 @@ for those making a game, and the engine does not know it exists.
 
 ## Status
 
-**Step 0 in progress: a hardcoded triangle, and no engine.** The C boundary is
-written, and the triangle is filled by the final fixed-point edge functions. All four
-hosts — C, C++, wasm and Android — render it with the same hash as the Rust
-path; comparing them in the conformance suite and the first release remain,
-before any other line of engine.
+**Step 0 cleared, released as 0.0.0: a hardcoded triangle, and no engine.**
+The C boundary is written, and the triangle is filled by the final fixed-point
+edge functions. All four hosts — C, C++, wasm and Android — render it with the
+conformance suite's reference hash. Step 1, the pipeline, begins.
 
 The roadmap has ten steps, each one published.
 

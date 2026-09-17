@@ -49,6 +49,8 @@ partout » en fait vérifié.
 **Franchie quand** les quatre hôtes affichent le même triangle, les quatre
 empreintes sont identiques, et `make nostd` passe en intégration continue.
 
+**Franchie, publiée en 0.0.0.**
+
 ## 1 — Le pipeline
 
 Maths — vecteurs, matrices, quaternions, tables trigonométriques maison —, pile
