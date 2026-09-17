@@ -44,7 +44,7 @@ leurs dans le noyau. Et la frontière C exige `std` et `unsafe`, que le noyau re
 | `screengine` | le noyau : maths, pipeline, rasteriseur, formats, monde | non | aucune | chemins SIMD seulement |
 | `screengine-ffi` | la frontière C, `cdylib` + `staticlib` | oui | `screengine` | oui |
 | `screengine-play` | étage d'accueil : fenêtre, entrées, boucle à pas fixe, mise à l'échelle | oui | `winit`, `softbuffer` | non |
-| `screengine-conformance` | scènes de référence, empreintes | oui | `screengine` | non |
+| `screengine-conformance` | scènes de référence, empreintes | oui | `screengine` | l'allocateur qui compte, dans son test seulement |
 
 **Un crate se crée pour une contrainte de compilation, jamais pour ranger.** Les
 quatre existants se justifient chacun par un besoin que les autres ne partagent
@@ -180,7 +180,10 @@ l'hôte gardant sa fenêtre, sa boucle et ses entrées.
 
 - **Uniquement dans `screengine-ffi` et dans les chemins SIMD du noyau.** Le
   noyau déclare `#![deny(unsafe_code)]` ; chaque module SIMD l'autorise
-  localement, et c'est la seule autorisation du crate.
+  localement, et c'est la seule autorisation du crate. Une exception hors du code
+  livré : l'allocateur global du test d'allocation de la conformance, parce que
+  `GlobalAlloc` est un trait `unsafe` et qu'aucune autre voie ne voit une
+  allocation.
 - **Chaque bloc porte un commentaire `// SAFETY:` qui nomme l'invariant tenu**, et
   qui le tient. « L'appelant garantit que `ptr` pointe vers `stride × hauteur`
   pixels, précondition documentée dans le header » est un commentaire ;
@@ -482,7 +485,16 @@ teste quelque chose.
 - **Chaque scène se rend en tuiles de 32, en tuiles de 64 et en image entière**, et
   les trois empreintes doivent être identiques ; puis ses tuiles dans un ordre
   mélangé. Une couture de tuile ne se voit que dans une configuration : sans ce
-  contrôle, la conformance ne vaudrait que pour la sienne.
+  contrôle, la conformance ne vaudrait que pour la sienne. Aujourd'hui la suite
+  rend chaque scène en tuiles de 32 et de 64 ; l'image entière et l'ordre
+  mélangé attendent l'API de tuiles de l'étape 1.
+- **Une scène, une référence**, `references/<scène>` : seize chiffres et un saut
+  de ligne, comparés octet pour octet. Toutes les configurations se comparent à
+  la même. Une référence absente fait échouer `--check`, jamais un « rien à
+  comparer » qui laisserait la suite verte.
+- **Les hôtes se comparent au chemin Rust de leur plateforme**, et ce chemin à la
+  référence versionnée : chaque plateforme d'intégration continue relie ainsi
+  tous les hôtes qu'elle exécute au même fichier.
 - **L'empreinte est FNV-1a 64 bits**, écrite en seize chiffres hexadécimaux
   minuscules. Elle hache la largeur puis la hauteur en `u32` petit-boutiste, puis
   la zone utile ligne par ligne, `largeur × 4` octets alpha compris ; le `stride`
@@ -491,9 +503,10 @@ teste quelque chose.
   réimplémenter en JavaScript et en Java ; SHA-256, asynchrone dans un
   navigateur, pour un détecteur de régression qui n'a rien à sécuriser.
 - **L'environnement flottant de l'hôte ne change pas l'image.** L'hôte C démasque
-  les exceptions, active DAZ, FZ et l'arrondi vers le haut avant d'appeler le
-  moteur, compare l'empreinte à celle du chemin Rust, et vérifie que son registre
-  lui revient intact.
+  les exceptions, active le zéro forcé et l'arrondi vers le haut avant d'appeler
+  le moteur, compare l'empreinte à celle du chemin Rust, et vérifie que son
+  registre lui revient intact — MXCSR sous x86_64, FPCR sur aarch64 et FPSCR sur
+  armv7, ces deux derniers par l'hôte Android sous `qemu-user`.
 - Les empreintes sont comparées octet pour octet : `.gitattributes` les déclare
   binaires.
 
@@ -505,6 +518,12 @@ lightmaps —, puis vérifie qu'aucune image rendue ensuite n'alloue, la premiè
 comprise. C'est la première qui compte : c'est là qu'un mipmap généré à la
 demande ou un atlas agrandi se cacherait. Et c'est la seule preuve de l'invariant
 qui ne dépende pas de l'attention du relecteur.
+
+Il vit dans `crates/screengine-conformance/tests/allocation.rs`, binaire de test
+à part : un allocateur global vaut pour tout le binaire. Le compte est par
+thread, armé autour des images seulement — le harnais de test alloue sur ses
+propres threads pendant la mesure. Aujourd'hui la scène est le triangle en dur,
+sur trois images ; chaque ressource chargeable y entrera avec son étape.
 
 ### Tests aléatoires
 

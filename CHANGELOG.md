@@ -85,6 +85,12 @@ hacher pareil.
   La bibliothèque des trois ABI est publiée, rangée comme `jniLibs/`.
 - Empreinte d'image : FNV-1a 64 bits sur les dimensions puis la zone utile,
   que chaque hôte recalcule dans son langage.
+- Suite de conformance : l'empreinte du triangle est une référence versionnée,
+  que `make conform` compare octet pour octet après un rendu en tuiles de 32 et
+  de 64. Chaque hôte compare la sienne au chemin Rust : les quatre se rejoignent
+  sur le même fichier.
+- Un test prouve qu'aucune image n'alloue une fois le contexte créé, la
+  première comprise.
 - Espace de travail en quatre crates : noyau sans std, frontière C, étage
   d'accueil, suite de conformance.
 - `screengine-play`, pour faire un jeu en Rust sans écrire d'hôte : fenêtre,
@@ -152,6 +158,12 @@ hash identically.
   three ABIs ships, laid out like `jniLibs/`.
 - Image hash: 64-bit FNV-1a over the dimensions then the visible area, which
   each host recomputes in its own language.
+- Conformance suite: the triangle hash is a versioned reference, which
+  `make conform` compares byte for byte after rendering with 32 and 64 pixel
+  tiles. Each host compares its own with the Rust path: all four meet on the
+  same file.
+- A test proves that no frame allocates once the context exists, the first one
+  included.
 - Four-crate workspace: std-free core, C boundary, Rust front end, conformance
   suite.
 - `screengine-play`, to make a game in Rust without writing a host: window,

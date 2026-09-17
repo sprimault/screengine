@@ -1,12 +1,22 @@
 // Copyright 2026 Stéphane Primault <sprimault@users.noreply.github.com>
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
-//! L'analyse de la ligne de commande de la conformance.
-//!
-//! Les références n'existent pas encore : il n'y a rien à rendre au-delà du
-//! triangle en dur, qui est celui des hôtes.
+//! La ligne de commande de la conformance, et la comparaison aux références.
 
 use super::*;
+
+/// Un répertoire de références propre à un test, vidé avant usage.
+///
+/// Sous `.tmp/` du dépôt et non dans le répertoire temporaire du système : sur
+/// le poste de développement, l'antivirus surveille ce dernier.
+fn scratch(name: &str) -> PathBuf {
+    let dir = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../.tmp/conformance-tests")
+        .join(name);
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("répertoire de test");
+    dir
+}
 
 /// Construit une liste d'arguments à partir de littéraux.
 fn args(values: &[&str]) -> Vec<String> {
@@ -50,6 +60,47 @@ fn print_exige_une_scene_connue() {
 /// il n'y aurait rien à comparer entre le chemin Rust et les hôtes.
 #[test]
 fn le_triangle_rend_une_empreinte_stable() {
-    let first = Scene::Triangle.render().expect("scène valide");
-    assert_eq!(Scene::Triangle.render(), Ok(first));
+    let first = Scene::Triangle
+        .render(Scene::HOST_TILE)
+        .expect("scène valide");
+    assert_eq!(Scene::Triangle.render(Scene::HOST_TILE), Ok(first));
+}
+
+/// Toutes les tailles de tuile rendent l'empreinte de `--print`, celle que les
+/// hôtes comparent : une référence écrite depuis une autre taille ne vaudrait
+/// que pour elle.
+#[test]
+fn toutes_les_tuiles_rendent_l_empreinte_des_hotes() {
+    let host = Scene::Triangle
+        .render(Scene::HOST_TILE)
+        .expect("scène valide");
+    assert_eq!(Scene::Triangle.render_all(), Ok(host));
+}
+
+/// Une référence absente est un échec qui dit quoi faire, jamais un « rien à
+/// comparer » qui laisserait croire la suite verte.
+#[test]
+fn une_reference_absente_echoue() {
+    let dir = scratch("absente");
+    let error = check(Scene::Triangle, &dir).expect_err("sans référence");
+    assert!(error.contains("référence absente"), "{error}");
+}
+
+/// Ce que `--update` écrit, `--check` le reconnaît.
+#[test]
+fn check_accepte_ce_qu_update_ecrit() {
+    let dir = scratch("aller-retour");
+    update(Scene::Triangle, &dir).expect("écriture");
+    assert!(check(Scene::Triangle, &dir).is_ok());
+}
+
+/// Une référence qui diffère d'un seul chiffre est une divergence, et le
+/// message donne les deux empreintes.
+#[test]
+fn une_reference_differente_diverge() {
+    let dir = scratch("divergente");
+    let rendered = Scene::Triangle.render_all().expect("scène valide");
+    fs::write(dir.join("triangle"), reference_text(rendered ^ 1)).expect("écriture");
+    let error = check(Scene::Triangle, &dir).expect_err("divergence");
+    assert!(error.contains(&hash::format(rendered)), "{error}");
 }
