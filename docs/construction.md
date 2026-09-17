@@ -30,6 +30,9 @@ Sans lui, un clone se construit dans `target/`.
 | `cargo-deny` | `0.19.4`, épinglé | ses règles changent de sens d'une version à l'autre ; en deçà de 0.19.1, il ne lit pas les scores CVSS 4.0 de la base d'avis |
 | `cargo-audit` | la dernière | il lit des avis publiés en continu ; l'épingler figerait ce qu'il sait lire |
 | Node | 22 au minimum | exécute l'hôte wasm de `make test` et sert sa page ; aucun paquet npm. Présent sur les images d'intégration continue |
+| NDK, SDK Android | NDK r29, build-tools 36.0.0, `android-36`, épinglés dans `hosts/android/Makefile` | l'hôte Android ; r28 au minimum pour les pages de 16 Ko. Fournis par `hosts/android/Dockerfile` |
+| JDK | 17 | `javac` et les outils du SDK |
+| `qemu-user` | celui de la distribution | exécute les tests aarch64 et armv7 de l'hôte Android sans appareil |
 
 Les versions sont épinglées dans le `Makefile` et nulle part ailleurs.
 `make tools` les installe, avec les cibles `thumbv7em-none-eabihf`,
@@ -45,7 +48,7 @@ plutôt que de les recopier.
 | `dev` | développement | `opt-level = 3` pour le noyau et les dépendances, assertions conservées |
 | `release` | binaires : exemples de l'étage d'accueil, conformance | `lto = "fat"`, `codegen-units = 1`, `panic = "abort"` |
 | `release-ffi` | bibliothèque partagée et statique | hérite de `release`, `panic = "unwind"` |
-| `ffi-test` | bibliothèques de `make test-abi` et `make test-cpp` | hérite de `release`, `panic = "unwind"`, sans LTO, assertions conservées |
+| `ffi-test` | bibliothèques de `make test-abi`, `make test-cpp` et `make test-android` | hérite de `release`, `panic = "unwind"`, sans LTO, assertions conservées |
 | `release-wasm` | module wasm publié | hérite de `release`, `panic = "abort"`, `strip = true` |
 | `wasm-test` | module de `make test-wasm` | hérite de `ffi-test`, `panic = "abort"` |
 
@@ -95,9 +98,9 @@ dynamique par nom.
 | Windows x64 | `x86_64-pc-windows-msvc` | `.dll`, `.lib` | MSVC Build Tools | `screengine-play`, `hosts/c`, `hosts/cpp` | CI |
 | Linux x64 | `x86_64-unknown-linux-gnu` | `.so`, `.a` | gcc ou clang | `hosts/c`, `hosts/cpp`, conformance | CI |
 | Navigateur | `wasm32-unknown-unknown` | `.wasm` | cible rustup, Node | `hosts/web` | CI, `make test-wasm` sous Linux et Windows |
-| Android arm64 | `aarch64-linux-android` | `.so` | NDK | `hosts/android` | CI, avec son hôte |
-| Android armv7 | `armv7-linux-androideabi` | `.so` | NDK | `hosts/android` | CI, avec son hôte |
-| Android x64 | `x86_64-linux-android` | `.so` | NDK | émulateur | CI, avec son hôte |
+| Android arm64 | `aarch64-linux-android` | `.so`, `.a` | NDK, `qemu-user` | `hosts/android` | CI, `make test-android` sous Linux, sans appareil |
+| Android armv7 | `armv7-linux-androideabi` | `.so`, `.a` | NDK, `qemu-user` | `hosts/android` | CI, `make test-android` sous Linux, sans appareil |
+| Android x64 | `x86_64-linux-android` | `.so`, `.a` | NDK, SDK, émulateur | `hosts/android` | CI, `make test-android` sous Linux, sur émulateur par JNI |
 | Sans `std` | `thumbv7em-none-eabihf` | `.rlib` du noyau seul | cible rustup | aucun | `make nostd`, CI |
 | iOS, macOS | — | — | — | — | hors périmètre v1 |
 
@@ -217,17 +220,50 @@ et un cycle de retour lent depuis un poste Windows.
   frontière choisit donc son module flottant par l'ABI — `target_os = "android"`
   ou `target_abi = "eabihf"` —, et une cible qu'aucun module ne couvre échoue à
   la compilation plutôt que de passer sans fixer son environnement.
-- **Le NDK fournit l'éditeur de liens.** Le niveau d'API minimal est celui de
-  l'éditeur choisi (`aarch64-linux-android21-clang` pour l'API 21), et Rust exige
-  un NDK récent — r25 au minimum depuis Rust 1.68.
-- **À trancher — C3** : le passage par JNI. La couche FFI n'exporte que l'ABI C,
-  et une méthode `native` Java réclame un symbole `Java_<paquet>_<classe>_<méthode>`.
-  Recommandation : une couche JNI mince écrite en C dans `hosts/android`,
-  compilée par le NDK et liée à `libscreengine_ffi.so`. Un crate `jni` ferait
-  entrer une dépendance et du code propre à Android dans l'arbre Rust, pour ce
-  qui n'est que de la conversion.
-- **À trancher — C4** : l'outil de construction côté Cargo — `cargo-ndk`, ou la
-  configuration des éditeurs de liens du NDK dans `.cargo/config.toml`.
+- **Le NDK fournit l'éditeur de liens**, passé à Cargo par les variables
+  `CARGO_TARGET_<TRIPLE>_LINKER` du `Makefile`, et `make lib-android` construit
+  les trois ABI. Écarté : `cargo-ndk`, un outil de plus à épingler pour trois
+  chemins ; et `.cargo/config.toml`, local au poste. L'éditeur de liens fixe le
+  niveau d'API — 21, par `ANDROID_API` — et celui d'armv7 s'appelle
+  `armv7a-linux-androideabi21-clang`, avec un `a` que le triple Rust n'a pas.
+  NDK r29, épinglé dans `hosts/android/Makefile` ; r28 au minimum, qui aligne
+  sur des pages de 16 Ko sans option.
+- **Le dépliage n'exige rien de plus** : la bibliothèque standard lie la
+  libunwind du NDK d'elle-même, et `release-ffi` s'applique tel quel.
+- **La couche JNI est en C**, dans `hosts/android/jni.c`, compilée par le NDK en
+  une bibliothèque séparée, `libscreengine_jni.so`, liée dynamiquement à
+  `libscreengine_ffi.so` — c'est la bibliothèque publiée qui est chargée, pas une
+  copie. Elle n'exporte que `JNI_OnLoad`, qui enregistre les méthodes par
+  `RegisterNatives` : un nom ou une signature fausse fait échouer le chargement
+  au lieu du premier appel. Écarté : le crate `jni`, qui ferait entrer une
+  dépendance et du code propre à Android dans l'arbre Rust pour de la
+  conversion.
+- **Le bitmap s'écrit sans copie**, par `AndroidBitmap_lockPixels`. Android y
+  donne le `stride` en octets par ligne ; l'ABI l'attend en pixels, d'où la
+  division par quatre. `Bitmap.setPixels(int[])` est écarté : il échange rouge et
+  bleu, voir [`abi.md`](abi.md).
+- **Java seul, sans Gradle.** `javac`, `d8`, `aapt2`, `zipalign` et `apksigner`
+  du SDK, pilotés par le `Makefile` de l'hôte. Kotlin exigerait son compilateur,
+  et Gradle un cache de dépendances, pour un hôte de quelques centaines de
+  lignes.
+- **Le test a deux paliers**, et `make test-android` exige que leurs cinq
+  empreintes soient identiques :
+  1. `hosts/c/main.c`, lié en statique à la bibliothèque statique de chaque ABI,
+     exécuté sans appareil — x86_64 directement, aarch64 et armv7 sous
+     `qemu-user`. C'est le seul palier qui éprouve FPCR et FPSCR : un émulateur
+     x86_64 ne voit que MXCSR.
+  2. Sur un émulateur ou un appareil joignable par `adb` : le même `main.c` lié
+     à la bibliothèque dynamique, puis `Test.java` lancé par `app_process`, à
+     travers la couche JNI et l'ART, sur un tampon direct dont la base est
+     décalée d'un octet.
+
+  L'APK n'est pas lancé par le test, mais construit par lui.
+- **`hosts/android/Dockerfile`** fournit tout cela sous Linux avec KVM : chaîne
+  Rust, NDK, SDK, émulateur x86_64 et `qemu-user`. L'image se nomme
+  `screengine-android`, et le cache — registre Cargo, cibles, AVD — vit dans un
+  volume. En intégration continue, le job `tests` Linux installe les mêmes
+  versions et démarre l'émulateur par son action ; Windows retire l'hôte par
+  `make test SANS=android`, une exclusion écrite plutôt qu'un saut.
 
 #### Pourquoi le `.so` ne se charge pas
 
@@ -244,13 +280,16 @@ Dans l'ordre où les causes se rencontrent :
    liée pour un niveau d'API plus récent que celui de l'appareil. L'éditeur de
    liens choisi fixe ce niveau.
 4. **Refus sur un appareil à pages de 16 Ko** — la bibliothèque est alignée sur des
-   pages de 4 Ko. Les NDK récents alignent sur 16 Ko par défaut ; avec un plus
-   ancien, l'alignement se demande à l'éditeur de liens
-   (`-Wl,-z,max-page-size=16384`). **À vérifier** au lot 8 contre le NDK en usage.
-5. **`UnsatisfiedLinkError: No implementation found for …`** — la bibliothèque est
-   chargée, mais la méthode `native` ne trouve pas son symbole JNI : nom de
-   paquet, de classe ou de méthode mal reproduit dans la couche JNI, ou méthode
-   jamais enregistrée.
+   pages de 4 Ko. Le NDK r29 aligne les ABI 64 bits sur 16 Ko sans option,
+   constaté sur `arm64-v8a` et `x86_64` par `llvm-readelf -l` ; `armeabi-v7a`
+   reste à 4 Ko, et c'est attendu : les pages de 16 Ko n'existent que sur les
+   appareils 64 bits. Avec un NDK antérieur à r28, l'alignement se demande à
+   l'éditeur de liens (`-Wl,-z,max-page-size=16384`). L'APK se vérifie par
+   `zipalign -c -P 16`.
+5. **`JNI_OnLoad` rend une erreur au chargement** — `RegisterNatives` n'a pas
+   trouvé la classe ou une méthode : nom de paquet, de classe, de méthode ou
+   signature mal reproduit dans `jni.c`. Sans `RegisterNatives`, le même défaut
+   n'apparaîtrait qu'au premier appel, en `UnsatisfiedLinkError`.
 
 ## Header
 
@@ -312,7 +351,7 @@ et chaque semaine pour l'audit :
 | Job | Plateforme | Contrôles |
 |---|---|---|
 | vérification | Linux | `fmt`, `lint`, `nostd`, `header-verif`, `deny` |
-| tests | Linux et Windows | `test`, hôtes C, C++ et wasm compris, `conform` |
+| tests | Linux et Windows | `test`, hôtes C, C++ et wasm compris, `conform` ; l'hôte Android sous Linux seulement, émulateur démarré, et retiré sous Windows par `SANS=android` |
 | audit | Linux | `audit`, dans un job à part : un avis publié en amont n'est pas un défaut de la PR en cours |
 
 Tout passe par le `Makefile`, et les outils par `make tools`. Les actions sont
@@ -337,9 +376,15 @@ leurs empreintes se comparent par leurs hôtes.
 - **`.github/workflows/release.yml`**, sur un tag `v*` : vérifie que le tag et la
   version du `Cargo.toml` concordent, lit la section du `CHANGELOG`, repasse les
   tests et la conformance — un tag posé sur un commit rouge ne publie pas —,
-  construit par `make lib` — `make lib-wasm` pour le module wasm —, puis crée la
+  construit par `make lib` — `make lib-wasm` et `make lib-android` pour les deux
+  autres —, puis crée la
   release en brouillon. Les notes se relisent avant de publier.
-- **Une archive par cible** — `windows_x64`, `linux_x64`, `wasm32` —,
+- **L'hôte Android se teste une fois par publication**, émulateur démarré, sur
+  l'entrée qui publie sa bibliothèque. Les autres entrées le retirent par
+  `SANS=android` : Windows n'a pas d'émulateur, et le repasser sous Linux ne
+  vérifierait rien de plus.
+- **Une archive par cible** — `windows_x64`, `linux_x64`, `wasm32`, `android`,
+  cette dernière rangée en `lib/<abi>/` comme `jniLibs/` —,
   `screengine_<tag>_<cible>`, contenant la
   bibliothèque, le header, `LICENSE-MIT`, `LICENSE-APACHE` et
   `THIRD-PARTY-NOTICES` ; un `SHA256SUMS`

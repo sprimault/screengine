@@ -77,6 +77,12 @@ hacher pareil.
   sans aucun import, alloue par `scg_buffer_alloc`, vérifie les mêmes refus et
   les vues détachées par la croissance de la mémoire, et compare son empreinte à
   celle du chemin Rust. Le module wasm est publié avec les autres archives.
+- Hôte Android : couche JNI en C, application sans Gradle qui écrit dans la
+  mémoire d'un bitmap, et un test en deux paliers lancé par `make test`. Les
+  trois ABI sans appareil — aarch64 et armv7 sous émulation —, environnement
+  flottant hostile compris ; puis un émulateur x86_64, en C et à travers JNI sur
+  un tampon désaligné. Toutes les empreintes doivent être celle du chemin Rust.
+  La bibliothèque des trois ABI est publiée, rangée comme `jniLibs/`.
 - Empreinte d'image : FNV-1a 64 bits sur les dimensions puis la zone utile,
   que chaque hôte recalcule dans son langage.
 - Espace de travail en quatre crates : noyau sans std, frontière C, étage
@@ -138,6 +144,12 @@ hash identically.
   imports at all, allocates through `scg_buffer_alloc`, checks the same
   rejections and the views detached when memory grows, and compares its hash
   with the Rust path's. The wasm module ships alongside the other archives.
+- Android host: a JNI layer in C, a Gradle-free app that writes straight into a
+  bitmap's memory, and a two-stage test run by `make test`. The three ABIs
+  without a device — aarch64 and armv7 under emulation — hostile floating-point
+  environment included; then an x86_64 emulator, in C and through JNI on a
+  misaligned buffer. Every hash must match the Rust path's. The library for the
+  three ABIs ships, laid out like `jniLibs/`.
 - Image hash: 64-bit FNV-1a over the dimensions then the visible area, which
   each host recomputes in its own language.
 - Four-crate workspace: std-free core, C boundary, Rust front end, conformance

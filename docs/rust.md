@@ -448,9 +448,16 @@ teste quelque chose.
   les exports réels du `.wasm`, les constantes recopiées en JavaScript comparées
   au header, et une vue détachée par la croissance de la mémoire. Ni registre
   flottant ni poison : wasm n'a pas le premier, et une panique y est un trap.
-- **Les trois cibles `test-*` ont une forme commune** dans le `Makefile` : chaque
+- **L'hôte Android, dans `make test-android`**, rend l'empreinte en deux paliers
+  qui doivent concorder : `hosts/c/main.c` lié en statique pour les trois ABI,
+  sans appareil — aarch64 et armv7 sous `qemu-user`, seul endroit où FPCR et
+  FPSCR hostiles sont éprouvés —, puis, sur un émulateur, le même programme lié
+  en dynamique et `Test.java` à travers JNI, sur une base de tampon désalignée.
+  Voir [`construction.md`](construction.md), « Android ».
+- **Les cibles `test-*` ont une forme commune** dans le `Makefile` : chaque
   hôte fournit `why-not`, `all` et `run`, et la règle compare son empreinte à
-  celle du chemin Rust.
+  celle du chemin Rust. `make test SANS=android` retire un hôte, par une
+  exclusion écrite là où on l'appelle.
 - **Conformance** dans `crates/screengine-conformance` : des scènes de référence,
   rendues sans fenêtre, dont le tampon est haché et comparé aux empreintes de
   `references/`.

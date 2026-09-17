@@ -110,8 +110,41 @@ jobs:
           rustup target add "$(make -s print-CIBLE_WASM)"
           node --version
 
+      # L'hôte Android : NDK, build-tools et plateforme aux versions du Makefile
+      # de l'hôte, qemu-user pour les ABI ARM, et KVM pour l'émulateur. L'image
+      # expose /dev/kvm, mais pas à l'utilisateur du job : ouvert le temps du
+      # job, plutôt que par une règle udev dont l'image n'a plus le répertoire.
+      - name: Android
+        if: runner.os == 'Linux'
+        run: |
+          [ -e /dev/kvm ] || { echo "KVM absent du runner" >&2; exit 1; }
+          sudo chmod 666 /dev/kvm
+          sudo apt-get update -q && sudo apt-get install -y -q qemu-user
+          rustup target add $(make -s print-CIBLES_ANDROID)
+          version() { make -s --no-print-directory -C hosts/android print-$1; }
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install \
+            "ndk;$(version NDK_VERSION)" "build-tools;$(version BUILD_TOOLS)" \
+            "platforms;$(version PLATFORM)" > /dev/null
+          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/$(version NDK_VERSION)" >> "$GITHUB_ENV"
+
+      # Sous Linux, make test entier tourne une fois l'émulateur démarré : c'est
+      # le seul moment où l'hôte Android a un appareil.
       - name: Tests
-        run: make test
+        if: runner.os == 'Linux'
+        uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
+        with:
+          api-level: 36
+          target: default
+          arch: x86_64
+          emulator-options: -no-window -no-audio -no-boot-anim -no-snapshot -gpu swiftshader_indirect
+          disable-animations: true
+          script: make test
+
+      # Windows n'a ni qemu-user ni KVM pour l'émulateur : l'hôte Android y est
+      # retiré par une exclusion écrite, et non par un saut que CI ferait échouer.
+      - name: Tests
+        if: runner.os == 'Windows'
+        run: make test SANS=android
 
       - name: Conformance
         run: make conform

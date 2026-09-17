@@ -30,9 +30,65 @@
 
 #if defined(__x86_64__) || defined(_M_X64)
 #include <xmmintrin.h>
-#define HAS_MXCSR 1
+#define HAS_FP_CONTROL 1
+
+/* Le registre de contrôle flottant de l'hôte. */
+typedef unsigned int fp_word;
+
+/* Lit MXCSR. */
+static fp_word fp_read(void)
+{
+    return _mm_getcsr();
+}
+
+/* Écrit MXCSR. */
+static void fp_write(fp_word word)
+{
+    _mm_setcsr(word);
+}
+
+/* Exceptions démasquées, arrondi vers le haut, DAZ et FZ. */
+static fp_word fp_hostile(fp_word host)
+{
+    return (host & ~0x7F80u) | 0x4000u | 0x8040u;
+}
+#elif defined(__aarch64__) || defined(__arm__)
+#include <fenv.h>
+#define HAS_FP_CONTROL 1
+
+/* Le mot de contrôle : FPCR sur aarch64, FPSCR sur armv7. */
+typedef uint32_t fp_word;
+
+/* Lit le mot de contrôle par fenv.h. Ses quatre premiers octets sont ce mot
+ * chez bionic comme chez la glibc, sur les deux architectures ; les champs, eux,
+ * n'ont pas le même nom. */
+static fp_word fp_read(void)
+{
+    fenv_t env;
+    fp_word word;
+    fegetenv(&env);
+    memcpy(&word, &env, sizeof word);
+    return word;
+}
+
+/* Écrit le mot de contrôle, sans toucher au reste de l'environnement. */
+static void fp_write(fp_word word)
+{
+    fenv_t env;
+    fegetenv(&env);
+    memcpy(&env, &word, sizeof word);
+    fesetenv(&env);
+}
+
+/* FZ, arrondi vers le haut et les six autorisations de piège. Beaucoup de cœurs
+ * — et qemu — laissent ces dernières à zéro : c'est pourquoi le registre est
+ * relu après l'écriture plutôt que comparé à cette valeur. */
+static fp_word fp_hostile(fp_word host)
+{
+    return (host & ~0x00C00000u) | 0x01000000u | 0x00400000u | 0x9F00u;
+}
 #else
-#define HAS_MXCSR 0
+#define HAS_FP_CONTROL 0
 #endif
 
 /* Largeur, hauteur et tuile de la scène. */
@@ -221,8 +277,8 @@ static uint64_t render(int *ok)
     return hash;
 }
 
-#if HAS_MXCSR
-/* Un hôte hostile : exceptions démasquées, arrondi vers le haut, DAZ et FZ. Le
+#if HAS_FP_CONTROL
+/* Un hôte hostile : exceptions démasquées, arrondi vers le haut, zéro forcé. Le
  * moteur doit rendre la même image, et rendre le registre intact.
  *
  * Aujourd'hui, seuls les masques et la restauration du registre ont un effet
@@ -231,14 +287,15 @@ static uint64_t render(int *ok)
  * transformation des sommets, et elle est en place pour ce jour-là. */
 static void check_float_environment(uint64_t expected)
 {
-    unsigned int host = _mm_getcsr();
-    unsigned int hostile = (host & ~0x7F80u) | 0x4000u | 0x8040u;
+    fp_word host = fp_read();
 
-    _mm_setcsr(hostile);
+    fp_write(fp_hostile(host));
+    fp_word hostile = fp_read();
+    check(hostile != host, "le registre flottant accepte un environnement hostile");
     int ok = 0;
     uint64_t hash = render(&ok);
-    unsigned int after = _mm_getcsr();
-    _mm_setcsr(host);
+    fp_word after = fp_read();
+    fp_write(host);
 
     check(ok, "le rendu aboutit sous un environnement flottant hostile");
     check(hash == expected, "l'environnement flottant de l'hôte ne change pas l'image");
@@ -257,7 +314,7 @@ int main(void)
     int ok = 0;
     uint64_t hash = render(&ok);
 
-#if HAS_MXCSR
+#if HAS_FP_CONTROL
     if (ok) {
         check_float_environment(hash);
     }
