@@ -22,7 +22,7 @@ pub const SCG_ERR_INVALID_ARGUMENT: i32 = -2;
 /// An allocation failed.
 pub const SCG_ERR_OUT_OF_MEMORY: i32 = -3;
 
-/// The call came out of sequence, such as ending a frame that never began.
+/// The call came out of sequence, such as rendering a tile before the frame began.
 pub const SCG_ERR_INVALID_STATE: i32 = -4;
 
 /// The engine panicked. The object is now faulted; see `SCG_ERR_FAULTED`.

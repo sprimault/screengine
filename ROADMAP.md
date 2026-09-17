@@ -54,8 +54,14 @@ empreintes sont identiques, et `make nostd` passe en intégration continue.
 ## 1 — Le pipeline
 
 Maths — vecteurs, matrices, quaternions, tables trigonométriques maison —, pile
-de matrices, projection, z-buffer, rasteriseur à fonctions de bord, découpage en
-tuiles.
+de matrices, projection, clipping du plan proche uniquement, en espace homogène
+avant division, et bande de garde pour que les coordonnées écran tiennent dans
+leur format ; z-buffer, rasteriseur à fonctions de bord, découpage en tuiles.
+
+Clipper contre six plans est inutile et coûteux : les côtés se traitent par
+découpe du rectangle en espace écran. Le clipping arrive avec la projection et
+non avec les textures : dès qu'une caméra existe, un sommet derrière elle ou hors
+de la bande de garde casserait le format 28.4, et rien d'autre ne l'en protège.
 
 La **virgule fixe après projection** et la **règle top-left** ne s'écrivent pas
 ici : elles sont figées dans `docs/rust.md` et servent dès le premier
@@ -80,12 +86,8 @@ entière.
 Correction de perspective par interpolation de `1/w`, `u/w`, `v/w` en virgule
 fixe, avec division tous les 16 pixels — des segments alignés sur la grille de
 l'image, jamais sur le bord de la tuile. Mipmaps, générés au chargement de la
-texture. Puis clipping du plan proche uniquement, en espace homogène avant
-division, et bande de garde pour que les coordonnées écran tiennent dans leur
-format.
-
-Clipper contre six plans est inutile et coûteux : les côtés se traitent par
-découpe du rectangle en espace écran.
+texture. Le clipping du plan proche, écrit à l'étape 1, découpe désormais aussi
+les coordonnées de texture.
 
 **Le filtrage par défaut est le tramage ordonné des coordonnées de texture**,
 technique de la fin des années 90 : un décalage sous-texel tiré d'une table

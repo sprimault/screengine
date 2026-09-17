@@ -34,7 +34,7 @@
 // An allocation failed.
 #define SCG_ERR_OUT_OF_MEMORY -3
 
-// The call came out of sequence, such as ending a frame that never began.
+// The call came out of sequence, such as rendering a tile before the frame began.
 #define SCG_ERR_INVALID_STATE -4
 
 // The engine panicked. The object is now faulted; see `SCG_ERR_FAULTED`.
