@@ -123,8 +123,8 @@ Aucun format de fichier n'existe encore : `version_format` n'a pas de valeur.
 - Le header s'inclut depuis C++ : gardes `extern "C"`, et assertions de
   disposition vérifiées par un compilateur C++ comme par un compilateur C.
 - Sur wasm, une panique est un trap et non un code de retour : la chaîne stable
-  n'y déroule pas la pile, et `SCG_ERR_PANIC` comme le poison n'y sont jamais
-  observés. Le texte de la panique est écrit avant le trap dans l'emplacement
+  n'y déroule pas la pile, et ni `SCG_ERR_PANIC` ni `SCG_ERR_POISONED` n'y
+  sont jamais rendus. Le texte de la panique est écrit avant le trap dans l'emplacement
   d'erreur sans contexte, que l'hôte lit dans la mémoire ; l'instance ne se
   réutilise pas.
 
@@ -204,6 +204,7 @@ exists yet: `version_format` has no value.
 - The header can be included from C++: `extern "C"` guards, and layout
   assertions checked by a C++ compiler as well as a C one.
 - On wasm, a panic is a trap, not a return code: the stable toolchain does not
-  unwind there, so neither `SCG_ERR_PANIC` nor poisoning is ever observed. The
+  unwind there, so neither `SCG_ERR_PANIC` nor `SCG_ERR_POISONED` is ever
+  returned. The
   panic text is written before the trap into the context-free error slot, which
   the host reads from memory; the instance is not reused.
