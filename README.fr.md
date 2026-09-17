@@ -24,20 +24,21 @@ threads.
 
 ## Ce qu'il ne fait pas
 
-C'est ce qui le rend intégrable, donc ça vient avant le reste. Il n'ouvre aucune
-fenêtre, ne lit aucun clavier, n'ouvre aucun fichier, ne joue aucun son et ne
-connaît aucune notion de jeu — ni joueur, ni arme, ni score.
+C'est ce qui le rend intégrable, donc ça vient avant le reste. Le moteur n'ouvre
+aucune fenêtre, ne lit aucun clavier, n'ouvre aucun fichier, ne joue aucun son et
+ne connaît aucune notion de jeu — ni joueur, ni arme, ni score.
 
 L'hôte fournit la fenêtre, les entrées et les octets. Le moteur transforme et
 rend. Cette frontière est la seule raison pour laquelle le même code sert sous
-Windows, dans un navigateur et sur un téléphone.
+Windows, dans un navigateur et sur un téléphone. `screengine-play` est l'un de
+ces hôtes, écrit en Rust pour qui fait un jeu, et le moteur ignore son existence.
 
 ## État
 
 **Étape 0 en cours : un triangle en dur, et aucun moteur.** La frontière C est
 écrite, et le triangle est rempli par les fonctions de bord en virgule fixe
-définitives. Il reste à l'afficher depuis quatre hôtes — C, C++, wasm, Android —
-avant toute autre ligne de moteur.
+définitives. Les hôtes C et C++ l'affichent, et rendent la même empreinte que le
+chemin Rust ; restent wasm et Android avant toute autre ligne de moteur.
 
 La feuille de route compte dix étapes, publiées à chacune.
 
