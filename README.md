@@ -23,20 +23,21 @@ every tile size and every thread count.
 
 ## What it does not do
 
-That comes first, because it is what makes the engine embeddable. It opens no
-window, reads no keyboard, opens no file, plays no sound, and knows nothing
-about games — no player, no weapon, no score.
+That comes first, because it is what makes the engine embeddable. The engine
+opens no window, reads no keyboard, opens no file, plays no sound, and knows
+nothing about games — no player, no weapon, no score.
 
 The host provides the window, the input and the bytes. The engine transforms and
 renders. That boundary is the only reason the same code runs on Windows, in a
-browser and on a phone.
+browser and on a phone. `screengine-play` is one of those hosts, written in Rust
+for those making a game, and the engine does not know it exists.
 
 ## Status
 
 **Step 0 in progress: a hardcoded triangle, and no engine.** The C boundary is
-written, and the triangle is filled by the final fixed-point edge functions. It
-remains to display it from four hosts — C, C++, wasm, Android — before any
-other line of engine.
+written, and the triangle is filled by the final fixed-point edge functions. The C
+and C++ hosts display it and produce the same hash as the Rust path; wasm and
+Android remain before any other line of engine.
 
 The roadmap has ten steps, each one published.
 
