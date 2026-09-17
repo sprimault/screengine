@@ -52,6 +52,9 @@ publié, et explique les conventions du dépôt à qui y contribue.
   rend les tuiles que personne n'a rendues : un hôte qui n'appelle qu'elle
   reçoit toujours l'image entière. `SCG_ABI_VERSION` ne change pas. Le thread
   qui rend une tuile doit disposer de 128 Kio de pile.
+- API Rust : `Vec3`, `Quat`, `Affine3` et `Angle`, en main droite avec Z en
+  haut. Trigonométrie par table et racine inverse sans libm, qui rendent les
+  mêmes bits sur toutes les cibles.
 
 ### Modifié
 - L'image se rend par tuiles de la taille choisie à la création : les triangles
@@ -71,6 +74,9 @@ publié, et explique les conventions du dépôt à qui y contribue.
   and renders every tile nobody rendered: a host that only calls it still
   receives the whole image. `SCG_ABI_VERSION` is unchanged. A thread rendering
   a tile needs 128 KiB of stack.
+- Rust API: `Vec3`, `Quat`, `Affine3` and `Angle`, right-handed with Z up.
+  Table-driven trigonometry and an inverse square root without libm, giving the
+  same bits on every target.
 
 ### Changed
 - The image is rendered in tiles of the size chosen at creation: triangles are

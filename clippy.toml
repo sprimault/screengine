@@ -1,0 +1,53 @@
+# Les méthodes flottantes que le noyau, la frontière et la conformance
+# refusent.
+#
+# Elles appellent la libm, dont les bits changent selon la plateforme, ou ne
+# traitent pas NaN et −0 pareil d'un chemin à l'autre. Trigonométrie et racine
+# inverse passent par les tables de `src/math`, un minimum ou un maximum
+# s'écrit en comparaison explicite, un arrondi sur la conversion `as`.
+# `abs`, `copysign` et la négation restent permis : ce sont des manipulations
+# du bit de signe, exactes partout.
+#
+# L'étage d'accueil a son propre fichier : ses calculs flottants ne servent
+# qu'à l'affichage et n'entrent dans aucune empreinte.
+disallowed-methods = [
+    { path = "f32::sqrt", reason = "libm : passer par math::rsqrt" },
+    { path = "f32::sin", reason = "libm : passer par math::Angle" },
+    { path = "f32::cos", reason = "libm : passer par math::Angle" },
+    { path = "f32::tan", reason = "libm : passer par math::Angle" },
+    { path = "f32::asin", reason = "libm" },
+    { path = "f32::acos", reason = "libm" },
+    { path = "f32::atan", reason = "libm" },
+    { path = "f32::atan2", reason = "libm" },
+    { path = "f32::hypot", reason = "libm" },
+    { path = "f32::cbrt", reason = "libm" },
+    { path = "f32::exp", reason = "libm" },
+    { path = "f32::ln", reason = "libm" },
+    { path = "f32::log2", reason = "libm" },
+    { path = "f32::log10", reason = "libm" },
+    { path = "f32::powi", reason = "libm selon la cible" },
+    { path = "f32::powf", reason = "libm" },
+    { path = "f32::mul_add", reason = "fusionne ou appelle la libm selon la cible" },
+    { path = "f32::floor", reason = "arrondir sur la conversion as" },
+    { path = "f32::ceil", reason = "arrondir sur la conversion as" },
+    { path = "f32::round", reason = "arrondir sur la conversion as" },
+    { path = "f32::trunc", reason = "arrondir sur la conversion as" },
+    { path = "f32::fract", reason = "arrondir sur la conversion as" },
+    { path = "f32::rem_euclid", reason = "libm" },
+    { path = "f32::min", reason = "NaN et -0 : comparaison explicite" },
+    { path = "f32::max", reason = "NaN et -0 : comparaison explicite" },
+    { path = "f32::clamp", reason = "NaN : comparaisons explicites" },
+    { path = "f32::signum", reason = "NaN : comparaison explicite" },
+    { path = "f64::sqrt", reason = "libm" },
+    { path = "f64::sin", reason = "libm" },
+    { path = "f64::cos", reason = "libm" },
+    { path = "f64::tan", reason = "libm" },
+    { path = "f64::powi", reason = "libm selon la cible" },
+    { path = "f64::powf", reason = "libm" },
+    { path = "f64::mul_add", reason = "fusionne ou appelle la libm selon la cible" },
+    { path = "f64::floor", reason = "arrondir sur la conversion as" },
+    { path = "f64::round", reason = "arrondir sur la conversion as" },
+    { path = "f64::min", reason = "NaN et -0 : comparaison explicite" },
+    { path = "f64::max", reason = "NaN et -0 : comparaison explicite" },
+    { path = "f64::clamp", reason = "NaN : comparaisons explicites" },
+]
