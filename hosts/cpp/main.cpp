@@ -114,7 +114,7 @@ bool loaded_dynamically()
 {
     using Version = uint32_t (*)();
 #if defined(_WIN32)
-    HMODULE module = GetModuleHandleA("screengine_ffi.dll");
+    HMODULE module = GetModuleHandleA("screengine.dll");
     if (module == nullptr || module == GetModuleHandleA(nullptr)) {
         return false;
     }
@@ -123,7 +123,7 @@ bool loaded_dynamically()
     const auto exported = reinterpret_cast<Version>(dlsym(RTLD_DEFAULT, "scg_abi_version"));
     Dl_info info{};
     if (exported == nullptr || dladdr(reinterpret_cast<const void *>(exported), &info) == 0 || info.dli_fname == nullptr
-        || std::string(info.dli_fname).find("libscreengine_ffi.so") == std::string::npos) {
+        || std::string(info.dli_fname).find("libscreengine.so") == std::string::npos) {
         return false;
     }
 #endif

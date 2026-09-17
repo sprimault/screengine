@@ -30,7 +30,7 @@ function status(text) {
 
 /** Charge le module, rend une image et la dessine. */
 async function main() {
-  const module = await WebAssembly.compileStreaming(fetch("screengine_ffi.wasm"));
+  const module = await WebAssembly.compileStreaming(fetch("screengine.wasm"));
   const engine = await scg.Screengine.instantiate(module);
   if (engine.abiVersion() !== scg.SCG_ABI_VERSION) {
     status(`ABI ${engine.abiVersion()}, attendue ${scg.SCG_ABI_VERSION}`);

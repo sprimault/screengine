@@ -31,7 +31,7 @@ public final class MainActivity extends Activity {
     @Override
     protected void onCreate(Bundle state) {
         super.onCreate(state);
-        System.loadLibrary("screengine_ffi");
+        System.loadLibrary("screengine");
         System.loadLibrary("screengine_jni");
 
         if (Screengine.abiVersionUnsigned() != Screengine.ABI_VERSION) {

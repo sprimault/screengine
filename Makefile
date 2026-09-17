@@ -40,7 +40,7 @@ ANDROID_ENV  = CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER=$(NDK_BIN)/aarch64-linu
 # La bibliothèque des trois ABI dans un profil : cdylib pour l'appareil,
 # staticlib pour les exécutables de test lancés sans appareil.
 android_build = for cible in $(CIBLES_ANDROID); do \
-	  $(ANDROID_ENV) cargo build -p screengine-ffi --profile $(1) --target $$cible || exit 1; \
+	  $(ANDROID_ENV) cargo build -p screengine-lib --profile $(1) --target $$cible || exit 1; \
 	done
 
 # makefile.local porte ce qui est propre au poste et n'est pas versionné. Inclus
@@ -57,19 +57,19 @@ android_build = for cible in $(CIBLES_ANDROID); do \
 build:
 	cargo build --workspace
 
-# La bibliothèque partagée passe par release-ffi et non par release : le premier
+# Les bibliothèques publiées viennent de screengine-lib, qui leur donne le nom
+# `screengine`. Elles passent par release-ffi et non par release : le premier
 # est en panic = "unwind", sans quoi catch_unwind ne rattraperait rien et une
 # panique traverserait la frontière C — comportement indéfini, pas plantage.
 lib:
-	cargo build -p screengine-ffi --profile release-ffi
+	cargo build -p screengine-lib --profile release-ffi
 
 # Le module wasm, par son propre profil : la cible n'a pas de dépliage sur une
 # chaîne stable, et le panic = "unwind" de release-ffi y serait ignoré sans
-# avertissement. `cargo rustc`
-# plutôt que `cargo build`, pour ne produire que le cdylib : la bibliothèque
-# statique et la rlib n'ont rien à faire sur cette cible.
+# avertissement. `cargo rustc` plutôt que `cargo build`, pour ne produire que le
+# cdylib : la bibliothèque statique n'a rien à faire sur cette cible.
 lib-wasm:
-	cargo rustc -p screengine-ffi --profile release-wasm --target $(CIBLE_WASM) --crate-type cdylib
+	cargo rustc -p screengine-lib --profile release-wasm --target $(CIBLE_WASM) --crate-type cdylib
 
 lib-android:
 	@$(call android_build,release-ffi)
@@ -118,17 +118,17 @@ TEST_TARGETS := $(addprefix test-,$(TEST_HOSTS)) $(addsuffix -run,$(addprefix te
 host_dir_abi      := c
 host_name_abi     := C
 host_profile_abi  := ffi-test
-host_build_abi     = cargo build -p screengine-ffi --profile ffi-test
+host_build_abi     = cargo build -p screengine-lib --profile ffi-test
 
 host_dir_cpp      := cpp
 host_name_cpp     := C++
 host_profile_cpp  := ffi-test
-host_build_cpp     = cargo build -p screengine-ffi --profile ffi-test
+host_build_cpp     = cargo build -p screengine-lib --profile ffi-test
 
 host_dir_wasm     := web
 host_name_wasm    := wasm
 host_profile_wasm := wasm-test
-host_build_wasm    = cargo rustc -p screengine-ffi --profile wasm-test --target $(CIBLE_WASM) --crate-type cdylib
+host_build_wasm    = cargo rustc -p screengine-lib --profile wasm-test --target $(CIBLE_WASM) --crate-type cdylib
 
 host_dir_android     := android
 host_name_android    := Android
@@ -172,7 +172,7 @@ $(addsuffix -run,$(addprefix test-,$(TEST_HOSTS))): test-%-run:
 # Elles sont figées dans hosts/c : on relance ceci quand la liaison de l'hôte C
 # casse sur un symbole introuvable après une montée de Rust.
 native-libs:
-	cargo rustc -p screengine-ffi --profile ffi-test --crate-type staticlib -- --print native-static-libs
+	cargo rustc -p screengine-lib --profile ffi-test --crate-type staticlib -- --print native-static-libs
 
 # Doublon assumé avec les formatters de clippy : cargo fmt porte sur tout
 # l'arbre, sans exclusion ni configuration, et reste vrai le jour où quelqu'un

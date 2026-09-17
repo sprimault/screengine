@@ -46,7 +46,7 @@ public final class Screengine {
      * @param dir répertoire des deux bibliothèques
      */
     public static void load(String dir) {
-        System.load(dir + "/libscreengine_ffi.so");
+        System.load(dir + "/libscreengine.so");
         System.load(dir + "/libscreengine_jni.so");
     }
 

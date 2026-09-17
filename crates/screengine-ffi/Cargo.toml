@@ -10,9 +10,10 @@ authors.workspace = true
 publish.workspace = true
 
 [lib]
-# `rlib` en plus des deux artefacts publiés : sans lui, `tests/` ne peut pas se
-# lier au crate, et les tests de frontière n'existeraient pas.
-crate-type = ["cdylib", "staticlib", "rlib"]
+# Une rlib seulement : les bibliothèques publiées sont produites par
+# screengine-lib, sous le nom `screengine`. La rlib sert à screengine-lib et aux
+# tests de frontière de `tests/`.
+crate-type = ["rlib"]
 
 [dependencies]
 screengine.workspace = true

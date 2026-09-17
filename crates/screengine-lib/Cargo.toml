@@ -1,0 +1,27 @@
+[package]
+name = "screengine-lib"
+description = "Les bibliothèques publiées de Screengine, sous le nom screengine."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish.workspace = true
+
+# Un crate pour une contrainte de compilation : la bibliothèque publiée s'appelle
+# `screengine`, et screengine-ffi ne peut pas porter ce nom — sa rlib entrerait
+# en collision avec celle du noyau, qui le porte déjà. Celui-ci ne produit que
+# les artefacts publiés, et ils ont leur nom dès la construction : la DLL sous
+# Windows porte le même nom que sa bibliothèque d'importation.
+[lib]
+name = "screengine"
+crate-type = ["cdylib", "staticlib"]
+test = false
+doc = false
+
+[dependencies]
+screengine-ffi = { path = "../screengine-ffi" }
+
+[lints]
+workspace = true

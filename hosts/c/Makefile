@@ -17,7 +17,7 @@ INCLUDE := ../../include
 
 ifeq ($(OS),Windows_NT)
 
-LIB := $(TARGET)/$(PROFILE)/screengine_ffi.lib
+LIB := $(TARGET)/$(PROFILE)/screengine.lib
 EXE := $(OUT)/screengine-abi.exe
 VSWHERE := /c/Program Files (x86)/Microsoft Visual Studio/Installer/vswhere.exe
 
@@ -35,7 +35,7 @@ $(EXE): main.c $(LIB) $(INCLUDE)/screengine.h build.cmd
 else
 
 CC  ?= cc
-LIB := $(TARGET)/$(PROFILE)/libscreengine_ffi.a
+LIB := $(TARGET)/$(PROFILE)/libscreengine.a
 EXE := $(OUT)/screengine-abi
 
 # Les bibliothèques système que réclame une bibliothèque statique Rust sous
