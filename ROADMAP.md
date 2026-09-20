@@ -79,8 +79,19 @@ dessus. Ce que cette étape y ajoute, c'est la preuve qu'elles tiennent partout.
 thread : c'est la forme du rasteriseur qu'elles décident, pas le parallélisme. La
 fonction de rendu d'une tuile existe dès cette étape dans l'ABI.
 
-Rien à voir d'intéressant : un cube qui tourne, deux cubes qui s'interpénètrent
-proprement. C'est en test que ça se mesure.
+Rien à voir d'intéressant : un couloir parcouru, avec une caisse posée au sol
+qui le traverse. C'est en test que ça se mesure.
+
+**Un couloir plutôt qu'un objet posé devant la caméra**, et ce n'est pas un
+choix de décor. La caméra est à l'intérieur d'une géométrie fermée, ce qu'elle
+sera toujours dans un monde de cellules : les deux orientations se mêlent dans
+la même image, les murs passent derrière le plan proche à chaque pas et
+débordent de l'écran, si bien que le clipping et la bande de garde travaillent
+en permanence. Un objet regardé de loin ne déclenche ni l'un ni l'autre, et
+laisserait le chemin le plus délicat de l'étape sans aucune scène visible pour
+le rejouer. Le sol qui fuit vers l'horizon vient avec, et c'est ce que l'étape
+suivante demande. La caisse porte ce que la géométrie du couloir ne montre pas :
+deux surfaces qui s'interpénètrent, que seul le tampon de profondeur départage.
 
 **Franchie quand** aucune couture n'apparaît sur la scène à arêtes partagées, en
 rotation lente, à toutes les résolutions internes prévues, et que chaque scène
