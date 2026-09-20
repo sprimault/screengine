@@ -58,6 +58,9 @@ impl fmt::Display for Error {
                 Argument::TriangleCapacity => {
                     f.write_str("more triangles submitted than the engine reserved")
                 }
+                Argument::Projection => f.write_str(
+                    "field of view must be within ]0, pi[ radians, and the near plane positive",
+                ),
             },
             Self::Engine(screengine::Error::OutOfMemory) => {
                 f.write_str("the engine could not allocate its buffers")

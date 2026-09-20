@@ -9,10 +9,12 @@
 //! calcule toujours par la forme close, au coin global.
 
 mod bins;
+mod clip;
 mod plane;
 mod triangle;
 
 pub use bins::{Bins, Grid};
+pub use clip::{MAX_CLIP_TRIANGLES, clip};
 pub use triangle::{Point, Prepared, Vertex, fill, prepare};
 
 /// Un rectangle de l'image, en pixels.

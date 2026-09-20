@@ -361,13 +361,19 @@ int32_t scg_frame_tile(ScgContext *ctx, uint32_t index, uint8_t *pixels, uint32_
 int32_t scg_frame_end(ScgContext *ctx, uint8_t *pixels, uint32_t stride);
 ```
 
-- **La scène se soumet avant `scg_frame_begin`.** Le début scelle la soumission,
-  transforme, découpe et répartit les triangles par tuile, sur le thread de
-  l'appel et en exclusif, puis écrit le nombre de tuiles. Écarté : soumettre
-  entre le début et les tuiles, et répartir à la première tuile. La répartition
-  est la seule phase qui écrit dans un état partagé ; faite paresseusement, elle
-  imposerait un verrou au chemin des tuiles, et une panique y tomberait sur un
-  thread quelconque de l'hôte.
+- **La scène se soumet avant `scg_frame_begin`.** Chaque soumission transforme,
+  clippe et prépare son triangle immédiatement ; le début scelle la soumission et
+  répartit les triangles par tuile, sur le thread de l'appel et en exclusif, puis
+  écrit le nombre de tuiles. Écarté : soumettre entre le début et les tuiles, et
+  répartir à la première tuile. La répartition est la seule phase qui écrit dans
+  un état partagé ; faite paresseusement, elle imposerait un verrou au chemin des
+  tuiles, et une panique y tomberait sur un thread quelconque de l'hôte.
+
+  **Le découpage a lieu à la soumission, et pas au début d'image**, parce que
+  c'est la seule place qui rende vraie la clause de capacité ci-dessous : un
+  triangle clippé en produit jusqu'à six, et le refus doit tomber sur l'appel qui
+  déborde, pas sur une image entière déjà soumise. Corollaire : `max_triangles`
+  compte des triangles **préparés**, non soumis.
 - **Le contexte a deux états.** En enregistrement, il accepte la soumission, la
   caméra et le changement de résolution ; `scg_frame_begin` le fait passer au
   rendu ; `scg_frame_end` le ramène à l'enregistrement, liste de dessin vidée,
@@ -494,10 +500,11 @@ void        scg_buffer_free(uint8_t *ptr, size_t len);
 `scg_last_error` accepte `NULL` : elle rend alors le message de l'emplacement par
 thread, celui des fonctions qui n'ont pas de contexte auquel se rattacher.
 
-À l'étape 0, `scg_frame_end` rend un triangle en dur dans l'image entière : il
-n'y a pas encore de scène à soumettre, ni de tuiles. Ce triangle est pourtant
-rempli par les fonctions de bord en virgule fixe et la règle top-left
-définitives — c'est le premier remplissage.
+À l'étape 0, `scg_frame_end` rendait un triangle en dur dans l'image entière : il
+n'y avait pas encore de scène à soumettre. Ce triangle est pourtant rempli par
+les fonctions de bord en virgule fixe et la règle top-left définitives — c'est le
+premier remplissage. Les tuiles et la projection sont arrivées depuis, sans
+qu'aucune de ces sept signatures change.
 
 ### Étape 1
 

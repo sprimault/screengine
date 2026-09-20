@@ -10,8 +10,9 @@ use core::sync::atomic::{AtomicBool, AtomicU8, AtomicU32, Ordering};
 
 use crate::buffer::reserved;
 use crate::error::{Argument, Error, Result};
-use crate::math::fixed::{to_depth, to_subpixel};
-use crate::raster::{Bins, Grid, Point, Prepared, Vertex, prepare};
+use crate::math::projection::ClipVertex;
+use crate::math::{Projection, Vec3};
+use crate::raster::{Bins, Grid, MAX_CLIP_TRIANGLES, Point, Prepared, Vertex, clip, prepare};
 
 pub use frame::{Frame, Output, Rows};
 
@@ -42,11 +43,24 @@ pub const TRIANGLE_CAPACITY: usize = 16_384;
 /// Le noir opaque dont chaque image part.
 const CLEAR_COLOR: u32 = 0xFF00_0000;
 
-/// La couleur du triangle de l'étape 0.
+/// La couleur du premier triangle de la scène de démonstration.
 ///
 /// Franchement distincte du fond : c'est la première chose qu'un hôte affiche,
 /// et un aplat sombre laisserait douter entre « ça rend » et « ça ne rend pas ».
 const DEMO_COLOR: u32 = 0xFF30_A0E0;
+
+/// La couleur du second, qui partage une arête avec le premier.
+///
+/// Proche de la première mais distincte : c'est ce qui fait qu'un trou ou un
+/// recouvrement le long de l'arête commune se voit à l'œil dans un hôte, sans
+/// attendre qu'une empreinte le dise.
+const DEMO_COLOR_SHARED: u32 = 0xFF30_E0A0;
+
+/// Le champ de vision vertical de la scène de démonstration, en radians.
+const DEMO_FOV_Y: f32 = core::f32::consts::FRAC_PI_3;
+
+/// Le plan proche de la scène de démonstration.
+const DEMO_NEAR: f32 = 0.1;
 
 /// Ce que reçoit la création d'un contexte.
 ///
@@ -108,6 +122,8 @@ pub struct Context {
     taken: Vec<AtomicBool>,
     /// Le découpage de l'image en cours, fixé au début.
     grid: Grid,
+    /// La projection, qui dépend de la résolution et se recalculera avec elle.
+    projection: Projection,
     /// [`RECORDING`], [`RENDERING`] ou [`CLOSING`].
     state: AtomicU8,
     /// Les tuiles en cours de rendu, que la fin attend à zéro.
@@ -143,6 +159,7 @@ impl Context {
             bins: Bins::new(tiles as usize, TRIANGLE_CAPACITY)?,
             taken,
             grid: Grid::new(config.width, config.height, config.tile_size),
+            projection: Projection::new(config.width, config.height, DEMO_FOV_Y, DEMO_NEAR)?,
             state: AtomicU8::new(RECORDING),
             in_flight: AtomicU32::new(0),
         })
@@ -174,7 +191,7 @@ impl Context {
             return Err(Error::InvalidState);
         }
         self.triangles.clear();
-        self.draw_demo_triangle()?;
+        self.draw_demo_scene()?;
         self.seal();
         Ok(self.grid.count())
     }
@@ -232,33 +249,78 @@ impl Context {
         Ok(())
     }
 
-    /// Soumet le triangle en dur de l'étape 0.
+    /// Soumet un triangle donné en espace de vue : découpe, projection,
+    /// préparation.
     ///
-    /// Il n'y a pas encore de scène à soumettre : ce triangle existe pour que
-    /// les hôtes aient quelque chose à afficher, et il est rempli par les
-    /// fonctions de bord et la règle top-left définitives — c'est le premier
-    /// remplissage, et il est déjà celui de tout le moteur.
-    fn draw_demo_triangle(&mut self) -> Result<()> {
-        let (w, h) = (self.width as f32, self.height as f32);
+    /// **La découpe a lieu ici et non au début d'image**, parce que c'est la
+    /// seule place qui rende vraie la clause de capacité : un triangle découpé
+    /// en produit jusqu'à six, et le refus doit tomber sur l'appel qui déborde
+    /// plutôt que sur une image entière déjà soumise. La capacité compte donc
+    /// des triangles préparés, pas soumis.
+    ///
+    /// Un sommet qu'on ne peut pas projeter fait disparaître le triangle sans
+    /// erreur : c'est une donnée, pas un défaut du moteur.
+    fn submit_view(&mut self, view: [Vec3; 3], color: u32) -> Result<()> {
+        let mut homogeneous = [ClipVertex {
+            x: 0.0,
+            y: 0.0,
+            w: 0.0,
+        }; 3];
+        for (slot, point) in homogeneous.iter_mut().zip(view) {
+            match self.projection.to_clip(point) {
+                Some(vertex) => *slot = vertex,
+                None => return Ok(()),
+            }
+        }
 
-        // Sens horaire à l'écran, Y vers le bas : sommet en haut, puis
-        // bas-droite, puis bas-gauche. Une profondeur quelconque : seul contre
-        // le fond, le triangle rend la même image à toute profondeur.
-        let z = to_depth(0.5);
-        let vertex = |x: f32, y: f32| Vertex {
-            position: Point {
-                x: to_subpixel(x),
-                y: to_subpixel(y),
-            },
-            z,
-        };
-        let vertices = [
-            vertex(w * 0.5, h * 0.12),
-            vertex(w * 0.88, h * 0.86),
-            vertex(w * 0.12, h * 0.86),
-        ];
+        let polygon = clip(homogeneous, self.projection.frustum());
+        // La borne est démontrée par la géométrie du découpage ; c'est ici
+        // qu'elle décide du nombre de places qu'un triangle soumis consomme
+        // dans la capacité.
+        debug_assert!(polygon.triangle_count() <= MAX_CLIP_TRIANGLES);
+        for i in 0..polygon.triangle_count() {
+            let vertices = polygon.triangle(i).map(|c| {
+                let projected = self.projection.to_vertex(c);
+                Vertex {
+                    position: Point {
+                        x: projected.x,
+                        y: projected.y,
+                    },
+                    z: projected.z,
+                }
+            });
+            self.submit(vertices, color)?;
+        }
+        Ok(())
+    }
 
-        self.submit(vertices, DEMO_COLOR)
+    /// Soumet la scène de démonstration : deux triangles qui partagent une
+    /// arête, vus de biais.
+    ///
+    /// Il n'y a pas encore de scène à soumettre par l'hôte, mais celle-ci
+    /// traverse désormais toute la chaîne — projection, découpe, virgule fixe —
+    /// au lieu d'être écrite en coordonnées d'écran. Deux triangles et non un :
+    /// c'est leur arête commune qui éprouve la propriété la plus coûteuse du
+    /// moteur, et deux couleurs distinctes la rendent visible dans les hôtes,
+    /// là où un aplat unique la cacherait.
+    ///
+    /// Le quadrilatère fuit vers la droite, donc chaque pixel a sa propre
+    /// profondeur, et il déborde à gauche pour que le parcours traite des
+    /// triangles plus larges que l'image.
+    fn draw_demo_scene(&mut self) -> Result<()> {
+        // Espace de vue : X à droite, Y vers le bas, Z vers l'avant. La caméra
+        // arrive avec la soumission par l'ABI ; ici, elle est l'identité.
+        let a = Vec3::new(-2.5, -1.6, 2.0);
+        let b = Vec3::new(2.5, -1.6, 3.5);
+        let c = Vec3::new(2.5, 1.6, 3.5);
+        let d = Vec3::new(-2.5, 1.6, 2.0);
+
+        // Antihoraire dans les données, donc horaire à l'écran une fois Y
+        // retourné : l'arête commune `a → c` est parcourue dans un sens par le
+        // premier triangle et dans l'autre par le second, ce qui est exactement
+        // le cas que la règle top-left doit trancher.
+        self.submit_view([a, c, b], DEMO_COLOR)?;
+        self.submit_view([a, d, c], DEMO_COLOR_SHARED)
     }
 }
 

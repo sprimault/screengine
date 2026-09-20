@@ -363,9 +363,10 @@ fn color_at(image: &[u8], x: u32, y: u32) -> u32 {
 fn deux_triangles_inclines_s_interpenetrent() {
     let (red, blue) = (0xFF00_00FF, 0xFFFF_0000);
     let (near, far) = (3 << 30, 1 << 30);
-    // Le rouge se rapproche vers la droite, le bleu s'en éloigne.
-    let a = [at(10, 10, far), at(190, 10, near), at(10, 140, far)];
-    let b = [at(10, 20, near), at(190, 20, far), at(10, 130, near)];
+    // Le rouge se rapproche vers la droite, le bleu s'en éloigne. Sommets
+    // antihoraires à l'écran, comme toute face avant.
+    let a = [at(10, 10, far), at(10, 140, far), at(190, 10, near)];
+    let b = [at(10, 20, near), at(10, 130, near), at(190, 20, far)];
     for order in [[(a, red), (b, blue)], [(b, blue), (a, red)]] {
         let mut context = context(32);
         context.triangles.clear();
@@ -384,7 +385,7 @@ fn deux_triangles_inclines_s_interpenetrent() {
 fn a_egalite_le_premier_soumis_reste() {
     let (red, blue) = (0xFF00_00FF, 0xFFFF_0000);
     let z = 1 << 31;
-    let triangle = [at(10, 10, z), at(190, 10, z), at(10, 140, z)];
+    let triangle = [at(10, 10, z), at(10, 140, z), at(190, 10, z)];
     for (first, second) in [(red, blue), (blue, red)] {
         let mut context = context(64);
         context.triangles.clear();
@@ -428,7 +429,7 @@ fn l_ordre_de_soumission_ne_compte_pas_a_profondeurs_distinctes() {
 fn la_capacite_de_triangles_est_une_limite() {
     let mut context = context(64);
     context.triangles.clear();
-    let v = [at(0, 0, 1 << 31), at(10, 0, 1 << 31), at(0, 10, 1 << 31)];
+    let v = [at(0, 0, 1 << 31), at(0, 10, 1 << 31), at(10, 0, 1 << 31)];
     for _ in 0..TRIANGLE_CAPACITY {
         context.submit(v, 0).expect("sous la capacité");
     }

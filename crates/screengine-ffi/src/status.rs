@@ -84,6 +84,9 @@ pub(crate) fn message_of(error: Error) -> &'static str {
         Error::InvalidArgument(Argument::TriangleCapacity) => {
             "too many triangles submitted for the capacity reserved at creation"
         }
+        Error::InvalidArgument(Argument::Projection) => {
+            "invalid projection: the vertical field of view must be within ]0, pi[ radians, and the near plane positive and finite"
+        }
         Error::OutOfMemory => "out of memory",
         Error::InvalidState => "call out of sequence: this tile was already rendered in this frame",
     }

@@ -55,8 +55,20 @@ publié, et explique les conventions du dépôt à qui y contribue.
 - API Rust : `Vec3`, `Quat`, `Affine3` et `Angle`, en main droite avec Z en
   haut. Trigonométrie par table et racine inverse sans libm, qui rendent les
   mêmes bits sur toutes les cibles.
+- Projection perspective et découpage en espace homogène, avant la division :
+  le plan proche et les quatre plans de la bande de garde, qui bornent les
+  coordonnées écran à ±4096 pixels. Le repère de vue est X à droite, Y vers le
+  bas, Z vers l'avant, avec un plan lointain à l'infini.
 
 ### Modifié
+- **Changement volontaire du rendu** : l'image n'est plus un triangle écrit en
+  coordonnées d'écran, mais deux triangles qui partagent une arête, vus de
+  biais et projetés par la chaîne complète. Les empreintes de conformance sont
+  mises à jour en conséquence. Aucune signature ne change, et
+  `SCG_ABI_VERSION` non plus.
+- La face avant est antihoraire dans les données : le moteur la rend en niant
+  les fonctions de bord, sans permuter de sommets. Un appelant de l'API Rust
+  qui soumettait ses triangles dans l'autre sens ne verra plus rien.
 - Tampon de profondeur : `near/w` en 0.32 interpolé en virgule fixe, test
   strict, et à égalité le premier triangle soumis reste. L'image du triangle en
   dur est inchangée. API Rust : `Frame::region` reçoit un tampon de profondeur à
@@ -81,8 +93,19 @@ publié, et explique les conventions du dépôt à qui y contribue.
 - Rust API: `Vec3`, `Quat`, `Affine3` and `Angle`, right-handed with Z up.
   Table-driven trigonometry and an inverse square root without libm, giving the
   same bits on every target.
+- Perspective projection and clipping in homogeneous space, before the divide:
+  the near plane and the four guard-band planes, which bound screen
+  coordinates to ±4096 pixels. The view frame is X right, Y down, Z forward,
+  with an infinite far plane.
 
 ### Changed
+- **Deliberate change of the rendered image**: it is no longer a triangle
+  written in screen coordinates, but two triangles sharing an edge, seen at an
+  angle and projected through the whole chain. Conformance hashes are updated
+  accordingly. No signature changes, and neither does `SCG_ABI_VERSION`.
+- Front faces are counter-clockwise in the data: the engine renders them by
+  negating the edge functions, without swapping vertices. A Rust API caller
+  submitting triangles the other way round will no longer see them.
 - Depth buffer: `near/w` in 0.32 interpolated in fixed point, strict test, and
   on a tie the first submitted triangle stays. The image of the hard-coded
   triangle is unchanged. Rust API: `Frame::region` takes a depth buffer next to
