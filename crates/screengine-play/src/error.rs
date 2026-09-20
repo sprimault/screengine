@@ -58,6 +58,9 @@ impl fmt::Display for Error {
                 Argument::TriangleCapacity => {
                     f.write_str("more triangles submitted than the engine reserved")
                 }
+                Argument::VertexIndex => {
+                    f.write_str("a triangle indexes a vertex beyond its batch")
+                }
                 Argument::Projection => f.write_str(
                     "field of view must be within ]0, pi[ radians, and the near plane positive",
                 ),

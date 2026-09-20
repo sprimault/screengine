@@ -19,6 +19,7 @@ mod context;
 mod error;
 mod math;
 mod raster;
+mod scene;
 #[cfg(test)]
 mod testing;
 
@@ -29,3 +30,4 @@ pub use context::{
 pub use error::{Argument, Error, Result};
 pub use math::{Affine3, Angle, Quat, Vec3};
 pub use raster::Rect;
+pub use scene::{Camera, Color, Triangle};

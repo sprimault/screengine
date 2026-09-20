@@ -68,7 +68,7 @@ elle ne crée aucun répertoire d'avance.
 
 ```
 src/
-  lib.rs  error.rs  buffer.rs  context.rs   ce qui existe avant tout domaine
+  lib.rs  error.rs  buffer.rs  context.rs  scene.rs   avant tout domaine
   math/       étape 1   vecteurs, matrices, quaternions, tables, virgule fixe
   raster/     étape 1   clipping, fonctions de bord, profondeur, tuiles ; simd/ à l'étape 9
   texture/    étape 2   mipmaps, filtrage
@@ -335,11 +335,39 @@ aux fonctions de bord.
   rien signaler.
 - **Vecteur colonne, `M·v`, stockage par colonnes.** Le noyau travaille en
   `Affine3`, 3×4 : trois colonnes puis la translation. **Pas de pile de
-  matrices** : la matrice modèle-vue est un paramètre de la soumission, composée
-  par `product`. Une pile n'aurait de consommateur ni dans le noyau ni dans
-  l'ABI, et le confort du chemin Rust ne crée jamais de capacité qui lui soit
-  propre. Une composition se lit `parent.product(local)`, la droite s'appliquant
-  d'abord.
+  matrices** : la matrice **modèle** — objet vers monde — est un paramètre de la
+  soumission, et le noyau y compose la vue par `product`. Une pile n'aurait de
+  consommateur ni dans le noyau ni dans l'ABI, et le confort du chemin Rust ne
+  crée jamais de capacité qui lui soit propre. Une composition se lit
+  `parent.product(local)`, la droite s'appliquant d'abord.
+- **La soumission reçoit la matrice modèle, jamais la modèle-vue.** Le contexte
+  porte la caméra, et lui seul inverse sa pose. Écartée : la modèle-vue, qui
+  obligerait chaque hôte à composer cet inverse, donc à normaliser un quaternion
+  par sa propre bibliothèque mathématique — et deux liaisons ne rendraient plus
+  la même image, ce que l'ABI interdit d'ailleurs en propres termes : une
+  liaison convertit des types et ne calcule rien.
+- **La caméra est une position, une orientation, un champ de vision et un plan
+  proche**, et le quaternion identité fixe les axes de vue ainsi :
+
+  ```text
+  X_vue (droite) ↦ −Y monde
+  Y_vue (bas)    ↦ −Z monde
+  Z_vue (avant)  ↦ +X monde
+  ```
+
+  Une caméra d'orientation neutre regarde donc le +X du monde, le zénith vers le
+  haut de l'écran. Une phrase — « elle regarde le +X » — ne suffirait pas : elle
+  laisse le roulis indéterminé, et c'est lui qu'une erreur de signe fait
+  basculer sans changer la direction du regard. Écarté : aligner les axes de vue
+  sur ceux du monde, qui ferait regarder le zénith par défaut. Le déterminant de
+  cette base vaut un : la composition reste rigide, et `inverse_rigid` garde sa
+  précondition. Étant une permutation signée, elle est exacte au bit près, et
+  une scène écrite en coordonnées monde vue par une caméra neutre rend la même
+  image que la même scène écrite en coordonnées de vue.
+- **Le quaternion se range `x, y, z, w`**, la quatrième composante étant la
+  partie réelle : l'identité est `{0, 0, 0, 1}`. C'est ce que l'ABI fige, parce
+  qu'une liaison JavaScript écrit la structure octet par octet et que `w` en
+  tête est la convention concurrente la plus répandue.
 - **La projection n'est pas une matrice**, c'est `(sx, sy, cx, cy, near)`
   appliqué à part, avec un plan lointain infini : `z_c = near` et `w_c = z_vue`
   donnent directement la profondeur `near/w`. Les cinq valeurs dépendent de la

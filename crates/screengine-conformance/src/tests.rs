@@ -78,6 +78,50 @@ fn toutes_les_passes_rendent_l_empreinte_des_hotes() {
     assert_eq!(Scene::Triangle.render_all(), Ok(host));
 }
 
+/// Chaque scène couvre une part franche de l'image.
+///
+/// Le contrôle qui manquerait le plus : une scène soumise dans le mauvais sens
+/// est éliminée comme dos de face, rend un fond noir, et son empreinte reste
+/// parfaitement stable d'une plateforme à l'autre. La suite entière resterait
+/// verte en ne comparant rien.
+///
+/// Un dixième de l'image : assez haut pour qu'un fond noir ou quelques pixels
+/// égarés échouent, assez bas pour n'imposer aucun cadrage aux scènes à venir.
+#[test]
+fn chaque_scene_couvre_une_part_de_l_image() {
+    let (width, height) = Scene::RESOLUTION;
+    let total = width as usize * height as usize;
+    for scene in Scene::ALL {
+        let pixels = scene.render_pixels(Scene::HOST_PASS).expect("scène valide");
+        let drawn = pixels
+            .chunks_exact(BYTES_PER_PIXEL)
+            .filter(|pixel| pixel[..3] != [0, 0, 0])
+            .count();
+        assert!(
+            drawn * 10 > total,
+            "{} : {drawn} pixels dessinés sur {total}",
+            scene.name()
+        );
+    }
+}
+
+/// Deux scènes ne rendent pas la même image.
+///
+/// Deux références identiques se relisent sans qu'on les remarque, et la scène
+/// recopiée par erreur n'éprouve alors rien de ce que son nom annonce.
+#[test]
+fn deux_scenes_ne_rendent_pas_la_meme_image() {
+    let hashes: Vec<u64> = Scene::ALL
+        .iter()
+        .map(|scene| scene.render_all().expect("scène valide"))
+        .collect();
+    for (i, a) in hashes.iter().enumerate() {
+        for (j, b) in hashes.iter().enumerate().skip(i + 1) {
+            assert_ne!(a, b, "{} et {}", Scene::ALL[i].name(), Scene::ALL[j].name());
+        }
+    }
+}
+
 /// Une référence absente est un échec qui dit quoi faire, jamais un « rien à
 /// comparer » qui laisserait croire la suite verte.
 #[test]

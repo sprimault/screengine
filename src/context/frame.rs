@@ -183,6 +183,12 @@ impl Context {
         }
         let result = self.finish(out);
         let next = if result.is_ok() { RECORDING } else { RENDERING };
+        if next == RECORDING {
+            // L'image est close : sa liste de dessin ne sert plus. La vider ici
+            // demanderait un `&mut`, que la fin n'a pas ; le prochain appel
+            // exclusif s'en charge.
+            self.stale.store(true, Ordering::SeqCst);
+        }
         self.state.store(next, Ordering::SeqCst);
         result
     }
@@ -330,6 +336,7 @@ impl<'a> Frame<'a> {
 /// contexte.
 impl Drop for Frame<'_> {
     fn drop(&mut self) {
+        self.context.stale.store(true, Ordering::SeqCst);
         self.context.state.store(RECORDING, Ordering::SeqCst);
     }
 }

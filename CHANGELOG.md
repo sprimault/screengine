@@ -59,6 +59,19 @@ publié, et explique les conventions du dépôt à qui y contribue.
   le plan proche et les quatre plans de la bande de garde, qui bornent les
   coordonnées écran à ±4096 pixels. Le repère de vue est X à droite, Y vers le
   bas, Z vers l'avant, avec un plan lointain à l'infini.
+- API Rust : soumission d'une scène par `Context::submit`, qui reçoit un lot de
+  sommets, des triangles indexés portant chacun sa `Color`, et la matrice
+  **modèle** — objet vers monde. Le contexte porte la `Camera` — position,
+  orientation, champ de vision, plan proche — et compose lui-même la vue : une
+  matrice modèle-vue reçue toute faite obligerait chaque hôte à inverser la pose
+  de la caméra, donc à normaliser un quaternion par sa propre bibliothèque
+  mathématique. Un lot est accepté ou refusé en entier.
+- Une caméra d'orientation neutre regarde le +X du monde, le zénith vers le haut
+  de l'écran ; le quaternion se range `x, y, z, w`, l'identité étant
+  `{0, 0, 0, 1}`.
+- Quatre scènes de conformance : la bande de garde, le débordement latéral sans
+  découpe, l'interpénétration avec égalité de profondeur, et un sol qui
+  traverse le plan proche.
 
 ### Modifié
 - **Changement volontaire du rendu** : l'image n'est plus un triangle écrit en
@@ -97,6 +110,18 @@ publié, et explique les conventions du dépôt à qui y contribue.
   the near plane and the four guard-band planes, which bound screen
   coordinates to ±4096 pixels. The view frame is X right, Y down, Z forward,
   with an infinite far plane.
+- Rust API: scene submission through `Context::submit`, taking a batch of
+  vertices, indexed triangles each carrying its `Color`, and the **model**
+  matrix — object to world. The context holds the `Camera` — position,
+  orientation, field of view, near plane — and composes the view itself: a
+  ready-made model-view matrix would force every host to invert the camera
+  pose, hence to normalise a quaternion with its own maths library. A batch is
+  accepted or rejected as a whole.
+- A camera with neutral orientation looks towards world +X, with the zenith
+  towards the top of the screen; quaternions are stored `x, y, z, w`, identity
+  being `{0, 0, 0, 1}`.
+- Four conformance scenes: the guard band, lateral overflow without clipping,
+  interpenetration with equal depths, and a floor crossing the near plane.
 
 ### Changed
 - **Deliberate change of the rendered image**: it is no longer a triangle

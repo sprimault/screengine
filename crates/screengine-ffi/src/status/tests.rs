@@ -62,6 +62,8 @@ fn chaque_argument_refuse_a_son_message() {
         Argument::Region,
         Argument::ScratchLength,
         Argument::TriangleCapacity,
+        Argument::VertexIndex,
+        Argument::Projection,
     ];
     for (i, a) in arguments.iter().enumerate() {
         let error = Error::InvalidArgument(*a);
