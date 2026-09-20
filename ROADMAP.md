@@ -58,10 +58,13 @@ projection, clipping en espace homogène avant division : le plan proche, et les
 quatre plans de la bande de garde pour que les coordonnées écran tiennent dans
 leur format ; z-buffer, rasteriseur à fonctions de bord, découpage en tuiles.
 
-Pas de pile de matrices : la matrice modèle-vue est un paramètre de la
-soumission. Une pile servirait une hiérarchie de transformations que ce projet
-n'a pas — la traversée de l'étape 5 empile des cellules, pas des matrices —, et
-le noyau seul l'offrirait, ce que la règle des deux chemins interdit.
+Pas de pile de matrices : la matrice modèle est un paramètre de la soumission,
+et le moteur y compose la vue de sa caméra. Une pile servirait une hiérarchie de
+transformations que ce projet n'a pas — la traversée de l'étape 5 empile des
+cellules, pas des matrices —, et le noyau seul l'offrirait, ce que la règle des
+deux chemins interdit. La matrice reste celle du modèle et jamais la modèle-vue :
+composer l'inverse de la caméra dans chaque liaison y ferait entrer autant de
+bibliothèques mathématiques que de langages.
 
 Clipper contre les six plans du tronc est inutile et coûteux : les côtés de
 l'image se traitent par découpe du rectangle en espace écran, les fonctions de

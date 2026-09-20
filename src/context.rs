@@ -11,8 +11,9 @@ use core::sync::atomic::{AtomicBool, AtomicU8, AtomicU32, Ordering};
 use crate::buffer::reserved;
 use crate::error::{Argument, Error, Result};
 use crate::math::projection::ClipVertex;
-use crate::math::{Projection, Vec3};
+use crate::math::{Affine3, Projection, Vec3};
 use crate::raster::{Bins, Grid, MAX_CLIP_TRIANGLES, Point, Prepared, Vertex, clip, prepare};
+use crate::scene::{Camera, Color, Triangle};
 
 pub use frame::{Frame, Output, Rows};
 
@@ -47,20 +48,14 @@ const CLEAR_COLOR: u32 = 0xFF00_0000;
 ///
 /// Franchement distincte du fond : c'est la première chose qu'un hôte affiche,
 /// et un aplat sombre laisserait douter entre « ça rend » et « ça ne rend pas ».
-const DEMO_COLOR: u32 = 0xFF30_A0E0;
+const DEMO_COLOR: Color = Color::new(0xE0, 0xA0, 0x30, 0xFF);
 
 /// La couleur du second, qui partage une arête avec le premier.
 ///
 /// Proche de la première mais distincte : c'est ce qui fait qu'un trou ou un
 /// recouvrement le long de l'arête commune se voit à l'œil dans un hôte, sans
 /// attendre qu'une empreinte le dise.
-const DEMO_COLOR_SHARED: u32 = 0xFF30_E0A0;
-
-/// Le champ de vision vertical de la scène de démonstration, en radians.
-const DEMO_FOV_Y: f32 = core::f32::consts::FRAC_PI_3;
-
-/// Le plan proche de la scène de démonstration.
-const DEMO_NEAR: f32 = 0.1;
+const DEMO_COLOR_SHARED: Color = Color::new(0xA0, 0xE0, 0x30, 0xFF);
 
 /// Ce que reçoit la création d'un contexte.
 ///
@@ -122,12 +117,33 @@ pub struct Context {
     taken: Vec<AtomicBool>,
     /// Le découpage de l'image en cours, fixé au début.
     grid: Grid,
-    /// La projection, qui dépend de la résolution et se recalculera avec elle.
+    /// La caméra, qu'une image conserve d'un bout à l'autre.
+    camera: Camera,
+    /// Le monde vers l'espace de vue, recalculé avec la caméra.
+    ///
+    /// Gardée plutôt que recomposée à chaque soumission : la composer est une
+    /// inversion, et la refaire par lot ferait dépendre l'image du découpage
+    /// des lots — même résultat, mais plus rien ne le garantirait.
+    view: Affine3,
+    /// La projection, qui dépend de la résolution et de la caméra.
     projection: Projection,
     /// [`RECORDING`], [`RENDERING`] ou [`CLOSING`].
     state: AtomicU8,
     /// Les tuiles en cours de rendu, que la fin attend à zéro.
     in_flight: AtomicU32,
+    /// Vrai quand la liste de dessin appartient à l'image déjà close.
+    ///
+    /// La fin d'image la périme mais ne peut pas la vider : elle ne tient
+    /// qu'un `&self`, des tuiles pouvant encore la lire. Le prochain appel
+    /// exclusif — une soumission, un début — la vide avant d'y toucher.
+    stale: AtomicBool,
+    /// Vrai dès qu'une soumission a été acceptée pour l'image en cours.
+    ///
+    /// Distinct de « la liste de dessin est vide » : une scène dont tous les
+    /// triangles tournent le dos à la caméra ne prépare rien, et la confondre
+    /// avec une absence de soumission ferait réapparaître la scène de
+    /// démonstration par-dessus ce que l'hôte a décrit. Disparaît avec elle.
+    submitted: bool,
 }
 
 /// Le contexte accepte la scène : aucune image n'est commencée.
@@ -151,6 +167,7 @@ impl Context {
         let mut taken = reserved(tiles as usize)?;
         taken.resize_with(tiles as usize, AtomicBool::default);
 
+        let camera = Camera::DEFAULT;
         Ok(Self {
             config,
             width: config.width,
@@ -159,10 +176,39 @@ impl Context {
             bins: Bins::new(tiles as usize, TRIANGLE_CAPACITY)?,
             taken,
             grid: Grid::new(config.width, config.height, config.tile_size),
-            projection: Projection::new(config.width, config.height, DEMO_FOV_Y, DEMO_NEAR)?,
+            camera,
+            view: camera.view(),
+            projection: Projection::new(config.width, config.height, camera.fov_y, camera.near)?,
             state: AtomicU8::new(RECORDING),
             in_flight: AtomicU32::new(0),
+            stale: AtomicBool::new(false),
+            submitted: false,
         })
+    }
+
+    /// La caméra courante.
+    pub fn camera(&self) -> Camera {
+        self.camera
+    }
+
+    /// Change la caméra, ou refuse son champ de vision et son plan proche.
+    ///
+    /// Refusée pendant le rendu, comme toute écriture dans l'état du contexte.
+    /// La caméra vaut pour l'image entière : la déplacer entre deux soumissions
+    /// du même lot rendrait une image que rien ne décrit.
+    ///
+    /// Le quaternion n'est pas exigé unitaire, il est normalisé ici ; en
+    /// revanche `fov_y` est refusé **sur les radians**, avant toute conversion
+    /// en angle binaire, qui replierait un champ de vision de trois demi-tours
+    /// en un demi-tour parfaitement acceptable.
+    pub fn set_camera(&mut self, camera: Camera) -> Result<()> {
+        if *self.state.get_mut() != RECORDING {
+            return Err(Error::InvalidState);
+        }
+        self.projection = Projection::new(self.width, self.height, camera.fov_y, camera.near)?;
+        self.view = camera.view();
+        self.camera = camera;
+        Ok(())
     }
 
     /// La configuration reçue à la création.
@@ -186,14 +232,33 @@ impl Context {
     /// C'est la forme qu'emploie la frontière C, qui garde l'image ouverte d'un
     /// appel à l'autre. Un appelant Rust lui préfère [`Context::frame_begin`],
     /// dont la [`Frame`] rend la séquence vérifiable à la compilation.
+    ///
+    /// L'image est faite de ce qui a été soumis depuis la fin de la précédente.
+    /// Tant qu'un hôte ne soumet rien, elle est la scène de démonstration, et
+    /// cette clause disparaîtra avec elle.
     pub fn begin(&mut self) -> Result<u32> {
         if *self.state.get_mut() != RECORDING {
             return Err(Error::InvalidState);
         }
-        self.triangles.clear();
-        self.draw_demo_scene()?;
+        self.drop_closed_frame();
+        if !self.submitted {
+            self.draw_demo_scene()?;
+        }
         self.seal();
         Ok(self.grid.count())
+    }
+
+    /// Vide la liste de dessin si elle appartient à une image déjà close.
+    ///
+    /// Le vidage se fait ici et non à la fin de l'image parce que la fin ne
+    /// tient qu'un `&self`. C'est aussi ce qui permet à un hôte de soumettre
+    /// dès le retour de la fin sans que sa scène soit jetée au début suivant.
+    fn drop_closed_frame(&mut self) {
+        if *self.stale.get_mut() {
+            self.triangles.clear();
+            self.submitted = false;
+            *self.stale.get_mut() = false;
+        }
     }
 
     /// Commence une image et rend de quoi en rendre les tuiles.
@@ -237,8 +302,69 @@ impl Context {
         self.end(&mut Rows::new(pixels, stride))
     }
 
-    /// Ajoute un triangle à l'image en cours.
-    fn submit(&mut self, v: [Vertex; 3], color: u32) -> Result<()> {
+    /// Soumet un lot de triangles, chacun transformé par `model` puis par la
+    /// caméra.
+    ///
+    /// `model` porte l'objet vers le monde, et le noyau compose la vue :
+    /// une matrice modèle-vue reçue toute faite obligerait chaque hôte à
+    /// inverser la pose de la caméra lui-même, donc à normaliser un quaternion
+    /// par sa propre bibliothèque mathématique, et deux liaisons ne rendraient
+    /// plus la même image.
+    ///
+    /// **Un lot est accepté ou refusé en entier.** Un lot à demi soumis
+    /// laisserait dans l'image un mur dont il manque la moitié, sans que l'hôte
+    /// sache où la coupure est tombée.
+    ///
+    /// Un triangle dont un sommet ne se projette pas — coordonnée démesurée ou
+    /// non finie — disparaît sans erreur : c'est une donnée, pas un défaut du
+    /// moteur. Un indice hors du tableau de sommets, lui, est une erreur de
+    /// l'appelant.
+    pub fn submit(
+        &mut self,
+        model: Affine3,
+        vertices: &[Vec3],
+        triangles: &[Triangle],
+    ) -> Result<()> {
+        if *self.state.get_mut() != RECORDING {
+            return Err(Error::InvalidState);
+        }
+        self.drop_closed_frame();
+        let mark = self.triangles.len();
+        let result = self.submit_batch(model, vertices, triangles);
+        if result.is_err() {
+            self.triangles.truncate(mark);
+        } else {
+            self.submitted = true;
+        }
+        result
+    }
+
+    /// Le corps de [`Context::submit`], qui peut laisser le lot à moitié posé.
+    fn submit_batch(
+        &mut self,
+        model: Affine3,
+        vertices: &[Vec3],
+        triangles: &[Triangle],
+    ) -> Result<()> {
+        let transform = self.view.product(model);
+        for triangle in triangles {
+            let mut corners = [Vec3::ZERO; 3];
+            for (corner, &index) in corners.iter_mut().zip(&triangle.indices) {
+                let vertex = vertices
+                    .get(index as usize)
+                    .ok_or(Error::InvalidArgument(Argument::VertexIndex))?;
+                *corner = transform.transform_point(*vertex);
+            }
+            self.submit_view(corners, triangle.color)?;
+        }
+        Ok(())
+    }
+
+    /// Ajoute un triangle déjà projeté à l'image en cours.
+    ///
+    /// La couleur y est déjà l'entier du rasteriseur : [`Color`] appartient à
+    /// la scène, et se convertit au plus tôt.
+    fn push(&mut self, v: [Vertex; 3], color: u32) -> Result<()> {
         let Some(triangle) = prepare(v, color) else {
             return Ok(());
         };
@@ -260,7 +386,7 @@ impl Context {
     ///
     /// Un sommet qu'on ne peut pas projeter fait disparaître le triangle sans
     /// erreur : c'est une donnée, pas un défaut du moteur.
-    fn submit_view(&mut self, view: [Vec3; 3], color: u32) -> Result<()> {
+    fn submit_view(&mut self, view: [Vec3; 3], color: Color) -> Result<()> {
         let mut homogeneous = [ClipVertex {
             x: 0.0,
             y: 0.0,
@@ -289,7 +415,7 @@ impl Context {
                     z: projected.z,
                 }
             });
-            self.submit(vertices, color)?;
+            self.push(vertices, color.packed())?;
         }
         Ok(())
     }
@@ -308,19 +434,31 @@ impl Context {
     /// profondeur, et il déborde à gauche pour que le parcours traite des
     /// triangles plus larges que l'image.
     fn draw_demo_scene(&mut self) -> Result<()> {
-        // Espace de vue : X à droite, Y vers le bas, Z vers l'avant. La caméra
-        // arrive avec la soumission par l'ABI ; ici, elle est l'identité.
-        let a = Vec3::new(-2.5, -1.6, 2.0);
-        let b = Vec3::new(2.5, -1.6, 3.5);
-        let c = Vec3::new(2.5, 1.6, 3.5);
-        let d = Vec3::new(-2.5, 1.6, 2.0);
-
+        // En coordonnées de monde, vues par une caméra neutre : c'est le même
+        // quadrilatère qu'avant la caméra, transporté par la base de vue, et
+        // l'empreinte est inchangée parce que cette base est une permutation
+        // d'axes exacte.
+        let vertices = [
+            Vec3::new(2.0, 2.5, 1.6),
+            Vec3::new(3.5, -2.5, 1.6),
+            Vec3::new(3.5, -2.5, -1.6),
+            Vec3::new(2.0, 2.5, -1.6),
+        ];
         // Antihoraire dans les données, donc horaire à l'écran une fois Y
-        // retourné : l'arête commune `a → c` est parcourue dans un sens par le
+        // retourné : l'arête commune `0 → 2` est parcourue dans un sens par le
         // premier triangle et dans l'autre par le second, ce qui est exactement
         // le cas que la règle top-left doit trancher.
-        self.submit_view([a, c, b], DEMO_COLOR)?;
-        self.submit_view([a, d, c], DEMO_COLOR_SHARED)
+        let triangles = [
+            Triangle {
+                indices: [0, 2, 1],
+                color: DEMO_COLOR,
+            },
+            Triangle {
+                indices: [0, 3, 2],
+                color: DEMO_COLOR_SHARED,
+            },
+        ];
+        self.submit(Affine3::IDENTITY, &vertices, &triangles)
     }
 }
 

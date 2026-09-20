@@ -51,6 +51,8 @@ pub enum Argument {
     ScratchLength,
     /// Plus de triangles soumis que la capacité réservée à la création.
     TriangleCapacity,
+    /// Un indice de triangle au-delà du tableau de sommets du lot.
+    VertexIndex,
     /// Un champ de vision hors de `]0, π[`, ou un plan proche nul, négatif ou
     /// démesuré.
     Projection,

@@ -67,8 +67,8 @@ fn scene(context: &mut Context, seed: u64) {
         let color = rng.next() as u32 | 0xFF00_0000;
         // Les deux orientations, pour que la moitié des tirages ne soit pas
         // éliminée comme dos de face.
-        context.submit([a, b, c], color).expect("capacité");
-        context.submit([a, c, b], color).expect("capacité");
+        context.push([a, b, c], color).expect("capacité");
+        context.push([a, c, b], color).expect("capacité");
     }
 }
 
@@ -371,7 +371,7 @@ fn deux_triangles_inclines_s_interpenetrent() {
         let mut context = context(32);
         context.triangles.clear();
         for (triangle, color) in order {
-            context.submit(triangle, color).expect("capacité");
+            context.push(triangle, color).expect("capacité");
         }
         let image = reference(&mut context);
         assert_eq!(color_at(&image, 20, 30), blue, "bleu devant à gauche");
@@ -389,8 +389,8 @@ fn a_egalite_le_premier_soumis_reste() {
     for (first, second) in [(red, blue), (blue, red)] {
         let mut context = context(64);
         context.triangles.clear();
-        context.submit(triangle, first).expect("capacité");
-        context.submit(triangle, second).expect("capacité");
+        context.push(triangle, first).expect("capacité");
+        context.push(triangle, second).expect("capacité");
         assert_eq!(color_at(&reference(&mut context), 30, 30), first);
     }
 }
@@ -416,7 +416,7 @@ fn l_ordre_de_soumission_ne_compte_pas_a_profondeurs_distinctes() {
             list.reverse();
         }
         for (v, color) in list {
-            context.submit(v, color).expect("capacité");
+            context.push(v, color).expect("capacité");
         }
         reference(&mut context)
     };
@@ -431,10 +431,10 @@ fn la_capacite_de_triangles_est_une_limite() {
     context.triangles.clear();
     let v = [at(0, 0, 1 << 31), at(0, 10, 1 << 31), at(10, 0, 1 << 31)];
     for _ in 0..TRIANGLE_CAPACITY {
-        context.submit(v, 0).expect("sous la capacité");
+        context.push(v, 0).expect("sous la capacité");
     }
     assert_eq!(
-        context.submit(v, 0),
+        context.push(v, 0),
         Err(Error::InvalidArgument(Argument::TriangleCapacity))
     );
     assert_eq!(context.triangles.len(), TRIANGLE_CAPACITY);

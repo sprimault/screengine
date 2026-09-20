@@ -4,8 +4,8 @@
 //! Les transformations affines, en 3×4.
 //!
 //! Vecteur colonne, `M·v`, stockage par colonnes : trois colonnes de rotation et
-//! d'échelle, puis la translation. La projection n'en est pas une : c'est un
-//! triplet `(sx, sy, near)` appliqué à part, qui épargne quatre produits par
+//! d'échelle, puis la translation. La projection n'en est pas une : c'est
+//! `(sx, sy, cx, cy, near)` appliqué à part, qui épargne quatre produits par
 //! sommet et une ligne dont les bits ne serviraient à rien.
 //!
 //! Chaque composante s'écrit à la main, sommée de gauche à droite dans l'ordre
@@ -56,7 +56,9 @@ impl Affine3 {
 
     /// Le produit `self · other` : `other` s'applique d'abord.
     ///
-    /// Une pile de matrices compose ainsi `parent.product(local)`.
+    /// Une composition se lit `parent.product(local)`. C'est ainsi que le
+    /// contexte compose la vue avec la matrice modèle d'une soumission ; il n'y
+    /// a pas de pile, et la matrice modèle-vue n'existe qu'ici.
     pub fn product(self, other: Self) -> Self {
         let a = &self.m;
         let b = &other.m;
