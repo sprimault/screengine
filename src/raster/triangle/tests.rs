@@ -52,8 +52,8 @@ fn fill_triangle<T: Target>(target: &mut T, window: Rect, v: [Point; 3], color: 
 fn quatre_fenetres_couvrent_comme_une_seule() {
     let v = [
         shift([p(25, 2)], 3, 11)[0],
-        shift([p(47, 37)], 5, 1)[0],
         shift([p(3, 30)], 7, 9)[0],
+        shift([p(47, 37)], 5, 1)[0],
     ];
     let mut whole = Coverage::new();
     fill_triangle(&mut whole, CLIP, v, 1);
@@ -148,7 +148,11 @@ fn quad_area(q: [Point; 4]) -> u32 {
             let py = y * SUBPIXEL_SCALE + PIXEL_CENTER;
             let inside = (0..4).all(|i| {
                 let (a, b) = (q[i], q[(i + 1) % 4]);
-                edge(a.x, a.y, b.x, b.y, px, py) + bias(b.x - a.x, b.y - a.y) >= 0
+                let (dx, dy) = (b.x - a.x, b.y - a.y);
+                // La même règle niée que `fill`, biais pris sur `-d` : la
+                // référence doit suivre la convention du moteur, sinon elle ne
+                // mesurerait que l'écart entre deux conventions.
+                -edge(a.x, a.y, b.x, b.y, px, py) + bias(-dx, -dy) >= 0
             });
             if inside {
                 count += 1;
@@ -156,6 +160,15 @@ fn quad_area(q: [Point; 4]) -> u32 {
         }
     }
     count
+}
+
+/// Retourne le sens de parcours d'un quadrilatère.
+///
+/// Les cas de test s'écrivent dans l'ordre de lecture — haut-gauche,
+/// haut-droite, bas-droite, bas-gauche —, qui est horaire à l'écran ; la face
+/// avant du moteur est l'autre. Le retournement se fait donc en un point.
+fn reversed(q: [Point; 4]) -> [Point; 4] {
+    [q[0], q[3], q[2], q[1]]
 }
 
 /// Vrai si le quadrilatère est convexe et parcouru dans le sens horaire.
@@ -183,6 +196,7 @@ fn split(q: [Point; 4], first: usize) -> Coverage {
 /// d'écart légitime. Une tolérance d'un seul pixel masquerait exactement le
 /// défaut cherché.
 fn assert_seamless(q: [Point; 4], label: &str) {
+    let q = reversed(q);
     let expected = quad_area(q);
     assert!(expected > 0, "{label} : le cas de test ne couvre rien");
 
@@ -251,8 +265,7 @@ fn partage_une_arete_au_bord_de_l_image() {
     let base = [p(25, 6), p(44, 20), p(25, 34), p(6, 20)];
     for (dx, dy) in [(-15, -10), (20, 12), (-30, 0), (0, 25)] {
         let shifted = shift(base, dx * SUBPIXEL_SCALE, dy * SUBPIXEL_SCALE);
-        let expected = quad_area(shifted);
-        if expected == 0 {
+        if quad_area(reversed(shifted)) == 0 {
             continue;
         }
         assert_seamless(shifted, "bord");
@@ -266,13 +279,15 @@ fn partage_une_arete_au_bord_de_l_image() {
 #[test]
 fn un_eventail_couvre_son_hexagone_sans_recouvrement() {
     let center = p(25, 20);
+    // Antihoraire à l'écran, comme toute face avant : le sommet du haut, puis
+    // vers la gauche.
     let rim = [
         p(25, 6),
-        p(37, 13),
-        p(37, 27),
-        p(25, 34),
-        p(13, 27),
         p(13, 13),
+        p(13, 27),
+        p(25, 34),
+        p(37, 27),
+        p(37, 13),
     ];
 
     let mut fan = Coverage::new();
@@ -322,8 +337,16 @@ fn un_triangle_degenere_n_ecrit_rien() {
 #[test]
 fn un_triangle_de_dos_n_est_pas_rendu() {
     let mut cov = Coverage::new();
-    fill_triangle(&mut cov, CLIP, [p(10, 10), p(10, 30), p(40, 10)], 1);
+    // Horaire à l'écran, donc le dos : la face avant est antihoraire dans les
+    // données, et le moteur la rend en niant les fonctions de bord.
+    fill_triangle(&mut cov, CLIP, [p(10, 10), p(40, 10), p(10, 30)], 1);
     assert_eq!(cov.stats().1, 0);
+
+    // Et son miroir est bien rendu, sans quoi ce test passerait aussi sur un
+    // moteur qui n'affiche plus rien.
+    let mut face = Coverage::new();
+    fill_triangle(&mut face, CLIP, [p(10, 10), p(10, 30), p(40, 10)], 1);
+    assert!(face.stats().1 > 0, "la face avant doit être rendue");
 }
 
 /// Un triangle entièrement hors de la fenêtre n'écrit rien, et sa boîte
@@ -398,13 +421,13 @@ fn des_quadrilateres_aleatoires_se_decoupent_sans_couture() {
             continue;
         }
 
-        let expected = quad_area(q);
+        let expected = quad_area(reversed(q));
         if expected == 0 {
             continue;
         }
 
         for first in [0usize, 1] {
-            let (touched, total, max) = split(q, first).stats();
+            let (touched, total, max) = split(reversed(q), first).stats();
             assert_eq!(max, 1, "graine {seed}, diagonale {first} : recouvrement");
             assert_eq!(touched, expected, "graine {seed}, diagonale {first} : trou");
             assert_eq!(total, expected, "graine {seed}, diagonale {first} : total");

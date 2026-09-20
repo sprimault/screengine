@@ -80,7 +80,8 @@ fn edge(ax: i32, ay: i32, bx: i32, by: i32, px: i32, py: i32) -> i64 {
 ///
 /// En parcours horaire avec Y vers le bas, on va vers les x croissants en haut,
 /// on descend à droite et on remonte à gauche : d'où le signe de `dy`, puis
-/// celui de `dx` pour départager les arêtes horizontales.
+/// celui de `dx` pour départager les arêtes horizontales. Le triangle étant
+/// parcouru dans l'autre sens ici, c'est `-d` qu'on lui passe : voir `fill`.
 ///
 /// La propriété qui rend l'arête partagée étanche est que pour un vecteur et son
 /// opposé, **exactement un des deux** est haut-ou-gauche — sauf si les deux
@@ -120,12 +121,21 @@ fn last_pixel(subpixel: i32) -> i32 {
 
 /// Prépare un triangle, sommets donnés en sous-pixels.
 ///
-/// Les sommets sont en ordre horaire à l'écran, Y vers le bas. Un triangle
-/// d'orientation inverse est le dos d'une face et n'est pas rendu ; pour une
-/// surface à deux faces, l'appelant échange deux sommets avant d'appeler, il ne
-/// nie pas les fonctions de bord — la négation laisserait la classification
-/// haut-gauche calculée sur l'ancien sens de parcours, et l'arête partagée
-/// serait revendiquée deux fois.
+/// **La face avant est antihoraire dans les données**, donc horaire à l'écran
+/// une fois l'axe Y retourné vers le bas : son aire signée est négative. Le
+/// moteur la rend en niant les fonctions de bord plutôt qu'en permutant deux
+/// sommets — l'ordre reçu reste l'ordre parcouru, et l'appelant n'a rien à
+/// réarranger.
+///
+/// Nier et transposer sont la même règle, pas deux conventions voisines :
+/// `edge` est exactement antisymétrique sur les entiers, et `is_top_left(d)` est
+/// le complémentaire de `is_top_left(-d)`. Ce qui rend l'arête partagée étanche
+/// n'est donc pas modifié, **à une condition qui ne se voit pas ici** : la
+/// négation vaut pour tous les triangles, toujours. Deux triangles adjacents
+/// dont l'un serait nié et l'autre non auraient des tests identiques au lieu de
+/// complémentaires sur leur arête commune, qui serait alors revendiquée deux
+/// fois ou pas du tout. C'est pourquoi une surface à deux faces se soumet par
+/// son triangle miroir, et jamais en levant le test de signe ci-dessous.
 ///
 /// Rend `None` pour un triangle qui ne peut couvrir aucun centre de pixel.
 pub fn prepare(vertices: [Vertex; 3], color: u32) -> Option<Prepared> {
@@ -135,7 +145,7 @@ pub fn prepare(vertices: [Vertex; 3], color: u32) -> Option<Prepared> {
     // défensif : les équations de plan des attributs diviseront par cette aire,
     // et un triangle plat verrait ses trois fonctions de bord s'annuler le long
     // d'un segment, que les biais pourraient toutes satisfaire.
-    if area <= 0 {
+    if area >= 0 {
         return None;
     }
 
@@ -186,12 +196,16 @@ pub fn fill<T: Target>(target: &mut T, window: Rect, triangle: &Prepared) {
 
     for (i, &(a, b)) in e.iter().enumerate() {
         let (dx, dy) = (v[b].x - v[a].x, v[b].y - v[a].y);
-        row[i] = edge(v[a].x, v[a].y, v[b].x, v[b].y, px, py) + bias(dx, dy);
-        // Dérivées de la forme close, multipliées par le pas d'un pixel. Les
-        // additions entières qui suivent sont exactes : parcourir vaut le
+        // La fonction de bord est niée, et le biais se prend sur `-d` : c'est ce
+        // qui classe l'arête sur le sens réellement parcouru. Pris sur `d`, il
+        // le serait sur le sens inverse, et les deux triangles d'une arête la
+        // revendiqueraient ensemble.
+        row[i] = -edge(v[a].x, v[a].y, v[b].x, v[b].y, px, py) + bias(-dx, -dy);
+        // Dérivées de la forme close niée, multipliées par le pas d'un pixel.
+        // Les additions entières qui suivent sont exactes : parcourir vaut le
         // recalcul complet, bit pour bit, quel que soit le nombre de pas.
-        step_x[i] = -(dy as i64) * SUBPIXEL_SCALE as i64;
-        step_y[i] = (dx as i64) * SUBPIXEL_SCALE as i64;
+        step_x[i] = (dy as i64) * SUBPIXEL_SCALE as i64;
+        step_y[i] = -(dx as i64) * SUBPIXEL_SCALE as i64;
     }
 
     // La profondeur au centre du premier pixel, par la forme close, puis par

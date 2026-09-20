@@ -53,13 +53,19 @@ empreintes sont identiques, et `make nostd` passe en intégration continue.
 
 ## 1 — Le pipeline
 
-Maths — vecteurs, matrices, quaternions, tables trigonométriques maison —, pile
-de matrices, projection, clipping du plan proche uniquement, en espace homogène
-avant division, et bande de garde pour que les coordonnées écran tiennent dans
+Maths — vecteurs, matrices, quaternions, tables trigonométriques maison —,
+projection, clipping en espace homogène avant division : le plan proche, et les
+quatre plans de la bande de garde pour que les coordonnées écran tiennent dans
 leur format ; z-buffer, rasteriseur à fonctions de bord, découpage en tuiles.
 
-Clipper contre six plans est inutile et coûteux : les côtés se traitent par
-découpe du rectangle en espace écran. Le clipping arrive avec la projection et
+Pas de pile de matrices : la matrice modèle-vue est un paramètre de la
+soumission. Une pile servirait une hiérarchie de transformations que ce projet
+n'a pas — la traversée de l'étape 5 empile des cellules, pas des matrices —, et
+le noyau seul l'offrirait, ce que la règle des deux chemins interdit.
+
+Clipper contre les six plans du tronc est inutile et coûteux : les côtés de
+l'image se traitent par découpe du rectangle en espace écran, les fonctions de
+bord s'évaluant en coordonnées globales. Le clipping arrive avec la projection et
 non avec les textures : dès qu'une caméra existe, un sommet derrière elle ou hors
 de la bande de garde casserait le format 28.4, et rien d'autre ne l'en protège.
 

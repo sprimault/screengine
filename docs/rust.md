@@ -326,12 +326,32 @@ aux fonctions de bord.
 - **Monde en main droite, Z en haut.** La vue de dessus de l'éditeur est
   directement (x, y), et la gravité suit un seul axe. Un format en Y vers le haut
   se convertit dans son chargeur, jamais dans le noyau.
+- **Repère de vue : X à droite, Y vers le bas, Z vers l'avant**, et `w = z_vue`.
+  Ce triplet est direct, comme le monde : la matrice de vue reste une
+  transformation rigide, donc son inverse est une transposition et une
+  translation, sans division. Écarté : Y vers le haut, qui rendrait le repère
+  indirect et ferait porter un miroir à la matrice de vue — `inverse_rigid`, dont
+  la précondition est l'absence d'échelle, en rendrait alors un faux inverse sans
+  rien signaler.
 - **Vecteur colonne, `M·v`, stockage par colonnes.** Le noyau travaille en
-  `Affine3`, 3×4 : trois colonnes puis la translation. La projection n'est pas
-  une matrice, c'est `(sx, sy, near)` appliqué à part, avec un plan lointain
-  infini : `z_c = near` et `w_c = z_vue` donnent directement la profondeur
-  `near/w`. Une composition se lit `parent.product(local)`, la droite
-  s'appliquant d'abord.
+  `Affine3`, 3×4 : trois colonnes puis la translation. **Pas de pile de
+  matrices** : la matrice modèle-vue est un paramètre de la soumission, composée
+  par `product`. Une pile n'aurait de consommateur ni dans le noyau ni dans
+  l'ABI, et le confort du chemin Rust ne crée jamais de capacité qui lui soit
+  propre. Une composition se lit `parent.product(local)`, la droite s'appliquant
+  d'abord.
+- **La projection n'est pas une matrice**, c'est `(sx, sy, cx, cy, near)`
+  appliqué à part, avec un plan lointain infini : `z_c = near` et `w_c = z_vue`
+  donnent directement la profondeur `near/w`. Les cinq valeurs dépendent de la
+  résolution interne et se recalculent quand elle change, sans allocation. Avec
+  des pixels carrés, `sx = sy = (hauteur/2)·cot(fov_y/2)`, le rapport d'aspect
+  étant porté par la largeur seule ; les deux champs restent distincts pour
+  qu'un pixel non carré n'exige pas une nouvelle API. Le centre est en
+  `(largeur/2, hauteur/2)` et non `((largeur−1)/2, …)` : le centre du pixel `i`
+  est en `i + 0,5`, ce que le rasteriseur code déjà par son demi-pas en
+  sous-pixels. Le plan lointain infini n'est pas un raffinement : à distance
+  finie, la profondeur cesse d'être un multiple constant de `1/w`, et `to_depth`
+  recevrait autre chose que ce que sa documentation annonce.
 - **Chaque somme s'écrit de gauche à droite, dans l'ordre des colonnes** :
   `((m0·x + m3·y) + m6·z) + m9`. Jamais d'arbre équilibré `(a+b)+(c+d)`, ni de
   boucle générique : c'est l'ordre qu'un chemin SIMD reproduit en accumulant
@@ -341,7 +361,16 @@ aux fonctions de bord.
   sphérique reste sous le millième de degré, sans arc cosinus.
 - **Face avant en sens antihoraire** dans les données. Le retournement que
   produit l'axe Y de l'écran, vers le bas, se traite dans le signe des fonctions
-  de bord, sans permuter de sommets.
+  de bord, sans permuter de sommets. **Nier la fonction de bord et transposer
+  deux sommets sont la même règle**, expression entière pour expression entière :
+  `edge` est exactement antisymétrique sur les entiers, et `is_top_left(d)` est
+  le complémentaire de `is_top_left(−d)` sur les quatre cas. L'étanchéité des
+  arêtes est donc conservée — à une condition, qui est réelle : **la négation est
+  une constante du pipeline, jamais une décision par triangle.** Deux triangles
+  adjacents traités différemment auraient des tests identiques au lieu de
+  complémentaires, et leur arête commune serait revendiquée deux fois ou pas du
+  tout. Corollaire : une surface à deux faces se soumet par son triangle miroir,
+  jamais en levant la règle de signe.
 - **Les angles sont binaires**, un `u32` où 2³² vaut un tour : le tour boucle
   par l'arithmétique modulaire, et les symétries entre quadrants sont exactes.
   Le sinus se lit dans une table d'un quart de cercle, 1024 intervalles
@@ -371,7 +400,7 @@ la création du contexte rend une erreur plutôt que de déborder en silence.
 | Grandeur | Format | Pourquoi |
 |---|---|---|
 | Coordonnées écran | `i32`, 28.4 (un seizième de pixel) | quatre bits suffisent à une résolution basse remontée en entier ; le pixel est échantillonné en son centre, à +8 |
-| Bande de garde | ±4096 pixels, soit ±2¹⁶ en 28.4 | au-delà, le sommet est clippé en espace homogène |
+| Bande de garde | borne **absolue** de ±4096 pixels sur la coordonnée écran, soit ±2¹⁶ en 28.4 | au-delà, le sommet est clippé en espace homogène. Absolue et non relative à l'image : gonfler l'image de 4096 autoriserait 6144 pixels en 2048 de large, et les bornes 2¹⁷ et 2³⁴ ci-dessous seraient fausses |
 | Fonctions de bord | `i64` | un écart entre sommets atteint 2¹⁷ en 28.4, un produit 2³⁴ : `i32` déborde dès que la bande de garde sert |
 | Règle top-left | biais de −1 sur les arêtes ni hautes ni gauches | deux triangles partageant une arête se partagent ses pixels, sans trou ni recouvrement |
 | Profondeur | `u32`, `near/w` en 0.32, bornée par `to_depth` à 64 unités des bornes | plus grand est plus proche ; `near/w` est affine en espace écran, donc s'interpole par une équation de plan. La marge couvre l'arrondi des gradients : aucun bornage par pixel. Test strict : à égalité, le premier triangle soumis reste |
@@ -420,9 +449,13 @@ la création du contexte rend une erreur plutôt que de déborder en silence.
   image » en « une réallocation au premier niveau chargé », sans que rien ne le
   signale.
 - **Le contexte dimensionne ses tampons à la création** : triangles préparés pour
-  la capacité reçue, répartition par tuile pour la résolution interne maximale,
-  pile de matrices, tampons de clipping. Changer de résolution sous ce maximum
-  n'alloue rien.
+  la capacité reçue, répartition par tuile pour la résolution interne maximale.
+  Changer de résolution sous ce maximum n'alloue rien.
+- **Le clipping n'a pas de tampon de contexte.** L'intersection d'un triangle
+  avec les cinq plans a au plus trois arêtes du triangle et cinq des plans, donc
+  huit sommets et six triangles : deux tampons de huit tiennent sur la pile de
+  l'appel. Le pire cas est prouvé, pas majoré — une capacité au jugé serait soit
+  un gaspillage par triangle, soit un dépassement qu'aucun test ne rejoue.
 - **Couleur et profondeur vivent sur la pile de l'appel de tuile**, en tableaux
   de taille fixe pour une tuile de 64 de côté. Autant de tampons que d'appels
   simultanés, sans que le noyau connaisse les threads de l'hôte ; `abi.md` en

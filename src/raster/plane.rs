@@ -37,7 +37,16 @@ pub struct Plane {
 
 impl Plane {
     /// L'équation de plan des valeurs `z` aux sommets `v`, dont l'aire signée
-    /// `area` est strictement positive.
+    /// `area` est celle que rend `edge` sur ces trois sommets, dans cet ordre.
+    ///
+    /// **L'aire arrive signée, et c'est ici qu'elle se normalise.** Le
+    /// dénominateur des gradients est cette aire : la nier sans nier les
+    /// numérateurs inverserait le sens de la profondeur, silencieusement, sur un
+    /// moteur qui rend désormais les faces avant par négation des fonctions de
+    /// bord. Le triplet change donc de signe d'un bloc, et le diviseur reste
+    /// positif pour que `div_euclid` garde l'arrondi vers le bas que sa
+    /// documentation promet. Un appelant qui normaliserait de son côté pourrait
+    /// désaccorder l'aire de ses sommets ; un seul endroit le peut, celui-ci.
     ///
     /// Le point de référence est le plus petit sommet dans l'ordre (y, x), et
     /// jamais `v[0]`. Les gradients ne dépendent pas de l'ordre des sommets,
@@ -47,7 +56,7 @@ impl Plane {
     /// triangle ne rendraient pas la même profondeur. Seul un test de
     /// permutation le voit.
     pub fn new(v: [Point; 3], z: [u32; 3], area: i64) -> Self {
-        debug_assert!(area > 0);
+        debug_assert!(area != 0);
         let (x, y) = (v.map(|p| p.x as i64), v.map(|p| p.y as i64));
         let z = z.map(|z| z as i64);
 
@@ -55,6 +64,12 @@ impl Plane {
         // numérateur à 2⁵⁰ au lieu de trois termes de 2⁴⁹.
         let numerator_x = (z[0] - z[2]) * (y[1] - y[2]) + (z[1] - z[2]) * (y[2] - y[0]);
         let numerator_y = (z[0] - z[2]) * (x[2] - x[1]) + (z[1] - z[2]) * (x[0] - x[2]);
+
+        let (numerator_x, numerator_y, area) = if area < 0 {
+            (-numerator_x, -numerator_y, -area)
+        } else {
+            (numerator_x, numerator_y, area)
+        };
 
         let reference = (0..3).min_by_key(|&i| (v[i].y, v[i].x)).unwrap_or(0);
 

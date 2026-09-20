@@ -9,8 +9,8 @@ use super::*;
 use crate::math::fixed::SUBPIXEL_SCALE;
 use crate::raster::{Point, Vertex, prepare};
 
-/// Un triangle rectangle qui couvre les pixels `x0..x1` × `y0..y1`, en
-/// ordre horaire.
+/// Un triangle rectangle qui couvre les pixels `x0..x1` × `y0..y1`, dans le
+/// sens de la face avant — antihoraire à l'écran.
 fn triangle(x0: i32, y0: i32, x1: i32, y1: i32) -> Prepared {
     let p = |x: i32, y: i32| Vertex {
         position: Point {
@@ -19,7 +19,7 @@ fn triangle(x0: i32, y0: i32, x1: i32, y1: i32) -> Prepared {
         },
         z: 1 << 31,
     };
-    prepare([p(x0, y0), p(x1, y0), p(x0, y1)], 0).expect("triangle visible")
+    prepare([p(x0, y0), p(x0, y1), p(x1, y0)], 0).expect("triangle visible")
 }
 
 /// Les triangles d'une tuile, dans l'ordre où elle les dessinera.

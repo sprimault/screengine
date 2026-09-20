@@ -12,12 +12,14 @@
 mod affine;
 mod angle;
 pub mod fixed;
+pub mod projection;
 mod quat;
 mod rsqrt;
 mod vector;
 
 pub use affine::Affine3;
 pub use angle::Angle;
+pub use projection::Projection;
 pub use quat::Quat;
 pub use vector::Vec3;
 
