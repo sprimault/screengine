@@ -236,6 +236,12 @@ conform:
 conform-update:
 	cargo run -p screengine-conformance --release -- --update
 
+# Écrit chaque vue en image, dans .tmp/conformance-images. Une empreinte ne dit
+# pas si l'image est juste, seulement si elle a changé : avant de figer une
+# référence nouvelle ou de la mettre à jour, on regarde.
+conform-images:
+	cargo run -p screengine-conformance --release -- --dump $(SORTIE)/conformance-images
+
 # Le header est généré et versionné : généré parce qu'écrit à la main il
 # divergerait des signatures, versionné parce qu'un intégrateur doit pouvoir le
 # lire sans installer cbindgen.

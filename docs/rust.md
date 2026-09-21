@@ -635,6 +635,16 @@ teste quelque chose.
   références est un commit distinct, dont le message dit ce que le rendu fait
   désormais autrement. Jamais mêlée au lot qui l'a causée : le diff d'un fichier
   d'empreintes ne se relit pas.
+- **Une option de rendu qui change l'image prend une scène, jamais une passe.**
+  Les passes d'une scène ne diffèrent que par le découpage et doivent rendre la
+  même empreinte : c'est tout leur objet. Un filtrage qui rend délibérément une
+  autre image a donc besoin de sa propre référence, elle-même vérifiée dans les
+  cinq passes, et sa géométrie se partage au texel près avec la scène qu'elle
+  double — sans quoi une divergence ne serait plus attribuable à l'option.
+- **Avant de figer une référence nouvelle ou de la mettre à jour, regarder
+  l'image**, par `make conform-images`. Une empreinte dit qu'une image a changé,
+  jamais qu'elle est juste : une scène rendue noire, à l'envers ou filtrée
+  autrement qu'on croit se fige aussi bien qu'une autre.
 - **La scène des arêtes partagées** — deux triangles qui partagent une arête se
   partagent ses pixels, sans trou ni recouvrement — se repasse à chaque
   modification du remplissage, à toutes les résolutions internes prévues. C'est

@@ -25,8 +25,8 @@ use std::{fs, io};
 use std::sync::Arc;
 
 use screengine::{
-    Affine3, Angle, BYTES_PER_PIXEL, Color, Config, Context, Frame, Quat, Rect, Rows, Texture,
-    Triangle, Vec3, VertexUv,
+    Affine3, Angle, BYTES_PER_PIXEL, Color, Config, Context, Filter, Frame, Quat, Rect, Rows,
+    Texture, Triangle, Vec3, VertexUv,
 };
 
 /// Une façon de rendre une scène qui ne doit pas changer l'image.
@@ -229,6 +229,18 @@ enum Scene {
     /// refaire, et un damier serré révèle mieux qu'une photographie ce que ce
     /// chemin peut casser.
     Textured,
+    /// Le même sol, échantillonné en bilinéaire.
+    ///
+    /// **Une scène et non une passe de plus**, et la distinction n'est pas de
+    /// forme : les passes d'une scène doivent toutes rendre la même empreinte,
+    /// puisqu'elles ne diffèrent que par le découpage. Un filtrage qui rend
+    /// délibérément une autre image n'y a donc pas sa place — il lui faut sa
+    /// propre référence, elle-même vérifiée dans les cinq passes.
+    ///
+    /// La géométrie est celle de `texture`, au texel près : c'est ce qui rend
+    /// les deux empreintes comparables, et une divergence attribuable au seul
+    /// filtrage.
+    TexturedBilinear,
 }
 
 /// Un damier de `side` texels de côté, ses cases de `cell`.
@@ -393,7 +405,7 @@ impl View {
 
 impl Scene {
     /// Toutes les scènes, dans l'ordre où `--check` les rejoue.
-    const ALL: [Self; 7] = [
+    const ALL: [Self; 8] = [
         Self::Edge,
         Self::Guard,
         Self::Lateral,
@@ -401,6 +413,7 @@ impl Scene {
         Self::Near,
         Self::Rotation,
         Self::Textured,
+        Self::TexturedBilinear,
     ];
 
     /// La passe que `--print` utilise, celle des hôtes.
@@ -433,6 +446,19 @@ impl Scene {
             Self::Near => "proche",
             Self::Rotation => "rotation",
             Self::Textured => "texture",
+            Self::TexturedBilinear => "texture-bilineaire",
+        }
+    }
+
+    /// Le filtrage que la scène demande au contexte.
+    ///
+    /// Le tramage partout ailleurs : c'est le défaut du moteur, et une scène
+    /// qui n'a rien à dire du filtrage doit rendre ce que rend un contexte
+    /// qu'on ne configure pas.
+    fn filter(self) -> Filter {
+        match self {
+            Self::TexturedBilinear => Filter::Bilinear,
+            _ => Filter::Dither,
         }
     }
 
@@ -552,7 +578,10 @@ impl Scene {
             // est de trente, ce qui donne à la perspective de quoi se tromper.
             // Huit texels par unité et des cases de huit texels : une case fait
             // une unité au sol, donc la fuite se lit case par case.
-            Self::Textured => textured_quad(
+            // Les deux scènes texturées partagent leur géométrie : seul le
+            // filtrage que le contexte porte les sépare, et c'est ce qui rend
+            // leurs empreintes comparables.
+            Self::Textured | Self::TexturedBilinear => textured_quad(
                 context,
                 [
                     Vec3::new(2.0, -24.0, -1.2),
@@ -605,6 +634,7 @@ impl Scene {
             tile_size: pass.tile_size(),
             max_triangles: 0,
         })?;
+        context.set_filter(self.filter())?;
         self.submit(&mut context, view)?;
         let mut pixels = vec![0u8; width as usize * height as usize * BYTES_PER_PIXEL];
         pass.render(context.frame_begin()?, &mut pixels, width, height)?;
