@@ -62,6 +62,12 @@ signature ne change et `SCG_ABI_VERSION` reste à **1**.
   une seule allocation, faite à ce seul appel.
 - API Rust : `VertexUv`, un sommet qui porte ses coordonnées de texture en
   texels, non normalisées.
+- Le filtrage par défaut : niveau de mipmap choisi par segment de seize pixels,
+  sur la plus forte des quatre dérivées — **la verticale comprise**, sans quoi
+  un sol sous-sélectionne et scintille —, puis tramage ordonné des coordonnées
+  par une matrice de Bayer 4×4 indexée sur la position dans l'image. Le
+  décalage vaut moins d'un demi-texel et somme à zéro sur un bloc : il masque
+  l'escalier de la troncature sans déplacer la texture.
 - Le remplissage échantillonne une texture, par segments de seize pixels
   alignés sur la grille de l'image : la réciproque de la profondeur se calcule
   aux extrémités du segment et les coordonnées s'interpolent affinement entre
@@ -133,6 +139,12 @@ is not recorded. No signature changes and `SCG_ABI_VERSION` stays at **1**.
   one call.
 - Rust API: `VertexUv`, a vertex carrying its texture coordinates in texels,
   unnormalised.
+- Default filtering: mipmap level picked per sixteen-pixel segment, on the
+  largest of the four derivatives — **the vertical one included**, without
+  which a floor underselects and shimmers —, then ordered dithering of the
+  coordinates through a 4×4 Bayer matrix indexed on the position in the image.
+  The offset is under half a texel and sums to zero over a block: it masks the
+  staircase of truncation without moving the texture.
 - Filling samples a texture, in sixteen-pixel segments aligned on the image
   grid: the reciprocal of depth is computed at the segment ends and coordinates
   are interpolated affinely between them. Segments are bounded by the
