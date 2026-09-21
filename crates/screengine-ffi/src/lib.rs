@@ -19,22 +19,29 @@ mod message;
 mod output;
 mod scene;
 mod status;
+mod texture;
 
 use std::alloc::{self, Layout};
 use std::ffi::c_char;
 use std::ptr;
 
-use screengine::{Argument, Context, Error as CoreError, Vec3};
+use std::sync::Arc;
+
+use screengine::{Argument, Context, Error as CoreError, Texture, Vec3, VertexUv};
 
 use entry::AbiError;
 use output::HostRows;
 
 pub use context::{ScgContext, ScgContextConfig};
-pub use scene::{ScgCamera, ScgMat4, ScgTriangle, ScgVertex};
+pub use scene::{
+    SCG_TEXTURE_FORMAT_RGBA8, ScgCamera, ScgMat4, ScgTextureDesc, ScgTriangle, ScgVertex,
+    ScgVertexUv,
+};
 pub use status::{
     SCG_ERR_FAULTED, SCG_ERR_INVALID_ARGUMENT, SCG_ERR_INVALID_STATE, SCG_ERR_NULL,
     SCG_ERR_OUT_OF_MEMORY, SCG_ERR_PANIC, SCG_ERR_POISONED, SCG_OK,
 };
+pub use texture::ScgTexture;
 
 /// ABI version this library implements.
 ///
@@ -211,6 +218,23 @@ unsafe fn slice_of<'a, T>(ptr: *const T, count: u32) -> &'a [T] {
     // SAFETY: précondition de la fonction. Le compte nul est traité avant, ce
     // qui évite d'exiger de l'hôte un pointeur aligné pour un tableau vide.
     unsafe { std::slice::from_raw_parts(ptr, count as usize) }
+}
+
+/// La tranche d'octets d'un bloc reçu de l'hôte.
+///
+/// Séparée de [`slice_of`] parce que la longueur d'un bloc de pixels est une
+/// `size_t` et non un compte d'éléments : c'est la seule longueur de l'ABI qui
+/// change de largeur selon la cible.
+///
+/// # Safety
+///
+/// `ptr` couvre `len` octets lisibles, ou `len` est nul.
+unsafe fn slice_of_bytes<'a>(ptr: *const u8, len: usize) -> &'a [u8] {
+    if len == 0 {
+        return &[];
+    }
+    // SAFETY: précondition de la fonction, le cas vide étant traité avant.
+    unsafe { std::slice::from_raw_parts(ptr, len) }
 }
 
 /// Begins a frame: seals the submitted scene, bins it into tiles, and writes
@@ -411,4 +435,136 @@ pub unsafe extern "C" fn scg_buffer_free(ptr: *mut u8, len: usize) {
     // avec cette même longueur, et l'alignement est une constante de l'ABI, ce
     // qui reconstruit à l'identique la description de l'allocation.
     unsafe { alloc::dealloc(ptr, layout) }
+}
+
+/// Loads a texture from a block of pixels and writes its handle to `out`.
+///
+/// `pixels` holds `width * height` texels, rows contiguous, four bytes each in
+/// R, G, B, A order — the memory order of the output pixels. The block is
+/// copied: the host may free it as soon as this call returns.
+///
+/// **Both sides must be powers of two**, independently, from 1 to 2048. The
+/// whole mipmap chain is built here, down to 1x1, by averaging texels; nothing
+/// is ever generated later, which is what keeps a frame free of allocation.
+///
+/// **Takes no context.** A texture belongs to none, and the same one may be
+/// submitted to several from several threads. On failure the message therefore
+/// goes to the per-thread slot: read it with `scg_last_error(NULL)`, on the
+/// calling thread, before any other call on that thread.
+///
+/// # Safety
+///
+/// `desc` must point to a readable description, zeroed before being filled in.
+/// `pixels` must cover exactly `width * height * 4` readable bytes, and `out` a
+/// writable handle. Nothing is written to `out` on failure.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn scg_texture_load(
+    desc: *const ScgTextureDesc,
+    pixels: *const u8,
+    len: usize,
+    out: *mut *mut ScgTexture,
+) -> i32 {
+    entry::without_context(|| {
+        if out.is_null() {
+            return Err(AbiError::NULL);
+        }
+        // SAFETY: précondition de la fonction — le pointeur est nul ou vise une
+        // description lisible.
+        let desc = unsafe { desc.as_ref() }.ok_or(AbiError::NULL)?;
+        desc.validate()?;
+        if pixels.is_null() && len != 0 {
+            return Err(AbiError::NULL);
+        }
+        // SAFETY: précondition de la fonction — `pixels` couvre `len` octets
+        // lisibles. Un `len` nul admet le pointeur nul, que `from_raw_parts`
+        // exigerait quand même aligné.
+        let pixels = unsafe { slice_of_bytes(pixels, len) };
+        let texture = Texture::load(desc.width, desc.height, pixels)?;
+        let handle = Box::into_raw(Box::new(ScgTexture {
+            inner: Arc::new(texture),
+        }));
+        // SAFETY: précondition de la fonction — `out` vise un handle
+        // inscriptible, et rien n'y a été écrit avant ce point.
+        unsafe { out.write(handle) };
+        Ok(())
+    })
+}
+
+/// Releases a texture.
+///
+/// `scg_texture_destroy(NULL)` does nothing, like `free(NULL)`. Destroying a
+/// texture a frame still references is harmless: the engine holds its own
+/// reference until that frame ends.
+///
+/// # Safety
+///
+/// `texture` must be null, or a handle returned by `scg_texture_load` and not
+/// yet destroyed.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn scg_texture_destroy(texture: *mut ScgTexture) {
+    if texture.is_null() {
+        return;
+    }
+    // SAFETY: précondition de la fonction — le handle vient de `Box::into_raw`
+    // dans `scg_texture_load` et n'a pas encore été rendu.
+    drop(unsafe { Box::from_raw(texture) });
+}
+
+/// Submits a batch of triangles dressed with a texture.
+///
+/// Same contract as `scg_submit`, with two differences: the vertices carry
+/// their texture coordinates, in texels, and the texture applies to the whole
+/// batch. Coordinates beyond 16384 texels, or not finite, reject the batch.
+///
+/// # Safety
+///
+/// Same preconditions as `scg_submit`, and `texture` must be a live handle from
+/// `scg_texture_load`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn scg_submit_textured(
+    ctx: *mut ScgContext,
+    model: *const ScgMat4,
+    vertices: *const ScgVertexUv,
+    vertex_count: u32,
+    triangles: *const ScgTriangle,
+    triangle_count: u32,
+    texture: *const ScgTexture,
+) -> i32 {
+    let submit = |mut core: entry::Core<'_>| {
+        // SAFETY: précondition de la fonction — chaque pointeur est nul ou vise
+        // une valeur lisible.
+        let model = unsafe { model.as_ref() }.ok_or(AbiError::NULL)?;
+        let model = model.to_core()?;
+        // SAFETY: précondition de la fonction — `texture` est un handle vivant.
+        let texture = unsafe { texture.as_ref() }.ok_or(AbiError::NULL)?;
+        // SAFETY: précondition de la fonction — chaque pointeur couvre son
+        // nombre d'éléments.
+        let (vertices, triangles) = unsafe {
+            (
+                slice_of(vertices, vertex_count),
+                slice_of(triangles, triangle_count),
+            )
+        };
+        scene::check_finite_uv(vertices)?;
+        core.exclusive()?
+            .submit_each_uv(model, triangles.len(), Some(&texture.inner), |i| {
+                let triangle = triangles[i];
+                let mut corners = [VertexUv::untextured(Vec3::ZERO); 3];
+                for (corner, index) in
+                    corners
+                        .iter_mut()
+                        .zip([triangle.i0, triangle.i1, triangle.i2])
+                {
+                    *corner = vertices
+                        .get(index as usize)
+                        .ok_or(CoreError::InvalidArgument(Argument::VertexIndex))?
+                        .to_core();
+                }
+                Ok((corners, triangle.color()))
+            })
+            .map_err(AbiError::from)
+    };
+
+    // SAFETY: précondition de la fonction — `ctx` est nul ou un handle vivant.
+    unsafe { entry::with_context(ctx, submit) }
 }

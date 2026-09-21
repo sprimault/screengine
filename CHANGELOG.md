@@ -62,6 +62,16 @@ signature ne change et `SCG_ABI_VERSION` reste à **1**.
   une seule allocation, faite à ce seul appel.
 - API Rust : `VertexUv`, un sommet qui porte ses coordonnées de texture en
   texels, non normalisées.
+- ABI : `scg_texture_load` et `scg_texture_destroy`, avec `ScgTextureDesc` et
+  `SCG_TEXTURE_FORMAT_RGBA8` — qui vaut **1 et non 0**, pour qu'une description
+  laissée à zéro soit refusée plutôt qu'interprétée. Les deux prennent **aucun
+  contexte** : une texture n'appartient à personne, et leur message se lit par
+  `scg_last_error(NULL)` sur le thread appelant. Le bloc de pixels est copié,
+  l'hôte peut le libérer au retour.
+- ABI : `scg_submit_textured` et `ScgVertexUv`, un sommet de vingt octets qui
+  porte ses coordonnées de texture en texels. La texture vaut pour le lot
+  entier. Détruire une texture qu'une image référence encore est sans effet sur
+  elle. Aucune signature publiée ne change et `SCG_ABI_VERSION` reste à **1**.
 - Le filtrage par défaut : niveau de mipmap choisi par segment de seize pixels,
   sur la plus forte des quatre dérivées — **la verticale comprise**, sans quoi
   un sol sous-sélectionne et scintille —, puis tramage ordonné des coordonnées
@@ -139,6 +149,16 @@ is not recorded. No signature changes and `SCG_ABI_VERSION` stays at **1**.
   one call.
 - Rust API: `VertexUv`, a vertex carrying its texture coordinates in texels,
   unnormalised.
+- ABI: `scg_texture_load` and `scg_texture_destroy`, with `ScgTextureDesc` and
+  `SCG_TEXTURE_FORMAT_RGBA8` — which is **1, not 0**, so that a description
+  left zeroed is refused rather than interpreted. Both take **no context**: a
+  texture belongs to nobody, and their message is read through
+  `scg_last_error(NULL)` on the calling thread. The pixel block is copied, the
+  host may free it on return.
+- ABI: `scg_submit_textured` and `ScgVertexUv`, a twenty-byte vertex carrying
+  its texture coordinates in texels. The texture applies to the whole batch.
+  Destroying a texture a frame still references does not affect it. No
+  published signature changes and `SCG_ABI_VERSION` stays at **1**.
 - Default filtering: mipmap level picked per sixteen-pixel segment, on the
   largest of the four derivatives — **the vertical one included**, without
   which a floor underselects and shimmers —, then ordered dithering of the

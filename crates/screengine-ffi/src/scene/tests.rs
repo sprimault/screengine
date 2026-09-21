@@ -36,6 +36,32 @@ fn les_structures_ont_la_disposition_publiee() {
     assert_eq!(offset_of!(ScgCamera, near_plane), 32);
 
     assert_eq!((size_of::<ScgMat4>(), align_of::<ScgMat4>()), (64, 4));
+
+    assert_eq!(
+        (size_of::<ScgVertexUv>(), align_of::<ScgVertexUv>()),
+        (20, 4)
+    );
+    assert_eq!(offset_of!(ScgVertexUv, z), 8);
+    assert_eq!(offset_of!(ScgVertexUv, u), 12);
+    assert_eq!(offset_of!(ScgVertexUv, v), 16);
+
+    assert_eq!(
+        (size_of::<ScgTextureDesc>(), align_of::<ScgTextureDesc>()),
+        (24, 4)
+    );
+    assert_eq!(offset_of!(ScgTextureDesc, height), 4);
+    assert_eq!(offset_of!(ScgTextureDesc, format), 8);
+    assert_eq!(offset_of!(ScgTextureDesc, reserved2), 20);
+}
+
+/// Le format RGBA8 vaut un, jamais zéro.
+///
+/// C'est ce qui fait refuser une description laissée à zéro plutôt que la lire
+/// comme valide — et un hôte qui oublie de remplir la sienne est précisément
+/// celui qui en a le plus besoin.
+#[test]
+fn le_format_de_texture_ne_vaut_pas_zero() {
+    assert_eq!(SCG_TEXTURE_FORMAT_RGBA8, 1);
 }
 
 /// Un sommet quelconque, que les tests dérivent.

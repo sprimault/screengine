@@ -45,6 +45,15 @@ export const SCG_ERR_FAULTED = -6;
 /** Ancien nom de `SCG_ERR_FAULTED`, gardé comme dans le header. */
 export const SCG_ERR_POISONED = -6;
 
+/**
+ * Le seul format de pixels qu'une texture accepte.
+ *
+ * Un et non zéro : une description laissée à zéro est ainsi refusée plutôt
+ * qu'interprétée, ce qui importe d'autant plus ici qu'une liaison JavaScript
+ * écrit la structure octet par octet dans la mémoire linéaire.
+ */
+export const SCG_TEXTURE_FORMAT_RGBA8 = 1;
+
 /** Les fonctions que le module doit exporter, en plus de `memory`. */
 export const EXPORTS = [
   "scg_abi_version",
@@ -58,6 +67,9 @@ export const EXPORTS = [
   "scg_last_error",
   "scg_buffer_alloc",
   "scg_buffer_free",
+  "scg_texture_load",
+  "scg_texture_destroy",
+  "scg_submit_textured",
 ];
 
 /** Taille de `ScgContextConfig`, celle qu'affirme le header. */
@@ -65,6 +77,12 @@ export const CONFIG_SIZE = 32;
 
 /** Taille de `ScgVertex` : trois `float`. */
 export const VERTEX_SIZE = 12;
+
+/** Taille de `ScgVertexUv` : trois `float` de position, puis `u` et `v`. */
+export const VERTEX_UV_SIZE = 20;
+
+/** Taille de `ScgTextureDesc` : six `uint32_t`. */
+export const TEXTURE_DESC_SIZE = 24;
 
 /** Taille de `ScgTriangle` : trois `uint32_t` puis quatre `uint8_t`. */
 export const TRIANGLE_SIZE = 16;

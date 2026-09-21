@@ -75,6 +75,17 @@ impl AbiError {
         code: SCG_ERR_INVALID_ARGUMENT,
         message: "model matrix must be finite, with last row exactly 0, 0, 0, 1",
     };
+
+    /// Le format de pixels d'une texture n'est pas celui que le moteur lit.
+    ///
+    /// Refusé ici parce que le noyau n'a pas de format : il reçoit des texels
+    /// déjà convertis. C'est la frontière qui porte l'énumération, et une
+    /// description laissée à zéro tombe dessus plutôt que d'être lue comme
+    /// valide — la raison pour laquelle le format RGBA8 vaut un et non zéro.
+    pub(crate) const TEXTURE_FORMAT: Self = Self {
+        code: SCG_ERR_INVALID_ARGUMENT,
+        message: "texture format must be SCG_TEXTURE_FORMAT_RGBA8",
+    };
 }
 
 impl From<Error> for AbiError {
