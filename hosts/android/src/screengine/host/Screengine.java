@@ -146,4 +146,42 @@ public final class Screengine {
      * @param len la même longueur
      */
     static native void bufferFree(long ptr, long len);
+
+    /**
+     * {@code scg_texture_load}, la description écrite par la couche JNI.
+     *
+     * Elle seule connaît le header : Java ne passe que les deux côtés et les
+     * texels, le format et les champs réservés étant remplis de l'autre côté.
+     *
+     * @param width largeur en texels, puissance de deux de 1 à 2048
+     * @param height hauteur en texels, même contrainte
+     * @param texels quatre octets R, G, B, A par texel, lignes jointives
+     * @return le handle, ou 0 en cas d'échec
+     */
+    static native long textureLoad(int width, int height, byte[] texels);
+
+    /**
+     * {@code scg_texture_destroy}.
+     *
+     * @param texture handle rendu par {@link #textureLoad}, ou 0
+     */
+    static native void textureDestroy(long texture);
+
+    /**
+     * {@code scg_submit_textured}.
+     *
+     * Mêmes tableaux que {@link #submit}, les sommets portant cinq flottants
+     * au lieu de trois : trois de position, puis {@code u} et {@code v} en
+     * texels.
+     *
+     * @param ctx handle, ou 0
+     * @param model seize coefficients, par colonnes
+     * @param vertices cinq flottants par sommet
+     * @param indices trois indices par triangle
+     * @param colors quatre octets R, G, B, A par triangle
+     * @param texture handle de la texture du lot
+     * @return le code de retour
+     */
+    static native int submitTextured(long ctx, float[] model, float[] vertices, int[] indices,
+            byte[] colors, long texture);
 }

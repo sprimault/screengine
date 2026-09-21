@@ -184,6 +184,51 @@ static int submit_scene(ScgContext *ctx)
     return code == SCG_OK;
 }
 
+/* Le sol de la scène `texture` : un damier qui fuit vers l'horizon, à 1,2 unité
+ * sous la caméra. Mêmes valeurs que la scène de conformance, et pour la même
+ * raison que le quadrilatère ci-dessus. */
+enum { FLOOR_SIDE = 64, FLOOR_CELL = 8 };
+
+/* Les coordonnées de texture s'écrivent en clair, densité comprise : une
+ * constante de plus ne dirait rien que le littéral ne dise, et l'hôte doit se
+ * lire comme ce qu'il est — la transcription d'une scène de référence. */
+static const ScgVertexUv FLOOR_VERTICES[4] = {
+    {  2.0f, -24.0f, -1.2f,   2.0f * 8.0f, -24.0f * 8.0f },
+    { 60.0f, -24.0f, -1.2f,  60.0f * 8.0f, -24.0f * 8.0f },
+    { 60.0f,  24.0f, -1.2f,  60.0f * 8.0f,  24.0f * 8.0f },
+    {  2.0f,  24.0f, -1.2f,   2.0f * 8.0f,  24.0f * 8.0f },
+};
+
+static const ScgTriangle FLOOR_TRIANGLES[2] = {
+    { 0, 1, 2, 0xFF, 0xFF, 0xFF, 0xFF },
+    { 0, 2, 3, 0xFF, 0xFF, 0xFF, 0xFF },
+};
+
+/* Écrit le damier procédural dans `pixels`, qui couvre `FLOOR_SIDE` au carré
+ * texels de quatre octets.
+ *
+ * Le motif est recopié de la suite de conformance, teinte pour teinte : c'est
+ * lui qui décide de l'empreinte, et un liseré décalé d'un texel la ferait
+ * diverger — ce qui est exactement l'objet de cette comparaison. */
+static void make_checker(uint8_t *pixels)
+{
+    for (uint32_t v = 0; v < FLOOR_SIDE; v++) {
+        for (uint32_t u = 0; u < FLOOR_SIDE; u++) {
+            uint8_t *texel = pixels + ((size_t)v * FLOOR_SIDE + u) * 4;
+            int edge = (u % FLOOR_CELL) == 0 || (v % FLOOR_CELL) == 0;
+            int dark = ((u / FLOOR_CELL) + (v / FLOOR_CELL)) % 2 == 0;
+            if (edge) {
+                texel[0] = 0xF0; texel[1] = 0xE0; texel[2] = 0xA0;
+            } else if (dark) {
+                texel[0] = 0x30; texel[1] = 0x38; texel[2] = 0x50;
+            } else {
+                texel[0] = 0x90; texel[1] = 0x70; texel[2] = 0x50;
+            }
+            texel[3] = 0xFF;
+        }
+    }
+}
+
 /* Vrai si le message est non nul, terminé, non vide si `expect_text`, et fait
  * d'octets UTF-8 plausibles. Les messages du moteur sont ASCII aujourd'hui ;
  * ce contrôle refuse surtout un octet de contrôle venu d'un tampon non
@@ -381,7 +426,66 @@ static void check_float_environment(uint64_t expected)
 }
 #endif
 
-/* Toutes les vérifications, puis l'empreinte sur la sortie standard. */
+/* Rend la scène texturée et hache son image.
+ *
+ * Plus courte que `render` : les sentinelles, l'alpha et les tuiles sont déjà
+ * éprouvés par la première scène, qui passe par le même tampon et le même
+ * chemin de sortie. Ce que celle-ci ajoute est le seul chemin que l'autre
+ * n'emprunte pas — chargement d'une texture, soumission texturée,
+ * échantillonnage — et son empreinte le compare au chemin Rust.
+ */
+static uint64_t render_textured(int *ok)
+{
+    ScgContextConfig config = scene_config();
+    ScgContext *ctx = NULL;
+    ScgTexture *texture = NULL;
+    uint8_t *pixels = malloc((size_t)STRIDE * HEIGHT * 4);
+    uint8_t *texels = malloc((size_t)FLOOR_SIDE * FLOOR_SIDE * 4);
+    uint64_t hash = 0;
+
+    *ok = 0;
+    if (pixels == NULL || texels == NULL) {
+        check(0, "allocation des tampons de la scène texturée");
+        free(pixels);
+        free(texels);
+        return 0;
+    }
+    make_checker(texels);
+
+    ScgTextureDesc desc;
+    memset(&desc, 0, sizeof desc);
+    desc.width = FLOOR_SIDE;
+    desc.height = FLOOR_SIDE;
+    desc.format = SCG_TEXTURE_FORMAT_RGBA8;
+
+    int loaded = scg_texture_load(&desc, texels, (size_t)FLOOR_SIDE * FLOOR_SIDE * 4, &texture);
+    check(loaded == SCG_OK, "la texture se charge sans contexte");
+    check(scg_create(&config, &ctx) == SCG_OK, "création du contexte texturé");
+
+    if (loaded == SCG_OK && ctx != NULL) {
+        int32_t code = scg_submit_textured(ctx, &IDENTITY, FLOOR_VERTICES, 4,
+                                           FLOOR_TRIANGLES, 2, texture);
+        check(code == SCG_OK, "le lot texturé est accepté");
+        /* Détruite avant le rendu, à dessein : le moteur en garde sa propre
+         * référence jusqu'à la fin de l'image, et l'empreinte le prouve. */
+        scg_texture_destroy(texture);
+        texture = NULL;
+
+        code = scg_frame_end(ctx, pixels, STRIDE);
+        check(code == SCG_OK, "l'image texturée se rend");
+        *ok = code == SCG_OK;
+        hash = fingerprint(pixels, WIDTH, HEIGHT, STRIDE);
+    }
+
+    scg_texture_destroy(texture);
+    scg_destroy(ctx);
+    free(pixels);
+    free(texels);
+    return hash;
+}
+
+/* Toutes les vérifications, puis les empreintes sur la sortie standard, une
+ * par ligne et dans l'ordre que le Makefile attend. */
 int main(void)
 {
     check(scg_abi_version() == SCG_ABI_VERSION, "la bibliothèque liée est celle du header");
@@ -401,10 +505,14 @@ int main(void)
         check_tiles(hash);
     }
 
-    if (failures > 0 || !ok) {
+    int textured_ok = 0;
+    uint64_t textured = render_textured(&textured_ok);
+
+    if (failures > 0 || !ok || !textured_ok) {
         fprintf(stderr, "%d vérification(s) en échec\n", failures);
         return 1;
     }
     printf("%016llx\n", (unsigned long long)hash);
+    printf("%016llx\n", (unsigned long long)textured);
     return 0;
 }

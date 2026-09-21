@@ -41,6 +41,13 @@ DEVICE_DIR := /data/local/tmp/screengine
 
 ABIS := arm64-v8a armeabi-v7a x86_64
 
+# Les scènes que chaque palier rend, dans l'ordre. Le Makefile racine en tient
+# la liste ; ici seul le nombre compte, pour découper les lignes d'un palier.
+# Écrit une fois : cinq paliers qui rendraient un nombre différent de scènes ne
+# se compareraient plus ligne à ligne, et la divergence passerait pour une
+# égalité.
+SCENE_COUNT := 2
+
 triple_arm64-v8a   := aarch64-linux-android
 triple_armeabi-v7a := armv7-linux-androideabi
 triple_x86_64      := x86_64-linux-android
@@ -139,22 +146,30 @@ all: native dex apk
 # Écrit l'empreinte sur la sortie standard, les échecs sur la sortie d'erreur. Une
 # empreinte par palier et par ABI, qui doivent toutes être identiques.
 run: all
-	@set -e; hashes=""; \
-	$(foreach abi,$(ABIS),h=$$($(qemu_$(abi)) $(OUT)/$(abi)/screengine-abi-static); \
-	  echo "$(abi) statique : $$h" >&2; hashes="$$hashes $$h"; ) \
+	@set -e; rm -f $(OUT)/paliers.txt; \
+	$(foreach abi,$(ABIS),h=$$($(qemu_$(abi)) $(OUT)/$(abi)/screengine-abi-static | tr -d '\r'); \
+	  echo "$(abi) statique : $$(echo $$h)" >&2; echo "$$h" >> $(OUT)/paliers.txt; ) \
 	adb shell rm -rf $(DEVICE_DIR) >/dev/null; \
 	adb shell mkdir -p $(DEVICE_DIR) >/dev/null; \
 	adb push $(OUT)/x86_64/libscreengine.so $(OUT)/x86_64/libscreengine_jni.so \
 	  $(OUT)/x86_64/screengine-abi $(OUT)/dex/classes.dex $(DEVICE_DIR)/ >/dev/null; \
 	h=$$(adb shell "LD_LIBRARY_PATH=$(DEVICE_DIR) $(DEVICE_DIR)/screengine-abi" | tr -d '\r'); \
-	echo "x86_64 appareil, C : $$h" >&2; hashes="$$hashes $$h"; \
+	echo "x86_64 appareil, C : $$(echo $$h)" >&2; echo "$$h" >> $(OUT)/paliers.txt; \
 	h=$$(adb shell "LD_LIBRARY_PATH=$(DEVICE_DIR) CLASSPATH=$(DEVICE_DIR)/classes.dex app_process $(DEVICE_DIR) screengine.host.Test $(DEVICE_DIR)" | tr -d '\r'); \
-	echo "x86_64 appareil, JNI : $$h" >&2; hashes="$$hashes $$h"; \
-	distinct=$$(printf '%s\n' $$hashes | sort -u); \
-	if [ $$(printf '%s\n' $$distinct | wc -l) -ne 1 ] || [ $$(printf '%s\n' $$hashes | wc -l) -ne 5 ]; then \
-	  echo "empreintes divergentes entre paliers ou ABI :$$hashes" >&2; exit 1; \
+	echo "x86_64 appareil, JNI : $$(echo $$h)" >&2; echo "$$h" >> $(OUT)/paliers.txt; \
+	scenes=$$(head -1 $(OUT)/paliers.txt >/dev/null && awk 'END {print NR}' $(OUT)/paliers.txt); \
+	if [ "$$scenes" -ne $$(( 5 * $(SCENE_COUNT) )) ]; then \
+	  echo "attendu $(SCENE_COUNT) empreinte(s) par palier, reçu $$scenes lignes pour cinq paliers" >&2; \
+	  exit 1; \
 	fi; \
-	echo $$distinct
+	for i in $$(seq 1 $(SCENE_COUNT)); do \
+	  distinct=$$(awk -v n=$(SCENE_COUNT) -v i=$$i 'NR % n == i % n' $(OUT)/paliers.txt | sort -u); \
+	  if [ $$(printf '%s\n' "$$distinct" | wc -l) -ne 1 ]; then \
+	    echo "scene $$i : empreintes divergentes entre paliers ou ABI" >&2; \
+	    cat $(OUT)/paliers.txt >&2; exit 1; \
+	  fi; \
+	  echo "$$distinct"; \
+	done
 
 # Démarre l'émulateur sans fenêtre et attend la fin de son démarrage. Pour une
 # machine Linux avec KVM ; l'intégration continue passe par son action.

@@ -244,6 +244,38 @@ export class Screengine {
   }
 
   /**
+   * Écrit un tableau de sommets texturés : trois `float` de position, puis
+   * `u` et `v` en texels.
+   *
+   * @param {number} ptr adresse d'au moins `vertices.length * VERTEX_UV_SIZE` octets
+   * @param {number[][]} vertices quintuplets `[x, y, z, u, v]`
+   */
+  writeVerticesUv(ptr, vertices) {
+    const view = new DataView(this.memory.buffer, ptr, vertices.length * VERTEX_UV_SIZE);
+    vertices.forEach((vertex, i) => {
+      vertex.forEach((value, k) => view.setFloat32(i * VERTEX_UV_SIZE + k * 4, value, true));
+    });
+  }
+
+  /**
+   * Écrit une description de texture, champs réservés compris.
+   *
+   * La structure est mise à zéro d'abord : ses champs réservés doivent l'être,
+   * et c'est ce qui permettra d'en employer un sans casser cette liaison.
+   *
+   * @param {number} ptr adresse d'au moins `TEXTURE_DESC_SIZE` octets
+   * @param {number} width largeur en texels, puissance de deux
+   * @param {number} height hauteur en texels, puissance de deux
+   */
+  writeTextureDesc(ptr, width, height) {
+    new Uint8Array(this.memory.buffer, ptr, TEXTURE_DESC_SIZE).fill(0);
+    const view = new DataView(this.memory.buffer, ptr, TEXTURE_DESC_SIZE);
+    view.setUint32(0, width, true);
+    view.setUint32(4, height, true);
+    view.setUint32(8, SCG_TEXTURE_FORMAT_RGBA8, true);
+  }
+
+  /**
    * Écrit la matrice identité, par colonnes.
    *
    * @param {number} ptr adresse d'au moins `MAT4_SIZE` octets
