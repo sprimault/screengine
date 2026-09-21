@@ -573,7 +573,7 @@ teste quelque chose.
 - **L'hôte C, dans `make test-abi`**, franchit réellement la frontière : lié à la
   bibliothèque statique, sans fenêtre, il vérifie refus, sentinelles autour du
   tampon, alignement et registre flottant, puis compare son empreinte du triangle
-  à celle du chemin Rust (`screengine-conformance --print triangle`). Il fait
+  à celle du chemin Rust (`screengine-conformance --print arete`). Il fait
   partie de `make test` ; sans compilateur C il saute en le disant, et ce saut
   est une erreur en intégration continue.
 - **Les hôtes rendent aussi par tuiles** : une partie des tuiles, dans un ordre

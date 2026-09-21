@@ -10,7 +10,7 @@
 // vient le symbole appelé. Le reste reprend les contrôles de l'hôte C, et son
 // empreinte du triangle est comparée à celle du chemin Rust par `make test-cpp`.
 //
-// La scène est celle de `screengine-conformance --print triangle` : 640×360,
+// La scène est celle de `screengine-conformance --print arete` : 640×360,
 // tuiles de 64.
 
 #include "screengine.h"

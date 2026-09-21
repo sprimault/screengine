@@ -11,7 +11,7 @@
  * Il écrit sur la sortie standard l'empreinte du triangle, que `make test-abi`
  * compare à celle du chemin Rust ; tout le reste part sur la sortie d'erreur.
  *
- * La scène est celle de `screengine-conformance --print triangle` : 640×360,
+ * La scène est celle de `screengine-conformance --print arete` : 640×360,
  * tuiles de 64. La changer d'un seul côté ferait diverger les deux empreintes.
  */
 
