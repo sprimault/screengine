@@ -203,13 +203,43 @@ fn un_lot_refuse_ne_laisse_rien_derriere_lui() {
 
 /// Un sommet qu'aucune projection ne peut porter fait disparaître son triangle
 /// sans erreur : c'est une donnée, pas un défaut du moteur.
+///
+/// Démesuré mais fini, donc : une coordonnée que la caméra ne peut pas porter
+/// aujourd'hui pourrait l'être d'un autre point de vue, et refuser le lot
+/// rendrait la scène irrendable selon l'endroit où la caméra se place.
 #[test]
 fn un_sommet_demesure_disparait_sans_erreur() {
     let mut ctx = small();
     let mut vertices = ahead();
-    vertices[1].y = f32::INFINITY;
+    vertices[1].y = 1.0e30;
     assert_eq!(ctx.submit(Affine3::IDENTITY, &vertices, &one()), Ok(()));
     assert_eq!(ctx.triangles.len(), 0);
+}
+
+/// Un sommet non fini refuse le lot entier, lui, et ne laisse rien derrière.
+///
+/// Le contraire du précédent, et la différence est celle qu'énonce le contrat
+/// d'ABI : un `NaN` ou un infini soumis ne dépend ni de la caméra ni de la
+/// matrice, c'est une donnée fausse. Le vérifier sur le second sommet, après
+/// qu'un triangle valide a déjà été posé, est ce qui attrape un refus qui
+/// laisserait le lot à moitié soumis.
+#[test]
+fn un_sommet_non_fini_refuse_le_lot_entier() {
+    for bad in [f32::NAN, f32::INFINITY, -f32::INFINITY] {
+        let mut ctx = small();
+        let triangles = [one()[0], one()[0]];
+        let mut vertices = ahead();
+        ctx.submit(Affine3::IDENTITY, &vertices, &one())
+            .expect("capacité");
+
+        vertices[1].z = bad;
+        assert_eq!(
+            ctx.submit(Affine3::IDENTITY, &vertices, &triangles),
+            Err(Error::InvalidArgument(Argument::VertexCoordinate)),
+            "{bad}"
+        );
+        assert_eq!(ctx.triangles.len(), 1, "le lot refusé a laissé un triangle");
+    }
 }
 
 /// La fin d'une image périme sa liste de dessin, et c'est la soumission

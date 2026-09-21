@@ -364,6 +364,16 @@ impl Context {
         let transform = self.view.product(model);
         for i in 0..count {
             let (corners, color) = read(i)?;
+            // Avant la transformation : c'est la valeur écrite par l'hôte qu'on
+            // refuse, pas ce que la caméra en fait. Un sommet fini que la
+            // matrice porte à l'infini reste une condition de vue, et son
+            // triangle disparaît plus bas sans erreur.
+            if corners
+                .iter()
+                .any(|v| !v.x.is_finite() || !v.y.is_finite() || !v.z.is_finite())
+            {
+                return Err(Error::InvalidArgument(Argument::VertexCoordinate));
+            }
             self.submit_view(corners.map(|v| transform.transform_point(v)), color)?;
         }
         Ok(())

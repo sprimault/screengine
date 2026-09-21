@@ -28,14 +28,23 @@ use super::fixed::{to_depth, to_subpixel};
 /// avec lui toutes les bornes entières du rasteriseur.
 pub const GUARD_PIXELS: f32 = 4096.0;
 
-/// Au-delà, une coordonnée de vue est rejetée avant le clipping.
+/// Au-delà, une coordonnée de clip est rejetée avant le découpage.
 ///
-/// Une matrice finie mais énorme suffit à produire des coordonnées dont les
-/// distances aux plans déborderaient vers l'infini. À 2¹⁰⁰, chaque distance
-/// reste sous 2¹¹³ : aucune évaluation de plan, aucune différence de deux
-/// distances ne peut atteindre l'infini, et la démonstration de symétrie de
-/// [`Frustum::intersect`] tient.
-const COORDINATE_LIMIT: f32 = 1.267_650_6e30;
+/// **Ce que la borne doit couvrir, ce sont les produits de
+/// [`Frustum::intersect`]**, et non l'évaluation des plans. Une distance est
+/// linéaire en la coordonnée — au plus `5121 · L`, les coefficients de plan
+/// valant `GUARD_PIXELS + center` avec un centre sous 1024 —, mais
+/// `da · b.x - db · a.x` est **quadratique** : `2 · 5121 · L²`. À `L = 2⁵⁶`, ce
+/// numérateur reste sous 2¹²⁵·³², un facteur six sous l'infini d'un `f32`.
+///
+/// **La borne porte sur la coordonnée de clip, et non sur celle de vue.** `x`
+/// vaut `scale_x · x_vue`, et `scale_x` croît sans borne quand le champ de
+/// vision se ferme : au pas le plus fin de l'angle binaire, la cotangente de la
+/// demi-ouverture dépasse cinq millions. Testée en amont de cette
+/// multiplication, la borne laissait passer des coordonnées de clip infinies,
+/// dont `intersect` faisait un `NaN` puis un triangle de bruit — sans erreur et
+/// sans panique, ce qu'elle existe précisément pour empêcher.
+const COORDINATE_LIMIT: f32 = 7.205_759_4e16;
 
 /// Un sommet projeté, avant la division par `w`.
 ///
@@ -226,14 +235,16 @@ impl Projection {
     /// suffirait à empoisonner les deux autres par le calcul d'intersection.
     pub fn to_clip(self, view: Vec3) -> Option<ClipVertex> {
         let over = |v: f32| v.is_nan() || v.abs() > COORDINATE_LIMIT;
-        if over(view.x) || over(view.y) || over(view.z) {
+        // Après la multiplication, jamais avant : c'est la coordonnée de clip
+        // qui entre dans le découpage. Les facteurs d'échelle étant finis et
+        // strictement positifs, un `x_vue` non fini ressort non fini et tombe
+        // dans le même test — il n'y a donc rien à vérifier en amont.
+        let x = self.scale_x * view.x;
+        let y = self.scale_y * view.y;
+        if over(x) || over(y) || over(view.z) {
             return None;
         }
-        Some(ClipVertex {
-            x: self.scale_x * view.x,
-            y: self.scale_y * view.y,
-            w: view.z,
-        })
+        Some(ClipVertex { x, y, w: view.z })
     }
 
     /// Divise par `w` et passe en virgule fixe : la dernière opération flottante

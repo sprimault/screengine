@@ -119,6 +119,74 @@ fn ecarte_une_coordonnee_non_finie_ou_demesuree() {
     assert!(p.to_clip(Vec3::new(1.0, 2.0, 3.0)).is_some());
 }
 
+/// La borne porte sur la coordonnée de clip, après la mise à l'échelle.
+///
+/// Un champ de vision très fermé porte `scale` à plusieurs millions : une
+/// coordonnée de vue que le test d'amont acceptait sort alors de la borne une
+/// fois multipliée. Testée avant la multiplication, elle laissait passer des
+/// abscisses de clip que le découpage ne peut pas porter.
+#[test]
+fn la_borne_porte_sur_la_coordonnee_de_clip() {
+    let etroit = Projection::new(640, 360, 1.0e-5, 0.1).unwrap_or_else(|_| unreachable!());
+    assert!(etroit.scale_x > 1.0e6, "champ trop ouvert pour ce cas");
+
+    let juste_sous = COORDINATE_LIMIT / etroit.scale_x * 0.5;
+    assert!(etroit.to_clip(Vec3::new(juste_sous, 0.0, 1.0)).is_some());
+    assert!(
+        etroit
+            .to_clip(Vec3::new(juste_sous * 8.0, 0.0, 1.0))
+            .is_none(),
+        "une coordonnée de vue modeste donne ici une coordonnée de clip hors borne"
+    );
+}
+
+/// Aucune sortie d'`intersect` n'est non finie, sur tout le domaine que
+/// `to_clip` laisse passer.
+///
+/// C'est la propriété que la borne existe pour tenir, et elle porte sur les
+/// **produits** de l'intersection, quadratiques en la coordonnée — pas sur les
+/// distances aux plans, qui sont linéaires. Un `inf − inf` y donnerait un
+/// `NaN`, que `to_subpixel` convertirait en zéro : un triangle de bruit, sans
+/// erreur ni panique.
+#[test]
+fn aucune_intersection_ne_deborde_dans_le_domaine_admis() {
+    let p = projection();
+    let f = p.frustum();
+    let mut rng = Rng::new(0x5EED_1234);
+
+    // Les extrêmes du domaine, et eux seuls, tiennent le pire cas : la borne
+    // est quadratique, donc c'est là que le produit est le plus grand.
+    let extreme = |rng: &mut Rng| {
+        let sign = if rng.next() & 1 == 0 { 1.0 } else { -1.0 };
+        sign * COORDINATE_LIMIT * (0.25 + 0.75 * rng.unit_f32())
+    };
+
+    for _ in 0..2_000 {
+        let a = ClipVertex {
+            x: extreme(&mut rng),
+            y: extreme(&mut rng),
+            w: extreme(&mut rng),
+        };
+        let b = ClipVertex {
+            x: extreme(&mut rng),
+            y: extreme(&mut rng),
+            w: extreme(&mut rng),
+        };
+        for plane in 0..PLANE_COUNT {
+            let (da, db) = (f.distance(a, plane), f.distance(b, plane));
+            assert!(da.is_finite() && db.is_finite(), "distance débordée");
+            if da == 0.0 || db == 0.0 || da == db {
+                continue;
+            }
+            let v = Frustum::intersect(a, b, da, db);
+            assert!(
+                v.x.is_finite() && v.y.is_finite() && v.w.is_finite(),
+                "intersection non finie : {v:?}"
+            );
+        }
+    }
+}
+
 /// **Le test central du lot.**
 ///
 /// Deux triangles qui partagent une arête la parcourent en sens opposés. Si le

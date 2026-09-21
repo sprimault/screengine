@@ -64,6 +64,9 @@ impl fmt::Display for Error {
                 Argument::Projection => f.write_str(
                     "field of view must be within ]0, pi[ radians, and the near plane positive",
                 ),
+                Argument::VertexCoordinate => {
+                    f.write_str("a submitted vertex coordinate is NaN or infinite")
+                }
                 Argument::TextureSize => {
                     f.write_str("texture sides must be powers of two between 1 and 2048")
                 }
