@@ -7,9 +7,10 @@ you hand it a scene and a buffer, it fills the buffer.
 
 ![Walking through a textured corridor: brick walls, cobbled floor, wooden crates](docs/couloir.webp)
 
-*The `couloir` example from `screengine-play`, rendered at 640×360 — textures,
-mipmaps and ordered dithering of texture coordinates. This is step 2, in
-progress on `master` and not published yet.*
+*The `couloir` example from `screengine-play`, rendered at 640×360: textures,
+mipmaps, bilinear filtering. The default filter is ordered dithering of texture
+coordinates, and the example toggles between the two — they are told apart
+while walking.*
 
 MIT or Apache-2.0, at your option — see [`LICENSE-MIT`](LICENSE-MIT) and
 [`LICENSE-APACHE`](LICENSE-APACHE). Unless you state otherwise, any contribution

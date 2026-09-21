@@ -7,9 +7,10 @@ GPU, pas de fenêtre : on lui donne une scène et un tampon, il remplit le tampo
 
 ![Traversée d'un couloir texturé : murs de brique, sol pavé, caisses de bois](docs/couloir.webp)
 
-*L'exemple `couloir` de `screengine-play`, rendu en 640×360 — textures, mipmaps
-et tramage ordonné des coordonnées. C'est l'étape 2, en cours sur `master` et
-pas encore publiée.*
+*L'exemple `couloir` de `screengine-play`, rendu en 640×360 : textures,
+mipmaps, filtrage bilinéaire. Le filtrage par défaut, lui, est le tramage
+ordonné des coordonnées, et l'exemple bascule de l'un à l'autre — c'est en
+marchant que les deux se départagent.*
 
 MIT ou Apache-2.0, au choix — voir [`LICENSE-MIT`](LICENSE-MIT) et
 [`LICENSE-APACHE`](LICENSE-APACHE). Sauf mention contraire de son auteur, toute
