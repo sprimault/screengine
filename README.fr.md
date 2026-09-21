@@ -35,11 +35,13 @@ ces hôtes, écrit en Rust pour qui fait un jeu, et le moteur ignore son existen
 
 ## État
 
-**Étape 0 franchie, publiée en 0.0.0 : un triangle en dur, et aucun moteur.**
-La frontière C est écrite, et le triangle est rempli par les fonctions de bord
-en virgule fixe définitives. Les quatre hôtes — C, C++, wasm et Android — le
-rendent avec l'empreinte de référence de la suite de conformance. L'étape 1, le
-pipeline, commence.
+**Étape 1 franchie, publiée en 0.1.0 : le pipeline, sans textures ni
+lumière.** Vecteurs, quaternions et trigonométrie par tables, projection,
+découpage en espace homogène, tampon de profondeur, rasteriseur à fonctions de
+bord et rendu par tuiles. L'hôte décrit sa scène — une caméra, des sommets, des
+triangles colorés — et les quatre hôtes de référence rendent la même image au
+bit près. Les surfaces sont des aplats : les textures sont l'étape 2, la
+lumière l'étape 3.
 
 La feuille de route compte dix étapes, publiées à chacune.
 
