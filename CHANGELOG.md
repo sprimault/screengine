@@ -108,6 +108,10 @@ signature ne change et `SCG_ABI_VERSION` reste à **1**.
   projet et suivent ses licences.
 
 ### Modifié
+- L'exemple `couloir` est texturé : brique sur les murs et le plafond, pavage
+  au sol, planches sur les caisses, chaque face de caisse habillée selon ses
+  deux axes propres. C'est là que se jugent le scintillement du sol et le
+  tramage vu de près, qu'aucune empreinte ne montre.
 - Le remplissage teste la profondeur avant d'écrire, en deux appels distincts
   au lieu d'un : c'est entre les deux que viendra l'échantillonnage de la
   texture, qui ne se paiera donc que pour les pixels visibles. L'image est
@@ -202,6 +206,10 @@ is not recorded. No signature changes and `SCG_ABI_VERSION` stays at **1**.
   project and carry its licences.
 
 ### Changed
+- The `couloir` example is textured: brick on the walls and ceiling, cobbles on
+  the floor, planks on the crates, each crate face mapped along its own two
+  axes. This is where floor shimmer and close-up dithering are judged, neither
+  of which a hash shows.
 - Filling tests depth before writing, in two distinct calls instead of one:
   texture sampling will happen between them, and will therefore only be paid
   for visible pixels. The image is unchanged, and so is the count of proposed
