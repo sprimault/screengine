@@ -14,7 +14,7 @@ use winit::dpi::PhysicalSize;
 use winit::event::{DeviceEvent, DeviceId, ElementState, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop, OwnedDisplayHandle};
 use winit::keyboard::{KeyCode, PhysicalKey};
-use winit::window::{Window, WindowId};
+use winit::window::{CursorGrabMode, Window, WindowId};
 
 use crate::clock::Clock;
 use crate::input::Input;
@@ -33,6 +33,28 @@ struct Display {
     visible: bool,
 }
 
+/// Capture le curseur ou le relâche ; rend ce qui a été obtenu.
+///
+/// Deux modes essayés dans l'ordre, parce qu'aucun n'existe partout : `Locked`
+/// n'est pas implémenté sous X11, `Confined` ne l'est pas sur macOS. Quand les
+/// deux échouent, la fonction rend faux et la boucle continue — une caméra à la
+/// souris devient alors inutilisable, mais les touches restent, et refuser de
+/// démarrer pour autant serait pire.
+///
+/// Le curseur se cache dans tous les cas : winit ne garantit pas qu'un mode de
+/// capture le masque.
+fn grab_cursor(window: &Window, capture: bool) -> bool {
+    if !capture {
+        let _ = window.set_cursor_grab(CursorGrabMode::None);
+        window.set_cursor_visible(true);
+        return false;
+    }
+    let grabbed = window.set_cursor_grab(CursorGrabMode::Locked).is_ok()
+        || window.set_cursor_grab(CursorGrabMode::Confined).is_ok();
+    window.set_cursor_visible(!grabbed);
+    grabbed
+}
+
 /// L'état de la boucle, et ce que l'appelant lui a confié.
 struct Runner<S, U, R> {
     play: Play,
@@ -49,6 +71,8 @@ struct Runner<S, U, R> {
     index: u64,
     last_wake: Option<Instant>,
     failure: Option<Error>,
+    /// Vrai quand le curseur est réellement capturé par la fenêtre.
+    captured: bool,
 }
 
 /// Lance la boucle, et rend la première erreur qui l'a arrêtée.
@@ -82,6 +106,7 @@ where
         index: 0,
         last_wake: None,
         failure: None,
+        captured: false,
     };
 
     event_loop.run_app(&mut runner).map_err(Error::EventLoop)?;
@@ -295,9 +320,14 @@ where
                 index: self.index,
                 dt: self.clock.step_seconds(),
                 exit: false,
+                captured: self.captured,
+                capture: None,
             };
             (self.update)(&mut self.state, &mut tick);
             let exit = tick.exit;
+            if let Some(capture) = tick.capture {
+                self.captured = grab_cursor(&display.window, capture);
+            }
             self.input.end_step();
             self.index += 1;
             if exit {
