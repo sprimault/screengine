@@ -13,7 +13,7 @@ use crate::math::fixed::{PIXEL_CENTER, SUBPIXEL_SCALE};
 
 use super::plane::{GRADIENT_BITS, Plane};
 use super::{Rect, Target};
-use crate::texture::Texture;
+use crate::texture::{MAX_TEXTURE_SIZE, Texture};
 
 /// Une position projetée, en sous-pixels.
 ///
@@ -466,6 +466,22 @@ fn fill_segment<T: Target>(
     let (from, to) = segment;
     let steps = (to - from + 1) as i64;
     let first = uv_at(from);
+    // **Le niveau se prend au maximum des deux extrémités**, et non au seul
+    // point de division gauche : quand la densité double sur seize pixels, un
+    // niveau pris à gauche sous-sélectionne toute la moitié droite du segment.
+    // La réciproque de droite est calculée de toute façon pour la pente, donc
+    // ce maximum coûte quatre multiplications et aucune division.
+    let level = {
+        let at = |x: i32, uv: [i64; 2]| {
+            mip_level(
+                triangle,
+                uv[0] as i32,
+                uv[1] as i32,
+                reciprocal((depth_at(x) >> GRADIENT_BITS) as u32),
+            )
+        };
+        at(from, first).max(at(to, uv_at(to)))
+    };
     // La valeur de fin se prend au pixel **suivant** le segment, pour que la
     // pente soit celle d'un pas de pixel et non d'un pas de segment. Ce point
     // est dans le span tant que le segment s'y termine ; à la fin du span, il
@@ -485,7 +501,14 @@ fn fill_segment<T: Target>(
     for x in draw.0..=draw.1 {
         let z = (depth >> GRADIENT_BITS) as u32;
         if target.test(x, y, z) {
-            let texel = texture.texel(0, (uv[0] >> UV_BITS) as i32, (uv[1] >> UV_BITS) as i32);
+            // Le décalage de niveau porte sur la coordonnée **interpolée**, et
+            // non sur les extrémités du segment : appliqué à celles-ci, il
+            // quantifierait la pente par 2ⁿ, soit cinq bits perdus au niveau 5.
+            // Les deux décalages restent séparés — le tramage s'insérera entre
+            // eux, et appliqué avant celui du niveau il serait divisé par 2ⁿ et
+            // s'éteindrait dès le niveau 2.
+            let coord = |c: i64| ((c >> level) >> UV_BITS) as i32;
+            let texel = texture.texel(level as usize, coord(uv[0]), coord(uv[1]));
             target.write(x, y, z, texel);
         }
         depth = depth.wrapping_add(depth_x);
@@ -504,6 +527,75 @@ fn reciprocal(depth: u32) -> u64 {
     debug_assert!(depth > 0, "profondeur nulle en un pixel couvert");
     (1u64 << 56) / depth.max(1) as u64
 }
+
+/// Le niveau de mipmap d'un segment, depuis ses dérivées et sa réciproque.
+///
+/// **Les quatre dérivées se prennent en forme close, sans division nouvelle.**
+/// `u = S/D` n'est pas affine en espace écran, mais `S` et `D` le sont, et
+/// `∂u/∂x = (S_x − u·D_x)/D`. Le facteur `1/D` étant commun aux quatre et le
+/// critère étant un **maximum** — distance de Chebyshev, sans racine carrée —,
+/// on le sort du maximum : quatre numérateurs entiers, un seul `max`, et une
+/// seule multiplication par la réciproque déjà calculée.
+///
+/// **La dérivée verticale est indispensable.** Sur un sol, `∂u/∂x` reste
+/// modérée le long d'une ligne alors que `∂u/∂y` explose vers l'horizon : un
+/// niveau choisi sur la seule horizontale sous-sélectionne, et le sol
+/// scintille. C'est le critère de franchissement de l'étape, manqué exactement
+/// là.
+///
+/// Écartée : la différence finie verticale, qui exigerait une réciproque un
+/// pixel plus bas — donc hors du triangle dès la dernière ligne, où la
+/// profondeur prolongée peut s'annuler. Le quotient y enveloppe en silence, et
+/// le scintillement reviendrait précisément à l'horizon.
+fn mip_level(triangle: &Prepared, u: i32, v: i32, reciprocal: u64) -> u32 {
+    let pixel = SUBPIXEL_SCALE;
+    let (dx, dy) = (
+        triangle.depth.step_x(pixel) >> GRADIENT_BITS,
+        triangle.depth.step_y(pixel) >> GRADIENT_BITS,
+    );
+    // `S` est en 14.12 et la coordonnée en 16.16 : le décalage met les deux
+    // termes à la même échelle avant la soustraction. `step_x` n'est pas encore
+    // réduit de `GRADIENT_BITS`, ce qui laisse les quatre bits de marge dont ce
+    // décalage a besoin.
+    let numerator = |plane: &Plane, coord: i32, depth_step: i64| {
+        let slope = plane.step_x(pixel) << (UV_BITS - GRADIENT_BITS);
+        slope - ((i64::from(coord).saturating_mul(depth_step)) >> UV_SHIFT)
+    };
+    let worst = [
+        numerator(&triangle.uv[0], u, dx),
+        numerator(&triangle.uv[1], v, dx),
+        {
+            let slope = triangle.uv[0].step_y(pixel) << (UV_BITS - GRADIENT_BITS);
+            slope - ((i64::from(u).saturating_mul(dy)) >> UV_SHIFT)
+        },
+        {
+            let slope = triangle.uv[1].step_y(pixel) << (UV_BITS - GRADIENT_BITS);
+            slope - ((i64::from(v).saturating_mul(dy)) >> UV_SHIFT)
+        },
+    ]
+    .into_iter()
+    .map(|n| n.unsigned_abs())
+    .max()
+    .unwrap_or(0);
+
+    // `ρ·2¹⁶ = M·W/2³⁶`, donc le niveau vaut `bit_length(ρ) − 1`, soit
+    // `11 − leading_zeros(M·W)`. Une dérivée nulle donne `leading_zeros = 64`
+    // et le niveau 0, sans cas particulier ; la saturation du produit donne le
+    // niveau 11, ce qui est inoffensif : elle demanderait plus de 2¹² texels
+    // par pixel, donc un niveau qu'aucune chaîne ne porte.
+    LEVEL_BIAS.saturating_sub(worst.saturating_mul(reciprocal).leading_zeros())
+}
+
+/// Le biais du logarithme de `mip_level`.
+///
+/// **Ce onze n'est pas un réglage** : il sort de la largeur de l'`u64` et des
+/// échelles de `S`, de `W` et des coordonnées. Qu'il vaille aussi le dernier
+/// niveau d'une texture de [`MAX_TEXTURE_SIZE`] est une coïncidence — et c'est
+/// l'assertion ci-dessous qui la surveille, faute de quoi porter cette borne à
+/// 4096 plafonnerait le niveau sans que rien ne le signale.
+const LEVEL_BIAS: u32 = 11;
+
+const _: () = assert!(MAX_TEXTURE_SIZE.trailing_zeros() == LEVEL_BIAS);
 
 /// La coordonnée de texture en 16.16 d'un attribut `S` à la profondeur `D`.
 ///

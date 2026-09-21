@@ -829,17 +829,22 @@ fn addressed(side: u32) -> Texture {
 /// Un sol texturé vu en perspective, préparé par la chaîne complète, avec les
 /// sommets dont il sort : un triangle préparé ne garde que ses plans, et
 /// l'interpolation exacte de référence a besoin des valeurs aux sommets.
-fn sol_texture() -> (Prepared, [Vertex; 3]) {
+///
+/// `devant` dit jusqu'où le sol fuit et `densite` combien de texels couvrent
+/// une unité de monde. Les deux se règlent par test : une fuite lointaine et
+/// une densité forte font travailler le mipmap, une fuite courte et une
+/// densité faible gardent tout au niveau 0, ce qu'il faut pour mesurer
+/// l'interpolation seule.
+fn sol_texture_fuyant(devant: f32, densite: f32) -> (Prepared, [Vertex; 3]) {
     use crate::math::{Projection, Vec3};
 
     let p = Projection::new(W as u32, H as u32, 1.0, 0.1).unwrap_or_else(|_| unreachable!());
-    let sol = |devant: f32, cote: f32| {
-        // Densité élevée à dessein : c'est elle qui rend un point de division
-        // déplacé visible en texels, donc qui donne au test sa sensibilité.
-        p.to_clip(Vec3::new(cote, 1.2, devant), devant * 96.0, cote * 96.0)
+    let sol = |avant: f32, cote: f32| {
+        p.to_clip(Vec3::new(cote, 1.2, avant), avant * densite, cote * densite)
             .expect("sommet projetable")
     };
-    let corners = [sol(1.5, -2.0), sol(60.0, 20.0), sol(60.0, -20.0)];
+    let large = devant / 3.0;
+    let corners = [sol(1.5, -2.0), sol(devant, large), sol(devant, -large)];
     let vertices = corners.map(|c| {
         let v = p.to_vertex(c);
         Vertex {
@@ -862,7 +867,7 @@ fn sol_texture() -> (Prepared, [Vertex; 3]) {
 /// dans une configuration.
 #[test]
 fn les_segments_s_alignent_sur_la_grille_de_l_image() {
-    let (triangle, _) = sol_texture();
+    let (triangle, _) = sol_texture_fuyant(60.0, 96.0);
     let texture = addressed(64);
 
     let mut entier = Paint::new();
@@ -901,7 +906,7 @@ fn les_segments_s_alignent_sur_la_grille_de_l_image() {
 /// même critère qu'un sol qui fuit vers l'horizon impose.
 #[test]
 fn l_interpolation_par_segments_reste_sous_le_texel() {
-    let (triangle, vertices) = sol_texture();
+    let (triangle, vertices) = sol_texture_fuyant(8.0, 6.0);
     let side = 64;
     let texture = addressed(side);
 
@@ -909,7 +914,11 @@ fn l_interpolation_par_segments_reste_sous_le_texel() {
     fill(&mut paint, CLIP, &triangle, Some(&texture));
 
     let (mut pire, mut mesures) = (0i128, 0u32);
-    for y in 0..H {
+    // Le quart bas de l'image seulement : c'est le premier plan, où le sol est
+    // agrandi et le niveau de mipmap reste le zéro. Plus loin, le texel lu est
+    // une moyenne dont la coordonnée n'est plus celle du niveau zéro, et la
+    // comparaison ne porterait plus sur l'interpolation mais sur le filtrage.
+    for y in (H * 3 / 4)..H {
         for x in 0..W {
             let got = paint.color[(y * W + x) as usize];
             if got == 0 {
@@ -940,6 +949,6 @@ fn l_interpolation_par_segments_reste_sous_le_texel() {
             mesures += 1;
         }
     }
-    assert!(mesures > 200, "{mesures} pixels, échantillon trop maigre");
+    assert!(mesures > 60, "{mesures} pixels, échantillon trop maigre");
     assert!(pire <= 1, "écart de {pire} texels sur {mesures} pixels");
 }

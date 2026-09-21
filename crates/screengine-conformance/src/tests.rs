@@ -229,3 +229,75 @@ fn une_reference_differente_diverge() {
     let error = check(Scene::Edge, &dir).expect_err("divergence");
     assert!(error.contains(&hash::format(rendered)), "{error}");
 }
+
+/// Le sol texturé est plus lisse au loin qu'au près.
+///
+/// **Le critère de l'étape, sous la seule forme qu'une suite sans mouvement
+/// puisse vérifier.** Un sol correctement filtré se fond avec la distance : ses
+/// texels s'y moyennent, et la variation d'un pixel au suivant s'effondre. Un
+/// sol échantillonné au niveau zéro fait l'inverse — plus il s'éloigne, plus
+/// chaque pixel saute d'un texel à l'autre, et c'est exactement le
+/// scintillement qu'on voit en mouvement.
+///
+/// **Sans référence, et monotone** : il n'y a pas de seuil à calibrer, donc
+/// rien qui vieillisse. Une empreinte, elle, ne pourrait pas le dire — elle
+/// change aussi bien pour un filtrage correct que pour un rendu bruité.
+#[test]
+fn le_sol_texture_est_plus_lisse_au_loin_qu_au_pres() {
+    for pass in Pass::ALL {
+        for view in Scene::Textured.views() {
+            let pixels = Scene::Textured
+                .render_pixels(pass, view)
+                .expect("scène valide");
+            let (width, height) = (view.width as usize, view.height as usize);
+
+            // Le **contraste maximal** entre deux pixels voisins d'une bande,
+            // et non la somme des écarts : au premier plan les transitions sont
+            // rares et franches, au loin nombreuses et atténuées, si bien que
+            // les sommes se compensent et ne disent rien. Le maximum, lui, dit
+            // ce qui compte — un sol minifié correctement n'a plus nulle part
+            // deux voisins que tout oppose.
+            let variation = |from: usize, to: usize| {
+                let (mut worst, mut count) = (0u64, 0u64);
+                for y in from..to {
+                    let row = &pixels[y * width * BYTES_PER_PIXEL..][..width * BYTES_PER_PIXEL];
+                    let line: Vec<&[u8]> = row.chunks_exact(BYTES_PER_PIXEL).collect();
+                    for pair in line.windows(2) {
+                        // Les pixels de fond ne disent rien du filtrage.
+                        if pair[0][..3] == [0, 0, 0] || pair[1][..3] == [0, 0, 0] {
+                            continue;
+                        }
+                        let gap = (0..3)
+                            .map(|c| u64::from(pair[0][c].abs_diff(pair[1][c])))
+                            .max()
+                            .unwrap_or(0);
+                        worst = worst.max(gap);
+                        count += 1;
+                    }
+                }
+                (worst, count)
+            };
+
+            // Le sol de cette scène occupe la moitié basse, son horizon tombant
+            // à mi-hauteur. La bande lointaine se prend **juste sous
+            // l'horizon**, là où la minification est forte ; plus bas, le
+            // niveau redescend et le damier redevient franc, ce qui est le
+            // comportement voulu et non un défaut.
+            let (loin, loin_n) = variation(height / 2, height * 9 / 16);
+            let (pres, pres_n) = variation(height * 7 / 8, height);
+            assert!(
+                loin_n > 1000 && pres_n > 1000,
+                "{} ({}) : bandes trop maigres, {loin_n} et {pres_n} couples",
+                Scene::Textured.name(),
+                pass.name()
+            );
+            assert!(
+                loin < pres,
+                "{} ({}) : contraste de {loin} au loin contre {pres} au près — \
+                 le filtrage ne minifie pas",
+                Scene::Textured.name(),
+                pass.name()
+            );
+        }
+    }
+}
