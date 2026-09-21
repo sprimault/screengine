@@ -106,6 +106,12 @@ signature ne change et `SCG_ABI_VERSION` reste à **1**.
 - Trois textures pour l'étage d'accueil — brique, pierre, bois — sous
   `crates/screengine-play/assets/`, en 512×512. Elles sont produites pour le
   projet et suivent ses licences.
+- API Rust : `Filter`, `Context::set_filter` et `Context::filter`. Le
+  bilinéaire mélange les quatre voisins d'un seul niveau de mipmap, poids sur
+  huit bits, en retranchant un demi-texel pour que le centre d'un texel rende
+  ce texel. Il **exclut** le tramage, qui n'a plus d'escalier à masquer. Le
+  défaut ne change pas, et le filtre se refuse pendant le rendu : deux tuiles
+  de la même image ne se lisent pas autrement.
 
 ### Modifié
 - L'exemple `couloir` est texturé : brique sur les murs et le plafond, pavage
@@ -204,6 +210,12 @@ is not recorded. No signature changes and `SCG_ABI_VERSION` stays at **1**.
 - Three textures for the host stage — brick, stone, wood — under
   `crates/screengine-play/assets/`, at 512×512. They were produced for the
   project and carry its licences.
+- Rust API: `Filter`, `Context::set_filter` and `Context::filter`. Bilinear
+  blends the four neighbours within a single mipmap level, eight-bit weights,
+  subtracting half a texel so that a texel centre samples that texel. It
+  **excludes** dithering, which no longer has a staircase to hide. The default
+  is unchanged, and the filter is refused during rendering: two tiles of the
+  same frame are never read differently.
 
 ### Changed
 - The `couloir` example is textured: brick on the walls and ceiling, cobbles on

@@ -18,7 +18,7 @@ use crate::raster::{
     Bins, Grid, MAX_CLIP_TRIANGLES, NO_TEXTURE, Point, Prepared, Vertex, clip, prepare,
 };
 use crate::scene::{Camera, Color, Triangle, VertexUv};
-use crate::texture::Texture;
+use crate::texture::{Filter, Texture};
 
 pub use frame::{Frame, Output, Rows};
 
@@ -135,6 +135,8 @@ pub struct Context {
     grid: Grid,
     /// La caméra, qu'une image conserve d'un bout à l'autre.
     camera: Camera,
+    /// Le mode d'échantillonnage, qu'une image conserve aussi.
+    filter: Filter,
     /// Le monde vers l'espace de vue, recalculé avec la caméra.
     ///
     /// Gardée plutôt que recomposée à chaque soumission : la composer est une
@@ -221,6 +223,7 @@ impl Context {
             taken,
             grid: Grid::new(config.width, config.height, config.tile_size),
             camera,
+            filter: Filter::default(),
             view: camera.view(),
             projection: Projection::new(config.width, config.height, camera.fov_y, camera.near)?,
             state: AtomicU8::new(RECORDING),
@@ -251,6 +254,26 @@ impl Context {
         self.projection = Projection::new(self.width, self.height, camera.fov_y, camera.near)?;
         self.view = camera.view();
         self.camera = camera;
+        Ok(())
+    }
+
+    /// Le mode d'échantillonnage courant.
+    pub fn filter(&self) -> Filter {
+        self.filter
+    }
+
+    /// Change le mode d'échantillonnage des textures.
+    ///
+    /// Refusé pendant le rendu, et pour une raison qui lui est propre : les
+    /// tuiles d'une image se rendent depuis des threads que le noyau ne
+    /// connaît pas, si bien qu'un filtre changé au milieu laisserait dans la
+    /// même image des tuiles lues autrement — une image que rien ne décrit, et
+    /// qui dépendrait de l'ordre où l'hôte a pris ses tuiles.
+    pub fn set_filter(&mut self, filter: Filter) -> Result<()> {
+        if *self.state.get_mut() != RECORDING {
+            return Err(Error::InvalidState);
+        }
+        self.filter = filter;
         Ok(())
     }
 

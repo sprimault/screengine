@@ -15,7 +15,7 @@ mod triangle;
 
 pub use bins::{Bins, Grid};
 pub use clip::{MAX_CLIP_TRIANGLES, clip};
-pub use triangle::{NO_TEXTURE, Point, Prepared, Vertex, fill, prepare};
+pub use triangle::{NO_TEXTURE, Point, Prepared, Sampling, Vertex, fill, prepare};
 
 /// Un rectangle de l'image, en pixels.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

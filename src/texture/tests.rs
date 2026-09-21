@@ -221,3 +221,134 @@ fn le_plus_grand_cote_tient_dans_le_tableau_de_niveaux() {
         Texture::load(MAX_TEXTURE_SIZE, 1, &plain(MAX_TEXTURE_SIZE, 1)).expect("texture valide");
     assert_eq!(texture.level_count(), MAX_LEVELS);
 }
+
+/// Le centre du texel `x`, en 16.16.
+fn center(x: i32) -> i32 {
+    (x << UV_BITS) + HALF_TEXEL
+}
+
+/// Quatre texels dont aucun canal ne coïncide : un mélange qui confondrait deux
+/// canaux ou deux voisins rendrait une valeur qu'aucun d'eux ne porte.
+fn quartet() -> Texture {
+    Texture::load(
+        2,
+        2,
+        &block(2, 2, |x, y| match (x, y) {
+            (0, 0) => [0x00, 0x10, 0x20, 0x30],
+            (1, 0) => [0x40, 0x50, 0x60, 0x70],
+            (0, 1) => [0x80, 0x90, 0xA0, 0xB0],
+            _ => [0xC0, 0xD0, 0xE0, 0xFF],
+        }),
+    )
+    .expect("texture valide")
+}
+
+/// Au centre d'un texel, le bilinéaire rend ce texel et rien d'autre.
+///
+/// C'est ce que le recentrage d'un demi-texel achète : sans lui, le centre du
+/// texel tomberait à la frontière de quatre voisins et toute la texture
+/// glisserait d'un demi-texel au changement de filtre.
+#[test]
+fn au_centre_d_un_texel_le_bilineaire_le_rend_seul() {
+    let texture = quartet();
+    for y in 0..2 {
+        for x in 0..2 {
+            assert_eq!(
+                texture.bilinear(0, center(x), center(y)),
+                texture.texel(0, x, y),
+                "texel ({x}, {y})"
+            );
+        }
+    }
+}
+
+/// À mi-chemin de deux voisins, chaque canal rend leur moyenne.
+#[test]
+fn a_mi_chemin_chaque_canal_rend_la_moyenne() {
+    let texture = quartet();
+    let milieu = texture.bilinear(0, 1 << UV_BITS, center(0));
+
+    // (a · 128 + b · 128 + 128) >> 8 sur chaque canal des texels (0,0) et (1,0).
+    assert_eq!(milieu.to_le_bytes(), [0x20, 0x30, 0x40, 0x50]);
+}
+
+/// Au centre exact des quatre, les quatre pèsent pareil.
+#[test]
+fn au_centre_des_quatre_ils_pesent_pareil() {
+    let texture = quartet();
+    let centre = texture.bilinear(0, 1 << UV_BITS, 1 << UV_BITS);
+
+    // Moyenne des quatre, canal par canal. L'alpha ne tombe pas rond — 0x30,
+    // 0x70, 0xB0 et 0xFF ne progressent pas régulièrement — et c'est lui qui
+    // montre que l'arrondi va bien au plus proche : 147,75 rend 148.
+    assert_eq!(centre.to_le_bytes(), [0x60, 0x70, 0x80, 0x94]);
+}
+
+/// Le repli par masque vaut pour les quatre voisins, pas seulement pour le
+/// texel de base : une surface pavée mélange son dernier texel avec le premier,
+/// sinon une couture apparaîtrait à chaque répétition.
+#[test]
+fn les_voisins_se_replient_comme_le_texel_de_base() {
+    let texture = quartet();
+    let a = texture.bilinear(0, 2 << UV_BITS, center(0));
+    let b = texture.bilinear(0, 0, center(0));
+
+    // Au-delà du bord droit, le voisin est la colonne 0 ; un demi-texel avant
+    // l'origine, c'est la colonne 1. Les deux mélangent la même paire.
+    assert_eq!(a.to_le_bytes(), [0x20, 0x30, 0x40, 0x50]);
+    assert_eq!(b, a);
+}
+
+/// Une coordonnée négative descend vers le texel inférieur, comme les autres.
+///
+/// C'est le décalage arithmétique qui l'obtient ; une division tronquerait vers
+/// zéro et doublerait un texel de part et d'autre de l'origine.
+#[test]
+fn une_coordonnee_negative_replie_du_bon_cote() {
+    let texture = quartet();
+
+    assert_eq!(
+        texture.bilinear(0, center(-1), center(0)),
+        texture.texel(0, 1, 0)
+    );
+    assert_eq!(
+        texture.bilinear(0, center(-2), center(0)),
+        texture.texel(0, 0, 0)
+    );
+}
+
+/// Le poids ne vaut jamais 256 : juste avant le centre du voisin, il manque
+/// une marche.
+///
+/// Mesurée sur le pire écart possible, du noir au blanc, où elle vaut une unité
+/// sur 255 ; un écart ordinaire la voit absorbée par l'arrondi. Le centre du
+/// voisin, lui, rend la valeur exacte — c'est ce que garantit le recentrage.
+#[test]
+fn le_poids_maximal_laisse_une_marche() {
+    let contraste = Texture::load(
+        2,
+        1,
+        &block(2, 1, |x, _| if x == 0 { [0; 4] } else { [0xFF; 4] }),
+    )
+    .expect("texture valide");
+
+    let avant = contraste.bilinear(0, center(1) - 1, center(0));
+
+    assert_eq!(avant.to_le_bytes(), [0xFE; 4]);
+    assert_eq!(
+        contraste.bilinear(0, center(1), center(0)).to_le_bytes(),
+        [0xFF; 4]
+    );
+}
+
+/// Un niveau au-delà de la chaîne se borne comme pour [`Texture::texel`].
+#[test]
+fn le_bilineaire_borne_le_niveau_comme_le_texel() {
+    let texture = quartet();
+    let last = texture.level_count() - 1;
+
+    assert_eq!(
+        texture.bilinear(last + 5, center(0), center(0)),
+        texture.bilinear(last, center(0), center(0))
+    );
+}

@@ -19,6 +19,31 @@ use core::fmt;
 
 use crate::buffer::reserved;
 use crate::error::{Argument, Error, Result};
+use crate::math::fixed::UV_BITS;
+
+/// Comment une texture s'échantillonne.
+///
+/// Les deux modes **s'excluent** : le tramage existe pour masquer l'escalier
+/// que laisse la troncature d'une coordonnée, et le bilinéaire ne tronque
+/// rien. Cumulés, le premier n'ajouterait que du bruit au second.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[non_exhaustive]
+pub enum Filter {
+    /// Un texel par pixel, coordonnées décalées par la table de tramage.
+    ///
+    /// Le défaut, et le filtrage de la classe visée : une indirection de table
+    /// et une addition, là où le bilinéaire lit quatre texels et en mélange
+    /// trois paires.
+    #[default]
+    Dither,
+    /// Les quatre texels voisins, mélangés selon les bits fractionnaires.
+    ///
+    /// **Dans un seul niveau de mipmap**, jamais entre deux : le trilinéaire
+    /// double les lectures pour un gain qui ne se voit qu'en mouvement lent, et
+    /// il appartient au matériel dédié, pas aux rasteriseurs logiciels de cette
+    /// génération.
+    Bilinear,
+}
 
 /// Le plus grand côté qu'une texture accepte, en texels.
 ///
@@ -199,6 +224,31 @@ impl Texture {
         self.texels[(level.offset + y * level.width + x) as usize]
     }
 
+    /// Les quatre texels voisins d'un point, mélangés selon ses bits
+    /// fractionnaires.
+    ///
+    /// `u` et `v` sont en 16.16, dans le niveau demandé. **Un demi-texel se
+    /// retranche d'abord** : le centre du texel `(0, 0)` est en `(0,5, 0,5)`,
+    /// et sans ce recentrage l'image glisserait d'un demi-texel vers le haut et
+    /// la gauche par rapport à ce que rend [`Texture::texel`] — un décalage
+    /// qu'on ne voit pas sur une image fixe, mais qui fait sauter la surface au
+    /// changement de filtre.
+    ///
+    /// Le repli reste celui du masque, appliqué à chacun des quatre voisins
+    /// séparément : le point qui tombe sur le dernier texel d'une ligne mélange
+    /// avec le premier, ce qui est exactement ce qu'une surface pavée demande.
+    pub fn bilinear(&self, level: usize, u: i32, v: i32) -> u32 {
+        let (u, v) = (u - HALF_TEXEL, v - HALF_TEXEL);
+        let (x, y) = (u >> UV_BITS, v >> UV_BITS);
+        // Le décalage est arithmétique : un point négatif descend vers le texel
+        // inférieur comme les autres, là où une division tronquerait vers zéro
+        // et doublerait un texel de part et d'autre de l'origine.
+        let weight = |c: i32| ((c >> (UV_BITS - WEIGHT_BITS)) as u32) & 0xFF;
+        let (wu, wv) = (weight(u), weight(v));
+        let row = |y: i32| mix(self.texel(level, x, y), self.texel(level, x + 1, y), wu);
+        mix(row(y), row(y + 1), wv)
+    }
+
     /// Les texels d'un niveau, lignes jointives, même bornage que
     /// [`Texture::level_size`].
     pub fn level_texels(&self, level: usize) -> &[u32] {
@@ -206,6 +256,30 @@ impl Texture {
         let start = level.offset as usize;
         &self.texels[start..start + level.len()]
     }
+}
+
+/// Bits du poids d'un mélange bilinéaire, et le demi-texel du recentrage.
+///
+/// Huit bits : de quoi mélanger deux octets sans perdre de marche, et le
+/// produit de deux canaux empaquetés tient encore dans un `u32`.
+const WEIGHT_BITS: u32 = 8;
+const HALF_TEXEL: i32 = 1 << (UV_BITS - 1);
+
+/// Mélange deux texels, `t` sur huit bits pour le second.
+///
+/// **Deux multiplications par mélange et non quatre** : R et B tiennent
+/// ensemble dans `0x00FF00FF`, G et A dans le même masque une fois décalés, et
+/// chaque produit en traite deux à la fois. Les canaux ne se marchent pas
+/// dessus — un octet multiplié par 256 en occupe seize, et il y en a seize
+/// entre eux.
+///
+/// L'arrondi est celui que `docs/rust.md` fixe, `(… + 128) >> 8`, posé sur les
+/// deux canaux du mot en une addition.
+fn mix(a: u32, b: u32, t: u32) -> u32 {
+    const MASK: u32 = 0x00FF_00FF;
+    const ROUND: u32 = 0x0080_0080;
+    let blend = |a: u32, b: u32| ((a * (256 - t) + b * t + ROUND) >> WEIGHT_BITS) & MASK;
+    blend(a & MASK, b & MASK) | (blend((a >> 8) & MASK, (b >> 8) & MASK) << 8)
 }
 
 /// Réduit un niveau dans le suivant, par moyenne des texels qu'il recouvre.

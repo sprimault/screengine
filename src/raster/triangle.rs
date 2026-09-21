@@ -9,11 +9,23 @@
 //! comme un scintillement de la couture, et découvert trop tard il est déjà sous
 //! tout le reste du moteur.
 
-use crate::math::fixed::{PIXEL_CENTER, SUBPIXEL_SCALE};
+use crate::math::fixed::{PIXEL_CENTER, SUBPIXEL_SCALE, UV_BITS};
 
 use super::plane::{GRADIENT_BITS, Plane};
 use super::{Rect, Target};
-use crate::texture::{MAX_TEXTURE_SIZE, Texture};
+use crate::texture::{Filter, MAX_TEXTURE_SIZE, Texture};
+
+/// Une texture et la façon de la lire.
+///
+/// Les deux voyagent ensemble plutôt qu'en deux paramètres : le filtre ne sert
+/// que là où il y a une texture, et le remplissage en porte déjà six.
+#[derive(Debug, Clone, Copy)]
+pub struct Sampling<'a> {
+    /// La texture du triangle.
+    pub texture: &'a Texture,
+    /// Le mode d'échantillonnage du contexte.
+    pub filter: Filter,
+}
 
 /// Une position projetée, en sous-pixels.
 ///
@@ -312,7 +324,7 @@ pub fn fill<T: Target>(
     target: &mut T,
     window: Rect,
     triangle: &Prepared,
-    texture: Option<&Texture>,
+    sampling: Option<Sampling<'_>>,
 ) {
     let color = triangle.color;
 
@@ -361,7 +373,7 @@ pub fn fill<T: Target>(
             // donnent les mêmes bits que l'évaluation directe en chaque pixel.
             let ey = (py_of(y) - triangle.ref_y) as i64;
             let ex = |x: i32| (x * SUBPIXEL_SCALE + PIXEL_CENTER - triangle.ref_x) as i64;
-            match texture {
+            match sampling {
                 None => {
                     let mut depth = plane.at(ex(lo), ey);
                     for x in lo..=hi {
@@ -375,7 +387,7 @@ pub fn fill<T: Target>(
                         depth = depth.wrapping_add(depth_x);
                     }
                 }
-                Some(texture) => {
+                Some(sampling) => {
                     let mut x = lo;
                     while x <= hi {
                         // Le segment court d'un multiple de seize de l'image au
@@ -387,7 +399,7 @@ pub fn fill<T: Target>(
                         let base = x - x.rem_euclid(SEGMENT);
                         let segment = (base.max(gl), (base + SEGMENT - 1).min(gr));
                         let last = segment.1.min(hi);
-                        fill_segment(target, triangle, texture, y, segment, (x, last));
+                        fill_segment(target, triangle, sampling, y, segment, (x, last));
                         x = last + 1;
                     }
                 }
@@ -413,9 +425,6 @@ fn py_of(y: i32) -> i32 {
 /// triangle — sinon la même surface se texturerait autrement selon le
 /// découpage.
 const SEGMENT: i32 = 16;
-
-/// Bits fractionnaires d'une coordonnée de texture par pixel.
-const UV_BITS: u32 = 16;
 
 /// Décalage qui ramène `S · W` en 16.16.
 ///
@@ -446,11 +455,12 @@ const UV_SHIFT: u32 = 20;
 fn fill_segment<T: Target>(
     target: &mut T,
     triangle: &Prepared,
-    texture: &Texture,
+    sampling: Sampling<'_>,
     y: i32,
     segment: (i32, i32),
     draw: (i32, i32),
 ) {
+    let texture = sampling.texture;
     // Les écarts se recalculent ici plutôt que de traverser la signature :
     // deux soustractions par segment, contre deux paramètres de plus dans une
     // liste qui en compte déjà six.
@@ -499,20 +509,32 @@ fn fill_segment<T: Target>(
     let skipped = (draw.0 - from) as i64;
     let mut uv = [first[0] + slope[0] * skipped, first[1] + slope[1] * skipped];
     for x in draw.0..=draw.1 {
-        let dither = dither_offsets(x, y);
         let z = (depth >> GRADIENT_BITS) as u32;
         if target.test(x, y, z) {
             // Le décalage de niveau porte sur la coordonnée **interpolée**, et
             // non sur les extrémités du segment : appliqué à celles-ci, il
             // quantifierait la pente par 2ⁿ, soit cinq bits perdus au niveau 5.
-            // Le tramage s'ajoute **après** lui : ajouté avant, il serait divisé
-            // par 2ⁿ et s'éteindrait dès le niveau 2.
-            let coord = |c: i64, shift: i32| (((c >> level) + i64::from(shift)) >> UV_BITS) as i32;
-            let texel = texture.texel(
-                level as usize,
-                coord(uv[0], dither[0]),
-                coord(uv[1], dither[1]),
-            );
+            let scaled = [uv[0] >> level, uv[1] >> level];
+            let texel = match sampling.filter {
+                // Le tramage s'ajoute **après** le décalage de niveau : ajouté
+                // avant, il serait divisé par 2ⁿ et s'éteindrait dès le
+                // niveau 2.
+                Filter::Dither => {
+                    let dither = dither_offsets(x, y);
+                    let coord = |c: i64, shift: i32| ((c + i64::from(shift)) >> UV_BITS) as i32;
+                    texture.texel(
+                        level as usize,
+                        coord(scaled[0], dither[0]),
+                        coord(scaled[1], dither[1]),
+                    )
+                }
+                // Les bits fractionnaires servent de poids au lieu d'être
+                // jetés : c'est la seule différence entre les deux modes, et
+                // c'est pourquoi le tramage n'a plus rien à masquer ici.
+                Filter::Bilinear => {
+                    texture.bilinear(level as usize, scaled[0] as i32, scaled[1] as i32)
+                }
+            };
             target.write(x, y, z, texel);
         }
         depth = depth.wrapping_add(depth_x);

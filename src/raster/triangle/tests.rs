@@ -18,6 +18,14 @@ use super::*;
 use crate::math::fixed::DEPTH_MARGIN;
 use crate::testing::Rng;
 
+/// Le filtrage par défaut, qui est celui que ces tests éprouvent.
+fn dithered(texture: &Texture) -> Option<Sampling<'_>> {
+    Some(Sampling {
+        texture,
+        filter: Filter::Dither,
+    })
+}
+
 /// Largeur de la fenêtre des tests : assez petite pour que le balayage de
 /// référence reste instantané, assez grande pour porter des arêtes obliques.
 const W: i32 = 50;
@@ -857,6 +865,75 @@ fn sol_texture_fuyant(devant: f32, densite: f32) -> (Prepared, [Vertex; 3]) {
     (prepare(vertices, 0, 0).expect("sol visible"), vertices)
 }
 
+/// Le filtre choisi arrive jusqu'au pixel, et les deux modes rendent bien deux
+/// images différentes.
+///
+/// Le critère est ce qui sépare les deux techniques : sur une surface agrandie,
+/// le tramage ne peut rendre que des texels existants — il déplace la
+/// coordonnée, il ne fabrique pas de couleur —, alors que le bilinéaire en
+/// interpole entre eux. Compter les valeurs distinctes le mesure sans dépendre
+/// d'un pixel particulier.
+#[test]
+fn le_bilineaire_interpole_la_ou_le_tramage_choisit() {
+    // Quatre texels de côté sur un sol qui en couvre des dizaines de pixels :
+    // l'agrandissement est franc, et c'est là que les deux modes divergent. Le
+    // damier donne le contraste maximal — `addressed` n'écarte ses texels que
+    // d'une unité par canal, et il n'y a alors rien à interpoler entre eux.
+    let (triangle, _) = sol_texture_fuyant(8.0, 4.0);
+    let texture = Texture::load(
+        4,
+        4,
+        &(0..16)
+            .flat_map(|i: u32| {
+                let noir = (i / 4 + i % 4) % 2 == 0;
+                [if noir { 0x00 } else { 0xFF }; 3]
+                    .into_iter()
+                    .chain([0xFF])
+            })
+            .collect::<Vec<u8>>(),
+    )
+    .expect("texture valide");
+
+    let rendu = |filter| {
+        let mut paint = Paint::new();
+        fill(
+            &mut paint,
+            CLIP,
+            &triangle,
+            Some(Sampling {
+                texture: &texture,
+                filter,
+            }),
+        );
+        paint
+    };
+    let (tramage, bilineaire) = (rendu(Filter::Dither), rendu(Filter::Bilinear));
+
+    let distinctes = |paint: &Paint| {
+        let mut vues = Vec::new();
+        for &c in paint.color.iter().filter(|c| **c != 0) {
+            if !vues.contains(&c) {
+                vues.push(c);
+            }
+        }
+        vues.len()
+    };
+    let (avec, sans) = (distinctes(&bilineaire), distinctes(&tramage));
+
+    // Le tramage ne rend que des texels existants : les deux du damier, plus
+    // les gris que la réduction pose dans les niveaux suivants, que le sol
+    // atteint en fuyant. Le bilinéaire, lui, fabrique tout l'intervalle.
+    assert!(sans <= 4, "{sans} couleurs : le tramage en a fabriqué");
+    assert!(
+        avec > 16,
+        "{avec} couleurs en bilinéaire contre {sans} : il n'interpole pas"
+    );
+    assert!(
+        bilineaire.color != tramage.color,
+        "le filtre ne change pas l'image"
+    );
+}
+
 /// **Le test central du lot.** Les segments de perspective s'alignent sur la
 /// grille de l'image, pas sur la fenêtre où l'on parcourt.
 ///
@@ -871,7 +948,7 @@ fn les_segments_s_alignent_sur_la_grille_de_l_image() {
     let texture = addressed(64);
 
     let mut entier = Paint::new();
-    fill(&mut entier, CLIP, &triangle, Some(&texture));
+    fill(&mut entier, CLIP, &triangle, dithered(&texture));
 
     let mut morceaux = Paint::new();
     for (x, y, width, height) in [
@@ -886,7 +963,7 @@ fn les_segments_s_alignent_sur_la_grille_de_l_image() {
             width,
             height,
         };
-        fill(&mut morceaux, window, &triangle, Some(&texture));
+        fill(&mut morceaux, window, &triangle, dithered(&texture));
     }
 
     let peints = entier.color.iter().filter(|c| **c != 0).count();
@@ -911,7 +988,7 @@ fn l_interpolation_par_segments_reste_sous_le_texel() {
     let texture = addressed(side);
 
     let mut paint = Paint::new();
-    fill(&mut paint, CLIP, &triangle, Some(&texture));
+    fill(&mut paint, CLIP, &triangle, dithered(&texture));
 
     let (mut pire, mut mesures) = (0i128, 0u32);
     // Le quart bas de l'image seulement : c'est le premier plan, où le sol est
@@ -1017,7 +1094,7 @@ fn le_tramage_ne_depend_pas_du_decoupage() {
     let texture = addressed(64);
 
     let mut entier = Paint::new();
-    fill(&mut entier, CLIP, &triangle, Some(&texture));
+    fill(&mut entier, CLIP, &triangle, dithered(&texture));
 
     let mut morceaux = Paint::new();
     for (x, y, width, height) in [
@@ -1032,7 +1109,7 @@ fn le_tramage_ne_depend_pas_du_decoupage() {
             width,
             height,
         };
-        fill(&mut morceaux, window, &triangle, Some(&texture));
+        fill(&mut morceaux, window, &triangle, dithered(&texture));
     }
 
     let peints = entier.color.iter().filter(|c| **c != 0).count();

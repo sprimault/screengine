@@ -88,6 +88,13 @@ pub fn to_depth(depth: f32) -> u32 {
 /// soumission admet, et il reste cinq bits de marge dans l'`i32`.
 pub const TEXEL_BITS: u32 = 12;
 
+/// Bits fractionnaires d'une coordonnée de texture par pixel, après division.
+///
+/// Seize, donc du 16.16. Il vit ici et non dans le rasteriseur parce que
+/// l'échantillonnage le lit aussi : le tramage décale ces bits avant de les
+/// tronquer, le bilinéaire en tire ses poids.
+pub const UV_BITS: u32 = 16;
+
 /// La plus grande coordonnée de texture qu'un sommet peut porter, en texels.
 ///
 /// Ce n'est pas la taille d'une texture, mais l'amplitude du pavage : une
