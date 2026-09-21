@@ -110,6 +110,86 @@ fn bias(dx: i32, dy: i32) -> i64 {
     if is_top_left(dx, dy) { 0 } else { -1 }
 }
 
+/// Les trois fonctions de bord au centre du pixel `(x0, y0)`, et leurs pas
+/// d'un pixel vers la droite puis vers le bas.
+///
+/// Extraite du remplissage parce que le test qui compare le span au balayage
+/// naïf doit partir exactement des mêmes valeurs : recopiée, elle finirait par
+/// diverger, et les deux se tromperaient ensemble sans que rien ne le dise.
+fn setup(triangle: &Prepared, x0: i32, y0: i32) -> ([i64; 3], [i64; 3], [i64; 3]) {
+    let v = triangle.v;
+    // Les trois arêtes, dans le sens du parcours : un point intérieur est du bon
+    // côté des trois à la fois.
+    let e = [(0usize, 1usize), (1, 2), (2, 0)];
+
+    let px = x0 * SUBPIXEL_SCALE + PIXEL_CENTER;
+    let py = py_of(y0);
+
+    let mut row = [0i64; 3];
+    let mut step_x = [0i64; 3];
+    let mut step_y = [0i64; 3];
+
+    for (i, &(a, b)) in e.iter().enumerate() {
+        let (dx, dy) = (v[b].x - v[a].x, v[b].y - v[a].y);
+        // La fonction de bord est niée, et le biais se prend sur `-d` : c'est ce
+        // qui classe l'arête sur le sens réellement parcouru. Pris sur `d`, il
+        // le serait sur le sens inverse, et les deux triangles d'une arête la
+        // revendiqueraient ensemble.
+        row[i] = -edge(v[a].x, v[a].y, v[b].x, v[b].y, px, py) + bias(-dx, -dy);
+        // Dérivées de la forme close niée, multipliées par le pas d'un pixel.
+        // Les additions entières qui suivent sont exactes : parcourir vaut le
+        // recalcul complet, bit pour bit, quel que soit le nombre de pas.
+        step_x[i] = (dy as i64) * SUBPIXEL_SCALE as i64;
+        step_y[i] = -(dx as i64) * SUBPIXEL_SCALE as i64;
+    }
+    (row, step_x, step_y)
+}
+
+/// Vrai si le pixel d'indice `k` depuis le début de la ligne est couvert.
+///
+/// La forme close, évaluée sans parcourir : les additions entières du parcours
+/// donnent les mêmes bits, mais celle-ci se calcule en un point quelconque.
+fn covered(row: &[i64; 3], step_x: &[i64; 3], k: i64) -> bool {
+    let at = |i: usize| row[i] + step_x[i] * k;
+    (at(0) | at(1) | at(2)) >= 0
+}
+
+/// Les abscisses extrêmes couvertes sur une ligne, bornes comprises, ou `None`
+/// si la ligne ne porte aucun pixel.
+///
+/// **Exact, et pas par approximation.** Sur une ligne, chaque arête vaut
+/// `C + k·S` avec `C` sa valeur à `x0` — biais top-left compris, qui ne fait
+/// que translater le demi-plan — et le test est `C + k·S ≥ 0`. Résoudre en
+/// entiers donne le plancher exact par `div_euclid`, donc chaque borne est
+/// **la** solution, pas une majoration : l'intersection des trois est
+/// rigoureusement ce que le test pixel par pixel retiendrait. Un span plus
+/// large ferait diviser la perspective là où la profondeur n'a pas de sens ;
+/// un span plus étroit trouerait le triangle.
+///
+/// Une arête horizontale — `S` nul — pose une condition constante sur toute la
+/// ligne, et ne demande aucune division.
+fn span(row: &[i64; 3], step_x: &[i64; 3], x0: i32, x1: i32) -> Option<(i32, i32)> {
+    let (mut lo, mut hi) = (0i64, (x1 - x0) as i64);
+    for i in 0..3 {
+        let (c, s) = (row[i], step_x[i]);
+        if s > 0 {
+            // `k ≥ −C/S`, donc le plafond du quotient, qui est l'opposé du
+            // plancher de son opposé.
+            lo = lo.max(-c.div_euclid(s));
+        } else if s < 0 {
+            hi = hi.min(c.div_euclid(-s));
+        } else if c < 0 {
+            return None;
+        }
+        if lo > hi {
+            return None;
+        }
+    }
+    // `lo` et `hi` sont encadrés par `0` et `x1 − x0`, qui tiennent tous deux
+    // dans un `i32` : la conversion ne peut pas déborder.
+    Some((x0 + lo as i32, x0 + hi as i32))
+}
+
 /// Le plus petit pixel entier dont le centre atteint `subpixel`.
 ///
 /// Par décalage arithmétique et non par division : `/ 16` tronque vers zéro et
@@ -174,7 +254,6 @@ pub fn prepare(vertices: [Vertex; 3], color: u32) -> Option<Prepared> {
 ///
 /// `window` est en pixels de l'image, et tient dans la bande de garde.
 pub fn fill<T: Target>(target: &mut T, window: Rect, triangle: &Prepared) {
-    let v = triangle.v;
     let color = triangle.color;
 
     // La fenêtre borne la boucle, jamais les valeurs : une fonction de bord
@@ -187,60 +266,41 @@ pub fn fill<T: Target>(target: &mut T, window: Rect, triangle: &Prepared) {
         return;
     }
 
-    // Les trois arêtes, dans le sens du parcours : un point intérieur est du bon
-    // côté des trois à la fois.
-    let e = [(0usize, 1usize), (1, 2), (2, 0)];
-
-    let px = x0 * SUBPIXEL_SCALE + PIXEL_CENTER;
-    let py = y0 * SUBPIXEL_SCALE + PIXEL_CENTER;
-
-    let mut row = [0i64; 3];
-    let mut step_x = [0i64; 3];
-    let mut step_y = [0i64; 3];
-
-    for (i, &(a, b)) in e.iter().enumerate() {
-        let (dx, dy) = (v[b].x - v[a].x, v[b].y - v[a].y);
-        // La fonction de bord est niée, et le biais se prend sur `-d` : c'est ce
-        // qui classe l'arête sur le sens réellement parcouru. Pris sur `d`, il
-        // le serait sur le sens inverse, et les deux triangles d'une arête la
-        // revendiqueraient ensemble.
-        row[i] = -edge(v[a].x, v[a].y, v[b].x, v[b].y, px, py) + bias(-dx, -dy);
-        // Dérivées de la forme close niée, multipliées par le pas d'un pixel.
-        // Les additions entières qui suivent sont exactes : parcourir vaut le
-        // recalcul complet, bit pour bit, quel que soit le nombre de pas.
-        step_x[i] = (dy as i64) * SUBPIXEL_SCALE as i64;
-        step_y[i] = -(dx as i64) * SUBPIXEL_SCALE as i64;
-    }
-
-    // La profondeur au centre du premier pixel, par la forme close, puis par
-    // pas entiers : mêmes bits que l'évaluation directe en chaque pixel.
+    let (mut row, step_x, step_y) = setup(triangle, x0, y0);
     let plane = &triangle.depth;
-    let mut depth_row = plane.at(px, py);
     let depth_x = plane.step_x(SUBPIXEL_SCALE);
-    let depth_y = plane.step_y(SUBPIXEL_SCALE);
 
     for y in y0..=y1 {
-        let mut cell = row;
-        let mut depth = depth_row;
-        for x in x0..=x1 {
-            // Un point est intérieur quand les trois valeurs sont positives ou
-            // nulles : leur OU binaire porte alors un bit de signe à zéro.
-            if (cell[0] | cell[1] | cell[2]) >= 0 {
+        if let Some((lo, hi)) = span(&row, &step_x, x0, x1) {
+            // Les deux extrémités sont couvertes, et le pixel qui précède le
+            // span ne l'est pas : c'est la coïncidence du span avec le test par
+            // pixel, vérifiée en débogage plutôt que relue.
+            debug_assert!(covered(&row, &step_x, (lo - x0) as i64));
+            debug_assert!(covered(&row, &step_x, (hi - x0) as i64));
+            debug_assert!(lo == x0 || !covered(&row, &step_x, (lo - x0 - 1) as i64));
+
+            // La profondeur au centre du premier pixel du span, par la forme
+            // close : elle ne se propage pas d'une ligne à l'autre, les spans
+            // ne commençant pas à la même abscisse. Les pas entiers qui suivent
+            // donnent les mêmes bits que l'évaluation directe en chaque pixel.
+            let mut depth = plane.at(lo * SUBPIXEL_SCALE + PIXEL_CENTER, py_of(y));
+            for x in lo..=hi {
                 // En un pixel couvert, la valeur tient dans [0, 2³²) : les
                 // sommets sont bornés par `to_depth` avec une marge qui couvre
                 // l'arrondi des gradients.
                 target.put(x, y, (depth >> GRADIENT_BITS) as u32, color);
+                depth = depth.wrapping_add(depth_x);
             }
-            for i in 0..3 {
-                cell[i] += step_x[i];
-            }
-            depth = depth.wrapping_add(depth_x);
         }
         for i in 0..3 {
             row[i] += step_y[i];
         }
-        depth_row = depth_row.wrapping_add(depth_y);
     }
+}
+
+/// L'ordonnée du centre du pixel `y`, en sous-pixels.
+fn py_of(y: i32) -> i32 {
+    y * SUBPIXEL_SCALE + PIXEL_CENTER
 }
 
 #[cfg(test)]
