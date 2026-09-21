@@ -22,6 +22,13 @@
 // Alignment, in bytes, guaranteed by `scg_buffer_alloc`.
 #define SCG_BUFFER_ALIGNMENT 16
 
+// The only pixel format a texture is loaded from.
+//
+// One, never zero: a description left zeroed is refused rather than read as a
+// valid format. Four bytes per texel, in the memory order of the output
+// pixels — a host never has two orders to keep straight.
+#define SCG_TEXTURE_FORMAT_RGBA8 1
+
 // Success.
 #define SCG_OK 0
 
@@ -62,6 +69,13 @@
 // distinct threads. Two contexts are independent and may each serve their own
 // thread.
 typedef struct ScgContext ScgContext;
+
+// An opaque handle to a loaded texture.
+//
+// Created by `scg_texture_load`, released by `scg_texture_destroy`. It belongs
+// to no context: the same texture may be submitted to several, from several
+// threads, and the engine keeps it alive for as long as a frame references it.
+typedef struct ScgTexture ScgTexture;
 
 // Configuration passed to `scg_create`.
 //
@@ -169,6 +183,55 @@ typedef struct ScgTriangle {
   // Alpha. Written as given, never composited.
   uint8_t a;
 } ScgTriangle;
+
+// What a texture load is given.
+//
+// All fields are `uint32_t`: four-byte alignment on every target, no padding,
+// offsets 0 to 20 alike everywhere.
+//
+// **Both sides must be powers of two**, independently of each other, from 1
+// to 2048. Texture coordinates then wrap by masking, with no division and no
+// comparison per texel, which is what makes textured filling affordable in
+// software.
+//
+// Zero the whole structure before filling it: the reserved fields must be
+// zero, and that is what will allow one of them to be used later without
+// breaking bindings already written.
+typedef struct ScgTextureDesc {
+  // Width in texels, a power of two between 1 and 2048.
+  uint32_t width;
+  // Height in texels, a power of two between 1 and 2048.
+  uint32_t height;
+  // Pixel format: `SCG_TEXTURE_FORMAT_RGBA8`.
+  uint32_t format;
+  // Reserved, must be zero.
+  uint32_t reserved0;
+  // Reserved, must be zero.
+  uint32_t reserved1;
+  // Reserved, must be zero.
+  uint32_t reserved2;
+} ScgTextureDesc;
+
+// A vertex carrying its texture coordinates.
+//
+// Twenty bytes, offsets 0/4/8/12/16 on every target, with no padding: a
+// JavaScript binding writes them into linear memory byte by byte.
+//
+// `u` and `v` are **in texels, not normalised**. That is the only choice that
+// makes them checkable against the vertex array alone: normalised, their bound
+// would depend on whichever texture the batch is finally drawn with.
+typedef struct ScgVertexUv {
+  // X coordinate, in object space.
+  float x;
+  // Y coordinate.
+  float y;
+  // Z coordinate.
+  float z;
+  // Texture abscissa, in texels.
+  float u;
+  // Texture ordinate, in texels.
+  float v;
+} ScgVertexUv;
 
 #ifdef __cplusplus
 extern "C" {
@@ -357,6 +420,61 @@ uint8_t *scg_buffer_alloc(size_t len);
 // freed, with the same `len`.
 void scg_buffer_free(uint8_t *ptr, size_t len);
 
+// Loads a texture from a block of pixels and writes its handle to `out`.
+//
+// `pixels` holds `width * height` texels, rows contiguous, four bytes each in
+// R, G, B, A order — the memory order of the output pixels. The block is
+// copied: the host may free it as soon as this call returns.
+//
+// **Both sides must be powers of two**, independently, from 1 to 2048. The
+// whole mipmap chain is built here, down to 1x1, by averaging texels; nothing
+// is ever generated later, which is what keeps a frame free of allocation.
+//
+// **Takes no context.** A texture belongs to none, and the same one may be
+// submitted to several from several threads. On failure the message therefore
+// goes to the per-thread slot: read it with `scg_last_error(NULL)`, on the
+// calling thread, before any other call on that thread.
+//
+// # Safety
+//
+// `desc` must point to a readable description, zeroed before being filled in.
+// `pixels` must cover exactly `width * height * 4` readable bytes, and `out` a
+// writable handle. Nothing is written to `out` on failure.
+int32_t scg_texture_load(const struct ScgTextureDesc *desc,
+                         const uint8_t *pixels,
+                         size_t len,
+                         struct ScgTexture **out);
+
+// Releases a texture.
+//
+// `scg_texture_destroy(NULL)` does nothing, like `free(NULL)`. Destroying a
+// texture a frame still references is harmless: the engine holds its own
+// reference until that frame ends.
+//
+// # Safety
+//
+// `texture` must be null, or a handle returned by `scg_texture_load` and not
+// yet destroyed.
+void scg_texture_destroy(struct ScgTexture *texture);
+
+// Submits a batch of triangles dressed with a texture.
+//
+// Same contract as `scg_submit`, with two differences: the vertices carry
+// their texture coordinates, in texels, and the texture applies to the whole
+// batch. Coordinates beyond 16384 texels, or not finite, reject the batch.
+//
+// # Safety
+//
+// Same preconditions as `scg_submit`, and `texture` must be a live handle from
+// `scg_texture_load`.
+int32_t scg_submit_textured(struct ScgContext *ctx,
+                            const struct ScgMat4 *model,
+                            const struct ScgVertexUv *vertices,
+                            uint32_t vertex_count,
+                            const struct ScgTriangle *triangles,
+                            uint32_t triangle_count,
+                            const struct ScgTexture *texture);
+
 #ifdef __cplusplus
 }  // extern "C"
 #endif  // __cplusplus
@@ -387,6 +505,14 @@ SCREENGINE_LAYOUT_ASSERT(sizeof(ScgTriangle) == 16, "ScgTriangle changed size");
 SCREENGINE_LAYOUT_ASSERT(offsetof(ScgTriangle, i2) == 8, "ScgTriangle.i2 moved");
 SCREENGINE_LAYOUT_ASSERT(offsetof(ScgTriangle, r) == 12, "ScgTriangle.r moved");
 SCREENGINE_LAYOUT_ASSERT(offsetof(ScgTriangle, a) == 15, "ScgTriangle.a moved");
+SCREENGINE_LAYOUT_ASSERT(sizeof(ScgVertexUv) == 20, "ScgVertexUv changed size");
+SCREENGINE_LAYOUT_ASSERT(offsetof(ScgVertexUv, z) == 8, "ScgVertexUv.z moved");
+SCREENGINE_LAYOUT_ASSERT(offsetof(ScgVertexUv, u) == 12, "ScgVertexUv.u moved");
+SCREENGINE_LAYOUT_ASSERT(offsetof(ScgVertexUv, v) == 16, "ScgVertexUv.v moved");
+SCREENGINE_LAYOUT_ASSERT(sizeof(ScgTextureDesc) == 24, "ScgTextureDesc changed size");
+SCREENGINE_LAYOUT_ASSERT(offsetof(ScgTextureDesc, height) == 4, "ScgTextureDesc.height moved");
+SCREENGINE_LAYOUT_ASSERT(offsetof(ScgTextureDesc, format) == 8, "ScgTextureDesc.format moved");
+SCREENGINE_LAYOUT_ASSERT(offsetof(ScgTextureDesc, reserved2) == 20, "ScgTextureDesc.reserved2 moved");
 SCREENGINE_LAYOUT_ASSERT(sizeof(ScgCamera) == 36, "ScgCamera changed size");
 SCREENGINE_LAYOUT_ASSERT(offsetof(ScgCamera, orientation) == 12, "orientation moved");
 SCREENGINE_LAYOUT_ASSERT(offsetof(ScgCamera, fov_y) == 28, "fov_y moved");

@@ -493,3 +493,254 @@ fn la_sequence_de_l_image_est_verifiee_a_la_frontiere() {
     // SAFETY: handle vivant, détruit une seule fois.
     unsafe { scg_destroy(ctx) };
 }
+
+/// Une description de texture valide, dont les tests dérivent leurs variantes.
+fn desc(width: u32, height: u32) -> ScgTextureDesc {
+    ScgTextureDesc {
+        width,
+        height,
+        format: SCG_TEXTURE_FORMAT_RGBA8,
+        reserved0: 0,
+        reserved1: 0,
+        reserved2: 0,
+    }
+}
+
+/// Charge une texture, ou échoue en disant pourquoi.
+fn load(desc: &ScgTextureDesc, pixels: &[u8]) -> *mut ScgTexture {
+    let mut out = ptr::null_mut();
+    // SAFETY: la description, le bloc et le paramètre de sortie sont des
+    // valeurs locales vivantes, et la longueur est celle de la tranche.
+    let code = unsafe { scg_texture_load(desc, pixels.as_ptr(), pixels.len(), &mut out) };
+    assert_eq!(
+        code,
+        SCG_OK,
+        "chargement refusé : {}",
+        last_error(ptr::null())
+    );
+    assert!(!out.is_null());
+    out
+}
+
+/// Une texture se charge et se détruit sans contexte : c'est ce qui permet à
+/// un hôte de préparer ses ressources avant d'ouvrir sa fenêtre, et à un
+/// serveur de n'en ouvrir jamais.
+#[test]
+fn charge_et_detruit_une_texture_sans_contexte() {
+    let texture = load(&desc(4, 2), &[0x80; 4 * 2 * 4]);
+    // SAFETY: handle vivant, détruit une seule fois.
+    unsafe { scg_texture_destroy(texture) };
+}
+
+/// Détruire un pointeur nul ne fait rien, comme `free`.
+#[test]
+fn detruire_une_texture_nulle_ne_fait_rien() {
+    // SAFETY: le pointeur nul est admis, et la fonction ne fait rien.
+    unsafe { scg_texture_destroy(ptr::null_mut()) };
+}
+
+/// Une description laissée à zéro est refusée plutôt que lue comme valide :
+/// c'est toute la raison pour laquelle le format RGBA8 vaut un et non zéro.
+#[test]
+fn refuse_une_description_a_zero() {
+    let zeroed = desc(4, 4);
+    let mut out = ptr::null_mut();
+    // SAFETY: description locale vivante, bloc de la longueur annoncée.
+    let code = unsafe {
+        scg_texture_load(
+            &ScgTextureDesc {
+                format: 0,
+                ..zeroed
+            },
+            [0u8; 64].as_ptr(),
+            64,
+            &mut out,
+        )
+    };
+    assert_eq!(code, SCG_ERR_INVALID_ARGUMENT);
+    assert!(out.is_null(), "rien ne doit être écrit en cas d'échec");
+    assert!(last_error(ptr::null()).contains("format"));
+}
+
+/// Un champ réservé non nul est refusé, et le message le dit : c'est la clause
+/// qui permettra d'en employer un sans casser les liaisons déjà écrites.
+#[test]
+fn refuse_un_champ_reserve_de_texture_non_nul() {
+    let mut out = ptr::null_mut();
+    // SAFETY: description locale vivante, bloc de la longueur annoncée.
+    let code = unsafe {
+        scg_texture_load(
+            &ScgTextureDesc {
+                reserved1: 1,
+                ..desc(4, 4)
+            },
+            [0u8; 64].as_ptr(),
+            64,
+            &mut out,
+        )
+    };
+    assert_eq!(code, SCG_ERR_INVALID_ARGUMENT);
+    assert!(last_error(ptr::null()).contains("reserved"));
+}
+
+/// Les refus du noyau traversent la frontière avec leur message : un côté qui
+/// n'est pas une puissance de deux, un bloc de la mauvaise longueur.
+#[test]
+fn les_refus_du_noyau_traversent_la_frontiere() {
+    for (d, pixels, mot) in [
+        (desc(3, 4), vec![0u8; 3 * 4 * 4], "power of two"),
+        (desc(4, 4), vec![0u8; 60], "width x height x 4"),
+    ] {
+        let mut out = ptr::null_mut();
+        // SAFETY: description et bloc locaux, longueur celle de la tranche.
+        let code = unsafe { scg_texture_load(&d, pixels.as_ptr(), pixels.len(), &mut out) };
+        assert_eq!(code, SCG_ERR_INVALID_ARGUMENT);
+        let message = last_error(ptr::null());
+        assert!(message.contains(mot), "message inattendu : {message}");
+    }
+}
+
+/// Une soumission texturée traverse la frontière, et une texture détruite
+/// aussitôt après ne trouble pas l'image : le moteur en garde une référence
+/// jusqu'à la fin.
+#[test]
+fn soumet_un_lot_texture_puis_detruit_la_texture() {
+    let ctx = create(&sane());
+    let texture = load(&desc(2, 2), &[0x40; 16]);
+
+    let vertices = [
+        ScgVertexUv {
+            x: 10.0,
+            y: -2.0,
+            z: -2.0,
+            u: 0.0,
+            v: 0.0,
+        },
+        ScgVertexUv {
+            x: 10.0,
+            y: 0.0,
+            z: 2.0,
+            u: 4.0,
+            v: 0.0,
+        },
+        ScgVertexUv {
+            x: 10.0,
+            y: 2.0,
+            z: -2.0,
+            u: 4.0,
+            v: 4.0,
+        },
+    ];
+    let triangles = [ScgTriangle {
+        i0: 0,
+        i1: 1,
+        i2: 2,
+        r: 0xFF,
+        g: 0xFF,
+        b: 0xFF,
+        a: 0xFF,
+    }];
+    let identity = ScgMat4 {
+        m: [
+            1.0, 0.0, 0.0, 0.0, //
+            0.0, 1.0, 0.0, 0.0, //
+            0.0, 0.0, 1.0, 0.0, //
+            0.0, 0.0, 0.0, 1.0,
+        ],
+    };
+
+    // SAFETY: contexte et texture vivants, les deux tableaux couvrent les
+    // comptes annoncés.
+    let code = unsafe {
+        scg_submit_textured(
+            ctx,
+            &identity,
+            vertices.as_ptr(),
+            3,
+            triangles.as_ptr(),
+            1,
+            texture,
+        )
+    };
+    assert_eq!(code, SCG_OK, "soumission refusée : {}", last_error(ctx));
+
+    // SAFETY: handle vivant ; le moteur en garde sa propre référence.
+    unsafe { scg_texture_destroy(texture) };
+
+    let mut pixels = vec![0u8; 64 * 32 * 4];
+    // SAFETY: contexte vivant, tampon de la taille annoncée par le stride.
+    let end = unsafe { scg_frame_end(ctx, pixels.as_mut_ptr(), 64) };
+    assert_eq!(end, SCG_OK);
+    assert!(
+        pixels.chunks_exact(4).any(|p| p[..3] == [0x40, 0x40, 0x40]),
+        "le triangle texturé n'a rien peint"
+    );
+    // SAFETY: handle vivant, détruit une seule fois.
+    unsafe { scg_destroy(ctx) };
+}
+
+/// Une coordonnée de texture non finie refuse le lot, et un sommet nul aussi :
+/// les deux contrôles de la frontière valent pour le chemin texturé.
+#[test]
+fn refuse_un_sommet_texture_non_fini() {
+    let ctx = create(&sane());
+    let texture = load(&desc(2, 2), &[0x40; 16]);
+    let vertices = [ScgVertexUv {
+        x: f32::NAN,
+        y: 0.0,
+        z: 0.0,
+        u: 0.0,
+        v: 0.0,
+    }; 3];
+    let triangles = [ScgTriangle {
+        i0: 0,
+        i1: 1,
+        i2: 2,
+        r: 0,
+        g: 0,
+        b: 0,
+        a: 0xFF,
+    }];
+    let identity = ScgMat4 {
+        m: [
+            1.0, 0.0, 0.0, 0.0, //
+            0.0, 1.0, 0.0, 0.0, //
+            0.0, 0.0, 1.0, 0.0, //
+            0.0, 0.0, 0.0, 1.0,
+        ],
+    };
+
+    // SAFETY: contexte et texture vivants, tableaux de la taille annoncée.
+    let code = unsafe {
+        scg_submit_textured(
+            ctx,
+            &identity,
+            vertices.as_ptr(),
+            3,
+            triangles.as_ptr(),
+            1,
+            texture,
+        )
+    };
+    assert_eq!(code, SCG_ERR_INVALID_ARGUMENT);
+    assert!(last_error(ctx).contains("finite"));
+
+    // SAFETY: mêmes préconditions ; le handle nul est refusé, pas déréférencé.
+    let null_texture = unsafe {
+        scg_submit_textured(
+            ctx,
+            &identity,
+            vertices.as_ptr(),
+            3,
+            triangles.as_ptr(),
+            1,
+            ptr::null(),
+        )
+    };
+    assert_eq!(null_texture, SCG_ERR_NULL);
+
+    // SAFETY: les deux handles sont vivants et détruits une seule fois.
+    unsafe { scg_texture_destroy(texture) };
+    // SAFETY: idem.
+    unsafe { scg_destroy(ctx) };
+}

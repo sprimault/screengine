@@ -7,11 +7,12 @@ Un auteur de liaison qui ne lit pas le français trouve l'essentiel dans
 `include/screengine.h`, dont la documentation est en anglais : ce qui ne peut pas
 être ignoré à l'appel y figure, fonction par fonction.
 
-**État : les sept points d'entrée de l'étape 0 sont publiés ; le rendu par
-tuiles de l'étape 1 est écrit, pas encore publié.** Chaque
-décision garde ci-dessous l'option écartée et pourquoi. Deux points restent
-marqués **À trancher** : celui des ressources, d'échéance plus tardive, et celui
-de la dépréciation, qui attend le gel de l'ABI en 1.0.
+**État : l'étape 1 est publiée en 0.1.0 — les sept points d'entrée de l'étape 0
+et le rendu par tuiles. Les textures de l'étape 2 sont écrites, pas encore
+publiées.** Chaque décision garde ci-dessous l'option écartée et pourquoi. Un
+point reste marqué **À trancher**, celui de la dépréciation, qui attend le gel
+de l'ABI en 1.0 ; celui des ressources est tranché pour les textures et ouvert
+pour les mondes seuls.
 
 ## Principes
 
@@ -260,9 +261,9 @@ dans la mémoire linéaire après le trap, sans rappeler le module.
       uint32_t width;
       uint32_t height;
       uint32_t tile_size;
-      uint32_t _reserved0;
-      uint32_t _reserved1;
-      uint32_t _reserved2;
+      uint32_t max_triangles;
+      uint32_t reserved1;
+      uint32_t reserved2;
   } ScgContextConfig;
   ```
 
@@ -277,11 +278,11 @@ dans la mémoire linéaire après le trap, sans rappeler le module.
   feuille de route réclame entre maintenant ou impose une seconde structure et
   une seconde fonction.
 
-  **À l'étape 1, `_reserved0` devient `max_triangles`**, la capacité de
-  triangles soumis par image, et `0` y vaut 16 384. C'est l'usage prévu des
-  champs réservés : un hôte de l'étape 0 qui passe des zéros obtient la
-  capacité par défaut, les décalages ne bougent pas, et `SCG_ABI_VERSION` non
-  plus. Une soumission au-delà de la capacité rend `SCG_ERR_INVALID_ARGUMENT`
+  **Le premier champ réservé est devenu `max_triangles` à l'étape 1**, la
+  capacité de triangles soumis par image, et `0` y vaut 16 384. C'est l'usage
+  prévu des champs réservés, et il a servi comme annoncé : un hôte de l'étape 0
+  qui passe des zéros obtient la capacité par défaut, les décalages n'ont pas
+  bougé, et `SCG_ABI_VERSION` non plus. Une soumission au-delà de la capacité rend `SCG_ERR_INVALID_ARGUMENT`
   au moment où elle est faite, jamais pendant le rendu. Écartée : une constante
   du noyau, trop petite pour un niveau détaillé ou trop coûteuse sur téléphone
   selon la valeur qu'on lui donne.
@@ -594,6 +595,72 @@ typedef struct ScgMat4 { float m[16]; } ScgMat4;
 - **La liste de dessin se vide à la fin de l'image**, pas à son début : un hôte
   qui soumet dès le retour de `scg_frame_end` doit retrouver sa scène.
 
+### Étape 2
+
+```c
+int32_t scg_texture_load(const ScgTextureDesc *desc, const uint8_t *pixels,
+                         size_t len, ScgTexture **out);
+void    scg_texture_destroy(ScgTexture *texture);
+int32_t scg_submit_textured(ScgContext *ctx, const ScgMat4 *model,
+                            const ScgVertexUv *vertices, uint32_t vertex_count,
+                            const ScgTriangle *triangles, uint32_t triangle_count,
+                            const ScgTexture *texture);
+```
+
+```c
+typedef struct ScgVertexUv { float x, y, z, u, v; } ScgVertexUv;
+
+typedef struct ScgTextureDesc {
+    uint32_t width;
+    uint32_t height;
+    uint32_t format;
+    uint32_t reserved0;
+    uint32_t reserved1;
+    uint32_t reserved2;
+} ScgTextureDesc;
+```
+
+Deux fonctions ajoutées, deux structures nouvelles, une constante :
+`SCG_ABI_VERSION` reste à **1**.
+
+- **Un seul format, `SCG_TEXTURE_FORMAT_RGBA8`, qui vaut 1 et non 0.** Une
+  description laissée à zéro est ainsi refusée plutôt qu'interprétée. Quatre
+  octets par texel dans l'ordre mémoire des pixels de sortie, lignes jointives,
+  longueur exactement `width × height × 4`. Écartés : le 565, dont la moyenne
+  des mipmaps perd la précision et qui ferait deux boucles ; le RGB sur trois
+  octets, dont l'accès n'est pas aligné ; la palette avec colormap, que
+  « couleurs directes » exclut.
+- **Les deux côtés sont des puissances de deux**, indépendamment l'un de
+  l'autre, de 1 à 2048. C'est ce qui permet au repli des coordonnées d'être un
+  masque, sans division ni comparaison par texel.
+- **Le moteur copie le bloc.** L'hôte peut le libérer au retour de l'appel.
+  Trois raisons, dans l'ordre : un bloc emprunté modifiable entre deux images
+  casserait le déterminisme ; un tampon de décodeur n'a aucun alignement
+  garanti ; et aucune durée de vie ne traverse alors la frontière. C'est la
+  réponse à **A8** pour les textures ; les mondes restent ouverts, leur
+  sémantique de mutation n'étant pas décidée.
+- **Les mipmaps sont engendrés au chargement**, jusqu'à 1×1, par moyenne des
+  texels. Rien n'est exposé : l'hôte ne fournit pas ses niveaux, et un niveau
+  engendré plus tard violerait « aucune allocation par image ».
+- **Une texture n'appartient à aucun contexte** : `scg_texture_load` et
+  `scg_texture_destroy` n'en prennent pas, et leur message va dans
+  l'emplacement par thread. Immuable une fois chargée, elle se partage en
+  lecture entre contextes et entre threads — ce qui referme aussi la question
+  du partage de ressources laissée ouverte plus haut.
+- **Détruire une texture qu'une image référence encore est sans effet sur
+  elle** : le moteur en garde une référence jusqu'à la fin de cette image.
+- **La texture vaut pour le lot entier**, et non pour chaque triangle :
+  `ScgTriangle` est publiée et ne peut plus gagner de champ, et une surface
+  continue se soumet de toute façon en un seul franchissement.
+- **`u` et `v` sont en texels, jamais normalisées**, et bornées à 16384 en
+  valeur absolue. C'est le seul choix qui rende le bornage vérifiable sur le
+  tableau de sommets seul : normalisées, la borne dépendrait de la texture avec
+  laquelle le lot est finalement dessiné. Au-delà, ou non finie, une coordonnée
+  refuse le lot entier.
+- **Aucun code d'erreur nouveau.** La plage des données reste fermée jusqu'à
+  l'étape 4 : `SCG_ERR_INVALID_FORMAT` nomme un format de fichier versionné,
+  qu'un bloc de pixels brut n'a pas. Ce qui grossit, ce sont les messages.
+
 ### Étapes suivantes
 
 Prévisionnel. Ce qui doit être exposé est arrêté par la feuille de route ; les
@@ -602,7 +669,7 @@ noms ne le sont pas.
 | Étape | Ce qui doit être exposé |
 |---|---|
 | 1 | début d'image et rendu d'une tuile (voir « Rendu par tuiles »), caméra et projection, soumission de triangles avec une matrice |
-| 2 | chargement d'une texture depuis un bloc de pixels, mipmaps générés au chargement, niveau de qualité du filtrage |
+| 2 | ✓ chargement d'une texture, mipmaps engendrés au chargement ; le niveau de qualité du filtrage attend le bilinéaire |
 | 3 | changement de résolution interne, calcul des lightmaps d'une cellule et reprise d'un cache, lumières dynamiques, brouillard, post-traitement |
 | 4 | chargement d'un maillage et d'une carte depuis un bloc d'octets, libération |
 | 5 | rendu du monde depuis la caméra |
