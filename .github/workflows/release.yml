@@ -219,7 +219,7 @@ jobs:
       - name: Éprouver l'archive
         if: matrix.cible == 'windows_x64' || matrix.cible == 'linux_x64'
         run: |
-          attendu=$(cat crates/screengine-conformance/references/triangle)
+          attendu=$(cat crates/screengine-conformance/references/arete)
           mkdir -p essai
           if [ "$RUNNER_OS" = "Windows" ]; then
             w() { cygpath -w "$1"; }

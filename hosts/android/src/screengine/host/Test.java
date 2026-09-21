@@ -16,7 +16,7 @@ import java.util.Arrays;
  * volontairement désalignée. Il écrit l'empreinte du triangle sur la sortie
  * standard, les échecs sur la sortie d'erreur.
  *
- * <p>La scène est celle de {@code screengine-conformance --print triangle} :
+ * <p>La scène est celle de {@code screengine-conformance --print arete} :
  * 640×360, tuiles de 64.
  *
  * <p>Usage : {@code app_process <dir> screengine.host.Test <dir>}
