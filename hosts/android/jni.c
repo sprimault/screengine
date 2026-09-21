@@ -136,6 +136,16 @@ static void destroy(JNIEnv *env, jclass cls, jlong ctx)
     scg_destroy((ScgContext *)(intptr_t)ctx);
 }
 
+/* scg_set_filter. Une valeur inconnue traverse et se fait refuser par la
+ * bibliothèque : l'énumération n'est pas recopiée ici, elle vit dans le
+ * header. */
+static jint set_filter(JNIEnv *env, jclass cls, jlong ctx, jint filter)
+{
+    (void)env;
+    (void)cls;
+    return (jint)scg_set_filter((ScgContext *)(intptr_t)ctx, (uint32_t)filter);
+}
+
 /*
  * scg_frame_end dans un ByteBuffer direct, à `offset` octets de son début.
  * L'offset permet à l'hôte de désaligner volontairement la base : le moteur
@@ -318,6 +328,7 @@ static const JNINativeMethod METHODS[] = {
     {"textureLoad", "(II[B)J", (void *)texture_load},
     {"textureDestroy", "(J)V", (void *)texture_destroy},
     {"submitTextured", "(J[F[F[I[BJ)I", (void *)submit_textured},
+    {"setFilter", "(JI)I", (void *)set_filter},
 };
 
 /* Enregistre les méthodes ; un échec empêche le chargement de la bibliothèque. */

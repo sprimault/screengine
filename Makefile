@@ -141,9 +141,11 @@ HOST_OUT = $(abspath $(SORTIE))/host-$(host_dir_$*)
 # Les scènes que chaque hôte décrit dans son langage, dans l'ordre où il écrit
 # leurs empreintes. `arete` relie les hôtes au chemin Rust depuis l'étape 0 ;
 # `texture` y ajoute le seul chemin que la première n'emprunte pas, celui du
-# remplissage texturé. Une scène ajoutée ici est une scène à écrire dans les
-# quatre hôtes, et c'est voulu : c'est ce qui rend leur comparaison possible.
-HOST_SCENES := arete texture
+# remplissage texturé ; `texture-bilineaire` reprend la même géométrie et ne
+# change que le filtrage, donc c'est `scg_set_filter` seul qu'elle éprouve de
+# bout en bout. Une scène ajoutée ici est une scène à écrire dans les quatre
+# hôtes, et c'est voulu : c'est ce qui rend leur comparaison possible.
+HOST_SCENES := arete texture texture-bilineaire
 
 # Sans l'outillage de l'hôte, la cible saute et dit pourquoi. En intégration
 # continue (CI défini), le même saut est une erreur : un contrôle qui ne tourne
@@ -171,7 +173,8 @@ $(addsuffix -run,$(addprefix test-,$(TEST_HOSTS))): test-%-run:
 	  cargo run -q -p screengine-conformance --release -- --print $$scene >> $(HOST_OUT)/rust.txt || exit 1; \
 	done
 	$(MAKE) -s --no-print-directory -C hosts/$(host_dir_$*) PROFILE=$(host_profile_$*) OUT=$(HOST_OUT) all
-	$(MAKE) -s --no-print-directory -C hosts/$(host_dir_$*) PROFILE=$(host_profile_$*) OUT=$(HOST_OUT) run > $(HOST_OUT)/host.txt
+	$(MAKE) -s --no-print-directory -C hosts/$(host_dir_$*) PROFILE=$(host_profile_$*) OUT=$(HOST_OUT) \
+	  SCENE_COUNT=$(words $(HOST_SCENES)) run > $(HOST_OUT)/host.txt
 	@rust=$$(tr -d '\r' < $(HOST_OUT)/rust.txt); host=$$(tr -d '\r' < $(HOST_OUT)/host.txt); \
 	if [ -z "$$host" ]; then \
 	  echo "test-$* : l'hote $(host_name_$*) n'a rien ecrit"; exit 1; \

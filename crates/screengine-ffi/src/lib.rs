@@ -34,8 +34,8 @@ use output::HostRows;
 
 pub use context::{ScgContext, ScgContextConfig};
 pub use scene::{
-    SCG_TEXTURE_FORMAT_RGBA8, ScgCamera, ScgMat4, ScgTextureDesc, ScgTriangle, ScgVertex,
-    ScgVertexUv,
+    SCG_FILTER_BILINEAR, SCG_FILTER_DITHER, SCG_TEXTURE_FORMAT_RGBA8, ScgCamera, ScgMat4,
+    ScgTextureDesc, ScgTriangle, ScgVertex, ScgVertexUv,
 };
 pub use status::{
     SCG_ERR_FAULTED, SCG_ERR_INVALID_ARGUMENT, SCG_ERR_INVALID_STATE, SCG_ERR_NULL,
@@ -130,6 +130,35 @@ pub unsafe extern "C" fn scg_set_camera(ctx: *mut ScgContext, camera: *const Scg
         // structure lisible, que rien d'autre ne modifie pendant l'appel.
         let camera = unsafe { camera.as_ref() }.ok_or(AbiError::NULL)?;
         core.exclusive()?.set_camera(camera.to_core()?)?;
+        Ok(())
+    };
+
+    // SAFETY: précondition de la fonction — `ctx` est nul ou un handle vivant.
+    unsafe { entry::with_context(ctx, set) }
+}
+
+/// Sets how textures are sampled from the next frames on.
+///
+/// `filter` is `SCG_FILTER_DITHER`, the default, or `SCG_FILTER_BILINEAR`; any
+/// other value is `SCG_ERR_INVALID_ARGUMENT`, and the context keeps the filter
+/// it had. A binding written against a later version therefore gets a plain
+/// error rather than an image filtered otherwise than it believes.
+///
+/// Rejected with `SCG_ERR_INVALID_STATE` between `scg_frame_begin` and
+/// `scg_frame_end`: tiles of one frame are rendered from threads the engine
+/// knows nothing about, and a filter changed in between would leave part of the
+/// image sampled one way and part the other.
+///
+/// The two filters are exclusive: bilinear replaces dithering, it does not add
+/// to it.
+///
+/// # Safety
+///
+/// `ctx` is a live handle used by no other thread during the call.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn scg_set_filter(ctx: *mut ScgContext, filter: u32) -> i32 {
+    let set = |mut core: entry::Core<'_>| {
+        core.exclusive()?.set_filter(scene::filter_of(filter)?)?;
         Ok(())
     };
 

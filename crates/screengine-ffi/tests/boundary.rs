@@ -679,6 +679,61 @@ fn soumet_un_lot_texture_puis_detruit_la_texture() {
     unsafe { scg_destroy(ctx) };
 }
 
+/// Les deux filtres se posent, et une valeur inconnue est refusée sans changer
+/// celui du contexte.
+///
+/// **Le refus est ce qui rend l'ajout d'un filtrage compatible** : une liaison
+/// écrite contre une version ultérieure reçoit une erreur franche au lieu d'une
+/// image filtrée autrement qu'elle ne le croit. Le rabattre sur le défaut
+/// serait silencieux, donc pire.
+#[test]
+fn pose_les_deux_filtres_et_refuse_le_reste() {
+    let ctx = create(&sane());
+
+    for filter in [SCG_FILTER_DITHER, SCG_FILTER_BILINEAR] {
+        // SAFETY: `ctx` est un handle vivant, seul ce thread l'emploie.
+        assert_eq!(unsafe { scg_set_filter(ctx, filter) }, SCG_OK);
+    }
+
+    // SAFETY: mêmes préconditions ; la valeur, elle, n'est pas un pointeur.
+    let refus = unsafe { scg_set_filter(ctx, 2) };
+    assert_eq!(refus, SCG_ERR_INVALID_ARGUMENT);
+    assert!(last_error(ctx).contains("SCG_FILTER_BILINEAR"));
+
+    // SAFETY: idem, le handle nul est refusé et non déréférencé.
+    assert_eq!(unsafe { scg_set_filter(ptr::null_mut(), 0) }, SCG_ERR_NULL);
+
+    // SAFETY: le handle est vivant et détruit une seule fois.
+    unsafe { scg_destroy(ctx) };
+}
+
+/// Le filtre ne se change pas pendant une image : les tuiles s'en lisent depuis
+/// des threads que le moteur ne connaît pas, et deux filtrages dans la même
+/// image ne décriraient plus rien.
+#[test]
+fn refuse_de_changer_le_filtre_pendant_une_image() {
+    let ctx = create(&sane());
+    let mut tiles = 0;
+    // SAFETY: `ctx` est vivant, le compteur est local, et l'image se referme
+    // plus bas.
+    assert_eq!(unsafe { scg_frame_begin(ctx, &mut tiles) }, SCG_OK);
+
+    // SAFETY: mêmes préconditions.
+    let pendant = unsafe { scg_set_filter(ctx, SCG_FILTER_BILINEAR) };
+    assert_eq!(pendant, SCG_ERR_INVALID_STATE);
+
+    let mut pixels = vec![0u8; 64 * 32 * 4];
+    // SAFETY: le tampon porte bien `stride × hauteur × 4` octets.
+    let code = unsafe { scg_frame_end(ctx, pixels.as_mut_ptr(), 64) };
+    assert_eq!(code, SCG_OK);
+
+    // SAFETY: l'image est close, le réglage redevient permis.
+    assert_eq!(unsafe { scg_set_filter(ctx, SCG_FILTER_BILINEAR) }, SCG_OK);
+
+    // SAFETY: le handle est vivant et détruit une seule fois.
+    unsafe { scg_destroy(ctx) };
+}
+
 /// Une coordonnée de texture non finie refuse le lot, et un sommet nul aussi :
 /// les deux contrôles de la frontière valent pour le chemin texturé.
 #[test]

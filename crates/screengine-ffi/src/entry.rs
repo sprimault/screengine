@@ -86,6 +86,17 @@ impl AbiError {
         code: SCG_ERR_INVALID_ARGUMENT,
         message: "texture format must be SCG_TEXTURE_FORMAT_RGBA8",
     };
+
+    /// Le niveau de filtrage demandé n'existe pas dans cette bibliothèque.
+    ///
+    /// Refusé plutôt que rabattu sur le défaut, et c'est ce qui rend l'ajout
+    /// d'un filtrage compatible : une liaison écrite contre une version
+    /// ultérieure recevra une erreur franche ici, au lieu d'une image filtrée
+    /// autrement qu'elle ne le croit.
+    pub(crate) const FILTER: Self = Self {
+        code: SCG_ERR_INVALID_ARGUMENT,
+        message: "filter must be SCG_FILTER_DITHER or SCG_FILTER_BILINEAR",
+    };
 }
 
 impl From<Error> for AbiError {

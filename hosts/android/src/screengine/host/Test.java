@@ -138,15 +138,19 @@ public final class Test {
     }
 
     /**
-     * Rend la scène {@code texture} et rend son empreinte, ou {@code null} si
-     * le rendu a échoué.
+     * Rend la scène texturée sous le filtrage demandé, ou {@code null} si le
+     * rendu a échoué.
      *
      * <p>La texture est détruite avant le rendu, à dessein : le moteur en garde
      * sa propre référence jusqu'à la fin de l'image, et l'empreinte le prouve.
      *
+     * <p>La géométrie ne dépend pas du filtrage : un écart entre les deux
+     * empreintes ne peut donc venir que de lui.
+     *
+     * @param filter {@code SCG_FILTER_DITHER} ou {@code SCG_FILTER_BILINEAR}
      * @return l'empreinte
      */
-    private static String renderTextured() {
+    private static String renderTextured(int filter) {
         long texture = Screengine.textureLoad(FLOOR_SIDE, FLOOR_SIDE, makeChecker());
         check(texture != 0, "la texture se charge sans contexte");
 
@@ -155,6 +159,8 @@ public final class Test {
             check(false, "création du contexte texturé");
             return null;
         }
+
+        check(Screengine.setFilter(out[0], filter) == Screengine.OK, "le filtrage se règle");
 
         float[] model = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
         // Cinq flottants par sommet : la position, puis u et v en texels, à
@@ -344,14 +350,16 @@ public final class Test {
         checkRefusals();
         checkBuffers();
         String hash = render();
-        String textured = renderTextured();
+        String textured = renderTextured(Screengine.FILTER_DITHER);
+        String bilinear = renderTextured(Screengine.FILTER_BILINEAR);
 
-        if (failures > 0 || hash == null || textured == null) {
+        if (failures > 0 || hash == null || textured == null || bilinear == null) {
             System.err.println(failures + " vérification(s) en échec");
             System.exit(1);
         }
         System.out.println(hash);
         System.out.println(textured);
+        System.out.println(bilinear);
         System.exit(0);
     }
 }

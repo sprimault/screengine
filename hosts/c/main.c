@@ -426,15 +426,18 @@ static void check_float_environment(uint64_t expected)
 }
 #endif
 
-/* Rend la scène texturée et hache son image.
+/* Rend la scène texturée sous le filtrage demandé et hache son image.
  *
  * Plus courte que `render` : les sentinelles, l'alpha et les tuiles sont déjà
  * éprouvés par la première scène, qui passe par le même tampon et le même
  * chemin de sortie. Ce que celle-ci ajoute est le seul chemin que l'autre
  * n'emprunte pas — chargement d'une texture, soumission texturée,
  * échantillonnage — et son empreinte le compare au chemin Rust.
+ *
+ * `filter` la rejoue telle quelle en bilinéaire : la géométrie ne bouge pas,
+ * si bien qu'un écart entre les deux empreintes ne peut venir que de là.
  */
-static uint64_t render_textured(int *ok)
+static uint64_t render_textured(int *ok, uint32_t filter)
 {
     ScgContextConfig config = scene_config();
     ScgContext *ctx = NULL;
@@ -461,6 +464,9 @@ static uint64_t render_textured(int *ok)
     int loaded = scg_texture_load(&desc, texels, (size_t)FLOOR_SIDE * FLOOR_SIDE * 4, &texture);
     check(loaded == SCG_OK, "la texture se charge sans contexte");
     check(scg_create(&config, &ctx) == SCG_OK, "création du contexte texturé");
+    if (ctx != NULL) {
+        check(scg_set_filter(ctx, filter) == SCG_OK, "le filtrage se règle");
+    }
 
     if (loaded == SCG_OK && ctx != NULL) {
         int32_t code = scg_submit_textured(ctx, &IDENTITY, FLOOR_VERTICES, 4,
@@ -506,13 +512,17 @@ int main(void)
     }
 
     int textured_ok = 0;
-    uint64_t textured = render_textured(&textured_ok);
+    uint64_t textured = render_textured(&textured_ok, SCG_FILTER_DITHER);
 
-    if (failures > 0 || !ok || !textured_ok) {
+    int bilinear_ok = 0;
+    uint64_t bilinear = render_textured(&bilinear_ok, SCG_FILTER_BILINEAR);
+
+    if (failures > 0 || !ok || !textured_ok || !bilinear_ok) {
         fprintf(stderr, "%d vérification(s) en échec\n", failures);
         return 1;
     }
     printf("%016llx\n", (unsigned long long)hash);
     printf("%016llx\n", (unsigned long long)textured);
+    printf("%016llx\n", (unsigned long long)bilinear);
     return 0;
 }

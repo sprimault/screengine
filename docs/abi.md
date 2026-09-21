@@ -605,6 +605,7 @@ int32_t scg_submit_textured(ScgContext *ctx, const ScgMat4 *model,
                             const ScgVertexUv *vertices, uint32_t vertex_count,
                             const ScgTriangle *triangles, uint32_t triangle_count,
                             const ScgTexture *texture);
+int32_t scg_set_filter(ScgContext *ctx, uint32_t filter);
 ```
 
 ```c
@@ -620,7 +621,7 @@ typedef struct ScgTextureDesc {
 } ScgTextureDesc;
 ```
 
-Deux fonctions ajoutées, deux structures nouvelles, une constante :
+Trois fonctions ajoutées, deux structures nouvelles, trois constantes :
 `SCG_ABI_VERSION` reste à **1**.
 
 - **Un seul format, `SCG_TEXTURE_FORMAT_RGBA8`, qui vaut 1 et non 0.** Une
@@ -657,6 +658,20 @@ Deux fonctions ajoutées, deux structures nouvelles, une constante :
   tableau de sommets seul : normalisées, la borne dépendrait de la texture avec
   laquelle le lot est finalement dessiné. Au-delà, ou non finie, une coordonnée
   refuse le lot entier.
+- **Le niveau de filtrage est un réglage du contexte**, pas un paramètre de
+  soumission : `SCG_FILTER_DITHER`, qui vaut **0**, et `SCG_FILTER_BILINEAR`,
+  qui vaut 1. Zéro pour le défaut, à l'inverse du format de texture et pour la
+  raison inverse — un contexte qu'on ne configure pas doit rendre ce que le
+  moteur rend par défaut, alors qu'une description laissée à zéro doit être
+  refusée.
+- **Une valeur de filtrage inconnue est refusée**, jamais rabattue sur le
+  défaut. C'est ce qui rend l'ajout d'un filtrage compatible : une liaison
+  écrite contre une version ultérieure reçoit `SCG_ERR_INVALID_ARGUMENT` au
+  lieu d'une image filtrée autrement qu'elle ne le croit.
+- **Les deux filtrages s'excluent**, et `scg_set_filter` est refusé entre
+  `scg_frame_begin` et `scg_frame_end` : les tuiles d'une image se rendent
+  depuis des threads que le moteur ne connaît pas, et un filtre changé au
+  milieu laisserait une part de l'image lue autrement que le reste.
 - **Aucun code d'erreur nouveau.** La plage des données reste fermée jusqu'à
   l'étape 4 : `SCG_ERR_INVALID_FORMAT` nomme un format de fichier versionné,
   qu'un bloc de pixels brut n'a pas. Ce qui grossit, ce sont les messages.
@@ -669,7 +684,7 @@ noms ne le sont pas.
 | Étape | Ce qui doit être exposé |
 |---|---|
 | 1 | début d'image et rendu d'une tuile (voir « Rendu par tuiles »), caméra et projection, soumission de triangles avec une matrice |
-| 2 | ✓ chargement d'une texture, mipmaps engendrés au chargement ; le niveau de qualité du filtrage attend le bilinéaire |
+| 2 | ✓ chargement d'une texture, mipmaps engendrés au chargement, niveau de qualité du filtrage par `scg_set_filter` |
 | 3 | changement de résolution interne, calcul des lightmaps d'une cellule et reprise d'un cache, lumières dynamiques, brouillard, post-traitement |
 | 4 | chargement d'un maillage et d'une carte depuis un bloc d'octets, libération |
 | 5 | rendu du monde depuis la caméra |
