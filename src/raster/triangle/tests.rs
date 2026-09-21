@@ -112,13 +112,20 @@ impl Coverage {
 }
 
 impl Target for Coverage {
-    fn put(&mut self, x: i32, y: i32, _z: u32, _color: u32) {
+    /// Le comptage porte sur le **test**, pas sur l'écriture : c'est là que
+    /// passent toutes les propositions, et un puits qui compterait les
+    /// écritures manquerait celles qu'une profondeur rejette — donc tout ce
+    /// qu'un recouvrement d'arête produirait.
+    fn test(&mut self, x: i32, y: i32, _z: u32) -> bool {
         assert!(
             (0..W).contains(&x) && (0..H).contains(&y),
             "écriture hors fenêtre en ({x}, {y})"
         );
         self.hits[(y * W + x) as usize] += 1;
+        true
     }
+
+    fn write(&mut self, _x: i32, _y: i32, _z: u32, _color: u32) {}
 }
 
 /// Un point, en pixels entiers convertis en sous-pixels.
@@ -607,9 +614,12 @@ struct Depths {
 }
 
 impl Target for Depths {
-    fn put(&mut self, x: i32, y: i32, z: u32, _color: u32) {
+    fn test(&mut self, x: i32, y: i32, z: u32) -> bool {
         self.seen.push((x, y, z));
+        true
     }
+
+    fn write(&mut self, _x: i32, _y: i32, _z: u32, _color: u32) {}
 }
 
 /// Les trois permutations circulaires d'un même triangle rendent les mêmes
@@ -689,4 +699,89 @@ fn un_triangle_prepare_porte_son_index_de_texture() {
         let triangle = prepare(vertices, 0, index).expect("triangle visible");
         assert_eq!(triangle.texture, index);
     }
+}
+
+/// Un puits qui tient vraiment une profondeur, et qui refuse toute écriture
+/// que son test n'a pas acceptée juste avant.
+struct Strict {
+    depth: Vec<u32>,
+    tests: u32,
+    writes: u32,
+    /// Le pixel que le dernier test a accepté, s'il en a accepté un.
+    accepted: Option<(i32, i32)>,
+}
+
+impl Strict {
+    /// Un puits vide, dont tous les pixels sont au fond.
+    fn new() -> Self {
+        Self {
+            depth: vec![0; (W * H) as usize],
+            tests: 0,
+            writes: 0,
+            accepted: None,
+        }
+    }
+}
+
+impl Target for Strict {
+    fn test(&mut self, x: i32, y: i32, z: u32) -> bool {
+        self.tests += 1;
+        let passes = z > self.depth[(y * W + x) as usize];
+        self.accepted = passes.then_some((x, y));
+        passes
+    }
+
+    fn write(&mut self, x: i32, y: i32, z: u32, _color: u32) {
+        assert_eq!(
+            self.accepted,
+            Some((x, y)),
+            "écriture en ({x}, {y}) sans test accepté"
+        );
+        self.writes += 1;
+        self.depth[(y * W + x) as usize] = z;
+        self.accepted = None;
+    }
+}
+
+/// Un pixel occulté est testé mais pas écrit.
+///
+/// C'est tout l'objet de la scission : entre le test et l'écriture viendra
+/// l'échantillonnage de la texture, et le faire pour un pixel qu'une
+/// profondeur rejette serait payer le plus cher du remplissage pour rien. Un
+/// puits qui écrirait sans test accepté est attrapé par l'assertion de `write`.
+#[test]
+fn un_pixel_occulte_est_teste_mais_pas_ecrit() {
+    let devant = [p(2, 2), p(2, 34), p(44, 2)];
+    let mut sink = Strict::new();
+
+    // Le même triangle deux fois : le premier passe partout, le second est
+    // derrière lui au sens strict du test, donc refusé partout.
+    let proche = devant.map(|position| Vertex {
+        position,
+        z: 3 << 30,
+        s: 0,
+        t: 0,
+    });
+    let loin = devant.map(|position| Vertex {
+        position,
+        z: 1 << 30,
+        s: 0,
+        t: 0,
+    });
+    for vertices in [proche, loin] {
+        let triangle = prepare(vertices, 1, NO_TEXTURE).expect("triangle visible");
+        fill(&mut sink, CLIP, &triangle);
+    }
+
+    let couverts = sink.writes;
+    assert!(couverts > 200, "{couverts} pixels, le cas ne couvre rien");
+    assert_eq!(
+        sink.tests,
+        couverts * 2,
+        "les deux triangles doivent proposer autant de pixels l'un que l'autre"
+    );
+    assert_eq!(
+        sink.writes, couverts,
+        "le triangle du fond a écrit malgré la profondeur"
+    );
 }

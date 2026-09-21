@@ -340,7 +340,10 @@ pub fn fill<T: Target>(target: &mut T, window: Rect, triangle: &Prepared) {
                 // En un pixel couvert, la valeur tient dans [0, 2³²) : les
                 // sommets sont bornés par `to_depth` avec une marge qui couvre
                 // l'arrondi des gradients.
-                target.put(x, y, (depth >> GRADIENT_BITS) as u32, color);
+                let z = (depth >> GRADIENT_BITS) as u32;
+                if target.test(x, y, z) {
+                    target.write(x, y, z, color);
+                }
                 depth = depth.wrapping_add(depth_x);
             }
         }

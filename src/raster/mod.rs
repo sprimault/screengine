@@ -42,11 +42,25 @@ pub struct Rect {
 /// dans la boucle de remplissage.
 pub trait Target {
     /// Propose un pixel couvert, en coordonnées entières de l'image, avec sa
-    /// profondeur en 0.32.
+    /// profondeur en 0.32 : rend vrai s'il passe le test de profondeur.
     ///
     /// Les coordonnées sont toujours dans la fenêtre passée au remplissage :
-    /// l'implémentation n'a pas à les vérifier. C'est elle qui fait le test de
-    /// profondeur, pour que le puits de comptage des tests d'étanchéité voie
-    /// toutes les écritures proposées.
-    fn put(&mut self, x: i32, y: i32, z: u32, color: u32);
+    /// l'implémentation n'a pas à les vérifier. C'est elle qui fait le test,
+    /// pour que le puits de comptage des tests d'étanchéité voie **toutes** les
+    /// propositions, y compris celles qu'une profondeur rejette.
+    fn test(&mut self, x: i32, y: i32, z: u32) -> bool;
+
+    /// Écrit un pixel que [`Target::test`] vient d'accepter.
+    ///
+    /// **Séparée du test, et c'est ce qui rend le texturage abordable** : entre
+    /// les deux, le remplissage échantillonne la texture, et il ne le fait donc
+    /// que pour les pixels qui survivent à la profondeur. Fondues en un seul
+    /// appel, les deux obligeraient à échantillonner avant de savoir si le
+    /// pixel est visible — sur une scène où le décor se recouvre, la plus
+    /// grande partie du travail irait à des pixels occultés.
+    ///
+    /// La profondeur est redonnée ici plutôt que retenue entre les deux appels :
+    /// un état caché dans le puits ferait dépendre l'écriture d'un test qui l'a
+    /// précédée, et rien dans le type ne le garantirait.
+    fn write(&mut self, x: i32, y: i32, z: u32, color: u32);
 }

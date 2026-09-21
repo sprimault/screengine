@@ -74,6 +74,10 @@ signature ne change et `SCG_ABI_VERSION` reste à **1**.
   non finies, le lot est refusé en entier.
 
 ### Modifié
+- Le remplissage teste la profondeur avant d'écrire, en deux appels distincts
+  au lieu d'un : c'est entre les deux que viendra l'échantillonnage de la
+  texture, qui ne se paiera donc que pour les pixels visibles. L'image est
+  inchangée, et le compte des propositions aussi.
 - Un triangle préparé porte les équations de plan de ses coordonnées de
   texture à côté de celle de sa profondeur, et les trois partagent leur point
   de référence : les écarts ne se calculent qu'une fois par pixel, et un
@@ -132,6 +136,10 @@ is not recorded. No signature changes and `SCG_ABI_VERSION` stays at **1**.
   rejected.
 
 ### Changed
+- Filling tests depth before writing, in two distinct calls instead of one:
+  texture sampling will happen between them, and will therefore only be paid
+  for visible pixels. The image is unchanged, and so is the count of proposed
+  pixels.
 - A prepared triangle carries the plane equations of its texture coordinates
   next to its depth one, and all three share their reference point: offsets are
   computed once per pixel, and a prepared triangle fits in two cache lines.

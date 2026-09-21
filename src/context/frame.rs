@@ -108,18 +108,27 @@ struct Scratch<'a> {
     rect: Rect,
 }
 
-impl Target for Scratch<'_> {
-    fn put(&mut self, x: i32, y: i32, z: u32, color: u32) {
+impl Scratch<'_> {
+    /// L'indice d'un pixel de l'image dans les tampons de la région.
+    fn index(&self, x: i32, y: i32) -> usize {
         let row = (y - self.rect.y as i32) as usize;
         let column = (x - self.rect.x as i32) as usize;
-        let i = row * self.rect.width as usize + column;
+        row * self.rect.width as usize + column
+    }
+}
+
+impl Target for Scratch<'_> {
+    fn test(&mut self, x: i32, y: i32, z: u32) -> bool {
         // Strict : à profondeur égale, le triangle soumis le premier reste. Les
         // triangles se dessinent dans l'ordre de soumission, quelle que soit la
         // tuile, et c'est ce qui rend l'égalité indépendante du découpage.
-        if z > self.depth[i] {
-            self.depth[i] = z;
-            self.color[i] = color;
-        }
+        z > self.depth[self.index(x, y)]
+    }
+
+    fn write(&mut self, x: i32, y: i32, z: u32, color: u32) {
+        let i = self.index(x, y);
+        self.depth[i] = z;
+        self.color[i] = color;
     }
 }
 
