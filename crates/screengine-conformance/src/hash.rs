@@ -52,6 +52,28 @@ pub(crate) fn image(pixels: &[u8], width: u32, height: u32, stride: u32) -> u64 
     fnv.0
 }
 
+/// L'empreinte d'une suite d'images, dans l'ordre.
+///
+/// Une scène qui rend plusieurs vues — plusieurs angles, plusieurs résolutions
+/// — n'a qu'une référence : le même algorithme, appliqué aux empreintes des
+/// vues écrites en petit-boutiste. L'ordre compte, et c'est voulu : deux vues
+/// échangées sont une régression.
+///
+/// **Une suite d'une seule vue rend l'empreinte de cette vue**, sans
+/// enveloppe. Sans cette clause, ajouter une scène à plusieurs vues changerait
+/// la référence de toutes les autres, et un hôte ne pourrait plus comparer son
+/// empreinte d'image au fichier versionné.
+pub(crate) fn chain(hashes: &[u64]) -> u64 {
+    if let [only] = hashes {
+        return *only;
+    }
+    let mut fnv = Fnv(OFFSET);
+    for hash in hashes {
+        fnv.write(&hash.to_le_bytes());
+    }
+    fnv.0
+}
+
 /// La forme canonique : seize chiffres hexadécimaux minuscules, poids fort
 /// d'abord. C'est celle que rend `hash('fnv1a64')` en PHP.
 pub(crate) fn format(hash: u64) -> String {
