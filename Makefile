@@ -138,6 +138,13 @@ host_build_android    = $(call android_build,ffi-test)
 
 HOST_OUT = $(abspath $(SORTIE))/host-$(host_dir_$*)
 
+# Les scènes que chaque hôte décrit dans son langage, dans l'ordre où il écrit
+# leurs empreintes. `arete` relie les hôtes au chemin Rust depuis l'étape 0 ;
+# `texture` y ajoute le seul chemin que la première n'emprunte pas, celui du
+# remplissage texturé. Une scène ajoutée ici est une scène à écrire dans les
+# quatre hôtes, et c'est voulu : c'est ce qui rend leur comparaison possible.
+HOST_SCENES := arete texture
+
 # Sans l'outillage de l'hôte, la cible saute et dit pourquoi. En intégration
 # continue (CI défini), le même saut est une erreur : un contrôle qui ne tourne
 # pas sans que personne le voie est pire que pas de contrôle.
@@ -159,15 +166,24 @@ $(addprefix test-,$(TEST_HOSTS)): test-%:
 $(addsuffix -run,$(addprefix test-,$(TEST_HOSTS))): test-%-run:
 	$(host_build_$*)
 	@mkdir -p $(HOST_OUT)
-	cargo run -q -p screengine-conformance --release -- --print arete > $(HOST_OUT)/rust.txt
+	@: > $(HOST_OUT)/rust.txt
+	@for scene in $(HOST_SCENES); do \
+	  cargo run -q -p screengine-conformance --release -- --print $$scene >> $(HOST_OUT)/rust.txt || exit 1; \
+	done
 	$(MAKE) -s --no-print-directory -C hosts/$(host_dir_$*) PROFILE=$(host_profile_$*) OUT=$(HOST_OUT) all
 	$(MAKE) -s --no-print-directory -C hosts/$(host_dir_$*) PROFILE=$(host_profile_$*) OUT=$(HOST_OUT) run > $(HOST_OUT)/host.txt
 	@rust=$$(tr -d '\r' < $(HOST_OUT)/rust.txt); host=$$(tr -d '\r' < $(HOST_OUT)/host.txt); \
-	if [ -n "$$host" ] && [ "$$host" = "$$rust" ]; then \
-	  echo "test-$* : empreinte $$host, identique au chemin Rust"; \
-	else \
-	  echo "test-$* : hote $(host_name_$*) '$$host', chemin Rust '$$rust'"; exit 1; \
-	fi
+	if [ -z "$$host" ]; then \
+	  echo "test-$* : l'hote $(host_name_$*) n'a rien ecrit"; exit 1; \
+	fi; \
+	i=1; for scene in $(HOST_SCENES); do \
+	  r=$$(echo "$$rust" | sed -n "$$i p"); h=$$(echo "$$host" | sed -n "$$i p"); \
+	  if [ "$$r" != "$$h" ]; then \
+	    echo "test-$* : scene $$scene, hote $(host_name_$*) '$$h', chemin Rust '$$r'"; exit 1; \
+	  fi; \
+	  i=$$((i + 1)); \
+	done; \
+	echo "test-$* : $(words $(HOST_SCENES)) empreinte(s) identiques au chemin Rust"
 
 # Les bibliothèques système que réclame la bibliothèque statique sur ce poste.
 # Elles sont figées dans hosts/c : on relance ceci quand la liaison de l'hôte C

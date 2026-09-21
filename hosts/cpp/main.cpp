@@ -138,6 +138,90 @@ bool submit_scene(ScgContext *ctx)
     return scg_submit(ctx, &IDENTITY, SCENE_VERTICES, 4, SCENE_TRIANGLES, 2) == SCG_OK;
 }
 
+/// Le côté de la texture du sol, en texels, et celui d'une de ses cases.
+constexpr uint32_t FLOOR_SIDE = 64;
+constexpr uint32_t FLOOR_CELL = 8;
+
+/// Le sol de la scène `texture`, à 1,2 unité sous la caméra, habillé à huit
+/// texels par unité de monde. Mêmes valeurs que la scène de conformance.
+constexpr ScgVertexUv FLOOR_VERTICES[4] = {
+    {  2.0f, -24.0f, -1.2f,   2.0f * 8.0f, -24.0f * 8.0f },
+    { 60.0f, -24.0f, -1.2f,  60.0f * 8.0f, -24.0f * 8.0f },
+    { 60.0f,  24.0f, -1.2f,  60.0f * 8.0f,  24.0f * 8.0f },
+    {  2.0f,  24.0f, -1.2f,   2.0f * 8.0f,  24.0f * 8.0f },
+};
+
+/// Ses deux triangles, blancs : c'est la texture qui porte la couleur.
+constexpr ScgTriangle FLOOR_TRIANGLES[2] = {
+    { 0, 1, 2, 0xFF, 0xFF, 0xFF, 0xFF },
+    { 0, 2, 3, 0xFF, 0xFF, 0xFF, 0xFF },
+};
+
+/// Le damier procédural, teinte pour teinte comme la suite de conformance
+/// l'écrit : c'est lui qui décide de l'empreinte, et un liseré décalé d'un
+/// texel la ferait diverger.
+std::vector<uint8_t> make_checker()
+{
+    std::vector<uint8_t> texels(static_cast<size_t>(FLOOR_SIDE) * FLOOR_SIDE * 4);
+    for (uint32_t v = 0; v < FLOOR_SIDE; v++) {
+        for (uint32_t u = 0; u < FLOOR_SIDE; u++) {
+            uint8_t *texel = texels.data() + (static_cast<size_t>(v) * FLOOR_SIDE + u) * 4;
+            const bool edge = (u % FLOOR_CELL) == 0 || (v % FLOOR_CELL) == 0;
+            const bool dark = ((u / FLOOR_CELL) + (v / FLOOR_CELL)) % 2 == 0;
+            if (edge) {
+                texel[0] = 0xF0; texel[1] = 0xE0; texel[2] = 0xA0;
+            } else if (dark) {
+                texel[0] = 0x30; texel[1] = 0x38; texel[2] = 0x50;
+            } else {
+                texel[0] = 0x90; texel[1] = 0x70; texel[2] = 0x50;
+            }
+            texel[3] = 0xFF;
+        }
+    }
+    return texels;
+}
+
+/// Rend la scène texturée et hache son image.
+///
+/// La texture est détruite avant le rendu, à dessein : le moteur en garde sa
+/// propre référence jusqu'à la fin de l'image, et l'empreinte le prouve.
+uint64_t render_textured(bool &ok)
+{
+    ok = false;
+    ScgContextConfig config = scene_config();
+    ScgContext *ctx = nullptr;
+    ScgTexture *texture = nullptr;
+    const std::vector<uint8_t> texels = make_checker();
+
+    ScgTextureDesc desc{};
+    desc.width = FLOOR_SIDE;
+    desc.height = FLOOR_SIDE;
+    desc.format = SCG_TEXTURE_FORMAT_RGBA8;
+
+    check(scg_texture_load(&desc, texels.data(), texels.size(), &texture) == SCG_OK,
+          "la texture se charge sans contexte");
+    check(scg_create(&config, &ctx) == SCG_OK, "création du contexte texturé");
+    if (texture == nullptr || ctx == nullptr) {
+        scg_texture_destroy(texture);
+        scg_destroy(ctx);
+        return 0;
+    }
+
+    check(scg_submit_textured(ctx, &IDENTITY, FLOOR_VERTICES, 4, FLOOR_TRIANGLES, 2, texture)
+              == SCG_OK,
+          "le lot texturé est accepté");
+    scg_texture_destroy(texture);
+
+    std::vector<uint8_t> pixels(static_cast<size_t>(STRIDE) * HEIGHT * 4);
+    const int32_t code = scg_frame_end(ctx, pixels.data(), STRIDE);
+    check(code == SCG_OK, "l'image texturée se rend");
+    ok = code == SCG_OK;
+
+    const uint64_t hash = fingerprint(pixels.data(), WIDTH, HEIGHT, STRIDE);
+    scg_destroy(ctx);
+    return hash;
+}
+
 /// Vrai si `scg_abi_version` est exporté par la bibliothèque dynamique chargée
 /// dans le processus, et rend la même version que l'appel direct. Sans ce
 /// contrôle, une bibliothèque statique liée par erreur passerait tous les
@@ -373,10 +457,14 @@ int main()
         check_tiles(hash);
     }
 
-    if (failures > 0 || !ok) {
+    bool textured_ok = false;
+    const uint64_t textured = render_textured(textured_ok);
+
+    if (failures > 0 || !ok || !textured_ok) {
         std::fprintf(stderr, "%d vérification(s) en échec\n", failures);
         return 1;
     }
     std::printf("%016llx\n", static_cast<unsigned long long>(hash));
+    std::printf("%016llx\n", static_cast<unsigned long long>(textured));
     return 0;
 }

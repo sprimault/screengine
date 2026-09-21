@@ -99,6 +99,91 @@ public final class Test {
         return Screengine.submit(ctx, model, vertices, indices, colors);
     }
 
+    /** Côté de la texture du sol, en texels, et côté d'une de ses cases. */
+    private static final int FLOOR_SIDE = 64;
+
+    private static final int FLOOR_CELL = 8;
+
+    /**
+     * Le damier procédural, teinte pour teinte comme la suite de conformance
+     * l'écrit : c'est lui qui décide de l'empreinte, et un liseré décalé d'un
+     * texel la ferait diverger.
+     *
+     * @return les texels, quatre octets chacun, lignes jointives
+     */
+    private static byte[] makeChecker() {
+        byte[] texels = new byte[FLOOR_SIDE * FLOOR_SIDE * 4];
+        for (int v = 0; v < FLOOR_SIDE; v++) {
+            for (int u = 0; u < FLOOR_SIDE; u++) {
+                int base = (v * FLOOR_SIDE + u) * 4;
+                boolean edge = u % FLOOR_CELL == 0 || v % FLOOR_CELL == 0;
+                boolean dark = (u / FLOOR_CELL + v / FLOOR_CELL) % 2 == 0;
+                if (edge) {
+                    texels[base] = (byte) 0xF0;
+                    texels[base + 1] = (byte) 0xE0;
+                    texels[base + 2] = (byte) 0xA0;
+                } else if (dark) {
+                    texels[base] = 0x30;
+                    texels[base + 1] = 0x38;
+                    texels[base + 2] = 0x50;
+                } else {
+                    texels[base] = (byte) 0x90;
+                    texels[base + 1] = 0x70;
+                    texels[base + 2] = 0x50;
+                }
+                texels[base + 3] = (byte) 0xFF;
+            }
+        }
+        return texels;
+    }
+
+    /**
+     * Rend la scène {@code texture} et rend son empreinte, ou {@code null} si
+     * le rendu a échoué.
+     *
+     * <p>La texture est détruite avant le rendu, à dessein : le moteur en garde
+     * sa propre référence jusqu'à la fin de l'image, et l'empreinte le prouve.
+     *
+     * @return l'empreinte
+     */
+    private static String renderTextured() {
+        long texture = Screengine.textureLoad(FLOOR_SIDE, FLOOR_SIDE, makeChecker());
+        check(texture != 0, "la texture se charge sans contexte");
+
+        long[] out = {0};
+        if (texture == 0 || Screengine.create(sceneConfig(), out) != Screengine.OK) {
+            check(false, "création du contexte texturé");
+            return null;
+        }
+
+        float[] model = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
+        // Cinq flottants par sommet : la position, puis u et v en texels, à
+        // huit texels par unité de monde comme la scène de référence.
+        float[] vertices = {
+            2.0f, -24.0f, -1.2f, 2.0f * 8.0f, -24.0f * 8.0f,
+            60.0f, -24.0f, -1.2f, 60.0f * 8.0f, -24.0f * 8.0f,
+            60.0f, 24.0f, -1.2f, 60.0f * 8.0f, 24.0f * 8.0f,
+            2.0f, 24.0f, -1.2f, 2.0f * 8.0f, 24.0f * 8.0f,
+        };
+        int[] indices = {0, 1, 2, 0, 2, 3};
+        byte[] colors = {
+            (byte) 0xFF, (byte) 0xFF, (byte) 0xFF, (byte) 0xFF,
+            (byte) 0xFF, (byte) 0xFF, (byte) 0xFF, (byte) 0xFF,
+        };
+        check(Screengine.submitTextured(out[0], model, vertices, indices, colors, texture)
+                == Screengine.OK, "le lot texturé est accepté");
+        Screengine.textureDestroy(texture);
+
+        int body = STRIDE * HEIGHT * Screengine.BYTES_PER_PIXEL;
+        ByteBuffer block = ByteBuffer.allocateDirect(body);
+        int code = Screengine.frameEnd(out[0], block, 0, STRIDE);
+        check(code == Screengine.OK, "l'image texturée se rend");
+
+        String hash = fingerprint(block, 0, STRIDE);
+        Screengine.destroy(out[0]);
+        return code == Screengine.OK ? hash : null;
+    }
+
     /**
      * Vrai si le message est non vide quand on l'attend, et sans caractère de
      * contrôle venu d'un tampon non initialisé.
@@ -259,12 +344,14 @@ public final class Test {
         checkRefusals();
         checkBuffers();
         String hash = render();
+        String textured = renderTextured();
 
-        if (failures > 0 || hash == null) {
+        if (failures > 0 || hash == null || textured == null) {
             System.err.println(failures + " vérification(s) en échec");
             System.exit(1);
         }
         System.out.println(hash);
+        System.out.println(textured);
         System.exit(0);
     }
 }
