@@ -439,3 +439,72 @@ fn des_quadrilateres_aleatoires_se_decoupent_sans_couture() {
 
     assert!(tested > 200, "trop peu de cas retenus : {tested}");
 }
+
+/// Le span rend exactement l'ensemble que le test des trois fonctions de bord
+/// retiendrait, ligne par ligne, sur des triangles tirés au hasard.
+///
+/// C'est la propriété dont dépend tout le schéma des segments de perspective :
+/// une extrémité qui déborderait ferait diviser la profondeur là où elle n'a
+/// pas de sens, et une extrémité trop courte trouerait le triangle. Le
+/// comparer au balayage naïf, et non à une autre formule, est ce qui interdit
+/// aux deux de se tromper ensemble.
+#[test]
+fn le_span_coincide_avec_le_test_par_pixel() {
+    let mut rng = Rng::new(0x5A11);
+    let mut lignes = 0;
+    for _ in 0..3_000 {
+        let v = [
+            p(rng.coord(-10, W + 10), rng.coord(-10, H + 10)),
+            p(rng.coord(-10, W + 10), rng.coord(-10, H + 10)),
+            p(rng.coord(-10, W + 10), rng.coord(-10, H + 10)),
+        ];
+        let vertices = v.map(|position| Vertex {
+            position,
+            z: 1 << 31,
+            s: 0,
+            t: 0,
+        });
+        let Some(triangle) = prepare(vertices, 0) else {
+            continue;
+        };
+
+        // Les mêmes bornes et les mêmes fonctions de bord que `fill`, pour que
+        // la comparaison porte sur le span seul.
+        let (bx0, by0, bx1, by1) = triangle.bounds();
+        let x0 = bx0.max(0);
+        let x1 = bx1.min(W - 1);
+        let y0 = by0.max(0);
+        let y1 = by1.min(H - 1);
+        if x0 > x1 || y0 > y1 {
+            continue;
+        }
+
+        let (mut row, step_x, step_y) = setup(&triangle, x0, y0);
+        for y in y0..=y1 {
+            let naif: Vec<i32> = (x0..=x1)
+                .filter(|x| covered(&row, &step_x, (x - x0) as i64))
+                .collect();
+            match span(&row, &step_x, x0, x1) {
+                Some((lo, hi)) => {
+                    assert_eq!(
+                        (lo, hi),
+                        (naif[0], naif[naif.len() - 1]),
+                        "graine 0x5A11, ligne {y}"
+                    );
+                    // Contigu : sans quoi les extrémités seules ne diraient
+                    // rien de ce qu'il y a entre elles.
+                    assert_eq!(naif.len() as i32, hi - lo + 1, "ligne {y} trouée");
+                    lignes += 1;
+                }
+                None => assert!(
+                    naif.is_empty(),
+                    "ligne {y} : span vide mais pixels couverts"
+                ),
+            }
+            for i in 0..3 {
+                row[i] += step_y[i];
+            }
+        }
+    }
+    assert!(lignes > 2_000, "{lignes} lignes, échantillon trop maigre");
+}

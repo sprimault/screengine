@@ -105,7 +105,11 @@ fn les_permutations_circulaires_rendent_les_memes_bits() {
 }
 
 /// Le pas d'un pixel ajouté pas à pas rend les bits de la forme close : c'est
-/// ce qui permet au parcours de partir du coin de n'importe quelle tuile.
+/// ce qui permet au parcours de partir de n'importe quel pixel d'une ligne.
+///
+/// Horizontalement seulement, parce que c'est le seul sens que le remplissage
+/// parcourt : chaque ligne repart de la forme close au premier pixel de son
+/// span, et il n'y a donc rien à propager d'une ligne à l'autre.
 #[test]
 fn le_parcours_pas_a_pas_rend_la_forme_close() {
     let mut rng = Rng::new(43);
@@ -117,16 +121,12 @@ fn le_parcours_pas_a_pas_rend_la_forme_close() {
         }
         let plane = Plane::new(v, [depth(&mut rng), depth(&mut rng), depth(&mut rng)], a);
         let (px, py) = (rng.coord(-60000, 60000), rng.coord(-60000, 60000));
-        let (steps_x, steps_y) = (rng.coord(0, 200), rng.coord(0, 200));
+        let steps_x = rng.coord(0, 200);
         let mut value = plane.at(px, py);
-        for _ in 0..steps_y {
-            value = value.wrapping_add(plane.step_y(SUBPIXEL_SCALE));
-        }
         for _ in 0..steps_x {
             value = value.wrapping_add(plane.step_x(SUBPIXEL_SCALE));
         }
-        let closed = plane.at(px + steps_x * SUBPIXEL_SCALE, py + steps_y * SUBPIXEL_SCALE);
-        assert_eq!(value, closed);
+        assert_eq!(value, plane.at(px + steps_x * SUBPIXEL_SCALE, py));
     }
 }
 

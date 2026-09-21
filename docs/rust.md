@@ -448,9 +448,18 @@ la création du contexte rend une erreur plutôt que de déborder en silence.
   l'image, jamais d'une valeur arrondie propre à la tuile. Rebaser les valeurs à
   l'origine d'une tuile est permis, parce qu'une translation entière est exacte.
 - **La division de perspective a lieu aux multiples de 16 de l'abscisse dans
-  l'image**, même quand ce point tombe hors du triangle ou de la tuile ; entre
-  deux, l'interpolation est affine. Un segment qui commencerait au bord de la
-  tuile ou du triangle donnerait une texture différente selon le découpage.
+  l'image**, même quand ce point tombe hors de la tuile ; entre deux,
+  l'interpolation est affine. Un segment qui commencerait au bord de la tuile
+  donnerait une texture différente selon le découpage.
+
+  **Les extrémités sont celles du span du triangle sur la ligne**, et non des
+  multiples de 16 quelconques : `near/w` prolongé hors du triangle peut
+  s'annuler ou devenir négatif, et il n'existe alors aucun quotient à prendre.
+  Le span s'obtient par résolution entière des trois fonctions de bord, ce qui
+  le rend rigoureusement égal à ce que le test pixel par pixel retiendrait —
+  plus large, il ferait diviser là où la profondeur n'a pas de sens ; plus
+  étroit, il trouerait le triangle. Il ne dépend que des sommets et de la
+  ligne, donc pas de la tuile.
 - **Le niveau de mipmap se choisit par segment de 16 pixels**, sur la même grille,
   à partir de la dérivée entière des coordonnées de texture ; le logarithme se
   prend par `leading_zeros`.

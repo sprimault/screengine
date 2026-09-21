@@ -101,13 +101,12 @@ impl Plane {
     }
 
     /// Le pas d'un pixel vers la droite, décalé de [`GRADIENT_BITS`].
+    ///
+    /// Il n'y a pas de pas vertical : le parcours reprend la forme close au
+    /// premier pixel de chaque ligne, les spans ne commençant pas tous à la
+    /// même abscisse.
     pub fn step_x(&self, pixel: i32) -> i64 {
         self.dx.wrapping_mul(pixel as i64)
-    }
-
-    /// Le pas d'un pixel vers le bas, décalé de [`GRADIENT_BITS`].
-    pub fn step_y(&self, pixel: i32) -> i64 {
-        self.dy.wrapping_mul(pixel as i64)
     }
 }
 

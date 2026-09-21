@@ -69,6 +69,16 @@ signature ne change et `SCG_ABI_VERSION` reste à **1**.
   profondeur à la division. Bornées à `MAX_TEXEL_COORD` texels : au-delà, ou
   non finies, le lot est refusé en entier.
 
+### Modifié
+- Le remplissage d'un triangle ne teste plus chaque pixel de sa boîte
+  englobante : il résout les trois fonctions de bord pour obtenir, ligne par
+  ligne, les abscisses extrêmes qu'il couvre, puis ne parcourt que celles-là.
+  Le résultat est rigoureusement le même — c'est la résolution entière qui le
+  garantit, pas une approximation —, et les empreintes de conformance sont
+  inchangées. C'est ce qui donnera leurs extrémités aux segments de
+  perspective : hors du triangle, la profondeur peut s'annuler, et il n'y
+  aurait aucun quotient à prendre.
+
 ### Corrigé
 - Une coordonnée de sommet démesurée pouvait produire un triangle de bruit au
   lieu de disparaître. La borne qui l'écarte portait sur la coordonnée de vue,
@@ -107,6 +117,15 @@ is not recorded. No signature changes and `SCG_ABI_VERSION` stays at **1**.
   extra cost — then get multiplied by depth at the divide. Bounded to
   `MAX_TEXEL_COORD` texels: beyond that, or non-finite, the whole batch is
   rejected.
+
+### Changed
+- Filling a triangle no longer tests every pixel of its bounding box: it solves
+  the three edge functions to get, line by line, the extreme abscissae it
+  covers, then walks only those. The result is rigorously the same — integer
+  resolution guarantees it, not an approximation — and conformance digests are
+  unchanged. This is what will give perspective segments their endpoints:
+  outside the triangle, depth can vanish, and there would be no quotient to
+  take.
 
 ### Fixed
 - An oversized vertex coordinate could produce a triangle of noise instead of
