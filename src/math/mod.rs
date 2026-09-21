@@ -19,6 +19,7 @@ mod vector;
 
 pub use affine::Affine3;
 pub use angle::Angle;
+pub use fixed::MAX_TEXEL_COORD;
 pub use projection::Projection;
 pub use quat::Quat;
 pub use vector::Vec3;

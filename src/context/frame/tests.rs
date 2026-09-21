@@ -63,6 +63,8 @@ fn scene(context: &mut Context, seed: u64) {
                 y: (cy + rng.coord(-reach, reach)) * SUBPIXEL_SCALE + rng.coord(0, 15),
             },
             z: flat.unwrap_or(DEPTH_MARGIN + (rng.next() % span) as u32),
+            s: 0,
+            t: 0,
         };
         let (a, b, c) = (vertex(), vertex(), vertex());
         let color = rng.next() as u32 | 0xFF00_0000;
@@ -349,6 +351,8 @@ fn at(x: i32, y: i32, z: u32) -> Vertex {
             y: y * SUBPIXEL_SCALE,
         },
         z,
+        s: 0,
+        t: 0,
     }
 }
 

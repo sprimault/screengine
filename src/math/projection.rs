@@ -19,7 +19,7 @@ use core::f32::consts::PI;
 use crate::error::{Argument, Error, Result};
 
 use super::Vec3;
-use super::fixed::{to_depth, to_subpixel};
+use super::fixed::{to_depth, to_subpixel, to_texel};
 
 /// La demi-largeur de la bande de garde, en pixels.
 ///
@@ -58,6 +58,17 @@ pub struct ClipVertex {
     pub y: f32,
     /// La profondeur de vue, qui est aussi le `w` homogène.
     pub w: f32,
+    /// L'abscisse dans la texture, en texels, telle que soumise.
+    ///
+    /// **Non prémultipliée.** La projection est linéaire avant la division,
+    /// donc `x`, `y` et `w` sont affines dans le paramètre du segment de vue —
+    /// et le placage l'étant aussi, `u` et `v` le sont dans **ce même**
+    /// paramètre. C'est ce qui permet au point d'intersection de les porter
+    /// sans un calcul de plus. Les prémultiplier par quoi que ce soit qui fasse
+    /// intervenir `w` détruirait exactement cette propriété.
+    pub u: f32,
+    /// L'ordonnée dans la texture, en texels, telle que soumise.
+    pub v: f32,
 }
 
 /// Les cinq plans contre lesquels un triangle se découpe.
@@ -130,6 +141,10 @@ impl Frustum {
             x: (da * b.x - db * a.x) * inverse,
             y: (da * b.y - db * a.y) * inverse,
             w: (da * b.w - db * a.w) * inverse,
+            // Mêmes quatre opérations, donc même symétrie : la démonstration
+            // ci-dessus ne dit rien de particulier sur `x`, `y` et `w`.
+            u: (da * b.u - db * a.u) * inverse,
+            v: (da * b.v - db * a.v) * inverse,
         }
     }
 
@@ -233,7 +248,7 @@ impl Projection {
     /// distance de plan ne puisse déborder. Un `NaN` tomberait du côté extérieur
     /// de chaque plan, donc disparaîtrait de lui-même — mais un seul sommet
     /// suffirait à empoisonner les deux autres par le calcul d'intersection.
-    pub fn to_clip(self, view: Vec3) -> Option<ClipVertex> {
+    pub fn to_clip(self, view: Vec3, u: f32, v: f32) -> Option<ClipVertex> {
         let over = |v: f32| v.is_nan() || v.abs() > COORDINATE_LIMIT;
         // Après la multiplication, jamais avant : c'est la coordonnée de clip
         // qui entre dans le découpage. Les facteurs d'échelle étant finis et
@@ -244,7 +259,16 @@ impl Projection {
         if over(x) || over(y) || over(view.z) {
             return None;
         }
-        Some(ClipVertex { x, y, w: view.z })
+        // `u` et `v` ne sont pas vérifiés ici : ils ne subissent aucune
+        // transformation, et la soumission les a déjà bornés sur la valeur
+        // exacte que l'hôte a écrite.
+        Some(ClipVertex {
+            x,
+            y,
+            w: view.z,
+            u,
+            v,
+        })
     }
 
     /// Divise par `w` et passe en virgule fixe : la dernière opération flottante
@@ -260,10 +284,20 @@ impl Projection {
     /// [`to_depth`]: super::fixed::to_depth
     pub fn to_vertex(self, v: ClipVertex) -> ProjectedVertex {
         let inverse = 1.0 / v.w;
+        // La profondeur est extraite et réutilisée, jamais recalculée pour les
+        // coordonnées de texture : `s` et `t` doivent être formés sur la
+        // profondeur effectivement interpolée par le rasteriseur, sans quoi un
+        // pixel pourrait tester « proche » au tampon de profondeur et texturer
+        // « loin ». C'est aussi ce qui évite un second interpolant : `near/w`
+        // *est* `1/w` à la constante `near` près, qui se simplifie à la
+        // division par pixel.
+        let depth = self.near * inverse;
         ProjectedVertex {
             x: to_subpixel(self.center_x + v.x * inverse),
             y: to_subpixel(self.center_y + v.y * inverse),
-            z: to_depth(self.near * inverse),
+            z: to_depth(depth),
+            s: to_texel(v.u * depth),
+            t: to_texel(v.v * depth),
         }
     }
 }
@@ -280,6 +314,14 @@ pub struct ProjectedVertex {
     pub y: i32,
     /// La profondeur, `near/w` en 0.32.
     pub z: u32,
+    /// L'abscisse de texture multipliée par la profondeur, en 14.12.
+    ///
+    /// C'est le produit qui s'interpole linéairement en espace écran, là où la
+    /// coordonnée seule ne le fait pas. La division par pixel le rend à
+    /// l'échelle.
+    pub s: i32,
+    /// L'ordonnée de texture multipliée par la profondeur, en 14.12.
+    pub t: i32,
 }
 
 #[cfg(test)]

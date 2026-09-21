@@ -82,5 +82,53 @@ pub fn to_depth(depth: f32) -> u32 {
     }
 }
 
+/// Bits fractionnaires d'une coordonnée de texture au sommet.
+///
+/// Douze, donc du 14.12 : la partie entière porte les 2¹⁴ texels que la
+/// soumission admet, et il reste cinq bits de marge dans l'`i32`.
+pub const TEXEL_BITS: u32 = 12;
+
+/// La plus grande coordonnée de texture qu'un sommet peut porter, en texels.
+///
+/// Ce n'est pas la taille d'une texture, mais l'amplitude du pavage : une
+/// surface qui répète sa texture huit mille fois reste dans la borne. Elle vient
+/// du produit que la récupération par pixel fait plus loin — coordonnée par
+/// profondeur, deux grandeurs anticorrélées dont le produit reste un bit sous le
+/// débordement d'un `i64`.
+pub const MAX_TEXEL_COORD: f32 = 16_384.0;
+
+/// La coordonnée de texture extrême en 14.12, vers laquelle `to_texel` borne.
+const TEXEL_LIMIT: i32 = (MAX_TEXEL_COORD as i32) << TEXEL_BITS;
+
+/// Passe une coordonnée de texture en 14.12, arrondie au plus proche.
+///
+/// Même demi-pas que [`to_subpixel`], et pour une raison qui se voit ici plus
+/// qu'ailleurs : la conversion `as` tronque vers zéro, si bien que le sens de
+/// l'arrondi s'inverserait de part et d'autre de l'origine de la texture — une
+/// couture y apparaîtrait, sur une ligne que rien d'autre ne distingue.
+///
+/// Le bornage est écrit, jamais laissé à la saturation de `as` : un sommet
+/// engendré par le découpage peut retomber quelques ulp sous le plan proche,
+/// donc porter une profondeur à peine au-dessus de un, exactement comme
+/// [`to_depth`] le borne déjà.
+pub fn to_texel(value: f32) -> i32 {
+    if value.is_nan() {
+        return 0;
+    }
+    let scaled = value * (1 << TEXEL_BITS) as f32;
+    let rounded = if scaled >= 0.0 {
+        scaled + 0.5
+    } else {
+        scaled - 0.5
+    };
+    if rounded >= TEXEL_LIMIT as f32 {
+        return TEXEL_LIMIT;
+    }
+    if rounded <= -(TEXEL_LIMIT as f32) {
+        return -TEXEL_LIMIT;
+    }
+    rounded as i32
+}
+
 #[cfg(test)]
 mod tests;

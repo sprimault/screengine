@@ -78,3 +78,50 @@ fn la_profondeur_reste_dans_la_marge() {
     let below_one = f32::from_bits(1.0f32.to_bits() - 1);
     assert_eq!(to_depth(below_one), u32::MAX - 255);
 }
+
+/// `to_texel` arrondit au plus proche, demi-pas écarté de zéro, et c'est sur
+/// les négatifs que ça compte : la conversion `as` tronque vers zéro, si bien
+/// qu'une texture aurait une couture le long de son origine, sur une ligne que
+/// rien d'autre ne distingue.
+#[test]
+fn la_coordonnee_de_texture_arrondit_au_plus_proche() {
+    let unit = 1 << TEXEL_BITS;
+    for (value, expected) in [
+        (0.0, 0),
+        (1.0, unit),
+        (-1.0, -unit),
+        (0.5, unit / 2),
+        (-0.5, -unit / 2),
+    ] {
+        assert_eq!(to_texel(value), expected, "{value}");
+    }
+
+    // Un quart de pas de part et d'autre de zéro : les deux doivent s'arrondir
+    // du même côté de leur propre entier, donc s'opposer exactement.
+    let quart = 0.25 / unit as f32;
+    assert_eq!(to_texel(quart), -to_texel(-quart));
+    let trois_quarts = 0.75 / unit as f32;
+    assert_eq!(to_texel(trois_quarts), 1);
+    assert_eq!(to_texel(-trois_quarts), -1);
+}
+
+/// La borne est écrite, jamais laissée à la saturation de `as` : un sommet
+/// engendré par le découpage retombe parfois quelques ulp sous le plan proche,
+/// donc porte une profondeur à peine au-dessus de un.
+#[test]
+fn la_coordonnee_de_texture_reste_dans_son_format() {
+    let limit = (MAX_TEXEL_COORD as i32) << TEXEL_BITS;
+    for (value, expected) in [
+        (MAX_TEXEL_COORD, limit),
+        (-MAX_TEXEL_COORD, -limit),
+        (MAX_TEXEL_COORD * 2.0, limit),
+        (f32::INFINITY, limit),
+        (f32::NEG_INFINITY, -limit),
+        (f32::NAN, 0),
+    ] {
+        assert_eq!(to_texel(value), expected, "{value}");
+    }
+    // Vingt-sept bits avec le signe : cinq de marge dans l'`i32`, et le 14.12
+    // littéralement vrai.
+    assert!(limit <= 1 << 26);
+}

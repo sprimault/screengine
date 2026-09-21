@@ -66,6 +66,16 @@ pub enum Argument {
     /// Un champ de vision hors de `]0, π[`, ou un plan proche nul, négatif ou
     /// démesuré.
     Projection,
+    /// Une coordonnée de texture non finie, ou au-delà de
+    /// [`MAX_TEXEL_COORD`] texels.
+    ///
+    /// Une erreur et non une disparition, contrairement à une position que la
+    /// vue ne peut pas porter : un `uv` ne dépend ni de la caméra, ni de la
+    /// matrice modèle, ni de la texture avec laquelle le lot sera dessiné.
+    /// Hors borne, c'est une donnée fausse.
+    ///
+    /// [`MAX_TEXEL_COORD`]: crate::MAX_TEXEL_COORD
+    TextureCoordinate,
     /// Un côté de texture nul, au-delà de [`MAX_TEXTURE_SIZE`], ou qui n'est
     /// pas une puissance de deux.
     ///
