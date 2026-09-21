@@ -31,6 +31,7 @@ Makefile text eol=lf
 # déclaration.
 crates/screengine-conformance/references/* binary
 *.png binary
+*.webp binary
 *.bin binary
 *.wasm binary
 *.so binary
