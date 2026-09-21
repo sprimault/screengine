@@ -17,7 +17,13 @@ publish.workspace = true
 #
 # winit reste en 0.30 : la 0.31 est encore en bêta, exige Rust 1.86, et change
 # la forme du gestionnaire d'application.
+#
+# `png` est ici et pas dans le noyau parce que le moteur n'ouvre aucun fichier :
+# il reçoit un bloc de texels et rien d'autre. Un hôte écrit contre l'ABI C
+# décode avec ce qu'il a — libpng, `Image` d'Android, `createImageBitmap` du
+# navigateur —, et c'est le même travail que fait ce crate pour le chemin Rust.
 [dependencies]
+png = "0.18.1"
 screengine.workspace = true
 softbuffer = { version = "0.4.8", default-features = false, features = [
     "x11",

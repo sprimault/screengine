@@ -97,6 +97,15 @@ signature ne change et `SCG_ABI_VERSION` reste à **1**.
   d'intersection les porte sans un calcul de plus —, puis se multiplient par la
   profondeur à la division. Bornées à `MAX_TEXEL_COORD` texels : au-delà, ou
   non finies, le lot est refusé en entier.
+- API Rust : `screengine_play::load_png`, qui décode un PNG et en fait une
+  texture du moteur — palette étendue, gris répété sur trois canaux, `tRNS`
+  devenu alpha, échantillons de seize bits ramenés à huit, alpha opaque quand
+  le format n'en porte pas. Le moteur n'ouvre toujours aucun fichier et ne
+  connaît aucun format d'image : décoder appartient à l'hôte, par ce chemin
+  comme derrière l'ABI C.
+- Trois textures pour l'étage d'accueil — brique, pierre, bois — sous
+  `crates/screengine-play/assets/`, en 512×512. Elles sont produites pour le
+  projet et suivent ses licences.
 
 ### Modifié
 - Le remplissage teste la profondeur avant d'écrire, en deux appels distincts
@@ -183,6 +192,14 @@ is not recorded. No signature changes and `SCG_ABI_VERSION` stays at **1**.
   extra cost — then get multiplied by depth at the divide. Bounded to
   `MAX_TEXEL_COORD` texels: beyond that, or non-finite, the whole batch is
   rejected.
+- Rust API: `screengine_play::load_png`, decoding a PNG into an engine texture
+  — palettes expanded, greyscale spread over three channels, `tRNS` turned into
+  alpha, sixteen-bit samples reduced to eight, an opaque alpha when the format
+  carries none. The engine still opens no file and knows no image format:
+  decoding belongs to the host, on this path as behind the C ABI.
+- Three textures for the host stage — brick, stone, wood — under
+  `crates/screengine-play/assets/`, at 512×512. They were produced for the
+  project and carry its licences.
 
 ### Changed
 - Filling tests depth before writing, in two distinct calls instead of one:

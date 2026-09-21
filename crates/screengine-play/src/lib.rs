@@ -35,6 +35,7 @@ mod error;
 mod input;
 mod runner;
 mod scale;
+mod texture;
 
 pub use camera::FreeCamera;
 pub use error::Error;
@@ -44,7 +45,8 @@ pub use screengine;
 // Réexportés et non redéfinis : ce crate ajoute du comportement, jamais des
 // données. Deux modèles de scène qui divergeraient seraient la seule façon de
 // le rater.
-pub use screengine::{Affine3, Camera, Color, Quat, Triangle, Vec3};
+pub use screengine::{Affine3, Camera, Color, Quat, Texture, Triangle, Vec3, VertexUv};
+pub use texture::load_png;
 pub use winit::event::MouseButton;
 pub use winit::keyboard::KeyCode;
 
