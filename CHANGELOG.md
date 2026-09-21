@@ -48,6 +48,14 @@ publié, et explique les conventions du dépôt à qui y contribue.
 
 ## [0.1.0] — 2026-09-21 — Le pipeline
 
+**Ce qu'un hôte de la 0.0.0 doit reprendre.** Le moteur n'a plus de scène en
+dur : un contexte auquel rien n'a été soumis rend désormais une image de fond.
+Un hôte qui n'appelait que `scg_frame_end` obtenait une image de démonstration ;
+il obtient maintenant un écran noir, et doit décrire sa scène par
+`scg_submit`. Aucune signature publiée ne change et `SCG_ABI_VERSION` reste à
+**1** : il se lie et s'exécute sans être recompilé, mais il ne montre plus rien
+tant qu'il ne soumet rien.
+
 ### Ajouté
 - `scg_frame_begin` et `scg_frame_tile` : l'hôte commence l'image, puis rend
   ses tuiles depuis ses propres threads. `scg_frame_end` garde sa signature et
@@ -129,6 +137,13 @@ publié, et explique les conventions du dépôt à qui y contribue.
   change pas.
 
 ***
+
+**What a 0.0.0 host must revisit.** The engine no longer has a built-in scene:
+a context nothing was submitted to now renders a background image. A host that
+only called `scg_frame_end` used to get a demonstration image; it now gets a
+black screen, and must describe its scene through `scg_submit`. No published
+signature changes and `SCG_ABI_VERSION` stays at **1**: it links and runs
+without being recompiled, but shows nothing until it submits something.
 
 ### Added
 - `scg_frame_begin` and `scg_frame_tile`: the host begins the frame, then
