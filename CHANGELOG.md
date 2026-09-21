@@ -46,6 +46,8 @@ publié, et explique les conventions du dépôt à qui y contribue.
 
 ## [Non publié]
 
+## [0.1.0] — 2026-09-21 — Le pipeline
+
 ### Ajouté
 - `scg_frame_begin` et `scg_frame_tile` : l'hôte commence l'image, puis rend
   ses tuiles depuis ses propres threads. `scg_frame_end` garde sa signature et

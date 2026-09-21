@@ -101,6 +101,8 @@ rotation lente, à toutes les résolutions internes prévues, et que chaque scè
 de conformance rend la même empreinte en tuiles de 32, de 64 et en image
 entière.
 
+**Franchie, publiée en 0.1.0.**
+
 ## 2 — Textures
 
 Correction de perspective par interpolation de `1/w`, `u/w`, `v/w` en virgule

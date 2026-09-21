@@ -34,10 +34,12 @@ for those making a game, and the engine does not know it exists.
 
 ## Status
 
-**Step 0 cleared, released as 0.0.0: a hardcoded triangle, and no engine.**
-The C boundary is written, and the triangle is filled by the final fixed-point
-edge functions. All four hosts — C, C++, wasm and Android — render it with the
-conformance suite's reference hash. Step 1, the pipeline, begins.
+**Step 1 cleared, released as 0.1.0: the pipeline, without textures or
+light.** Vectors, quaternions and table-driven trigonometry, projection,
+clipping in homogeneous space, a depth buffer, an edge-function rasteriser and
+tiled rendering. The host describes its scene — a camera, vertices, coloured
+triangles — and all four reference hosts render the same image, bit for bit.
+Surfaces are flat colours: textures are step 2, light is step 3.
 
 The roadmap has ten steps, each one published.
 
