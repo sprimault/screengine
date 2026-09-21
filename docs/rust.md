@@ -633,6 +633,22 @@ teste quelque chose.
   de ligne, comparés octet pour octet. Toutes les configurations se comparent à
   la même. Une référence absente fait échouer `--check`, jamais un « rien à
   comparer » qui laisserait la suite verte.
+- **Une scène peut rendre plusieurs vues** — plusieurs angles, plusieurs
+  résolutions internes —, et ses empreintes d'image s'enchaînent en une seule,
+  dans l'ordre. Écartée : une référence par vue, qui nommerait la vue fautive
+  mais porterait des dizaines de fichiers pour une scène ; la comparaison entre
+  configurations se fait vue par vue et nomme déjà celle qui diverge. Une scène
+  d'une seule vue garde l'empreinte de son image, sans enveloppe : c'est ce qui
+  permet à un hôte de comparer la sienne au fichier versionné.
+- **Une couture ne se lit pas dans une empreinte**, qui change aussi bien pour
+  un trou que pour une teinte — et une référence prise sur un rendu troué le
+  figerait. Elle se vérifie sans référence : la scène projetée étant convexe,
+  son intersection avec une ligne de pixels est un segment, et un pixel de fond
+  entre le premier et le dernier pixel peint est un trou. Ce contrôle attrape
+  une couture de tuile ou une découpe qui mord ; il n'attrape pas la règle
+  top-left, dont le biais ne départage que les centres de pixels tombant
+  exactement sur l'arête — cas que seuls les tests du noyau atteignent, en les
+  y plaçant.
 - **Les hôtes se comparent au chemin Rust de leur plateforme**, et ce chemin à la
   référence versionnée : chaque plateforme d'intégration continue relie ainsi
   tous les hôtes qu'elle exécute au même fichier.

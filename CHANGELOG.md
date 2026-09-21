@@ -72,6 +72,10 @@ publié, et explique les conventions du dépôt à qui y contribue.
 - Quatre scènes de conformance : la bande de garde, le débordement latéral sans
   découpe, l'interpénétration avec égalité de profondeur, et un sol qui
   traverse le plan proche.
+- Une cinquième, en rotation : la scène à arêtes partagées sur un tour complet,
+  à trois résolutions internes. Ses images s'enchaînent en une seule empreinte,
+  et un contrôle sans référence vérifie qu'aucune ligne ne montre de trou entre
+  les deux triangles.
 - `scg_set_camera` et `scg_submit`, avec `ScgCamera`, `ScgVertex`,
   `ScgTriangle` et `ScgMat4`. La matrice reçue est celle du **modèle** — objet
   vers monde —, le moteur composant la vue de sa caméra ; une modèle-vue y
@@ -141,6 +145,9 @@ publié, et explique les conventions du dépôt à qui y contribue.
   being `{0, 0, 0, 1}`.
 - Four conformance scenes: the guard band, lateral overflow without clipping,
   interpenetration with equal depths, and a floor crossing the near plane.
+- A fifth, rotating: the shared-edge scene over a full turn, at three internal
+  resolutions. Its images chain into a single hash, and a reference-free check
+  verifies that no row shows a gap between the two triangles.
 
 ### Changed
 - **Deliberate change of the rendered image**: it is no longer a triangle

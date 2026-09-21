@@ -23,7 +23,8 @@ use std::process::ExitCode;
 use std::{fs, io};
 
 use screengine::{
-    Affine3, BYTES_PER_PIXEL, Color, Config, Context, Frame, Rect, Rows, Triangle, Vec3,
+    Affine3, Angle, BYTES_PER_PIXEL, Color, Config, Context, Frame, Quat, Rect, Rows, Triangle,
+    Vec3,
 };
 
 /// Une façon de rendre une scène qui ne doit pas changer l'image.
@@ -200,7 +201,47 @@ enum Scene {
     /// Le plan proche coupe chacun de ses triangles, et c'est la découpe qui
     /// engendre le plus de sommets par triangle.
     Near,
+    /// La scène à arêtes partagées, tournée sur un tour complet et rendue à
+    /// trois résolutions internes.
+    ///
+    /// Le critère de franchissement de l'étape : aucune couture, en rotation,
+    /// à toutes les résolutions prévues. Une arête immobile ne prouve rien —
+    /// la règle top-left départage quatre cas selon son orientation, et une
+    /// scène fixe n'en éprouve qu'un.
+    ///
+    /// Ses images se hachent toutes dans la même empreinte, dans l'ordre des
+    /// vues : une référence par angle désignerait l'angle fautif, mais
+    /// porterait quarante-huit fichiers pour une seule scène, et c'est la
+    /// comparaison entre passes qui donne déjà cette information.
+    Rotation,
 }
+
+/// Le quadrilatère à arêtes partagées, en coordonnées de monde.
+///
+/// Les quatre hôtes le décrivent aussi, chacun dans son langage : c'est lui qui
+/// relie leurs empreintes à celle du chemin Rust. Son centre est sur l'axe de
+/// visée, ce dont la scène en rotation se sert pour le faire tourner sans le
+/// sortir du champ.
+const EDGE_VERTICES: [Vec3; 4] = [
+    Vec3::new(2.0, 2.5, 1.6),
+    Vec3::new(3.5, -2.5, 1.6),
+    Vec3::new(3.5, -2.5, -1.6),
+    Vec3::new(2.0, 2.5, -1.6),
+];
+
+/// Ses deux triangles, dont l'arête commune est parcourue dans un sens par le
+/// premier et dans l'autre par le second : le cas que la règle top-left doit
+/// trancher.
+const EDGE_TRIANGLES: [Triangle; 2] = [
+    Triangle {
+        indices: [0, 2, 1],
+        color: Color::new(0xE0, 0xA0, 0x30, 0xFF),
+    },
+    Triangle {
+        indices: [0, 3, 2],
+        color: Color::new(0xA0, 0xE0, 0x30, 0xFF),
+    },
+];
 
 /// Deux gris francs, pour les scènes où la couleur ne porte rien d'autre que
 /// la diagonale.
@@ -257,21 +298,57 @@ fn wall(context: &mut Context, distance: f32, half_y: f32, half_z: f32) -> scree
     )
 }
 
+/// Une image à rendre d'une scène : sa résolution, et l'angle de rotation.
+///
+/// Une scène fixe n'a qu'une vue ; celle qui tourne en a autant que d'angles
+/// et de résolutions, et toutes entrent dans la même empreinte.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct View {
+    /// Largeur interne, en pixels.
+    width: u32,
+    /// Hauteur interne, en pixels.
+    height: u32,
+    /// Le rang de l'angle, sur [`Scene::ANGLES`].
+    angle: u32,
+}
+
+impl View {
+    /// La désignation d'une vue dans un message de divergence.
+    fn label(self) -> String {
+        format!("{}×{} angle {}", self.width, self.height, self.angle)
+    }
+}
+
 impl Scene {
     /// Toutes les scènes, dans l'ordre où `--check` les rejoue.
-    const ALL: [Self; 5] = [
+    const ALL: [Self; 6] = [
         Self::Edge,
         Self::Guard,
         Self::Lateral,
         Self::Depth,
         Self::Near,
+        Self::Rotation,
     ];
 
     /// La passe que `--print` utilise, celle des hôtes.
     const HOST_PASS: Pass = Pass::Tiles64;
 
-    /// La résolution de toutes les scènes, qui est celle des hôtes.
+    /// La résolution des scènes fixes, qui est celle des hôtes.
     const RESOLUTION: (u32, u32) = (640, 360);
+
+    /// Les résolutions internes que la scène en rotation parcourt.
+    ///
+    /// Trois formats 16:9, dont celui des hôtes. Une couture qui ne se
+    /// montrerait qu'à une résolution donnée — un arrondi qui tombe juste en
+    /// 640 de large et faux en 320 — resterait invisible sans elles.
+    const RESOLUTIONS: [(u32, u32); 3] = [(640, 360), (480, 270), (320, 180)];
+
+    /// Les angles que la scène en rotation parcourt, sur un tour complet.
+    ///
+    /// Seize : assez pour que chaque arête passe par l'horizontale, la
+    /// verticale et les deux diagonales, qui sont les quatre cas que la règle
+    /// top-left départage différemment.
+    const ANGLES: u32 = 16;
 
     /// Le nom de la scène, qui est aussi celui de sa référence.
     fn name(self) -> &'static str {
@@ -281,6 +358,30 @@ impl Scene {
             Self::Lateral => "lateral",
             Self::Depth => "profondeur",
             Self::Near => "proche",
+            Self::Rotation => "rotation",
+        }
+    }
+
+    /// Les vues que cette scène rend, dans l'ordre où elles entrent dans
+    /// l'empreinte.
+    fn views(self) -> Vec<View> {
+        let (width, height) = Self::RESOLUTION;
+        match self {
+            Self::Rotation => Self::RESOLUTIONS
+                .iter()
+                .flat_map(|&(width, height)| {
+                    (0..Self::ANGLES).map(move |angle| View {
+                        width,
+                        height,
+                        angle,
+                    })
+                })
+                .collect(),
+            _ => vec![View {
+                width,
+                height,
+                angle: 0,
+            }],
         }
     }
 
@@ -288,33 +389,29 @@ impl Scene {
     ///
     /// Les coordonnées sont celles du monde — X vers l'est, Z en haut —, et la
     /// caméra neutre regarde le +X depuis l'origine.
-    fn submit(self, context: &mut Context) -> screengine::Result<()> {
+    fn submit(self, context: &mut Context, view: View) -> screengine::Result<()> {
         match self {
+            // Le même quadrilatère que `arete`, tourné autour de l'axe de
+            // visée. L'axe passe par son centre, donc il reste dans le champ et
+            // garde sa fuite en perspective ; ce qui change, c'est
+            // l'orientation de chacune de ses arêtes, y compris la commune.
+            Self::Rotation => {
+                let turn = view.angle as f32 * core::f32::consts::TAU / Self::ANGLES as f32;
+                let spin =
+                    Quat::from_axis_angle(Vec3::new(1.0, 0.0, 0.0), Angle::from_radians(turn));
+                context.submit(
+                    Affine3::from_rotation_translation(spin, Vec3::ZERO),
+                    &EDGE_VERTICES,
+                    &EDGE_TRIANGLES,
+                )
+            }
             // Le quadrilatère fuit vers la droite, donc chaque pixel a sa
             // propre profondeur, et il déborde à gauche pour que le parcours
             // traite des triangles plus larges que l'image. L'ordre des sommets
             // fait que l'arête commune est parcourue dans un sens par le
             // premier triangle et dans l'autre par le second : c'est le cas que
             // la règle top-left doit trancher.
-            Self::Edge => context.submit(
-                Affine3::IDENTITY,
-                &[
-                    Vec3::new(2.0, 2.5, 1.6),
-                    Vec3::new(3.5, -2.5, 1.6),
-                    Vec3::new(3.5, -2.5, -1.6),
-                    Vec3::new(2.0, 2.5, -1.6),
-                ],
-                &[
-                    Triangle {
-                        indices: [0, 2, 1],
-                        color: Color::new(0xE0, 0xA0, 0x30, 0xFF),
-                    },
-                    Triangle {
-                        indices: [0, 3, 2],
-                        color: Color::new(0xA0, 0xE0, 0x30, 0xFF),
-                    },
-                ],
-            ),
+            Self::Edge => context.submit(Affine3::IDENTITY, &EDGE_VERTICES, &EDGE_TRIANGLES),
             // À une demi-unité de la caméra et dix de large : ses bords partent
             // à plus de six mille pixels du centre, loin au-delà des 4096 de la
             // bande de garde.
@@ -397,23 +494,19 @@ impl Scene {
         Self::ALL.into_iter().find(|scene| scene.name() == name)
     }
 
-    /// Rend la scène par `pass` et rend son empreinte.
-    ///
-    /// Toutes les scènes partagent la résolution des hôtes : une scène qui
-    /// rendrait ailleurs ne se comparerait plus à rien de ce qu'ils mesurent.
-    fn render(self, pass: Pass) -> Result<u64, screengine::Error> {
-        let (width, height) = Self::RESOLUTION;
-        let pixels = self.render_pixels(pass)?;
-        Ok(hash::image(&pixels, width, height, width))
+    /// Rend une vue par `pass` et rend son empreinte.
+    fn render_view(self, pass: Pass, view: View) -> Result<u64, screengine::Error> {
+        let pixels = self.render_pixels(pass, view)?;
+        Ok(hash::image(&pixels, view.width, view.height, view.width))
     }
 
-    /// Rend la scène par `pass` et rend le tampon lui-même.
+    /// Rend une vue par `pass` et rend le tampon lui-même.
     ///
     /// L'empreinte ne dit pas si une image est noire, et une scène soumise à
     /// l'envers est éliminée comme dos de face sans un mot : c'est par ce
     /// chemin que les tests vérifient qu'il y a quelque chose à hacher.
-    fn render_pixels(self, pass: Pass) -> Result<Vec<u8>, screengine::Error> {
-        let (width, height) = Self::RESOLUTION;
+    fn render_pixels(self, pass: Pass, view: View) -> Result<Vec<u8>, screengine::Error> {
+        let (width, height) = (view.width, view.height);
         let mut context = Context::new(Config {
             max_width: width,
             max_height: height,
@@ -422,7 +515,7 @@ impl Scene {
             tile_size: pass.tile_size(),
             max_triangles: 0,
         })?;
-        self.submit(&mut context)?;
+        self.submit(&mut context, view)?;
         let mut pixels = vec![0u8; width as usize * height as usize * BYTES_PER_PIXEL];
         pass.render(context.frame_begin()?, &mut pixels, width, height)?;
         Ok(pixels)
@@ -433,33 +526,40 @@ impl Scene {
     /// Deux passes qui divergent sont une erreur du moteur, pas une
     /// différence à départager : l'image ne dépend ni du découpage, ni de
     /// l'ordre, ni des threads.
+    /// La comparaison se fait **vue par vue** et non sur l'empreinte cumulée :
+    /// c'est ce qui permet au message de nommer la résolution et l'angle où la
+    /// divergence apparaît, là où l'empreinte de la scène ne dirait que « ça ne
+    /// correspond plus ».
     fn render_all(self) -> Result<u64, String> {
-        let mut common: Option<(Pass, u64)> = None;
-        for pass in Pass::ALL {
-            let hash = self.render(pass).map_err(|error| {
-                format!(
-                    "{} ({}) : le moteur a refusé la scène : {error:?}",
-                    self.name(),
-                    pass.name()
-                )
-            })?;
-            match common {
-                None => common = Some((pass, hash)),
-                Some((first, expected)) if expected != hash => {
-                    return Err(format!(
-                        "{} : {} et {} divergent ({} contre {})",
+        let views = self.views();
+        let mut reference: Vec<u64> = Vec::with_capacity(views.len());
+
+        for (rank, pass) in Pass::ALL.into_iter().enumerate() {
+            for (index, view) in views.iter().enumerate() {
+                let hash = self.render_view(pass, *view).map_err(|error| {
+                    format!(
+                        "{} ({}, {}) : le moteur a refusé la scène : {error:?}",
                         self.name(),
-                        first.name(),
                         pass.name(),
-                        hash::format(expected),
+                        view.label()
+                    )
+                })?;
+                if rank == 0 {
+                    reference.push(hash);
+                } else if reference[index] != hash {
+                    return Err(format!(
+                        "{} ({}) : {} et {} divergent ({} contre {})",
+                        self.name(),
+                        view.label(),
+                        Pass::ALL[0].name(),
+                        pass.name(),
+                        hash::format(reference[index]),
                         hash::format(hash)
                     ));
                 }
-                Some(_) => {}
             }
         }
-        // Pass::ALL n'est pas vide : la boucle a fixé l'empreinte.
-        Ok(common.map_or(0, |(_, hash)| hash))
+        Ok(hash::chain(&reference))
     }
 }
 
@@ -556,17 +656,40 @@ fn write_bmp(path: &Path, pixels: &[u8], width: u32, height: u32) -> io::Result<
     fs::write(path, file)
 }
 
-/// Écrit toutes les scènes en images dans `dir` ; rend le compte rendu.
+/// Écrit chaque vue d'une scène en image dans `dir` ; rend le compte rendu.
+///
+/// Une scène à plusieurs vues en écrit autant, suffixées de leur résolution et
+/// de leur angle : c'est en les ouvrant à la suite qu'on voit tourner ce qu'une
+/// empreinte ne montre pas.
 fn dump(scene: Scene, dir: &Path) -> Result<String, String> {
-    let (width, height) = Scene::RESOLUTION;
-    let pixels = scene
-        .render_pixels(Scene::HOST_PASS)
-        .map_err(|error| format!("{} : le moteur a refusé la scène : {error:?}", scene.name()))?;
-    let path = dir.join(format!("{}.bmp", scene.name()));
-    fs::create_dir_all(dir)
-        .and_then(|()| write_bmp(&path, &pixels, width, height))
-        .map_err(|error| format!("{} : {error}", path.display()))?;
-    Ok(format!("{} : {}", scene.name(), path.display()))
+    let views = scene.views();
+    fs::create_dir_all(dir).map_err(|error| format!("{} : {error}", dir.display()))?;
+
+    for (index, view) in views.iter().enumerate() {
+        let pixels = scene
+            .render_pixels(Scene::HOST_PASS, *view)
+            .map_err(|error| {
+                format!(
+                    "{} ({}) : le moteur a refusé la scène : {error:?}",
+                    scene.name(),
+                    view.label()
+                )
+            })?;
+        let name = if views.len() == 1 {
+            format!("{}.bmp", scene.name())
+        } else {
+            format!("{}-{index:02}.bmp", scene.name())
+        };
+        let path = dir.join(name);
+        write_bmp(&path, &pixels, view.width, view.height)
+            .map_err(|error| format!("{} : {error}", path.display()))?;
+    }
+    Ok(format!(
+        "{} : {} image(s) dans {}",
+        scene.name(),
+        views.len(),
+        dir.display()
+    ))
 }
 
 /// Lit le mode dans les arguments, programme exclu.
@@ -609,7 +732,11 @@ fn main() -> ExitCode {
             dump
         }
         Mode::Print(scene) => {
-            return match scene.render(Scene::HOST_PASS) {
+            // L'empreinte de la première vue, et non celle de la scène : un
+            // hôte hache une image, pas une suite d'images, et c'est à cette
+            // valeur-là qu'il compare la sienne.
+            let view = scene.views()[0];
+            return match scene.render_view(Scene::HOST_PASS, view) {
                 Ok(hash) => {
                     println!("{}", hash::format(hash));
                     ExitCode::SUCCESS
