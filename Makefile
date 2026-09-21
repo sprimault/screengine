@@ -51,8 +51,9 @@ android_build = for cible in $(CIBLES_ANDROID); do \
 # tapée directement perd ces réglages, et l'écart ne se voit pas dans la sortie.
 -include makefile.local
 
-.PHONY: build lib lib-wasm lib-android run example web test native-libs fmt lint lint-doc-tests nostd conform conform-update \
-        header header-verif audit deny doc hosts host-c host-cpp host-web host-android clean tools
+.PHONY: build lib lib-wasm lib-android run example web test native-libs fmt fmt-fix lint lint-doc-tests nostd \
+        conform conform-update conform-images header header-verif audit deny doc hosts host-c host-cpp host-web \
+        host-android clean tools
 
 build:
 	cargo build --workspace
@@ -199,6 +200,12 @@ native-libs:
 # touche à la configuration de clippy.
 fmt:
 	cargo fmt --all --check
+
+# Applique ce que `fmt` refuse. Une cible plutôt qu'un `cargo fmt` tapé à la
+# main : le diff de rustfmt se relit dans `git diff`, alors qu'un reformatage
+# reproduit à la main dérive au deuxième essai.
+fmt-fix:
+	cargo fmt --all
 
 # Le noyau et la frontière passent aussi clippy sur les cibles qu'aucune machine
 # de développement n'exécute : leurs `cfg` propres ne sont vérifiés par aucune

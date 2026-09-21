@@ -17,13 +17,19 @@
 //! des coordonnées se voit en se collant à un mur, là où un texel couvre
 //! plusieurs pixels. Aucune empreinte ne dit ces deux choses.
 //!
+//! `F` bascule le filtrage des textures. **C'est en marchant qu'il se juge** :
+//! côte à côte sur une image fixe, le tramage et le bilinéaire ne montrent
+//! qu'un grain contre un flou, alors que ce qui les sépare vraiment — un motif
+//! qui fourmille contre une surface qui glisse — ne se voit qu'en mouvement.
+//!
 //! `Z` `Q` `S` `D` ou les flèches pour se déplacer, la souris pour regarder.
 //! Le clic gauche prend la souris, le clic du milieu la rend, Échap ferme.
 
 use std::sync::Arc;
 
 use screengine_play::{
-    Affine3, Color, FreeCamera, MouseButton, Play, Texture, Triangle, Vec3, VertexUv, load_png,
+    Affine3, Color, Filter, FreeCamera, KeyCode, MouseButton, Play, Texture, Triangle, Vec3,
+    VertexUv, load_png,
 };
 
 /// Demi-largeur du couloir, en unités de monde. Une unité vaut un mètre : la
@@ -264,6 +270,23 @@ fn corridor() -> [Mesh; 3] {
 struct World {
     /// La caméra, à hauteur d'œil.
     camera: FreeCamera,
+    /// Le filtrage courant, que `F` bascule.
+    ///
+    /// Il part du tramage, qui est le défaut du moteur : l'exemple montre
+    /// d'abord ce qu'un hôte obtient sans rien configurer.
+    filter: Filter,
+}
+
+/// Le titre de la fenêtre, qui porte les commandes et le filtrage actif.
+///
+/// Les deux ensemble, et là plutôt que dans la console : c'est le seul endroit
+/// qu'on regarde sans lâcher la souris, et le seul où un jeu peut écrire tant
+/// que le moteur ne dessine pas de texte.
+fn title(filter: Filter) -> &'static str {
+    match filter {
+        Filter::Bilinear => "Couloir — F : bilinéaire · Z Q S D / flèches · clic : souris",
+        _ => "Couloir — F : tramage · Z Q S D / flèches · clic : souris",
+    }
 }
 
 /// Ouvre la fenêtre et parcourt le couloir.
@@ -276,41 +299,48 @@ fn main() -> Result<(), screengine_play::Error> {
     ];
     let world = World {
         camera: FreeCamera::new(Vec3::new(0.0, 0.0, 1.6)),
+        filter: Filter::Dither,
     };
     // L'indication vit dans la barre de titre et non dans la console : c'est
     // là qu'on la cherche quand on ne sait plus comment récupérer sa souris,
     // et elle y reste visible pendant que le curseur est pris.
-    Play::new()
-        .title("Couloir — Z Q S D / flèches · clic gauche : souris · clic milieu : la rendre")
-        .run(
-            world,
-            |world, tick| {
-                // Le curseur n'est **pas** pris au démarrage, et c'est délibéré :
-                // une fenêtre qui s'empare de la souris à l'ouverture laisse
-                // chercher comment la récupérer. Le clic gauche la prend, celui
-                // du milieu la rend — un bouton qui ne sert à rien d'autre, là
-                // où Échap ferme sans détour.
-                if tick.input().button_pressed(MouseButton::Left) {
-                    tick.capture_cursor(true);
-                }
-                if tick.input().button_pressed(MouseButton::Middle) {
-                    tick.capture_cursor(false);
-                }
-                world.camera.update(tick);
-            },
-            move |world, context| {
-                // Un refus ne peut venir que de la capacité, que cette scène
-                // n'approche pas ; le laisser passer vaut mieux qu'arrêter la
-                // boucle sur une image manquante.
-                let _ = context.set_camera(world.camera.camera());
-                for (mesh, texture) in [&masonry, &floor, &crates].into_iter().zip(&textures) {
-                    let _ = context.submit_textured(
-                        Affine3::IDENTITY,
-                        &mesh.vertices,
-                        &mesh.faces,
-                        texture,
-                    );
-                }
-            },
-        )
+    Play::new().title(title(world.filter)).run(
+        world,
+        |world, tick| {
+            // Le curseur n'est **pas** pris au démarrage, et c'est délibéré :
+            // une fenêtre qui s'empare de la souris à l'ouverture laisse
+            // chercher comment la récupérer. Le clic gauche la prend, celui
+            // du milieu la rend — un bouton qui ne sert à rien d'autre, là
+            // où Échap ferme sans détour.
+            if tick.input().button_pressed(MouseButton::Left) {
+                tick.capture_cursor(true);
+            }
+            if tick.input().button_pressed(MouseButton::Middle) {
+                tick.capture_cursor(false);
+            }
+            if tick.input().pressed(KeyCode::KeyF) {
+                world.filter = match world.filter {
+                    Filter::Bilinear => Filter::Dither,
+                    _ => Filter::Bilinear,
+                };
+                tick.set_title(title(world.filter));
+            }
+            world.camera.update(tick);
+        },
+        move |world, context| {
+            // Un refus ne peut venir que de la capacité, que cette scène
+            // n'approche pas ; le laisser passer vaut mieux qu'arrêter la
+            // boucle sur une image manquante.
+            let _ = context.set_camera(world.camera.camera());
+            let _ = context.set_filter(world.filter);
+            for (mesh, texture) in [&masonry, &floor, &crates].into_iter().zip(&textures) {
+                let _ = context.submit_textured(
+                    Affine3::IDENTITY,
+                    &mesh.vertices,
+                    &mesh.faces,
+                    texture,
+                );
+            }
+        },
+    )
 }
