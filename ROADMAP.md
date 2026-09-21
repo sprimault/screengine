@@ -119,6 +119,8 @@ niveau de qualité au-dessus, choisi par l'hôte.
 **Franchie quand** la caméra peut se coller à un mur texturé sans artefact, et
 qu'un sol qui fuit vers l'horizon ne scintille pas en mouvement.
 
+**Franchie, publiée en 0.2.0.**
+
 ## 3 — La lumière et l'image
 
 Lightmaps, quelques lumières dynamiques ajoutées aux lightmaps, brouillard par
