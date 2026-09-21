@@ -141,6 +141,21 @@ pub struct VertexUv {
     pub v: f32,
 }
 
+impl VertexUv {
+    /// Le sommet d'une soumission sans texture, dont les coordonnées sont
+    /// nulles.
+    ///
+    /// C'est ainsi que le chemin non texturé rejoint le chemin général : un
+    /// seul corps de soumission, et pas deux à tenir accordés.
+    pub const fn untextured(position: Vec3) -> Self {
+        Self {
+            position,
+            u: 0.0,
+            v: 0.0,
+        }
+    }
+}
+
 /// Un triangle soumis : trois indices dans le tableau de sommets, et sa couleur.
 ///
 /// La couleur est portée par le triangle et non par le lot : une surface entière

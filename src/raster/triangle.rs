@@ -35,6 +35,10 @@ pub struct Vertex {
     /// La profondeur, `near/w` en 0.32, plus grand est plus proche, bornée par
     /// `to_depth`.
     pub z: u32,
+    /// L'abscisse de texture multipliée par la profondeur, en 14.12.
+    pub s: i32,
+    /// L'ordonnée de texture multipliée par la profondeur, en 14.12.
+    pub t: i32,
 }
 
 /// Un triangle prêt à être parcouru dans n'importe quelle fenêtre.

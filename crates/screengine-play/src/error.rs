@@ -67,6 +67,9 @@ impl fmt::Display for Error {
                 Argument::VertexCoordinate => {
                     f.write_str("a submitted vertex coordinate is NaN or infinite")
                 }
+                Argument::TextureCoordinate => {
+                    f.write_str("a texture coordinate is not finite, or beyond 16384 texels")
+                }
                 Argument::TextureSize => {
                     f.write_str("texture sides must be powers of two between 1 and 2048")
                 }

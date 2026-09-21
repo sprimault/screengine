@@ -62,6 +62,12 @@ signature ne change et `SCG_ABI_VERSION` reste à **1**.
   une seule allocation, faite à ce seul appel.
 - API Rust : `VertexUv`, un sommet qui porte ses coordonnées de texture en
   texels, non normalisées.
+- API Rust : `Context::submit_uv`, qui soumet un lot dont les sommets portent
+  leurs coordonnées de texture. Elles traversent le découpage sans
+  prémultiplication — la projection étant linéaire avant la division, le point
+  d'intersection les porte sans un calcul de plus —, puis se multiplient par la
+  profondeur à la division. Bornées à `MAX_TEXEL_COORD` texels : au-delà, ou
+  non finies, le lot est refusé en entier.
 
 ### Corrigé
 - Une coordonnée de sommet démesurée pouvait produire un triangle de bruit au
@@ -95,6 +101,12 @@ is not recorded. No signature changes and `SCG_ABI_VERSION` stays at **1**.
   one call.
 - Rust API: `VertexUv`, a vertex carrying its texture coordinates in texels,
   unnormalised.
+- Rust API: `Context::submit_uv`, submitting a batch whose vertices carry their
+  texture coordinates. They cross the clipper unpremultiplied — projection
+  being linear before the divide, the intersection point carries them at no
+  extra cost — then get multiplied by depth at the divide. Bounded to
+  `MAX_TEXEL_COORD` texels: beyond that, or non-finite, the whole batch is
+  rejected.
 
 ### Fixed
 - An oversized vertex coordinate could produce a triangle of noise instead of

@@ -315,3 +315,77 @@ fn la_scene_ne_se_change_pas_pendant_le_rendu() {
     );
     assert_eq!(ctx.set_camera(Camera::DEFAULT), Err(Error::InvalidState));
 }
+
+/// Les sommets de `ahead`, avec les coordonnées de texture qu'on lui donne.
+fn ahead_uv(u: f32, v: f32) -> [VertexUv; 3] {
+    ahead().map(|position| VertexUv { position, u, v })
+}
+
+/// Une soumission texturée pose les mêmes triangles qu'une soumission sans
+/// texture : les coordonnées voyagent à côté de la géométrie, elles ne la
+/// changent pas.
+#[test]
+fn une_soumission_texturee_pose_la_meme_geometrie() {
+    let mut avec = small();
+    let mut sans = small();
+    avec.submit_uv(Affine3::IDENTITY, &ahead_uv(4.0, 8.0), &one())
+        .expect("capacité");
+    sans.submit(Affine3::IDENTITY, &ahead(), &one())
+        .expect("capacité");
+
+    assert_eq!(avec.triangles.len(), sans.triangles.len());
+    for (a, b) in avec.triangles.iter().zip(&sans.triangles) {
+        assert_eq!(a.bounds(), b.bounds());
+    }
+}
+
+/// Une coordonnée de texture hors borne refuse le lot entier, et ne laisse rien
+/// derrière : contrairement à une position que la vue ne peut pas porter, elle
+/// ne dépend ni de la caméra ni de la matrice, donc c'est une donnée fausse.
+#[test]
+fn une_coordonnee_de_texture_hors_borne_refuse_le_lot() {
+    for bad in [
+        f32::NAN,
+        f32::INFINITY,
+        -f32::INFINITY,
+        MAX_TEXEL_COORD * 1.5,
+        -MAX_TEXEL_COORD * 1.5,
+    ] {
+        let mut ctx = small();
+        ctx.submit(Affine3::IDENTITY, &ahead(), &one())
+            .expect("capacité");
+
+        let mut vertices = ahead_uv(0.0, 0.0);
+        vertices[2].u = bad;
+        assert_eq!(
+            ctx.submit_uv(Affine3::IDENTITY, &vertices, &one()),
+            Err(Error::InvalidArgument(Argument::TextureCoordinate)),
+            "{bad}"
+        );
+        vertices[2].u = 0.0;
+        vertices[1].v = bad;
+        assert_eq!(
+            ctx.submit_uv(Affine3::IDENTITY, &vertices, &one()),
+            Err(Error::InvalidArgument(Argument::TextureCoordinate)),
+            "{bad}"
+        );
+        assert_eq!(ctx.triangles.len(), 1, "un lot refusé a laissé un triangle");
+    }
+}
+
+/// La borne est inclusive : c'est la valeur exacte qui rend le produit par la
+/// profondeur juste un bit sous le débordement, et la refuser rétrécirait le
+/// domaine sans raison.
+#[test]
+fn la_borne_des_coordonnees_de_texture_est_inclusive() {
+    let mut ctx = small();
+    assert_eq!(
+        ctx.submit_uv(
+            Affine3::IDENTITY,
+            &ahead_uv(MAX_TEXEL_COORD, -MAX_TEXEL_COORD),
+            &one()
+        ),
+        Ok(())
+    );
+    assert_eq!(ctx.triangles.len(), 1);
+}

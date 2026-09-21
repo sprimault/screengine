@@ -10,10 +10,11 @@ use core::sync::atomic::{AtomicBool, AtomicU8, AtomicU32, Ordering};
 
 use crate::buffer::reserved;
 use crate::error::{Argument, Error, Result};
+use crate::math::fixed::MAX_TEXEL_COORD;
 use crate::math::projection::ClipVertex;
 use crate::math::{Affine3, Projection, Vec3};
 use crate::raster::{Bins, Grid, MAX_CLIP_TRIANGLES, Point, Prepared, Vertex, clip, prepare};
-use crate::scene::{Camera, Color, Triangle};
+use crate::scene::{Camera, Color, Triangle, VertexUv};
 
 pub use frame::{Frame, Output, Rows};
 
@@ -139,6 +140,21 @@ pub struct Context {
     /// qu'un `&self`, des tuiles pouvant encore la lire. Le prochain appel
     /// exclusif — une soumission, un début — la vide avant d'y toucher.
     stale: AtomicBool,
+}
+
+/// Un sommet porté en espace de vue, ses coordonnées de texture intactes.
+///
+/// La transformation ne touche que la position ; `u` et `v` traversent sans
+/// être modifiés, et c'est ce qui rend leur bornage vérifiable une fois pour
+/// toutes à la soumission.
+#[derive(Debug, Clone, Copy)]
+struct ClipSource {
+    /// La position en espace de vue.
+    view: Vec3,
+    /// L'abscisse de texture, en texels.
+    u: f32,
+    /// L'ordonnée de texture, en texels.
+    v: f32,
 }
 
 /// Le contexte accepte la scène : aucune image n'est commencée.
@@ -343,6 +359,41 @@ impl Context {
     where
         F: Fn(usize) -> Result<([Vec3; 3], Color)>,
     {
+        self.submit_each_uv(model, count, |i| {
+            let (corners, color) = read(i)?;
+            Ok((corners.map(VertexUv::untextured), color))
+        })
+    }
+
+    /// Soumet un lot de triangles dont les sommets portent leurs coordonnées de
+    /// texture.
+    ///
+    /// Même contrat que [`Context::submit`] pour le reste : `model` porte
+    /// l'objet vers le monde, et le lot est accepté ou refusé en entier.
+    pub fn submit_uv(
+        &mut self,
+        model: Affine3,
+        vertices: &[VertexUv],
+        triangles: &[Triangle],
+    ) -> Result<()> {
+        self.submit_each_uv(model, triangles.len(), |i| {
+            let triangle = triangles[i];
+            let mut corners = [VertexUv::untextured(Vec3::ZERO); 3];
+            for (corner, &index) in corners.iter_mut().zip(&triangle.indices) {
+                *corner = *vertices
+                    .get(index as usize)
+                    .ok_or(Error::InvalidArgument(Argument::VertexIndex))?;
+            }
+            Ok((corners, triangle.color))
+        })
+    }
+
+    /// La forme générale de [`Context::submit_each`], dont les sommets portent
+    /// leurs coordonnées de texture.
+    pub fn submit_each_uv<F>(&mut self, model: Affine3, count: usize, read: F) -> Result<()>
+    where
+        F: Fn(usize) -> Result<([VertexUv; 3], Color)>,
+    {
         if *self.state.get_mut() != RECORDING {
             return Err(Error::InvalidState);
         }
@@ -355,11 +406,11 @@ impl Context {
         result
     }
 
-    /// Le corps de [`Context::submit_each`], qui peut laisser le lot à moitié
-    /// posé.
+    /// Le corps de [`Context::submit_each_uv`], qui peut laisser le lot à
+    /// moitié posé.
     fn submit_batch<F>(&mut self, model: Affine3, count: usize, read: F) -> Result<()>
     where
-        F: Fn(usize) -> Result<([Vec3; 3], Color)>,
+        F: Fn(usize) -> Result<([VertexUv; 3], Color)>,
     {
         let transform = self.view.product(model);
         for i in 0..count {
@@ -368,13 +419,28 @@ impl Context {
             // refuse, pas ce que la caméra en fait. Un sommet fini que la
             // matrice porte à l'infini reste une condition de vue, et son
             // triangle disparaît plus bas sans erreur.
-            if corners
-                .iter()
-                .any(|v| !v.x.is_finite() || !v.y.is_finite() || !v.z.is_finite())
-            {
+            if corners.iter().any(|c| {
+                !c.position.x.is_finite() || !c.position.y.is_finite() || !c.position.z.is_finite()
+            }) {
                 return Err(Error::InvalidArgument(Argument::VertexCoordinate));
             }
-            self.submit_view(corners.map(|v| transform.transform_point(v)), color)?;
+            // Les coordonnées de texture, elles, ne dépendent d'aucune
+            // transformation : la borne porte sur la valeur exacte que l'hôte a
+            // écrite, et le découpage n'en produira que des combinaisons
+            // convexes. Revalider en aval serait de la défensive sur une valeur
+            // qui ne peut plus sortir que par un défaut du moteur.
+            let off = |c: f32| c.is_nan() || c.abs() > MAX_TEXEL_COORD;
+            if corners.iter().any(|c| off(c.u) || off(c.v)) {
+                return Err(Error::InvalidArgument(Argument::TextureCoordinate));
+            }
+            self.submit_view(
+                corners.map(|c| ClipSource {
+                    view: transform.transform_point(c.position),
+                    u: c.u,
+                    v: c.v,
+                }),
+                color,
+            )?;
         }
         Ok(())
     }
@@ -405,14 +471,16 @@ impl Context {
     ///
     /// Un sommet qu'on ne peut pas projeter fait disparaître le triangle sans
     /// erreur : c'est une donnée, pas un défaut du moteur.
-    fn submit_view(&mut self, view: [Vec3; 3], color: Color) -> Result<()> {
+    fn submit_view(&mut self, view: [ClipSource; 3], color: Color) -> Result<()> {
         let mut homogeneous = [ClipVertex {
             x: 0.0,
             y: 0.0,
             w: 0.0,
+            u: 0.0,
+            v: 0.0,
         }; 3];
-        for (slot, point) in homogeneous.iter_mut().zip(view) {
-            match self.projection.to_clip(point) {
+        for (slot, source) in homogeneous.iter_mut().zip(view) {
+            match self.projection.to_clip(source.view, source.u, source.v) {
                 Some(vertex) => *slot = vertex,
                 None => return Ok(()),
             }
@@ -432,6 +500,8 @@ impl Context {
                         y: projected.y,
                     },
                     z: projected.z,
+                    s: projected.s,
+                    t: projected.t,
                 }
             });
             self.push(vertices, color.packed())?;

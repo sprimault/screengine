@@ -16,6 +16,23 @@ fn projection() -> Projection {
     Projection::new(640, 360, 1.0, 0.1).unwrap_or_else(|_| unreachable!())
 }
 
+/// Le passage en espace de clip d'un sommet sans texture, pour les cas où les
+/// coordonnées de texture ne sont pas le sujet.
+fn to_clip(p: Projection, view: Vec3) -> Option<ClipVertex> {
+    Projection::to_clip(p, view, 0.0, 0.0)
+}
+
+/// Un sommet de clip sans texture, écrit par ses trois coordonnées.
+fn cv(x: f32, y: f32, w: f32) -> ClipVertex {
+    ClipVertex {
+        x,
+        y,
+        w,
+        u: 0.0,
+        v: 0.0,
+    }
+}
+
 /// Le repliement d'`Angle::from_radians` est le piège : trois demi-tours y
 /// deviendraient un demi-tour, accepté sans rien signaler. Le refus porte donc
 /// sur les radians, avant toute conversion.
@@ -55,7 +72,7 @@ fn refuse_une_resolution_nulle() {
 fn l_axe_tombe_au_centre_de_l_image() {
     let p = projection();
     for depth in [0.5, 1.0, 10.0, 1000.0] {
-        let clip = p.to_clip(Vec3::new(0.0, 0.0, depth)).unwrap();
+        let clip = to_clip(p, Vec3::new(0.0, 0.0, depth)).unwrap();
         let v = p.to_vertex(clip);
         assert_eq!((v.x, v.y), (320 * 16, 180 * 16), "profondeur {depth}");
     }
@@ -71,8 +88,8 @@ fn la_projection_est_symetrique_autour_du_centre() {
         let x = rng.unit_f32() * 4.0 - 2.0;
         let y = rng.unit_f32() * 4.0 - 2.0;
         let w = 0.2 + rng.unit_f32() * 8.0;
-        let a = p.to_vertex(p.to_clip(Vec3::new(x, y, w)).unwrap());
-        let b = p.to_vertex(p.to_clip(Vec3::new(-x, -y, w)).unwrap());
+        let a = p.to_vertex(to_clip(p, Vec3::new(x, y, w)).unwrap());
+        let b = p.to_vertex(to_clip(p, Vec3::new(-x, -y, w)).unwrap());
         assert_eq!(a.x - 320 * 16, 320 * 16 - b.x);
         assert_eq!(a.y - 180 * 16, 180 * 16 - b.y);
         assert_eq!(a.z, b.z, "même profondeur, même w");
@@ -87,7 +104,7 @@ fn le_bord_du_champ_tombe_sur_le_bord_de_l_image() {
     // À la distance 1, la demi-hauteur du tronc vaut tan(fov/2).
     let half = Angle::from_radians(1.0).half();
     let half_height = half.sin() / half.cos();
-    let clip = p.to_clip(Vec3::new(0.0, half_height, 1.0)).unwrap();
+    let clip = to_clip(p, Vec3::new(0.0, half_height, 1.0)).unwrap();
     assert_eq!(p.to_vertex(clip).y, 360 * 16);
 }
 
@@ -97,7 +114,7 @@ fn le_bord_du_champ_tombe_sur_le_bord_de_l_image() {
 fn rend_les_bits_de_l_expression_ecrite() {
     let p = projection();
     let view = Vec3::new(0.37, -1.2, 3.5);
-    let clip = p.to_clip(view).unwrap();
+    let clip = to_clip(p, view).unwrap();
     let v = p.to_vertex(clip);
 
     let inverse = 1.0 / 3.5;
@@ -106,17 +123,42 @@ fn rend_les_bits_de_l_expression_ecrite() {
     assert_eq!(v.z, to_depth(0.1 * inverse));
 }
 
+/// Les coordonnées de texture se forment sur la **même** profondeur que celle
+/// qui part au tampon, et non sur un produit refait dans un autre ordre.
+///
+/// Deux flottants qui valent la même chose à un ulp près suffiraient à ce qu'un
+/// pixel teste « proche » au tampon de profondeur et texture « loin ». Le test
+/// compare les bits, donc il attrape un `u · near · inverse` réassocié aussi
+/// bien qu'un `1/w` calculé à part.
+#[test]
+fn la_coordonnee_de_texture_se_forme_sur_la_profondeur_rendue() {
+    let p = projection();
+    let mut rng = Rng::new(0x7E57);
+    for _ in 0..1000 {
+        let u = rng.unit_f32() * 2000.0 - 1000.0;
+        let w = 0.2 + rng.unit_f32() * 50.0;
+        let clip =
+            Projection::to_clip(p, Vec3::new(0.5, -0.25, w), u, -u).expect("sommet projetable");
+        let v = p.to_vertex(clip);
+
+        let depth = p.near * (1.0 / w);
+        assert_eq!(v.z, to_depth(depth));
+        assert_eq!(v.s, to_texel(u * depth), "u {u}, w {w}");
+        assert_eq!(v.t, to_texel(-u * depth), "u {u}, w {w}");
+    }
+}
+
 /// Une coordonnée non finie ou démesurée est écartée avant le découpage : une
 /// seule d'entre elles empoisonnerait les deux autres par l'intersection.
 #[test]
 fn ecarte_une_coordonnee_non_finie_ou_demesuree() {
     let p = projection();
     for bad in [f32::NAN, f32::INFINITY, -f32::INFINITY, 1.0e35] {
-        assert!(p.to_clip(Vec3::new(bad, 0.0, 1.0)).is_none(), "{bad}");
-        assert!(p.to_clip(Vec3::new(0.0, bad, 1.0)).is_none(), "{bad}");
-        assert!(p.to_clip(Vec3::new(0.0, 0.0, bad)).is_none(), "{bad}");
+        assert!(to_clip(p, Vec3::new(bad, 0.0, 1.0)).is_none(), "{bad}");
+        assert!(to_clip(p, Vec3::new(0.0, bad, 1.0)).is_none(), "{bad}");
+        assert!(to_clip(p, Vec3::new(0.0, 0.0, bad)).is_none(), "{bad}");
     }
-    assert!(p.to_clip(Vec3::new(1.0, 2.0, 3.0)).is_some());
+    assert!(to_clip(p, Vec3::new(1.0, 2.0, 3.0)).is_some());
 }
 
 /// La borne porte sur la coordonnée de clip, après la mise à l'échelle.
@@ -131,11 +173,9 @@ fn la_borne_porte_sur_la_coordonnee_de_clip() {
     assert!(etroit.scale_x > 1.0e6, "champ trop ouvert pour ce cas");
 
     let juste_sous = COORDINATE_LIMIT / etroit.scale_x * 0.5;
-    assert!(etroit.to_clip(Vec3::new(juste_sous, 0.0, 1.0)).is_some());
+    assert!(to_clip(etroit, Vec3::new(juste_sous, 0.0, 1.0)).is_some());
     assert!(
-        etroit
-            .to_clip(Vec3::new(juste_sous * 8.0, 0.0, 1.0))
-            .is_none(),
+        to_clip(etroit, Vec3::new(juste_sous * 8.0, 0.0, 1.0)).is_none(),
         "une coordonnée de vue modeste donne ici une coordonnée de clip hors borne"
     );
 }
@@ -162,16 +202,8 @@ fn aucune_intersection_ne_deborde_dans_le_domaine_admis() {
     };
 
     for _ in 0..2_000 {
-        let a = ClipVertex {
-            x: extreme(&mut rng),
-            y: extreme(&mut rng),
-            w: extreme(&mut rng),
-        };
-        let b = ClipVertex {
-            x: extreme(&mut rng),
-            y: extreme(&mut rng),
-            w: extreme(&mut rng),
-        };
+        let a = cv(extreme(&mut rng), extreme(&mut rng), extreme(&mut rng));
+        let b = cv(extreme(&mut rng), extreme(&mut rng), extreme(&mut rng));
         for plane in 0..PLANE_COUNT {
             let (da, db) = (f.distance(a, plane), f.distance(b, plane));
             assert!(da.is_finite() && db.is_finite(), "distance débordée");
@@ -201,10 +233,15 @@ fn l_intersection_est_symetrique_au_bit_pres() {
     let mut rng = Rng::new(0xC11B);
     let mut croisements = 0;
     for _ in 0..20_000 {
+        // Les coordonnées de texture entrent dans le tirage : elles passent par
+        // la même forme, donc la symétrie doit valoir pour elles aussi, et une
+        // asymétrie ne se verrait sur aucune autre.
         let point = |rng: &mut Rng| ClipVertex {
             x: rng.unit_f32() * 2000.0 - 1000.0,
             y: rng.unit_f32() * 2000.0 - 1000.0,
             w: rng.unit_f32() * 20.0 - 5.0,
+            u: rng.unit_f32() * 512.0 - 256.0,
+            v: rng.unit_f32() * 512.0 - 256.0,
         };
         let (a, b) = (point(&mut rng), point(&mut rng));
         for plane in 0..PLANE_COUNT {
@@ -229,6 +266,23 @@ fn l_intersection_est_symetrique_au_bit_pres() {
                 ab.w.to_bits(),
                 ba.w.to_bits(),
                 "graine 0xC11B, plan {plane}"
+            );
+            assert_eq!(
+                ab.u.to_bits(),
+                ba.u.to_bits(),
+                "graine 0xC11B, plan {plane}"
+            );
+            assert_eq!(
+                ab.v.to_bits(),
+                ba.v.to_bits(),
+                "graine 0xC11B, plan {plane}"
+            );
+            // La symétrie survit à l'infini, pas la valeur : deux sens qui
+            // débordent rendent le même NaN, et la comparaison ci-dessus
+            // resterait verte pendant que le sommet est du bruit.
+            assert!(
+                ab.u.is_finite() && ab.v.is_finite(),
+                "coordonnée de texture débordée"
             );
         }
     }
@@ -266,16 +320,8 @@ fn la_forme_usuelle_n_est_pas_symetrique() {
 /// forme générale en produirait une copie voisine, donc un triangle en aiguille.
 #[test]
 fn un_sommet_sur_le_plan_ressort_identique() {
-    let a = ClipVertex {
-        x: 1.0,
-        y: 2.0,
-        w: 3.0,
-    };
-    let b = ClipVertex {
-        x: 9.0,
-        y: 8.0,
-        w: 7.0,
-    };
+    let a = cv(1.0, 2.0, 3.0);
+    let b = cv(9.0, 8.0, 7.0);
     let sur_a = Frustum::intersect(a, b, 0.0, -1.5);
     assert_eq!(sur_a.x.to_bits(), a.x.to_bits());
     assert_eq!(sur_a.w.to_bits(), a.w.to_bits());
@@ -291,10 +337,12 @@ fn l_intersection_tombe_sur_le_plan() {
     let f = p.frustum();
     let mut rng = Rng::new(0x7A1E);
     for _ in 0..2000 {
-        let point = |rng: &mut Rng| ClipVertex {
-            x: rng.unit_f32() * 100.0 - 50.0,
-            y: rng.unit_f32() * 100.0 - 50.0,
-            w: rng.unit_f32() * 10.0 - 2.0,
+        let point = |rng: &mut Rng| {
+            cv(
+                rng.unit_f32() * 100.0 - 50.0,
+                rng.unit_f32() * 100.0 - 50.0,
+                rng.unit_f32() * 10.0 - 2.0,
+            )
         };
         let (a, b) = (point(&mut rng), point(&mut rng));
         for plane in 0..PLANE_COUNT {
@@ -322,18 +370,10 @@ fn l_intersection_tombe_sur_le_plan() {
 fn les_codes_de_position_designent_les_plans_violes() {
     let p = projection();
     let f = p.frustum();
-    let dedans = ClipVertex {
-        x: 0.0,
-        y: 0.0,
-        w: 1.0,
-    };
+    let dedans = cv(0.0, 0.0, 1.0);
     assert_eq!(f.outcode(dedans), 0);
 
-    let derriere = ClipVertex {
-        x: 0.0,
-        y: 0.0,
-        w: -1.0,
-    };
+    let derriere = cv(0.0, 0.0, -1.0);
     assert!(
         f.outcode(derriere) & 1 != 0,
         "le plan proche doit être violé"
@@ -341,10 +381,6 @@ fn les_codes_de_position_designent_les_plans_violes() {
 
     // Un NaN en abscisse viole les deux plans latéraux et eux seuls : toute
     // comparaison avec lui est fausse, donc `d >= 0` l'est aussi.
-    let nan = ClipVertex {
-        x: f32::NAN,
-        y: 0.0,
-        w: 1.0,
-    };
+    let nan = cv(f32::NAN, 0.0, 1.0);
     assert_eq!(f.outcode(nan), 0b00110);
 }

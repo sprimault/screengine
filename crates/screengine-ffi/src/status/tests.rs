@@ -65,6 +65,7 @@ fn chaque_argument_refuse_a_son_message() {
         Argument::VertexIndex,
         Argument::Projection,
         Argument::VertexCoordinate,
+        Argument::TextureCoordinate,
         Argument::TextureSize,
         Argument::TextureLength,
     ];

@@ -38,6 +38,8 @@ fn fill_triangle<T: Target>(target: &mut T, window: Rect, v: [Point; 3], color: 
     let vertices = v.map(|position| Vertex {
         position,
         z: 1 << 31,
+        s: 0,
+        t: 0,
     });
     if let Some(triangle) = prepare(vertices, color) {
         fill(target, window, &triangle);
