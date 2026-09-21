@@ -219,7 +219,14 @@ jobs:
       - name: Éprouver l'archive
         if: matrix.cible == 'windows_x64' || matrix.cible == 'linux_x64'
         run: |
-          attendu=$(cat crates/screengine-conformance/references/arete)
+          # Les mêmes scènes que `make test`, dans le même ordre : les hôtes en
+          # écrivent une empreinte par ligne, et la liste vit dans le Makefile
+          # racine. La lire là plutôt que la recopier ici — une copie de plus a
+          # déjà divergé le jour où une scène s'est ajoutée, et l'échec n'est
+          # apparu qu'au tag.
+          attendu=$(for scene in $(make -s print-HOST_SCENES); do
+            cat "crates/screengine-conformance/references/$scene"
+          done)
           mkdir -p essai
           if [ "$RUNNER_OS" = "Windows" ]; then
             w() { cygpath -w "$1"; }
