@@ -70,6 +70,11 @@ signature ne change et `SCG_ABI_VERSION` reste à **1**.
   non finies, le lot est refusé en entier.
 
 ### Modifié
+- Un triangle préparé porte les équations de plan de ses coordonnées de
+  texture à côté de celle de sa profondeur, et les trois partagent leur point
+  de référence : les écarts ne se calculent qu'une fois par pixel, et un
+  triangle préparé tient dans deux lignes de cache. Les empreintes sont
+  inchangées — rien ne lit encore ces plans.
 - Le remplissage d'un triangle ne teste plus chaque pixel de sa boîte
   englobante : il résout les trois fonctions de bord pour obtenir, ligne par
   ligne, les abscisses extrêmes qu'il couvre, puis ne parcourt que celles-là.
@@ -119,6 +124,10 @@ is not recorded. No signature changes and `SCG_ABI_VERSION` stays at **1**.
   rejected.
 
 ### Changed
+- A prepared triangle carries the plane equations of its texture coordinates
+  next to its depth one, and all three share their reference point: offsets are
+  computed once per pixel, and a prepared triangle fits in two cache lines.
+  Digests are unchanged — nothing reads those planes yet.
 - Filling a triangle no longer tests every pixel of its bounding box: it solves
   the three edge functions to get, line by line, the extreme abscissae it
   covers, then walks only those. The result is rigorously the same — integer

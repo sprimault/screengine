@@ -57,9 +57,23 @@ pub struct Prepared {
     x1: i32,
     y0: i32,
     y1: i32,
+    /// Le point de référence des trois plans, en sous-pixels.
+    ///
+    /// Commun, et c'est structurel : les plans d'un même triangle s'évaluent
+    /// aux mêmes écarts, qui ne se calculent donc qu'une fois par pixel.
+    ref_x: i32,
+    ref_y: i32,
     depth: Plane,
+    /// Les coordonnées de texture multipliées par la profondeur, `u·d` puis
+    /// `v·d`, qui sont affines en espace écran là où `u` et `v` ne le sont pas.
+    uv: [Plane; 2],
     color: u32,
 }
+
+/// Cent vingt-huit octets, deux lignes de cache pleines, et quatre de rab où
+/// l'identifiant de texture entrera sans rien déplacer. La répartition par
+/// tuile parcourt ce tableau deux fois par image : sa taille compte.
+const _: () = assert!(size_of::<Prepared>() == 128);
 
 impl Prepared {
     /// Les pixels extrêmes que le triangle peut couvrir : `(x0, y0, x1, y1)`,
@@ -238,13 +252,39 @@ pub fn prepare(vertices: [Vertex; 3], color: u32) -> Option<Prepared> {
     let min_y = v[0].y.min(v[1].y).min(v[2].y);
     let max_y = v[0].y.max(v[1].y).max(v[2].y);
 
+    // Le plus petit sommet dans l'ordre (y, x), partagé par les trois plans :
+    // pris sur `v[0]`, une permutation circulaire changerait l'arrondi en
+    // chaque pixel sans changer le triangle.
+    let reference = (0..3).min_by_key(|&i| (v[i].y, v[i].x)).unwrap_or(0);
+
     let prepared = Prepared {
         v,
         x0: first_pixel(min_x),
         x1: last_pixel(max_x),
         y0: first_pixel(min_y),
         y1: last_pixel(max_y),
-        depth: Plane::new(v, vertices.map(|vertex| vertex.z), area),
+        ref_x: v[reference].x,
+        ref_y: v[reference].y,
+        depth: Plane::new(
+            v,
+            vertices.map(|vertex| i64::from(vertex.z)),
+            area,
+            reference,
+        ),
+        uv: [
+            Plane::new(
+                v,
+                vertices.map(|vertex| i64::from(vertex.s)),
+                area,
+                reference,
+            ),
+            Plane::new(
+                v,
+                vertices.map(|vertex| i64::from(vertex.t)),
+                area,
+                reference,
+            ),
+        ],
         color,
     };
     (prepared.x0 <= prepared.x1 && prepared.y0 <= prepared.y1).then_some(prepared)
@@ -283,7 +323,10 @@ pub fn fill<T: Target>(target: &mut T, window: Rect, triangle: &Prepared) {
             // close : elle ne se propage pas d'une ligne à l'autre, les spans
             // ne commençant pas à la même abscisse. Les pas entiers qui suivent
             // donnent les mêmes bits que l'évaluation directe en chaque pixel.
-            let mut depth = plane.at(lo * SUBPIXEL_SCALE + PIXEL_CENTER, py_of(y));
+            let mut depth = plane.at(
+                (lo * SUBPIXEL_SCALE + PIXEL_CENTER - triangle.ref_x) as i64,
+                (py_of(y) - triangle.ref_y) as i64,
+            );
             for x in lo..=hi {
                 // En un pixel couvert, la valeur tient dans [0, 2³²) : les
                 // sommets sont bornés par `to_depth` avec une marge qui couvre

@@ -15,6 +15,7 @@ use alloc::vec;
 use alloc::vec::Vec;
 
 use super::*;
+use crate::math::fixed::DEPTH_MARGIN;
 use crate::testing::Rng;
 
 /// Largeur de la fenêtre des tests : assez petite pour que le balayage de
@@ -507,4 +508,164 @@ fn le_span_coincide_avec_le_test_par_pixel() {
         }
     }
     assert!(lignes > 2_000, "{lignes} lignes, échantillon trop maigre");
+}
+
+/// L'erreur des attributs interpolés, mesurée en texels sur un sol qui fuit
+/// vers l'horizon.
+///
+/// C'est la question que le format en virgule fixe laissait ouverte :
+/// l'équation de plan se trompe de moins de 64 unités d'attribut, ce qui est
+/// une fraction de texel de près, et le facteur `1/d` l'amplifie au loin. La
+/// réponse est mesurée ici, et elle est **nulle** : `S` et `D` portent la même
+/// erreur relative et leur quotient l'absorbe. Un accumulateur exact par plan —
+/// une addition et une comparaison par pixel et par attribut — serait donc
+/// payé pour rien.
+///
+/// Le zéro est un seuil et non une coïncidence à contempler : le jour où il
+/// devient un, c'est que quelque chose a changé dans les formats, et c'est ce
+/// jour-là qu'il faut rouvrir la question.
+///
+/// Le sol part du plan proche et file jusqu'à deux cents unités : c'est la
+/// géométrie qui maltraite le plus la profondeur, et celle du critère de
+/// franchissement de l'étape.
+#[test]
+fn l_erreur_des_attributs_reste_sous_un_texel() {
+    use crate::math::{Projection, Vec3};
+
+    let p = Projection::new(640, 360, 1.0, 0.1).unwrap_or_else(|_| unreachable!());
+    // Un sol à 1,7 unité sous la caméra — Y va vers le bas en espace de vue —,
+    // texturé à soixante-quatre texels par unité : un carrelage serré, qui rend
+    // l'erreur lisible.
+    let sol = |devant: f32, cote: f32| {
+        p.to_clip(Vec3::new(cote, 1.7, devant), devant * 64.0, cote * 64.0)
+            .expect("sommet projetable")
+    };
+    // L'ordre donne la face avant : au sol, vue d'en haut, c'est le sens
+    // horaire à l'écran une fois l'axe Y retourné.
+    let corners = [sol(2.0, -3.0), sol(200.0, 40.0), sol(200.0, -40.0)];
+    let projected = corners.map(|c| p.to_vertex(c));
+    let vertices = projected.map(|v| Vertex {
+        position: Point { x: v.x, y: v.y },
+        z: v.z,
+        s: v.s,
+        t: v.t,
+    });
+    let triangle = prepare(vertices, 0).expect("sol visible");
+
+    let (x0, y0, x1, y1) = triangle.bounds();
+    let (mut pire, mut mesures) = (0i128, 0u32);
+    for y in y0.max(0)..=y1.min(359) {
+        for x in x0.max(0)..=x1.min(639) {
+            let (px, py) = (x * SUBPIXEL_SCALE + PIXEL_CENTER, py_of(y));
+            // La face avant a une aire **négative** à l'écran : les poids
+            // portent ce signe, et c'est en les niant qu'on retrouve des
+            // coordonnées barycentriques positives à l'intérieur.
+            let w = barycentric(vertices.map(|v| v.position), px, py).map(|n| -n);
+            if w.iter().any(|n| *n < 0) {
+                continue;
+            }
+
+            // Exact : `S` et `D` étant tous deux affines en espace écran, leur
+            // rapport *est* l'interpolation perspective-correcte, et les aires
+            // au dénominateur se simplifient.
+            let sum = |f: fn(&Vertex) -> i128| (0..3).map(|i| w[i] * f(&vertices[i])).sum::<i128>();
+            let (num_s, num_d) = (sum(|v| v.s as i128), sum(|v| v.z as i128));
+            if num_d <= 0 {
+                continue;
+            }
+            let exact = (num_s << 20) / num_d;
+
+            let (ex, ey) = ((px - triangle.ref_x) as i64, (py - triangle.ref_y) as i64);
+            let s = (triangle.uv[0].at(ex, ey) >> GRADIENT_BITS) as i128;
+            let d = (triangle.depth.at(ex, ey) >> GRADIENT_BITS) as i128;
+            let obtenu = (s << 20) / d;
+
+            pire = pire.max((obtenu - exact).abs());
+            mesures += 1;
+        }
+    }
+    assert!(
+        mesures > 10_000,
+        "{mesures} pixels, échantillon trop maigre"
+    );
+    assert_eq!(pire, 0, "écart de {pire} texels sur {mesures} pixels");
+}
+
+/// Les trois poids barycentriques non normalisés d'un point, en `i128` : l'aire
+/// du sous-triangle opposé à chaque sommet.
+fn barycentric(v: [Point; 3], px: i32, py: i32) -> [i128; 3] {
+    let (x, y) = (v.map(|p| p.x as i128), v.map(|p| p.y as i128));
+    let (px, py) = (px as i128, py as i128);
+    let w = |a: usize, b: usize| (x[a] - px) * (y[b] - py) - (y[a] - py) * (x[b] - px);
+    [w(1, 2), w(2, 0), w(0, 1)]
+}
+
+/// Les profondeurs écrites par un puits, pour comparer deux remplissages
+/// autrement que par leur couverture.
+struct Depths {
+    seen: Vec<(i32, i32, u32)>,
+}
+
+impl Target for Depths {
+    fn put(&mut self, x: i32, y: i32, z: u32, _color: u32) {
+        self.seen.push((x, y, z));
+    }
+}
+
+/// Les trois permutations circulaires d'un même triangle rendent les mêmes
+/// pixels avec les mêmes profondeurs, au bit près.
+///
+/// Une permutation circulaire ne change ni le triangle ni son orientation :
+/// deux soumissions du même mur, écrites dans un ordre différent par un
+/// exportateur, doivent donner la même image. C'est la seule raison d'être du
+/// point de référence canonique — pris sur `v[0]`, l'arrondi des équations de
+/// plan changerait en chaque pixel.
+#[test]
+fn les_permutations_circulaires_rendent_la_meme_image() {
+    let mut rng = Rng::new(0xC1FC);
+    let mut compares = 0;
+    for _ in 0..500 {
+        let v = [
+            p(rng.coord(0, W), rng.coord(0, H)),
+            p(rng.coord(0, W), rng.coord(0, H)),
+            p(rng.coord(0, W), rng.coord(0, H)),
+        ];
+        let z = [
+            DEPTH_MARGIN + (rng.next() % 0x4000_0000) as u32,
+            DEPTH_MARGIN + (rng.next() % 0x4000_0000) as u32,
+            DEPTH_MARGIN + (rng.next() % 0x4000_0000) as u32,
+        ];
+        let s = [
+            rng.coord(-9000, 9000),
+            rng.coord(-9000, 9000),
+            rng.coord(-9000, 9000),
+        ];
+
+        let render = |shift: usize| {
+            let k = |i: usize| (i + shift) % 3;
+            let vertices = [0, 1, 2].map(|i| Vertex {
+                position: v[k(i)],
+                z: z[k(i)],
+                s: s[k(i)],
+                t: -s[k(i)],
+            });
+            let mut sink = Depths { seen: Vec::new() };
+            if let Some(triangle) = prepare(vertices, 1) {
+                fill(&mut sink, CLIP, &triangle);
+            }
+            sink.seen
+        };
+
+        let base = render(0);
+        if base.is_empty() {
+            continue;
+        }
+        assert_eq!(render(1), base, "permutation de 1");
+        assert_eq!(render(2), base, "permutation de 2");
+        compares += 1;
+    }
+    assert!(
+        compares > 100,
+        "{compares} triangles, échantillon trop maigre"
+    );
 }
