@@ -508,15 +508,91 @@ qu'aucune de ces sept signatures change.
 
 ### Étape 1
 
-Écrites à ce jour, en attendant la caméra et la soumission de triangles :
-
 ```c
 int32_t scg_frame_begin(ScgContext *ctx, uint32_t *tile_count);
 int32_t scg_frame_tile(ScgContext *ctx, uint32_t index, uint8_t *pixels, uint32_t stride);
+int32_t scg_set_camera(ScgContext *ctx, const ScgCamera *camera);
+int32_t scg_submit(ScgContext *ctx, const ScgMat4 *model,
+                   const ScgVertex *vertices, uint32_t vertex_count,
+                   const ScgTriangle *triangles, uint32_t triangle_count);
 ```
 
-Leur contrat est dans « Rendu par tuiles ». Tant qu'aucune scène ne se soumet,
-l'image est le triangle en dur de l'étape 0, rendu par tuiles.
+Le contrat des deux premières est dans « Rendu par tuiles », celui des deux
+autres dans « Soumettre une scène ». Aucune signature publiée n'a changé, et
+`SCG_ABI_VERSION` reste à 1.
+
+**Il n'y a plus de scène en dur.** Un contexte auquel rien n'a été soumis rend
+une image de fond, sans erreur : une scène vide est une scène, pas un appel
+fautif. C'est le seul changement de rendu de l'étape, et il ne touche que les
+hôtes qui ne soumettaient rien — jusqu'ici, tous.
+
+### Soumettre une scène
+
+**La matrice de soumission est celle du modèle**, qui porte l'objet dans le
+monde ; le moteur y compose la vue de sa caméra. Écartée : la modèle-vue, qui
+obligerait chaque liaison à inverser elle-même la pose de la caméra, donc à
+normaliser un quaternion par sa propre bibliothèque mathématique — et deux
+liaisons ne rendraient plus la même image. C'est la clause « ne rien calculer »
+appliquée à la seule chose qui, sans elle, aurait dû l'être partout.
+
+```c
+typedef struct ScgVertex { float x, y, z; } ScgVertex;
+
+typedef struct ScgTriangle {
+    uint32_t i0, i1, i2;
+    uint8_t  r, g, b, a;
+} ScgTriangle;
+
+typedef struct ScgCamera {
+    float position[3];
+    float orientation[4];
+    float fov_y;
+    float near_plane;
+} ScgCamera;
+
+typedef struct ScgMat4 { float m[16]; } ScgMat4;
+```
+
+- **Aucun champ réservé dans ces quatre structures.** L'étape 2 apporte une
+  structure de sommet nouvelle et une fonction nouvelle, ce que la règle
+  d'extension prévoit ; un champ qui dormirait en attendant serait un pari sur
+  sa forme. Les décalages sont 0/4/8 pour `ScgVertex`, 0/4/8/12/13/14/15 pour
+  `ScgTriangle`, 0/12/28/32 pour `ScgCamera` — identiques sur les quatre
+  cibles, sans un octet de bourrage.
+- **La couleur est portée par le triangle**, en quatre octets nommés, dans
+  l'ordre mémoire des pixels. Écarté : un `uint32_t`, qui rouvrirait à chaque
+  liaison la question de l'ordre des canaux — celle-là même que le format des
+  pixels tranche plus haut.
+- **Les indices ne sont pas facultatifs.** Un hôte sans géométrie indexée écrit
+  `0, 1, 2` puis `3, 4, 5` ; le moteur n'a pas deux chemins à tenir, et le lot
+  reste un seul franchissement de la frontière.
+- **Un lot est accepté ou refusé en entier.** Un indice au-delà de
+  `vertex_count`, une coordonnée non finie, un dépassement de capacité :
+  l'image reste exactement ce qu'elle était. Un lot à demi accepté laisserait
+  un mur dont il manque la moitié, sans que l'hôte sache où la coupure est
+  tombée. Un triangle qui ne se projette pas — derrière le plan proche, hors de
+  la bande de garde — disparaît sans erreur : c'est une donnée.
+- **`ScgMat4` est une 4×4 rangée par colonnes**, `m[colonne × 4 + ligne]`, dont
+  la dernière ligne — `m[3]`, `m[7]`, `m[11]`, `m[15]` — vaut exactement
+  `0, 0, 0, 1`, sans quoi `SCG_ERR_INVALID_ARGUMENT`. Une 4×4 parce que c'est
+  ce que tout hôte a sous la main ; la dernière ligne vérifiée parce que le
+  moteur inverse la pose de la caméra sans division, ce qui n'est juste que
+  pour une transformation rigide — une matrice à perspective y passerait pour
+  telle.
+- **Le quaternion se range `x, y, z, w`**, la partie réelle en dernier :
+  l'identité est `{0, 0, 0, 1}`. Il n'est pas exigé unitaire, le moteur le
+  normalise.
+- **Avec l'orientation neutre, la caméra regarde le +X du monde**, le zénith
+  vers le haut de l'écran et le −Y vers la droite. Le monde est en main droite,
+  Z en haut.
+- **`near_plane` et non `near`** : `windows.h` définit encore `near` et `far`
+  comme macros vides, héritées de la mémoire segmentée 16 bits, et un champ de
+  ce nom disparaîtrait dans toute unité de compilation qui l'inclut d'abord.
+- **La caméra vaut pour l'image entière.** `scg_set_camera` et `scg_submit`
+  sont refusés entre le début et la fin d'une image, comme toute écriture dans
+  l'état du contexte.
+- **La liste de dessin se vide à la fin de l'image**, pas à son début : un hôte
+  qui soumet dès le retour de `scg_frame_end` doit retrouver sa scène.
 
 ### Étapes suivantes
 

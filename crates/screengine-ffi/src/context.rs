@@ -38,8 +38,16 @@ pub struct ScgContextConfig {
     pub height: u32,
     /// Tile side in pixels: 32 or 64. Any other value is rejected.
     pub tile_size: u32,
-    /// Reserved. Must be zero.
-    pub reserved0: u32,
+    /// Triangles one frame may hold, or 0 for the default of 16384.
+    ///
+    /// This counts *prepared* triangles: clipping against the near plane turns
+    /// one submitted triangle into up to six, and `scg_submit` rejects the
+    /// batch that would exceed the capacity, never a frame already submitted.
+    ///
+    /// This field was reserved in ABI version 1 and reserved fields had to be
+    /// zero, so a host written against that header keeps the default and needs
+    /// no change; `SCG_ABI_VERSION` is unchanged.
+    pub max_triangles: u32,
     /// Reserved. Must be zero.
     pub reserved1: u32,
     /// Reserved. Must be zero.
@@ -50,7 +58,7 @@ impl ScgContextConfig {
     /// Convertit vers la configuration du noyau, ou refuse un champ réservé non
     /// nul.
     pub(crate) fn to_core(self) -> Result<Config, AbiError> {
-        if self.reserved0 | self.reserved1 | self.reserved2 != 0 {
+        if self.reserved1 | self.reserved2 != 0 {
             return Err(AbiError::RESERVED);
         }
         Ok(Config {
@@ -59,6 +67,7 @@ impl ScgContextConfig {
             width: self.width,
             height: self.height,
             tile_size: self.tile_size,
+            max_triangles: self.max_triangles,
         })
     }
 }

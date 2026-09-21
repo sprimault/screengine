@@ -52,9 +52,20 @@ SCREENGINE_LAYOUT_ASSERT(offsetof(ScgContextConfig, max_height) == 4, "max_heigh
 SCREENGINE_LAYOUT_ASSERT(offsetof(ScgContextConfig, width) == 8, "width moved");
 SCREENGINE_LAYOUT_ASSERT(offsetof(ScgContextConfig, height) == 12, "height moved");
 SCREENGINE_LAYOUT_ASSERT(offsetof(ScgContextConfig, tile_size) == 16, "tile_size moved");
-SCREENGINE_LAYOUT_ASSERT(offsetof(ScgContextConfig, reserved0) == 20, "reserved0 moved");
+SCREENGINE_LAYOUT_ASSERT(offsetof(ScgContextConfig, max_triangles) == 20, "max_triangles moved");
 SCREENGINE_LAYOUT_ASSERT(offsetof(ScgContextConfig, reserved1) == 24, "reserved1 moved");
 SCREENGINE_LAYOUT_ASSERT(offsetof(ScgContextConfig, reserved2) == 28, "reserved2 moved");
+SCREENGINE_LAYOUT_ASSERT(sizeof(ScgVertex) == 12, "ScgVertex changed size");
+SCREENGINE_LAYOUT_ASSERT(offsetof(ScgVertex, z) == 8, "ScgVertex.z moved");
+SCREENGINE_LAYOUT_ASSERT(sizeof(ScgTriangle) == 16, "ScgTriangle changed size");
+SCREENGINE_LAYOUT_ASSERT(offsetof(ScgTriangle, i2) == 8, "ScgTriangle.i2 moved");
+SCREENGINE_LAYOUT_ASSERT(offsetof(ScgTriangle, r) == 12, "ScgTriangle.r moved");
+SCREENGINE_LAYOUT_ASSERT(offsetof(ScgTriangle, a) == 15, "ScgTriangle.a moved");
+SCREENGINE_LAYOUT_ASSERT(sizeof(ScgCamera) == 36, "ScgCamera changed size");
+SCREENGINE_LAYOUT_ASSERT(offsetof(ScgCamera, orientation) == 12, "orientation moved");
+SCREENGINE_LAYOUT_ASSERT(offsetof(ScgCamera, fov_y) == 28, "fov_y moved");
+SCREENGINE_LAYOUT_ASSERT(offsetof(ScgCamera, near_plane) == 32, "near_plane moved");
+SCREENGINE_LAYOUT_ASSERT(sizeof(ScgMat4) == 64, "ScgMat4 changed size");
 #undef SCREENGINE_LAYOUT_ASSERT
 #endif
 #endif"""

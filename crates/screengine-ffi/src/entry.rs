@@ -48,6 +48,33 @@ impl AbiError {
         code: SCG_ERR_INVALID_ARGUMENT,
         message: "reserved fields must be zero",
     };
+
+    /// Une coordonnée de sommet n'est pas un nombre fini.
+    ///
+    /// Le noyau ferait disparaître le triangle sans erreur, ce qui est le bon
+    /// comportement pour une donnée qu'il a lui-même transformée. Reçue telle
+    /// quelle d'un hôte, elle est une erreur d'appel, et le dire vaut mieux que
+    /// laisser un mur manquer dans l'image.
+    pub(crate) const VERTEX_NOT_FINITE: Self = Self {
+        code: SCG_ERR_INVALID_ARGUMENT,
+        message: "vertex coordinates must be finite numbers",
+    };
+
+    /// La position ou l'orientation de la caméra n'est pas finie.
+    pub(crate) const CAMERA_NOT_FINITE: Self = Self {
+        code: SCG_ERR_INVALID_ARGUMENT,
+        message: "camera position and orientation must be finite numbers",
+    };
+
+    /// La matrice du modèle n'est pas une transformation affine.
+    ///
+    /// Refusée ici parce que le noyau ne voit qu'une 3×4, où la question ne se
+    /// pose plus : c'est la frontière qui reçoit une 4×4 et doit vérifier que
+    /// sa dernière ligne n'y cache pas une perspective.
+    pub(crate) const MATRIX: Self = Self {
+        code: SCG_ERR_INVALID_ARGUMENT,
+        message: "model matrix must be finite, with last row exactly 0, 0, 0, 1",
+    };
 }
 
 impl From<Error> for AbiError {

@@ -50,6 +50,8 @@ export const EXPORTS = [
   "scg_abi_version",
   "scg_create",
   "scg_destroy",
+  "scg_set_camera",
+  "scg_submit",
   "scg_frame_begin",
   "scg_frame_tile",
   "scg_frame_end",
@@ -60,6 +62,15 @@ export const EXPORTS = [
 
 /** Taille de `ScgContextConfig`, celle qu'affirme le header. */
 export const CONFIG_SIZE = 32;
+
+/** Taille de `ScgVertex` : trois `float`. */
+export const VERTEX_SIZE = 12;
+
+/** Taille de `ScgTriangle` : trois `uint32_t` puis quatre `uint8_t`. */
+export const TRIANGLE_SIZE = 16;
+
+/** Taille de `ScgMat4` : seize `float`, par colonnes. */
+export const MAT4_SIZE = 64;
 
 /** Octets par pixel du tampon de sortie, R, G, B, A. */
 export const BYTES_PER_PIXEL = 4;
@@ -178,9 +189,53 @@ export class Screengine {
     view.setUint32(8, config.width, true);
     view.setUint32(12, config.height, true);
     view.setUint32(16, config.tileSize, true);
-    view.setUint32(20, reserved[0], true);
-    view.setUint32(24, reserved[1], true);
-    view.setUint32(28, reserved[2], true);
+    view.setUint32(20, config.maxTriangles ?? 0, true);
+    view.setUint32(24, reserved[0], true);
+    view.setUint32(28, reserved[1], true);
+  }
+
+  /**
+   * Écrit un tableau de sommets, trois `float` chacun.
+   *
+   * @param {number} ptr adresse d'au moins `vertices.length * VERTEX_SIZE` octets
+   * @param {number[][]} vertices triplets `[x, y, z]` en coordonnées de monde
+   */
+  writeVertices(ptr, vertices) {
+    const view = new DataView(this.memory.buffer, ptr, vertices.length * VERTEX_SIZE);
+    vertices.forEach(([x, y, z], i) => {
+      view.setFloat32(i * VERTEX_SIZE, x, true);
+      view.setFloat32(i * VERTEX_SIZE + 4, y, true);
+      view.setFloat32(i * VERTEX_SIZE + 8, z, true);
+    });
+  }
+
+  /**
+   * Écrit un tableau de triangles : trois indices, puis quatre octets de
+   * couleur dans l'ordre mémoire des pixels.
+   *
+   * @param {number} ptr adresse d'au moins `triangles.length * TRIANGLE_SIZE` octets
+   * @param {{indices: number[], color: number[]}[]} triangles
+   */
+  writeTriangles(ptr, triangles) {
+    const view = new DataView(this.memory.buffer, ptr, triangles.length * TRIANGLE_SIZE);
+    triangles.forEach(({ indices, color }, i) => {
+      const base = i * TRIANGLE_SIZE;
+      indices.forEach((index, k) => view.setUint32(base + k * 4, index, true));
+      color.forEach((channel, k) => view.setUint8(base + 12 + k, channel));
+    });
+  }
+
+  /**
+   * Écrit la matrice identité, par colonnes.
+   *
+   * @param {number} ptr adresse d'au moins `MAT4_SIZE` octets
+   */
+  writeIdentity(ptr) {
+    const view = new DataView(this.memory.buffer, ptr, MAT4_SIZE);
+    new Uint8Array(this.memory.buffer, ptr, MAT4_SIZE).fill(0);
+    for (let i = 0; i < 4; i++) {
+      view.setFloat32(i * 20, 1, true);
+    }
   }
 
   /**

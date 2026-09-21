@@ -86,6 +86,24 @@ public final class Screengine {
     static native void destroy(long ctx);
 
     /**
+     * {@code scg_submit}, les trois tableaux repris tels quels.
+     *
+     * <p>Trois tableaux plutôt qu'un tableau de structures, que Java ne sait pas
+     * décrire : la couche JNI recompose les {@code ScgVertex} et les
+     * {@code ScgTriangle}. Les couleurs voyagent en octets séparés et jamais
+     * empaquetées dans un {@code int} — un entier réintroduirait la question de
+     * l'ordre que les quatre champs nommés de l'ABI ferment.
+     *
+     * @param ctx handle, ou 0
+     * @param model seize coefficients, par colonnes
+     * @param vertices trois coordonnées par sommet
+     * @param indices trois indices par triangle
+     * @param colors quatre octets R, G, B, A par triangle
+     * @return le code de retour
+     */
+    static native int submit(long ctx, float[] model, float[] vertices, int[] indices, byte[] colors);
+
+    /**
      * {@code scg_frame_end} dans un tampon direct.
      *
      * @param ctx handle, ou 0

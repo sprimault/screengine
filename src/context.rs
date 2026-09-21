@@ -37,25 +37,11 @@ pub const BYTES_PER_PIXEL: usize = 4;
 
 /// Les triangles qu'une image peut recevoir.
 ///
-/// Ce que la frontière C annonce comme capacité par défaut, tant que la
-/// configuration ne permet pas de la choisir.
+/// La capacité de triangles par défaut, quand la configuration passe zéro.
 pub const TRIANGLE_CAPACITY: usize = 16_384;
 
 /// Le noir opaque dont chaque image part.
 const CLEAR_COLOR: u32 = 0xFF00_0000;
-
-/// La couleur du premier triangle de la scène de démonstration.
-///
-/// Franchement distincte du fond : c'est la première chose qu'un hôte affiche,
-/// et un aplat sombre laisserait douter entre « ça rend » et « ça ne rend pas ».
-const DEMO_COLOR: Color = Color::new(0xE0, 0xA0, 0x30, 0xFF);
-
-/// La couleur du second, qui partage une arête avec le premier.
-///
-/// Proche de la première mais distincte : c'est ce qui fait qu'un trou ou un
-/// recouvrement le long de l'arête commune se voit à l'œil dans un hôte, sans
-/// attendre qu'une empreinte le dise.
-const DEMO_COLOR_SHARED: Color = Color::new(0xA0, 0xE0, 0x30, 0xFF);
 
 /// Ce que reçoit la création d'un contexte.
 ///
@@ -75,6 +61,13 @@ pub struct Config {
     pub height: u32,
     /// Côté d'une tuile : 32 ou 64.
     pub tile_size: u32,
+    /// Triangles qu'une image peut recevoir, ou `0` pour
+    /// [`TRIANGLE_CAPACITY`].
+    ///
+    /// La valeur compte des triangles **préparés** : un triangle découpé par
+    /// le plan proche en produit jusqu'à six, et c'est l'appel qui déborde qui
+    /// est refusé, jamais une image entière déjà soumise.
+    pub max_triangles: u32,
 }
 
 impl Config {
@@ -93,6 +86,15 @@ impl Config {
             return Err(Error::InvalidArgument(Argument::TileSize));
         }
         Ok(())
+    }
+
+    /// La capacité de triangles effective, `0` valant le défaut.
+    fn capacity(&self) -> usize {
+        if self.max_triangles == 0 {
+            TRIANGLE_CAPACITY
+        } else {
+            self.max_triangles as usize
+        }
     }
 }
 
@@ -137,13 +139,6 @@ pub struct Context {
     /// qu'un `&self`, des tuiles pouvant encore la lire. Le prochain appel
     /// exclusif — une soumission, un début — la vide avant d'y toucher.
     stale: AtomicBool,
-    /// Vrai dès qu'une soumission a été acceptée pour l'image en cours.
-    ///
-    /// Distinct de « la liste de dessin est vide » : une scène dont tous les
-    /// triangles tournent le dos à la caméra ne prépare rien, et la confondre
-    /// avec une absence de soumission ferait réapparaître la scène de
-    /// démonstration par-dessus ce que l'hôte a décrit. Disparaît avec elle.
-    submitted: bool,
 }
 
 /// Le contexte accepte la scène : aucune image n'est commencée.
@@ -168,12 +163,13 @@ impl Context {
         taken.resize_with(tiles as usize, AtomicBool::default);
 
         let camera = Camera::DEFAULT;
+        let capacity = config.capacity();
         Ok(Self {
             config,
             width: config.width,
             height: config.height,
-            triangles: reserved(TRIANGLE_CAPACITY)?,
-            bins: Bins::new(tiles as usize, TRIANGLE_CAPACITY)?,
+            triangles: reserved(capacity)?,
+            bins: Bins::new(tiles as usize, capacity)?,
             taken,
             grid: Grid::new(config.width, config.height, config.tile_size),
             camera,
@@ -182,7 +178,6 @@ impl Context {
             state: AtomicU8::new(RECORDING),
             in_flight: AtomicU32::new(0),
             stale: AtomicBool::new(false),
-            submitted: false,
         })
     }
 
@@ -234,16 +229,13 @@ impl Context {
     /// dont la [`Frame`] rend la séquence vérifiable à la compilation.
     ///
     /// L'image est faite de ce qui a été soumis depuis la fin de la précédente.
-    /// Tant qu'un hôte ne soumet rien, elle est la scène de démonstration, et
-    /// cette clause disparaîtra avec elle.
+    /// Rien de soumis donne une image de fond, sans erreur : c'est une scène
+    /// vide, pas un appel fautif.
     pub fn begin(&mut self) -> Result<u32> {
         if *self.state.get_mut() != RECORDING {
             return Err(Error::InvalidState);
         }
         self.drop_closed_frame();
-        if !self.submitted {
-            self.draw_demo_scene()?;
-        }
         self.seal();
         Ok(self.grid.count())
     }
@@ -256,7 +248,6 @@ impl Context {
     fn drop_closed_frame(&mut self) {
         if *self.stale.get_mut() {
             self.triangles.clear();
-            self.submitted = false;
             *self.stale.get_mut() = false;
         }
     }
@@ -325,37 +316,55 @@ impl Context {
         vertices: &[Vec3],
         triangles: &[Triangle],
     ) -> Result<()> {
+        self.submit_each(model, triangles.len(), |i| {
+            let triangle = triangles[i];
+            let mut corners = [Vec3::ZERO; 3];
+            for (corner, &index) in corners.iter_mut().zip(&triangle.indices) {
+                *corner = *vertices
+                    .get(index as usize)
+                    .ok_or(Error::InvalidArgument(Argument::VertexIndex))?;
+            }
+            Ok((corners, triangle.color))
+        })
+    }
+
+    /// Soumet un lot dont chaque triangle se lit par une fonction d'accès.
+    ///
+    /// La forme générale, dont [`Context::submit`] n'est que la façade sur deux
+    /// tranches. Elle existe pour la frontière C, qui reçoit des tableaux de
+    /// structures `#[repr(C)]` qui lui appartiennent : sans elle, il lui
+    /// faudrait soit les copier — une allocation par image —, soit
+    /// réinterpréter ses tranches, ce qui imposerait au noyau une disposition
+    /// mémoire qu'il n'a pas choisie.
+    ///
+    /// `read` est appelée une fois par triangle, dans l'ordre, et son erreur
+    /// refuse le lot entier.
+    pub fn submit_each<F>(&mut self, model: Affine3, count: usize, read: F) -> Result<()>
+    where
+        F: Fn(usize) -> Result<([Vec3; 3], Color)>,
+    {
         if *self.state.get_mut() != RECORDING {
             return Err(Error::InvalidState);
         }
         self.drop_closed_frame();
         let mark = self.triangles.len();
-        let result = self.submit_batch(model, vertices, triangles);
+        let result = self.submit_batch(model, count, read);
         if result.is_err() {
             self.triangles.truncate(mark);
-        } else {
-            self.submitted = true;
         }
         result
     }
 
-    /// Le corps de [`Context::submit`], qui peut laisser le lot à moitié posé.
-    fn submit_batch(
-        &mut self,
-        model: Affine3,
-        vertices: &[Vec3],
-        triangles: &[Triangle],
-    ) -> Result<()> {
+    /// Le corps de [`Context::submit_each`], qui peut laisser le lot à moitié
+    /// posé.
+    fn submit_batch<F>(&mut self, model: Affine3, count: usize, read: F) -> Result<()>
+    where
+        F: Fn(usize) -> Result<([Vec3; 3], Color)>,
+    {
         let transform = self.view.product(model);
-        for triangle in triangles {
-            let mut corners = [Vec3::ZERO; 3];
-            for (corner, &index) in corners.iter_mut().zip(&triangle.indices) {
-                let vertex = vertices
-                    .get(index as usize)
-                    .ok_or(Error::InvalidArgument(Argument::VertexIndex))?;
-                *corner = transform.transform_point(*vertex);
-            }
-            self.submit_view(corners, triangle.color)?;
+        for i in 0..count {
+            let (corners, color) = read(i)?;
+            self.submit_view(corners.map(|v| transform.transform_point(v)), color)?;
         }
         Ok(())
     }
@@ -368,7 +377,7 @@ impl Context {
         let Some(triangle) = prepare(v, color) else {
             return Ok(());
         };
-        if self.triangles.len() >= TRIANGLE_CAPACITY {
+        if self.triangles.len() >= self.config.capacity() {
             return Err(Error::InvalidArgument(Argument::TriangleCapacity));
         }
         self.triangles.push(triangle);
@@ -418,47 +427,6 @@ impl Context {
             self.push(vertices, color.packed())?;
         }
         Ok(())
-    }
-
-    /// Soumet la scène de démonstration : deux triangles qui partagent une
-    /// arête, vus de biais.
-    ///
-    /// Il n'y a pas encore de scène à soumettre par l'hôte, mais celle-ci
-    /// traverse désormais toute la chaîne — projection, découpe, virgule fixe —
-    /// au lieu d'être écrite en coordonnées d'écran. Deux triangles et non un :
-    /// c'est leur arête commune qui éprouve la propriété la plus coûteuse du
-    /// moteur, et deux couleurs distinctes la rendent visible dans les hôtes,
-    /// là où un aplat unique la cacherait.
-    ///
-    /// Le quadrilatère fuit vers la droite, donc chaque pixel a sa propre
-    /// profondeur, et il déborde à gauche pour que le parcours traite des
-    /// triangles plus larges que l'image.
-    fn draw_demo_scene(&mut self) -> Result<()> {
-        // En coordonnées de monde, vues par une caméra neutre : c'est le même
-        // quadrilatère qu'avant la caméra, transporté par la base de vue, et
-        // l'empreinte est inchangée parce que cette base est une permutation
-        // d'axes exacte.
-        let vertices = [
-            Vec3::new(2.0, 2.5, 1.6),
-            Vec3::new(3.5, -2.5, 1.6),
-            Vec3::new(3.5, -2.5, -1.6),
-            Vec3::new(2.0, 2.5, -1.6),
-        ];
-        // Antihoraire dans les données, donc horaire à l'écran une fois Y
-        // retourné : l'arête commune `0 → 2` est parcourue dans un sens par le
-        // premier triangle et dans l'autre par le second, ce qui est exactement
-        // le cas que la règle top-left doit trancher.
-        let triangles = [
-            Triangle {
-                indices: [0, 2, 1],
-                color: DEMO_COLOR,
-            },
-            Triangle {
-                indices: [0, 3, 2],
-                color: DEMO_COLOR_SHARED,
-            },
-        ];
-        self.submit(Affine3::IDENTITY, &vertices, &triangles)
     }
 }
 

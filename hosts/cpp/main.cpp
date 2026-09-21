@@ -104,6 +104,40 @@ ScgContextConfig scene_config()
     return config;
 }
 
+/// Le quadrilatère de la scène `arete`, en coordonnées de monde : X vers
+/// l'est, Z en haut, la caméra par défaut le regardant depuis l'origine.
+///
+/// Ce sont les valeurs de la scène de conformance. Cet hôte les décrit en C++
+/// et les fait traverser l'ABI : c'est la comparaison des deux empreintes qui
+/// dit que sommets, indices, couleurs et matrice arrivent intacts.
+constexpr ScgVertex SCENE_VERTICES[4] = {
+    { 2.0f, 2.5f, 1.6f },
+    { 3.5f, -2.5f, 1.6f },
+    { 3.5f, -2.5f, -1.6f },
+    { 2.0f, 2.5f, -1.6f },
+};
+
+/// Deux triangles qui partagent l'arête des sommets 0 et 2, parcourue en sens
+/// opposés par chacun.
+constexpr ScgTriangle SCENE_TRIANGLES[2] = {
+    { 0, 2, 1, 0xE0, 0xA0, 0x30, 0xFF },
+    { 0, 3, 2, 0xA0, 0xE0, 0x30, 0xFF },
+};
+
+/// L'identité, par colonnes.
+constexpr ScgMat4 IDENTITY = {
+    { 1.0f, 0.0f, 0.0f, 0.0f,
+      0.0f, 1.0f, 0.0f, 0.0f,
+      0.0f, 0.0f, 1.0f, 0.0f,
+      0.0f, 0.0f, 0.0f, 1.0f }
+};
+
+/// Soumet la scène au contexte, et rend vrai si elle a été acceptée.
+bool submit_scene(ScgContext *ctx)
+{
+    return scg_submit(ctx, &IDENTITY, SCENE_VERTICES, 4, SCENE_TRIANGLES, 2) == SCG_OK;
+}
+
 /// Vrai si `scg_abi_version` est exporté par la bibliothèque dynamique chargée
 /// dans le processus, et rend la même version que l'appel direct. Sans ce
 /// contrôle, une bibliothèque statique liée par erreur passerait tous les
@@ -221,6 +255,7 @@ uint64_t render(bool &ok)
     Context ctx(raw);
 
     uint8_t *pixels = block.data() + GUARD;
+    check(submit_scene(ctx.get()), "scène soumise");
     const int32_t code = scg_frame_end(ctx.get(), pixels, STRIDE);
     check(code == SCG_OK, "scg_frame_end aboutit");
     ok = code == SCG_OK;
@@ -261,6 +296,7 @@ void check_tiles(uint64_t expected)
     Context ctx(raw);
     std::vector<uint8_t> pixels(size_t{STRIDE} * HEIGHT * 4);
 
+    check(submit_scene(ctx.get()), "scène soumise");
     uint32_t count = 0;
     check(scg_frame_begin(ctx.get(), &count) == SCG_OK, "scg_frame_begin aboutit");
 

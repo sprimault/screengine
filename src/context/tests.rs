@@ -19,6 +19,7 @@ fn sane() -> Config {
         width: 640,
         height: 360,
         tile_size: 64,
+        max_triangles: 0,
     }
 }
 
@@ -112,6 +113,7 @@ fn small() -> Context {
         width: 64,
         height: 64,
         tile_size: 32,
+        max_triangles: 0,
     })
     .expect("configuration saine")
 }
@@ -228,30 +230,47 @@ fn la_fin_d_image_perime_la_liste_de_dessin() {
     assert_eq!(ctx.triangles.len(), 1, "le lot précédent a été vidé");
 }
 
-/// Une scène dont tous les triangles sont éliminés reste une scène soumise :
-/// la démonstration ne revient pas par-dessus.
+/// Une image que personne n'a alimentée se rend sans erreur, et ne montre que
+/// le fond.
 ///
-/// Le défaut qu'un hôte verrait autrement : il soumet un mur qui tourne le dos
-/// à la caméra, ne prépare donc aucun triangle, et voit apparaître une scène
-/// qu'il n'a jamais décrite.
+/// Une scène vide est une scène, pas un appel fautif : c'est ce qu'obtient un
+/// hôte qui n'a encore rien à montrer, et il ne doit pas avoir à distinguer ce
+/// cas d'un refus.
 #[test]
-fn une_scene_entierement_eliminee_ne_rappelle_pas_la_demonstration() {
+fn une_image_sans_soumission_ne_montre_que_le_fond() {
     let mut ctx = small();
-    ctx.submit(Affine3::IDENTITY, &behind(), &one())
-        .expect("capacité");
-    ctx.begin().expect("image commencée");
+    let mut pixels = vec![0u8; 64 * 64 * BYTES_PER_PIXEL];
+    assert_eq!(ctx.begin().map(|_| ()), Ok(()));
     assert!(ctx.triangles.is_empty());
+    assert_eq!(ctx.frame_end(&mut pixels, 64), Ok(()));
+    assert!(
+        pixels
+            .chunks_exact(BYTES_PER_PIXEL)
+            .all(|p| p == [0, 0, 0, 0xFF])
+    );
 }
 
-/// Une image que personne n'a alimentée rend la scène de démonstration.
+/// La capacité de triangles se choisit à la création, et zéro vaut le défaut.
 ///
-/// Elle disparaîtra avec elle ; jusque-là, c'est ce qui garde une image aux
-/// hôtes qui ne soumettent rien.
+/// Zéro et non un champ absent : c'est un champ qui était réservé dans l'ABI
+/// publiée, et un hôte qui passait des zéros doit obtenir le défaut sans rien
+/// reprendre.
 #[test]
-fn une_image_sans_soumission_rend_la_demonstration() {
-    let mut ctx = small();
-    ctx.begin().expect("image commencée");
-    assert!(!ctx.triangles.is_empty());
+fn la_capacite_de_triangles_se_choisit_a_la_creation() {
+    let mut config = sane();
+    assert_eq!(config.capacity(), TRIANGLE_CAPACITY);
+    config.max_triangles = 3;
+    assert_eq!(config.capacity(), 3);
+
+    config.width = 64;
+    config.height = 64;
+    let mut ctx = Context::new(config).expect("configuration saine");
+    let triangles = [one()[0]; 4];
+    assert_eq!(
+        ctx.submit(Affine3::IDENTITY, &ahead(), &triangles),
+        Err(Error::InvalidArgument(Argument::TriangleCapacity))
+    );
+    assert_eq!(ctx.triangles.len(), 0, "le lot entier est refusé");
 }
 
 /// Tout ce qui écrit dans l'état du contexte est refusé pendant le rendu :

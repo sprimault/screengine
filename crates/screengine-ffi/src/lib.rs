@@ -17,18 +17,20 @@ mod entry;
 mod fpenv;
 mod message;
 mod output;
+mod scene;
 mod status;
 
 use std::alloc::{self, Layout};
 use std::ffi::c_char;
 use std::ptr;
 
-use screengine::Context;
+use screengine::{Argument, Context, Error as CoreError, Vec3};
 
 use entry::AbiError;
 use output::HostRows;
 
 pub use context::{ScgContext, ScgContextConfig};
+pub use scene::{ScgCamera, ScgMat4, ScgTriangle, ScgVertex};
 pub use status::{
     SCG_ERR_FAULTED, SCG_ERR_INVALID_ARGUMENT, SCG_ERR_INVALID_STATE, SCG_ERR_NULL,
     SCG_ERR_OUT_OF_MEMORY, SCG_ERR_PANIC, SCG_ERR_POISONED, SCG_OK,
@@ -101,6 +103,114 @@ pub unsafe extern "C" fn scg_destroy(ctx: *mut ScgContext) {
     // `scg_create` et n'a pas encore été rendu. C'est le seul endroit du crate
     // qui reprend cette allocation.
     drop(unsafe { Box::from_raw(ctx) });
+}
+
+/// Sets the camera the next frames will render from.
+///
+/// Rejected with `SCG_ERR_INVALID_STATE` between `scg_frame_begin` and
+/// `scg_frame_end`: the camera holds for a whole frame. The field of view must
+/// be within ]0, pi[ radians and the near plane positive, otherwise
+/// `SCG_ERR_INVALID_ARGUMENT`. The quaternion is normalised by the engine.
+///
+/// # Safety
+///
+/// `ctx` is a live handle used by no other thread during the call, and `camera`
+/// is NULL or points to a readable `ScgCamera`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn scg_set_camera(ctx: *mut ScgContext, camera: *const ScgCamera) -> i32 {
+    let set = |mut core: entry::Core<'_>| {
+        // SAFETY: précondition de la fonction — le pointeur est nul ou vise une
+        // structure lisible, que rien d'autre ne modifie pendant l'appel.
+        let camera = unsafe { camera.as_ref() }.ok_or(AbiError::NULL)?;
+        core.exclusive()?.set_camera(camera.to_core()?)?;
+        Ok(())
+    };
+
+    // SAFETY: précondition de la fonction — `ctx` est nul ou un handle vivant.
+    unsafe { entry::with_context(ctx, set) }
+}
+
+/// Submits a batch of triangles to the frame being recorded.
+///
+/// `model` carries the object into world space; the engine composes the view
+/// from its own camera. Passing a model-view matrix here would apply the view
+/// twice.
+///
+/// Each triangle indexes three vertices of `vertices` and carries its own
+/// colour. **The batch is accepted or rejected as a whole**: an index at or
+/// beyond `vertex_count`, a coefficient that is not finite, or a batch that
+/// would exceed the triangle capacity leaves the frame exactly as it was. A
+/// triangle whose vertices cannot be projected — beyond the guard band, behind
+/// the near plane — simply does not appear, which is not an error.
+///
+/// A count of zero is accepted and submits nothing. Rejected with
+/// `SCG_ERR_INVALID_STATE` between `scg_frame_begin` and `scg_frame_end`.
+///
+/// # Safety
+///
+/// `ctx` is a live handle used by no other thread during the call; `vertices`
+/// points to `vertex_count` readable `ScgVertex`, and `triangles` to
+/// `triangle_count` readable `ScgTriangle`. A count of zero allows a null
+/// pointer.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn scg_submit(
+    ctx: *mut ScgContext,
+    model: *const ScgMat4,
+    vertices: *const ScgVertex,
+    vertex_count: u32,
+    triangles: *const ScgTriangle,
+    triangle_count: u32,
+) -> i32 {
+    let submit = |mut core: entry::Core<'_>| {
+        // SAFETY: précondition de la fonction — le pointeur est nul ou vise une
+        // matrice lisible.
+        let model = unsafe { model.as_ref() }.ok_or(AbiError::NULL)?;
+        let model = model.to_core()?;
+        // SAFETY: précondition de la fonction — chaque pointeur couvre son
+        // nombre d'éléments, et un compte nul admet le pointeur nul, pour
+        // lequel `from_raw_parts` exigerait quand même un pointeur aligné.
+        let (vertices, triangles) = unsafe {
+            (
+                slice_of(vertices, vertex_count),
+                slice_of(triangles, triangle_count),
+            )
+        };
+        scene::check_finite(vertices)?;
+        core.exclusive()?
+            .submit_each(model, triangles.len(), |i| {
+                let triangle = triangles[i];
+                let mut corners = [Vec3::ZERO; 3];
+                for (corner, index) in
+                    corners
+                        .iter_mut()
+                        .zip([triangle.i0, triangle.i1, triangle.i2])
+                {
+                    *corner = vertices
+                        .get(index as usize)
+                        .ok_or(CoreError::InvalidArgument(Argument::VertexIndex))?
+                        .to_core();
+                }
+                Ok((corners, triangle.color()))
+            })
+            .map_err(AbiError::from)
+    };
+
+    // SAFETY: précondition de la fonction — `ctx` est nul ou un handle vivant.
+    unsafe { entry::with_context(ctx, submit) }
+}
+
+/// La tranche d'un tableau reçu de l'hôte, vide pour un compte nul.
+///
+/// # Safety
+///
+/// `ptr` couvre `count` éléments lisibles, ou `count` est nul.
+unsafe fn slice_of<'a, T>(ptr: *const T, count: u32) -> &'a [T] {
+    if count == 0 {
+        return &[];
+    }
+    // SAFETY: précondition de la fonction. Le compte nul est traité avant, ce
+    // qui évite d'exiger de l'hôte un pointeur aligné pour un tableau vide.
+    unsafe { std::slice::from_raw_parts(ptr, count as usize) }
 }
 
 /// Begins a frame: seals the submitted scene, bins it into tiles, and writes

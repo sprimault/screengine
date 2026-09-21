@@ -45,6 +45,26 @@ public final class MainActivity extends Activity {
             return;
         }
 
+        // Le quadrilatère de la scène de référence, en coordonnées de monde,
+        // vu par la caméra par défaut depuis l'origine.
+        float[] model = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
+        float[] vertices = {
+            2.0f, 2.5f, 1.6f,
+            3.5f, -2.5f, 1.6f,
+            3.5f, -2.5f, -1.6f,
+            2.0f, 2.5f, -1.6f,
+        };
+        int[] indices = {0, 2, 1, 0, 3, 2};
+        byte[] colors = {
+            (byte) 0xE0, (byte) 0xA0, 0x30, (byte) 0xFF,
+            (byte) 0xA0, (byte) 0xE0, 0x30, (byte) 0xFF,
+        };
+        if (Screengine.submit(out[0], model, vertices, indices, colors) != Screengine.OK) {
+            showText(Screengine.lastError(out[0]));
+            Screengine.destroy(out[0]);
+            return;
+        }
+
         // ARGB_8888 est rangé R, G, B, A en mémoire, l'ordre de l'ABI : le nom
         // vient de l'entier de Color, pas de la disposition.
         Bitmap bitmap = Bitmap.createBitmap(WIDTH, HEIGHT, Bitmap.Config.ARGB_8888);

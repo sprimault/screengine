@@ -20,6 +20,7 @@ fn context() -> ScgContext {
         width: 8,
         height: 8,
         tile_size: 32,
+        max_triangles: 0,
     };
     ScgContext::new(Context::new(config).expect("configuration saine"))
 }

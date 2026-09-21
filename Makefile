@@ -91,7 +91,8 @@ test:
 	@for hote in $(filter-out $(SANS),$(TEST_HOSTS)); do $(MAKE) test-$$hote || exit 1; done
 
 # Les hôtes qui franchissent réellement la frontière, chacun comparant son
-# empreinte du triangle à celle du chemin Rust. Les tests de screengine-ffi
+# empreinte à celle du chemin Rust sur la même scène, qu'il décrit lui-même
+# dans son langage et soumet par l'ABI. Les tests de screengine-ffi
 # appellent les fonctions exportées depuis Rust : ils ne voient ni l'édition de
 # liens, ni la disposition vue par un autre compilateur, ni l'environnement d'un
 # vrai hôte.
@@ -158,7 +159,7 @@ $(addprefix test-,$(TEST_HOSTS)): test-%:
 $(addsuffix -run,$(addprefix test-,$(TEST_HOSTS))): test-%-run:
 	$(host_build_$*)
 	@mkdir -p $(HOST_OUT)
-	cargo run -q -p screengine-conformance --release -- --print triangle > $(HOST_OUT)/rust.txt
+	cargo run -q -p screengine-conformance --release -- --print arete > $(HOST_OUT)/rust.txt
 	$(MAKE) -s --no-print-directory -C hosts/$(host_dir_$*) PROFILE=$(host_profile_$*) OUT=$(HOST_OUT) all
 	$(MAKE) -s --no-print-directory -C hosts/$(host_dir_$*) PROFILE=$(host_profile_$*) OUT=$(HOST_OUT) run > $(HOST_OUT)/host.txt
 	@rust=$$(tr -d '\r' < $(HOST_OUT)/rust.txt); host=$$(tr -d '\r' < $(HOST_OUT)/host.txt); \

@@ -21,7 +21,7 @@ fn sane() -> ScgContextConfig {
         width: 64,
         height: 32,
         tile_size: 32,
-        reserved0: 0,
+        max_triangles: 0,
         reserved1: 0,
         reserved2: 0,
     }
@@ -169,16 +169,85 @@ fn refuse_un_stride_plus_court_que_la_largeur() {
     unsafe { scg_destroy(ctx) };
 }
 
+/// Soumet le quadrilatère de la scène de référence, par les structures de
+/// l'ABI, et rend le code de retour.
+fn submit_scene(ctx: *mut ScgContext) -> i32 {
+    let model = ScgMat4 {
+        m: [
+            1.0, 0.0, 0.0, 0.0, //
+            0.0, 1.0, 0.0, 0.0, //
+            0.0, 0.0, 1.0, 0.0, //
+            0.0, 0.0, 0.0, 1.0,
+        ],
+    };
+    let vertices = [
+        ScgVertex {
+            x: 2.0,
+            y: 2.5,
+            z: 1.6,
+        },
+        ScgVertex {
+            x: 3.5,
+            y: -2.5,
+            z: 1.6,
+        },
+        ScgVertex {
+            x: 3.5,
+            y: -2.5,
+            z: -1.6,
+        },
+        ScgVertex {
+            x: 2.0,
+            y: 2.5,
+            z: -1.6,
+        },
+    ];
+    let triangles = [
+        ScgTriangle {
+            i0: 0,
+            i1: 2,
+            i2: 1,
+            r: 0xE0,
+            g: 0xA0,
+            b: 0x30,
+            a: 0xFF,
+        },
+        ScgTriangle {
+            i0: 0,
+            i1: 3,
+            i2: 2,
+            r: 0xA0,
+            g: 0xE0,
+            b: 0x30,
+            a: 0xFF,
+        },
+    ];
+
+    // SAFETY: handle vivant, et chaque pointeur couvre le nombre d'éléments
+    // annoncé — ce sont des tableaux locaux qui vivent jusqu'au retour.
+    unsafe {
+        scg_submit(
+            ctx,
+            &model,
+            vertices.as_ptr(),
+            vertices.len() as u32,
+            triangles.as_ptr(),
+            triangles.len() as u32,
+        )
+    }
+}
+
 /// La séquence complète telle qu'un hôte l'écrira, et le seul test qui regarde
 /// ce qui sort du tampon. Deux clauses de l'ABI s'y vérifient : quelque chose
 /// est effectivement peint, et l'alpha est **écrit** partout — un octet laissé
 /// indéfini donnerait un rendu troué dans un navigateur, seule cible où ce canal
 /// est réellement composité.
 #[test]
-fn rend_le_triangle_dans_le_tampon_de_l_hote() {
+fn rend_la_scene_dans_le_tampon_de_l_hote() {
     let ctx = create(&sane());
     let mut pixels = [0u8; 64 * 32 * 4];
 
+    assert_eq!(submit_scene(ctx), SCG_OK);
     // SAFETY: handle vivant, tampon d'au moins `stride × hauteur` pixels.
     let code = unsafe { scg_frame_end(ctx, pixels.as_mut_ptr(), 64) };
     assert_eq!(code, SCG_OK);
