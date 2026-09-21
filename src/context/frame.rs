@@ -7,11 +7,12 @@
 //! threads distincts : la [`Frame`] ne se lit qu'en partage, et chaque tuile
 //! n'écrit que dans sa pile et dans son rectangle du tampon de l'hôte.
 
+use alloc::sync::Arc;
 use core::sync::atomic::{AtomicU32, Ordering};
 
 use crate::context::{BYTES_PER_PIXEL, CLEAR_COLOR, CLOSING, Context, RECORDING, RENDERING};
 use crate::error::{Argument, Error, Result};
-use crate::raster::{Rect, Target, fill};
+use crate::raster::{NO_TEXTURE, Rect, Target, fill};
 
 /// Le plus grand côté de tuile, qui dimensionne le tampon de travail posé sur
 /// la pile.
@@ -247,7 +248,15 @@ impl Context {
         // le bat.
         scratch.depth.fill(0);
         for index in triangles {
-            fill(&mut scratch, rect, &self.triangles[index as usize]);
+            let triangle = &self.triangles[index as usize];
+            // L'index se résout ici, une fois par triangle : le rasteriseur
+            // reçoit la texture et ne connaît ni la table ni le comptage de
+            // références, qui appartiennent au contexte.
+            let texture = match triangle.texture() {
+                NO_TEXTURE => None,
+                index => self.textures.get(index as usize).map(Arc::as_ref),
+            };
+            fill(&mut scratch, rect, triangle, texture);
         }
 
         let width = rect.width as usize;

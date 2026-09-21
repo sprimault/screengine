@@ -43,7 +43,7 @@ fn fill_triangle<T: Target>(target: &mut T, window: Rect, v: [Point; 3], color: 
         t: 0,
     });
     if let Some(triangle) = prepare(vertices, color, NO_TEXTURE) {
-        fill(target, window, &triangle);
+        fill(target, window, &triangle, None);
     }
 }
 
@@ -661,7 +661,7 @@ fn les_permutations_circulaires_rendent_la_meme_image() {
             });
             let mut sink = Depths { seen: Vec::new() };
             if let Some(triangle) = prepare(vertices, 1, NO_TEXTURE) {
-                fill(&mut sink, CLIP, &triangle);
+                fill(&mut sink, CLIP, &triangle, None);
             }
             sink.seen
         };
@@ -770,7 +770,7 @@ fn un_pixel_occulte_est_teste_mais_pas_ecrit() {
     });
     for vertices in [proche, loin] {
         let triangle = prepare(vertices, 1, NO_TEXTURE).expect("triangle visible");
-        fill(&mut sink, CLIP, &triangle);
+        fill(&mut sink, CLIP, &triangle, None);
     }
 
     let couverts = sink.writes;
@@ -784,4 +784,162 @@ fn un_pixel_occulte_est_teste_mais_pas_ecrit() {
         sink.writes, couverts,
         "le triangle du fond a écrit malgré la profondeur"
     );
+}
+
+/// Un puits qui garde la couleur écrite par pixel, avec un test de profondeur
+/// réel.
+struct Paint {
+    color: Vec<u32>,
+    depth: Vec<u32>,
+}
+
+impl Paint {
+    /// Un puits vide, tous pixels au fond.
+    fn new() -> Self {
+        Self {
+            color: vec![0; (W * H) as usize],
+            depth: vec![0; (W * H) as usize],
+        }
+    }
+}
+
+impl Target for Paint {
+    fn test(&mut self, x: i32, y: i32, z: u32) -> bool {
+        z > self.depth[(y * W + x) as usize]
+    }
+
+    fn write(&mut self, x: i32, y: i32, z: u32, color: u32) {
+        self.depth[(y * W + x) as usize] = z;
+        self.color[(y * W + x) as usize] = color;
+    }
+}
+
+/// Une texture dont chaque texel porte ses propres coordonnées : le texel
+/// `(u, v)` vaut `u | v << 8`, si bien qu'un pixel dit lequel il a lu.
+fn addressed(side: u32) -> Texture {
+    let mut bytes = Vec::new();
+    for v in 0..side {
+        for u in 0..side {
+            bytes.extend_from_slice(&[u as u8, v as u8, 0, 0xFF]);
+        }
+    }
+    Texture::load(side, side, &bytes).expect("texture valide")
+}
+
+/// Un sol texturé vu en perspective, préparé par la chaîne complète, avec les
+/// sommets dont il sort : un triangle préparé ne garde que ses plans, et
+/// l'interpolation exacte de référence a besoin des valeurs aux sommets.
+fn sol_texture() -> (Prepared, [Vertex; 3]) {
+    use crate::math::{Projection, Vec3};
+
+    let p = Projection::new(W as u32, H as u32, 1.0, 0.1).unwrap_or_else(|_| unreachable!());
+    let sol = |devant: f32, cote: f32| {
+        // Densité élevée à dessein : c'est elle qui rend un point de division
+        // déplacé visible en texels, donc qui donne au test sa sensibilité.
+        p.to_clip(Vec3::new(cote, 1.2, devant), devant * 96.0, cote * 96.0)
+            .expect("sommet projetable")
+    };
+    let corners = [sol(1.5, -2.0), sol(60.0, 20.0), sol(60.0, -20.0)];
+    let vertices = corners.map(|c| {
+        let v = p.to_vertex(c);
+        Vertex {
+            position: Point { x: v.x, y: v.y },
+            z: v.z,
+            s: v.s,
+            t: v.t,
+        }
+    });
+    (prepare(vertices, 0, 0).expect("sol visible"), vertices)
+}
+
+/// **Le test central du lot.** Les segments de perspective s'alignent sur la
+/// grille de l'image, pas sur la fenêtre où l'on parcourt.
+///
+/// Rendu en quatre fenêtres, le même sol doit donner exactement les mêmes
+/// couleurs qu'en une seule. Un segment qui repartirait du bord de la fenêtre
+/// diviserait à d'autres abscisses, et la même surface se texturerait autrement
+/// selon la taille des tuiles — une couture que la conformance ne verrait que
+/// dans une configuration.
+#[test]
+fn les_segments_s_alignent_sur_la_grille_de_l_image() {
+    let (triangle, _) = sol_texture();
+    let texture = addressed(64);
+
+    let mut entier = Paint::new();
+    fill(&mut entier, CLIP, &triangle, Some(&texture));
+
+    let mut morceaux = Paint::new();
+    for (x, y, width, height) in [
+        (0, 0, 17, 13),
+        (17, 0, 33, 13),
+        (0, 13, 17, 27),
+        (17, 13, 33, 27),
+    ] {
+        let window = Rect {
+            x,
+            y,
+            width,
+            height,
+        };
+        fill(&mut morceaux, window, &triangle, Some(&texture));
+    }
+
+    let peints = entier.color.iter().filter(|c| **c != 0).count();
+    assert!(peints > 200, "{peints} pixels, le cas ne couvre rien");
+    assert!(
+        morceaux.color == entier.color,
+        "le découpage de la fenêtre a changé la texture"
+    );
+}
+
+/// L'interpolation affine entre deux divisions ne s'écarte pas de la
+/// perspective exacte de plus d'un texel.
+///
+/// C'est ce que le segment de seize pixels achète : une division pour seize
+/// pixels au lieu d'une par pixel. Le comparer à l'exact, calculé en `i128`
+/// sur les mêmes sommets, est ce qui dit si le compromis tient — et c'est le
+/// même critère qu'un sol qui fuit vers l'horizon impose.
+#[test]
+fn l_interpolation_par_segments_reste_sous_le_texel() {
+    let (triangle, vertices) = sol_texture();
+    let side = 64;
+    let texture = addressed(side);
+
+    let mut paint = Paint::new();
+    fill(&mut paint, CLIP, &triangle, Some(&texture));
+
+    let (mut pire, mut mesures) = (0i128, 0u32);
+    for y in 0..H {
+        for x in 0..W {
+            let got = paint.color[(y * W + x) as usize];
+            if got == 0 {
+                continue;
+            }
+            let (px, py) = (x * SUBPIXEL_SCALE + PIXEL_CENTER, py_of(y));
+            let w = barycentric(triangle.v, px, py).map(|n| -n);
+            if w.iter().any(|n| *n < 0) {
+                continue;
+            }
+            let sum = |f: fn(&Vertex) -> i128| (0..3).map(|i| w[i] * f(&vertices[i])).sum::<i128>();
+            let num_d = sum(|v| i128::from(v.z));
+            if num_d <= 0 {
+                continue;
+            }
+            // `S / D` est l'interpolation perspective-correcte exacte, les aires
+            // au dénominateur se simplifiant. Ramenée en 16.16 comme les
+            // coordonnées du remplissage : `S` est en 14.12 et `D` en 0.32, donc
+            // le quotient se décale de 36 bits.
+            let exact = (sum(|v| i128::from(v.s)) << 36) / num_d;
+
+            // Le texel lu porte ses coordonnées : `u` est son octet de poids
+            // faible, replié comme le remplissage l'a replié.
+            let lu = (got & 0xFF) as i128;
+            let attendu = (exact >> 16).rem_euclid(side as i128);
+            let ecart = (lu - attendu).rem_euclid(side as i128);
+            pire = pire.max(ecart.min(side as i128 - ecart));
+            mesures += 1;
+        }
+    }
+    assert!(mesures > 200, "{mesures} pixels, échantillon trop maigre");
+    assert!(pire <= 1, "écart de {pire} texels sur {mesures} pixels");
 }

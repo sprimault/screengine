@@ -181,6 +181,24 @@ impl Texture {
         (level.width, level.height)
     }
 
+    /// Le texel d'un niveau aux coordonnées `(u, v)`, repliées par masque.
+    ///
+    /// **Le repli est un `ET` binaire**, et c'est toute la raison d'exiger des
+    /// côtés en puissance de deux : une coordonnée qui sort de la texture y
+    /// rentre sans division ni comparaison, pour une surface qui répète son
+    /// habillage des milliers de fois. Sur un entier signé, le masque replie
+    /// aussi les négatifs du bon côté, là où un reste de division les
+    /// renverrait de l'autre.
+    ///
+    /// Les coordonnées sont en texels entiers, le niveau borné comme dans
+    /// [`Texture::level_size`].
+    pub fn texel(&self, level: usize, u: i32, v: i32) -> u32 {
+        let level = self.levels[level.min(self.count - 1)];
+        let x = (u as u32) & (level.width - 1);
+        let y = (v as u32) & (level.height - 1);
+        self.texels[(level.offset + y * level.width + x) as usize]
+    }
+
     /// Les texels d'un niveau, lignes jointives, même bornage que
     /// [`Texture::level_size`].
     pub fn level_texels(&self, level: usize) -> &[u32] {

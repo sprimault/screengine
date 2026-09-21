@@ -13,6 +13,7 @@ use crate::math::fixed::{PIXEL_CENTER, SUBPIXEL_SCALE};
 
 use super::plane::{GRADIENT_BITS, Plane};
 use super::{Rect, Target};
+use crate::texture::Texture;
 
 /// Une position projetée, en sous-pixels.
 ///
@@ -88,6 +89,11 @@ impl Prepared {
     /// bornes comprises.
     pub fn bounds(&self) -> (i32, i32, i32, i32) {
         (self.x0, self.y0, self.x1, self.y1)
+    }
+
+    /// L'index de sa texture dans la table de l'image, ou [`NO_TEXTURE`].
+    pub fn texture(&self) -> u16 {
+        self.texture
     }
 }
 
@@ -302,49 +308,89 @@ pub fn prepare(vertices: [Vertex; 3], color: u32, texture: u16) -> Option<Prepar
 /// Remplit la partie d'un triangle préparé qui tombe dans `window`.
 ///
 /// `window` est en pixels de l'image, et tient dans la bande de garde.
-pub fn fill<T: Target>(target: &mut T, window: Rect, triangle: &Prepared) {
+pub fn fill<T: Target>(
+    target: &mut T,
+    window: Rect,
+    triangle: &Prepared,
+    texture: Option<&Texture>,
+) {
     let color = triangle.color;
 
     // La fenêtre borne la boucle, jamais les valeurs : une fonction de bord
     // évaluée en un pixel ne dépend pas du rectangle dans lequel on la parcourt.
-    let x0 = triangle.x0.max(window.x as i32);
-    let x1 = triangle.x1.min((window.x + window.width) as i32 - 1);
+    let wx0 = triangle.x0.max(window.x as i32);
+    let wx1 = triangle.x1.min((window.x + window.width) as i32 - 1);
     let y0 = triangle.y0.max(window.y as i32);
     let y1 = triangle.y1.min((window.y + window.height) as i32 - 1);
-    if x0 > x1 || y0 > y1 {
+    if wx0 > wx1 || y0 > y1 {
         return;
     }
 
-    let (mut row, step_x, step_y) = setup(triangle, x0, y0);
+    // **Les fonctions de bord partent du span du triangle, pas de celui de la
+    // fenêtre.** Le span sert aux segments de perspective, dont les extrémités
+    // doivent être les mêmes quelle que soit la tuile : bornés par la fenêtre,
+    // ils diviseraient à d'autres abscisses et la même surface se texturerait
+    // autrement selon le découpage.
+    let (mut row, step_x, step_y) = setup(triangle, triangle.x0, y0);
     let plane = &triangle.depth;
     let depth_x = plane.step_x(SUBPIXEL_SCALE);
 
     for y in y0..=y1 {
-        if let Some((lo, hi)) = span(&row, &step_x, x0, x1) {
+        if let Some((gl, gr)) = span(&row, &step_x, triangle.x0, triangle.x1) {
             // Les deux extrémités sont couvertes, et le pixel qui précède le
             // span ne l'est pas : c'est la coïncidence du span avec le test par
             // pixel, vérifiée en débogage plutôt que relue.
-            debug_assert!(covered(&row, &step_x, (lo - x0) as i64));
-            debug_assert!(covered(&row, &step_x, (hi - x0) as i64));
-            debug_assert!(lo == x0 || !covered(&row, &step_x, (lo - x0 - 1) as i64));
+            debug_assert!(covered(&row, &step_x, (gl - triangle.x0) as i64));
+            debug_assert!(covered(&row, &step_x, (gr - triangle.x0) as i64));
+            debug_assert!(
+                gl == triangle.x0 || !covered(&row, &step_x, (gl - triangle.x0 - 1) as i64)
+            );
+
+            // Le parcours, lui, s'arrête au bord de la fenêtre.
+            let (lo, hi) = (gl.max(wx0), gr.min(wx1));
+            if lo > hi {
+                for i in 0..3 {
+                    row[i] += step_y[i];
+                }
+                continue;
+            }
 
             // La profondeur au centre du premier pixel du span, par la forme
             // close : elle ne se propage pas d'une ligne à l'autre, les spans
             // ne commençant pas à la même abscisse. Les pas entiers qui suivent
             // donnent les mêmes bits que l'évaluation directe en chaque pixel.
-            let mut depth = plane.at(
-                (lo * SUBPIXEL_SCALE + PIXEL_CENTER - triangle.ref_x) as i64,
-                (py_of(y) - triangle.ref_y) as i64,
-            );
-            for x in lo..=hi {
-                // En un pixel couvert, la valeur tient dans [0, 2³²) : les
-                // sommets sont bornés par `to_depth` avec une marge qui couvre
-                // l'arrondi des gradients.
-                let z = (depth >> GRADIENT_BITS) as u32;
-                if target.test(x, y, z) {
-                    target.write(x, y, z, color);
+            let ey = (py_of(y) - triangle.ref_y) as i64;
+            let ex = |x: i32| (x * SUBPIXEL_SCALE + PIXEL_CENTER - triangle.ref_x) as i64;
+            match texture {
+                None => {
+                    let mut depth = plane.at(ex(lo), ey);
+                    for x in lo..=hi {
+                        // En un pixel couvert, la valeur tient dans [0, 2³²) :
+                        // les sommets sont bornés par `to_depth` avec une marge
+                        // qui couvre l'arrondi des gradients.
+                        let z = (depth >> GRADIENT_BITS) as u32;
+                        if target.test(x, y, z) {
+                            target.write(x, y, z, color);
+                        }
+                        depth = depth.wrapping_add(depth_x);
+                    }
                 }
-                depth = depth.wrapping_add(depth_x);
+                Some(texture) => {
+                    let mut x = lo;
+                    while x <= hi {
+                        // Le segment court d'un multiple de seize de l'image au
+                        // suivant, **rabattu sur le span global** : au-delà, la
+                        // profondeur prolongée hors du triangle peut s'annuler,
+                        // et il n'y aurait aucun quotient à prendre. Ses bornes
+                        // ne dépendent donc que du triangle et de la grille de
+                        // l'image, jamais de la fenêtre où l'on parcourt.
+                        let base = x - x.rem_euclid(SEGMENT);
+                        let segment = (base.max(gl), (base + SEGMENT - 1).min(gr));
+                        let last = segment.1.min(hi);
+                        fill_segment(target, triangle, texture, y, segment, (x, last));
+                        x = last + 1;
+                    }
+                }
             }
         }
         for i in 0..3 {
@@ -356,6 +402,117 @@ pub fn fill<T: Target>(target: &mut T, window: Rect, triangle: &Prepared) {
 /// L'ordonnée du centre du pixel `y`, en sous-pixels.
 fn py_of(y: i32) -> i32 {
     y * SUBPIXEL_SCALE + PIXEL_CENTER
+}
+
+/// Pixels entre deux divisions de perspective.
+///
+/// Seize, la valeur d'époque : la division coûte alors un seizième de pixel, et
+/// l'écart à la perspective exacte reste sous le texel sur un segment de cette
+/// longueur. Les points de division sont les **multiples de seize de l'abscisse
+/// dans l'image**, jamais un décompte reparti du bord de la tuile ou du
+/// triangle — sinon la même surface se texturerait autrement selon le
+/// découpage.
+const SEGMENT: i32 = 16;
+
+/// Bits fractionnaires d'une coordonnée de texture par pixel.
+const UV_BITS: u32 = 16;
+
+/// Décalage qui ramène `S · W` en 16.16.
+///
+/// `S` est en 14.12 et vaut `u · d · 2¹²` ; `W` vaut `2⁵⁶ / D` avec `D = d ·
+/// 2³²`. Leur produit vaut donc `u · 2³⁶`, et `u` en 16.16 s'en tire par un
+/// décalage de vingt bits.
+///
+/// **Le produit ne déborde pas, et ce n'est pas par la borne des facteurs** :
+/// pris séparément, `S` atteint 2²⁶ et `W` 2⁵⁰, dont le produit serait hors de
+/// l'`i64`. Mais les deux sont **anticorrélés** — la profondeur qui fait
+/// grandir `W` fait rétrécir `S` dans la même proportion —, si bien que leur
+/// produit vaut exactement `u · 2³⁶` et reste sous 2⁵⁰ pour une coordonnée
+/// bornée à 2¹⁴ texels.
+const UV_SHIFT: u32 = 20;
+
+/// Remplit la part de `draw` qui tombe dans le segment `segment`, bornes
+/// comprises.
+///
+/// Les coordonnées de texture se divisent aux **deux extrémités du segment** et
+/// s'interpolent affinement entre elles : c'est le compromis d'époque, une
+/// division pour seize pixels au lieu d'une par pixel, et l'écart à la
+/// perspective exacte reste sous le texel sur une longueur pareille.
+///
+/// `segment` ne dépend que du triangle et de la grille de l'image ; `draw` en
+/// est la part que la fenêtre laisse voir. Les séparer est ce qui rend la
+/// texture indépendante du découpage : tout part de la forme close, rien ne
+/// s'accumule d'une tuile à l'autre.
+fn fill_segment<T: Target>(
+    target: &mut T,
+    triangle: &Prepared,
+    texture: &Texture,
+    y: i32,
+    segment: (i32, i32),
+    draw: (i32, i32),
+) {
+    // Les écarts se recalculent ici plutôt que de traverser la signature :
+    // deux soustractions par segment, contre deux paramètres de plus dans une
+    // liste qui en compte déjà six.
+    let ey = (py_of(y) - triangle.ref_y) as i64;
+    let ex = |x: i32| (x * SUBPIXEL_SCALE + PIXEL_CENTER - triangle.ref_x) as i64;
+    let depth_at = |x: i32| triangle.depth.at(ex(x), ey);
+    let uv_at = |x: i32| {
+        let w = reciprocal((depth_at(x) >> GRADIENT_BITS) as u32);
+        let read = |plane: &Plane| i64::from(texel_coord(plane.at(ex(x), ey) >> GRADIENT_BITS, w));
+        [read(&triangle.uv[0]), read(&triangle.uv[1])]
+    };
+
+    let (from, to) = segment;
+    let steps = (to - from + 1) as i64;
+    let first = uv_at(from);
+    // La valeur de fin se prend au pixel **suivant** le segment, pour que la
+    // pente soit celle d'un pas de pixel et non d'un pas de segment. Ce point
+    // est dans le span tant que le segment s'y termine ; à la fin du span, il
+    // vaut le dernier pixel couvert, faute de profondeur au-delà.
+    let after = uv_at(if to < triangle.x1 { to + 1 } else { to });
+    // `div_euclid` : la pente s'arrondit vers le bas des deux côtés de zéro, là
+    // où `/` ferait un pas double autour de l'origine de la texture.
+    let slope = [
+        (after[0] - first[0]).div_euclid(steps),
+        (after[1] - first[1]).div_euclid(steps),
+    ];
+
+    let mut depth = depth_at(draw.0);
+    let depth_x = triangle.depth.step_x(SUBPIXEL_SCALE);
+    let skipped = (draw.0 - from) as i64;
+    let mut uv = [first[0] + slope[0] * skipped, first[1] + slope[1] * skipped];
+    for x in draw.0..=draw.1 {
+        let z = (depth >> GRADIENT_BITS) as u32;
+        if target.test(x, y, z) {
+            let texel = texture.texel(0, (uv[0] >> UV_BITS) as i32, (uv[1] >> UV_BITS) as i32);
+            target.write(x, y, z, texel);
+        }
+        depth = depth.wrapping_add(depth_x);
+        uv[0] += slope[0];
+        uv[1] += slope[1];
+    }
+}
+
+/// La réciproque de la profondeur, `2⁵⁶ / D`.
+///
+/// La seule division du remplissage, et elle a lieu une fois par segment de
+/// seize pixels. `D` est strictement positif en un pixel couvert : les sommets
+/// sont bornés par `to_depth` à distance des bornes, et une combinaison convexe
+/// reste dans l'intervalle.
+fn reciprocal(depth: u32) -> u64 {
+    debug_assert!(depth > 0, "profondeur nulle en un pixel couvert");
+    (1u64 << 56) / depth.max(1) as u64
+}
+
+/// La coordonnée de texture en 16.16 d'un attribut `S` à la profondeur `D`.
+///
+/// **Par décalage et non par division** : `/` tronque vers zéro, donc
+/// changerait de sens d'arrondi de part et d'autre de l'origine de la texture,
+/// et une couture y apparaîtrait sur une ligne que rien d'autre ne distingue.
+/// Le décalage arithmétique, lui, arrondit vers le bas des deux côtés.
+fn texel_coord(s: i64, reciprocal: u64) -> i32 {
+    ((s.wrapping_mul(reciprocal as i64)) >> UV_SHIFT) as i32
 }
 
 #[cfg(test)]
