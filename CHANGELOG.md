@@ -93,6 +93,12 @@ signature ne change et `SCG_ABI_VERSION` reste à **1**.
   de sa propre référence. Les sept précédentes sont inchangées.
 - `make conform-images` écrit chaque vue en image : une empreinte dit qu'une
   image a changé, jamais qu'elle est juste.
+- ABI : `scg_set_filter`, avec `SCG_FILTER_DITHER` — qui vaut **0**, à l'inverse
+  du format de texture, parce qu'un contexte qu'on ne configure pas doit rendre
+  le défaut — et `SCG_FILTER_BILINEAR`. Une valeur inconnue est refusée et non
+  rabattue sur le défaut : c'est ce qui rend l'ajout d'un filtrage compatible.
+  Refusé pendant le rendu. Aucune signature publiée ne change,
+  `SCG_ABI_VERSION` reste à **1**, et aucun code d'erreur n'est ajouté.
 - API Rust : `Context::submit_textured`, qui habille un lot d'une texture. Elle
   vaut pour le lot entier, et le moteur en garde une référence forte jusqu'à la
   fin de l'image : l'hôte peut la libérer de son côté sans que l'image en cours
@@ -204,6 +210,12 @@ is not recorded. No signature changes and `SCG_ABI_VERSION` stays at **1**.
   reference. The seven previous ones are unchanged.
 - `make conform-images` writes every view out as an image: a digest says an
   image changed, never that it is correct.
+- ABI: `scg_set_filter`, with `SCG_FILTER_DITHER` — which is **0**, unlike the
+  texture format, because a context that is never configured must render the
+  default — and `SCG_FILTER_BILINEAR`. An unknown value is refused rather than
+  falling back on the default: that is what makes adding a filter compatible.
+  Refused during rendering. No published signature changes,
+  `SCG_ABI_VERSION` stays at **1**, and no error code is added.
 - Rust API: `Context::submit_textured`, dressing a batch with a texture. It
   applies to the whole batch, and the engine keeps a strong reference to it
   until the frame ends: the host may release its own without the current frame

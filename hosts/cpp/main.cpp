@@ -181,11 +181,14 @@ std::vector<uint8_t> make_checker()
     return texels;
 }
 
-/// Rend la scène texturée et hache son image.
+/// Rend la scène texturée sous le filtrage demandé et hache son image.
 ///
 /// La texture est détruite avant le rendu, à dessein : le moteur en garde sa
 /// propre référence jusqu'à la fin de l'image, et l'empreinte le prouve.
-uint64_t render_textured(bool &ok)
+///
+/// `filter` rejoue la même géométrie en bilinéaire : un écart entre les deux
+/// empreintes ne peut alors venir que du filtrage.
+uint64_t render_textured(bool &ok, uint32_t filter)
 {
     ok = false;
     ScgContextConfig config = scene_config();
@@ -207,6 +210,7 @@ uint64_t render_textured(bool &ok)
         return 0;
     }
 
+    check(scg_set_filter(ctx, filter) == SCG_OK, "le filtrage se règle");
     check(scg_submit_textured(ctx, &IDENTITY, FLOOR_VERTICES, 4, FLOOR_TRIANGLES, 2, texture)
               == SCG_OK,
           "le lot texturé est accepté");
@@ -458,13 +462,17 @@ int main()
     }
 
     bool textured_ok = false;
-    const uint64_t textured = render_textured(textured_ok);
+    const uint64_t textured = render_textured(textured_ok, SCG_FILTER_DITHER);
 
-    if (failures > 0 || !ok || !textured_ok) {
+    bool bilinear_ok = false;
+    const uint64_t bilinear = render_textured(bilinear_ok, SCG_FILTER_BILINEAR);
+
+    if (failures > 0 || !ok || !textured_ok || !bilinear_ok) {
         std::fprintf(stderr, "%d vérification(s) en échec\n", failures);
         return 1;
     }
     std::printf("%016llx\n", static_cast<unsigned long long>(hash));
     std::printf("%016llx\n", static_cast<unsigned long long>(textured));
+    std::printf("%016llx\n", static_cast<unsigned long long>(bilinear));
     return 0;
 }

@@ -54,6 +54,17 @@ export const SCG_ERR_POISONED = -6;
  */
 export const SCG_TEXTURE_FORMAT_RGBA8 = 1;
 
+/**
+ * Le tramage ordonné des coordonnées, filtrage par défaut.
+ *
+ * Zéro, à l'inverse du format de texture : un contexte qu'on ne configure pas
+ * doit rendre ce que le moteur rend par défaut.
+ */
+export const SCG_FILTER_DITHER = 0;
+
+/** Le bilinéaire, un niveau de qualité au-dessus, qui remplace le tramage. */
+export const SCG_FILTER_BILINEAR = 1;
+
 /** Les fonctions que le module doit exporter, en plus de `memory`. */
 export const EXPORTS = [
   "scg_abi_version",
@@ -70,6 +81,7 @@ export const EXPORTS = [
   "scg_texture_load",
   "scg_texture_destroy",
   "scg_submit_textured",
+  "scg_set_filter",
 ];
 
 /** Taille de `ScgContextConfig`, celle qu'affirme le header. */

@@ -36,6 +36,12 @@ public final class Screengine {
     /** Octets par pixel du tampon de sortie, R, G, B, A. */
     public static final int BYTES_PER_PIXEL = 4;
 
+    /** Tramage ordonné des coordonnées, le filtrage par défaut du moteur. */
+    public static final int FILTER_DITHER = 0;
+
+    /** Bilinéaire, qui remplace le tramage au lieu de s'y ajouter. */
+    public static final int FILTER_BILINEAR = 1;
+
     /** Pas d'instance : des fonctions, comme l'ABI. */
     private Screengine() {}
 
@@ -184,4 +190,18 @@ public final class Screengine {
      */
     static native int submitTextured(long ctx, float[] model, float[] vertices, int[] indices,
             byte[] colors, long texture);
+
+    /**
+     * {@code scg_set_filter}.
+     *
+     * Les valeurs sont celles du header, {@code SCG_FILTER_DITHER} et
+     * {@code SCG_FILTER_BILINEAR} : elles ne sont pas recopiées ici, et une
+     * valeur inconnue traverse la couche JNI pour se faire refuser par la
+     * bibliothèque, qui seule fait foi.
+     *
+     * @param ctx handle, ou 0
+     * @param filter le niveau de filtrage
+     * @return le code de retour
+     */
+    static native int setFilter(long ctx, int filter);
 }

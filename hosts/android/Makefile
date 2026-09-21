@@ -42,11 +42,15 @@ DEVICE_DIR := /data/local/tmp/screengine
 ABIS := arm64-v8a armeabi-v7a x86_64
 
 # Les scènes que chaque palier rend, dans l'ordre. Le Makefile racine en tient
-# la liste ; ici seul le nombre compte, pour découper les lignes d'un palier.
-# Écrit une fois : cinq paliers qui rendraient un nombre différent de scènes ne
-# se compareraient plus ligne à ligne, et la divergence passerait pour une
-# égalité.
-SCENE_COUNT := 2
+# la liste et **passe ce nombre** : les deux ont divergé une fois, à l'ajout
+# d'une scène, et l'échec n'est apparu qu'au bout d'une construction Android
+# complète. La valeur ci-dessous ne sert qu'à un appel direct, hors du Makefile
+# racine.
+#
+# Un seul nombre pour les cinq paliers : ceux qui rendraient un nombre
+# différent de scènes ne se compareraient plus ligne à ligne, et la divergence
+# passerait pour une égalité.
+SCENE_COUNT ?= 3
 
 triple_arm64-v8a   := aarch64-linux-android
 triple_armeabi-v7a := armv7-linux-androideabi

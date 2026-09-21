@@ -29,6 +29,20 @@
 // pixels — a host never has two orders to keep straight.
 #define SCG_TEXTURE_FORMAT_RGBA8 1
 
+// Ordered dithering of texture coordinates: the default filter.
+//
+// Zero, unlike `SCG_TEXTURE_FORMAT_RGBA8`, and for the opposite reason: a
+// context that is never configured must render what the engine renders by
+// default, so the default has to be the zero value.
+#define SCG_FILTER_DITHER 0
+
+// Bilinear blending of the four neighbouring texels, within one mipmap level.
+//
+// A quality level above the default, at the price of four texel reads per
+// pixel instead of one. It replaces dithering rather than adding to it: there
+// is no staircase left to hide once coordinates are interpolated.
+#define SCG_FILTER_BILINEAR 1
+
 // Success.
 #define SCG_OK 0
 
@@ -278,6 +292,26 @@ void scg_destroy(struct ScgContext *ctx);
 // `ctx` is a live handle used by no other thread during the call, and `camera`
 // is NULL or points to a readable `ScgCamera`.
 int32_t scg_set_camera(struct ScgContext *ctx, const struct ScgCamera *camera);
+
+// Sets how textures are sampled from the next frames on.
+//
+// `filter` is `SCG_FILTER_DITHER`, the default, or `SCG_FILTER_BILINEAR`; any
+// other value is `SCG_ERR_INVALID_ARGUMENT`, and the context keeps the filter
+// it had. A binding written against a later version therefore gets a plain
+// error rather than an image filtered otherwise than it believes.
+//
+// Rejected with `SCG_ERR_INVALID_STATE` between `scg_frame_begin` and
+// `scg_frame_end`: tiles of one frame are rendered from threads the engine
+// knows nothing about, and a filter changed in between would leave part of the
+// image sampled one way and part the other.
+//
+// The two filters are exclusive: bilinear replaces dithering, it does not add
+// to it.
+//
+// # Safety
+//
+// `ctx` is a live handle used by no other thread during the call.
+int32_t scg_set_filter(struct ScgContext *ctx, uint32_t filter);
 
 // Submits a batch of triangles to the frame being recorded.
 //

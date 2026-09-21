@@ -11,7 +11,7 @@
 //! nouvelle et une fonction nouvelle, ce que la règle d'extension prévoit — un
 //! champ qui dort en attendant ce jour-là serait un pari sur sa forme.
 
-use screengine::{Affine3, Camera, Color, Quat, Vec3, VertexUv};
+use screengine::{Affine3, Camera, Color, Filter, Quat, Vec3, VertexUv};
 
 use crate::entry::AbiError;
 
@@ -232,6 +232,33 @@ pub(crate) fn check_finite_uv(vertices: &[ScgVertexUv]) -> Result<(), AbiError> 
 /// valid format. Four bytes per texel, in the memory order of the output
 /// pixels — a host never has two orders to keep straight.
 pub const SCG_TEXTURE_FORMAT_RGBA8: u32 = 1;
+
+/// Ordered dithering of texture coordinates: the default filter.
+///
+/// Zero, unlike `SCG_TEXTURE_FORMAT_RGBA8`, and for the opposite reason: a
+/// context that is never configured must render what the engine renders by
+/// default, so the default has to be the zero value.
+pub const SCG_FILTER_DITHER: u32 = 0;
+
+/// Bilinear blending of the four neighbouring texels, within one mipmap level.
+///
+/// A quality level above the default, at the price of four texel reads per
+/// pixel instead of one. It replaces dithering rather than adding to it: there
+/// is no staircase left to hide once coordinates are interpolated.
+pub const SCG_FILTER_BILINEAR: u32 = 1;
+
+/// Le filtrage du noyau que désigne une valeur de l'ABI.
+///
+/// La conversion vit ici et non dans le noyau, qui porte une énumération et
+/// ignore qu'elle se transporte en entier — comme le format de texture, dont le
+/// noyau ne connaît pas davantage la représentation.
+pub(crate) fn filter_of(value: u32) -> Result<Filter, AbiError> {
+    match value {
+        SCG_FILTER_DITHER => Ok(Filter::Dither),
+        SCG_FILTER_BILINEAR => Ok(Filter::Bilinear),
+        _ => Err(AbiError::FILTER),
+    }
+}
 
 /// What a texture load is given.
 ///
