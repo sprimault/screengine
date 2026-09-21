@@ -46,6 +46,13 @@ publié, et explique les conventions du dépôt à qui y contribue.
 
 ## [Non publié]
 
+**Ce qu'un hôte de la 0.1.0 doit reprendre.** Une coordonnée de sommet non
+finie refuse désormais le lot entier, là où elle faisait disparaître son
+triangle en silence ; c'est ce que le contrat d'ABI annonçait déjà. Un hôte qui
+soumettait un `NaN` sans le savoir voyait un trou dans son décor, il reçoit
+maintenant `SCG_ERR_INVALID_ARGUMENT` et son lot n'est pas posé. Aucune
+signature ne change et `SCG_ABI_VERSION` reste à **1**.
+
 ### Ajouté
 - API Rust : `Texture::load`, qui copie un bloc de pixels RGBA8 et engendre
   toute sa chaîne de mipmaps, jusqu'à 1×1, par moyenne des texels et jamais par
@@ -56,7 +63,28 @@ publié, et explique les conventions du dépôt à qui y contribue.
 - API Rust : `VertexUv`, un sommet qui porte ses coordonnées de texture en
   texels, non normalisées.
 
+### Corrigé
+- Une coordonnée de sommet démesurée pouvait produire un triangle de bruit au
+  lieu de disparaître. La borne qui l'écarte portait sur la coordonnée de vue,
+  avant la mise à l'échelle par le champ de vision, alors que ce qu'elle doit
+  couvrir sont les produits du découpage, quadratiques en la coordonnée de
+  clip : au-delà, une intersection donnait un `NaN` sans erreur ni panique.
+  Elle porte désormais sur la coordonnée de clip. Les empreintes de
+  conformance sont inchangées — il fallait des coordonnées absurdes pour
+  l'atteindre.
+- Une coordonnée de sommet non finie refuse le lot entier, comme le contrat
+  d'ABI l'annonce, au lieu de faire disparaître son triangle sans rien dire.
+  Un sommet **fini mais démesuré** continue de disparaître sans erreur : il
+  dépend de la caméra, et refuser le lot rendrait une scène valide irrendable
+  selon l'endroit où l'on se place.
+
 ***
+
+**What a 0.1.0 host must revisit.** A non-finite vertex coordinate now rejects
+the whole batch, where it used to make its triangle vanish silently; this is
+what the ABI contract already promised. A host unknowingly submitting a `NaN`
+saw a hole in its scenery, it now gets `SCG_ERR_INVALID_ARGUMENT` and its batch
+is not recorded. No signature changes and `SCG_ABI_VERSION` stays at **1**.
 
 ### Added
 - Rust API: `Texture::load`, which copies a block of RGBA8 pixels and builds its
@@ -67,6 +95,20 @@ publié, et explique les conventions du dépôt à qui y contribue.
   one call.
 - Rust API: `VertexUv`, a vertex carrying its texture coordinates in texels,
   unnormalised.
+
+### Fixed
+- An oversized vertex coordinate could produce a triangle of noise instead of
+  vanishing. The bound that rejects it applied to the view coordinate, before
+  the field-of-view scaling, whereas what it must cover are the clipping
+  products, quadratic in the clip coordinate: beyond that, an intersection
+  yielded a `NaN` with neither error nor panic. It now applies to the clip
+  coordinate. Conformance digests are unchanged — reaching it took absurd
+  coordinates.
+- A non-finite vertex coordinate rejects the whole batch, as the ABI contract
+  states, instead of making its triangle vanish silently. A **finite but
+  oversized** vertex still vanishes without an error: it depends on the camera,
+  and rejecting the batch would make a valid scene unrenderable depending on
+  where one stands.
 
 ## [0.1.0] — 2026-09-21 — Le pipeline
 

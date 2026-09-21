@@ -53,6 +53,16 @@ pub enum Argument {
     TriangleCapacity,
     /// Un indice de triangle au-delà du tableau de sommets du lot.
     VertexIndex,
+    /// Une coordonnée de sommet non finie dans un lot soumis.
+    ///
+    /// Distincte d'un sommet simplement démesuré, qui fait disparaître son
+    /// triangle sans erreur : celui-là dépend de la caméra et de la matrice
+    /// modèle, donc l'hôte ne peut pas savoir d'avance s'il se projettera, et
+    /// refuser le lot rendrait une scène valide irrendable selon l'endroit où
+    /// la caméra se place. Un `NaN` ou un infini soumis, lui, ne dépend de
+    /// rien : c'est une donnée fausse, du même statut qu'un indice hors
+    /// tableau.
+    VertexCoordinate,
     /// Un champ de vision hors de `]0, π[`, ou un plan proche nul, négatif ou
     /// démesuré.
     Projection,

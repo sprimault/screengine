@@ -90,6 +90,9 @@ pub(crate) fn message_of(error: Error) -> &'static str {
         Error::InvalidArgument(Argument::Projection) => {
             "invalid projection: the vertical field of view must be within ]0, pi[ radians, and the near plane positive and finite"
         }
+        Error::InvalidArgument(Argument::VertexCoordinate) => {
+            "vertex coordinate is not finite: NaN and infinities are rejected, and the whole batch with them"
+        }
         Error::InvalidArgument(Argument::TextureSize) => {
             "invalid texture size: each side must be a power of two between 1 and 2048"
         }
