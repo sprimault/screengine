@@ -76,6 +76,14 @@ pub enum Argument {
     ///
     /// [`MAX_TEXEL_COORD`]: crate::MAX_TEXEL_COORD
     TextureCoordinate,
+    /// Plus de textures distinctes dans une image que la table du contexte
+    /// n'en porte.
+    ///
+    /// Le cas limite, et il faut le chercher : la table est dimensionnée sur
+    /// la capacité de triangles, or une texture vaut pour un lot et un lot
+    /// porte au moins un triangle. Seul un hôte qui soumettrait plus de 65535
+    /// lots texturés distincts dans une image l'atteint.
+    TextureCapacity,
     /// Un côté de texture nul, au-delà de [`MAX_TEXTURE_SIZE`], ou qui n'est
     /// pas une puissance de deux.
     ///

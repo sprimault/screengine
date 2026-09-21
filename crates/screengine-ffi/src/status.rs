@@ -93,6 +93,9 @@ pub(crate) fn message_of(error: Error) -> &'static str {
         Error::InvalidArgument(Argument::VertexCoordinate) => {
             "vertex coordinate is not finite: NaN and infinities are rejected, and the whole batch with them"
         }
+        Error::InvalidArgument(Argument::TextureCapacity) => {
+            "too many distinct textures in one frame for the capacity reserved at creation"
+        }
         Error::InvalidArgument(Argument::TextureCoordinate) => {
             "texture coordinate is not finite, or beyond 16384 texels"
         }

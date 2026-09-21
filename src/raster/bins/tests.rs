@@ -7,7 +7,7 @@ use alloc::vec::Vec;
 
 use super::*;
 use crate::math::fixed::SUBPIXEL_SCALE;
-use crate::raster::{Point, Vertex, prepare};
+use crate::raster::{NO_TEXTURE, Point, Vertex, prepare};
 
 /// Un triangle rectangle qui couvre les pixels `x0..x1` × `y0..y1`, dans le
 /// sens de la face avant — antihoraire à l'écran.
@@ -21,7 +21,7 @@ fn triangle(x0: i32, y0: i32, x1: i32, y1: i32) -> Prepared {
         s: 0,
         t: 0,
     };
-    prepare([p(x0, y0), p(x0, y1), p(x1, y0)], 0).expect("triangle visible")
+    prepare([p(x0, y0), p(x0, y1), p(x1, y0)], 0, NO_TEXTURE).expect("triangle visible")
 }
 
 /// Les triangles d'une tuile, dans l'ordre où elle les dessinera.

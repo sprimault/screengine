@@ -42,7 +42,7 @@ fn fill_triangle<T: Target>(target: &mut T, window: Rect, v: [Point; 3], color: 
         s: 0,
         t: 0,
     });
-    if let Some(triangle) = prepare(vertices, color) {
+    if let Some(triangle) = prepare(vertices, color, NO_TEXTURE) {
         fill(target, window, &triangle);
     }
 }
@@ -465,7 +465,7 @@ fn le_span_coincide_avec_le_test_par_pixel() {
             s: 0,
             t: 0,
         });
-        let Some(triangle) = prepare(vertices, 0) else {
+        let Some(triangle) = prepare(vertices, 0, NO_TEXTURE) else {
             continue;
         };
 
@@ -550,7 +550,7 @@ fn l_erreur_des_attributs_reste_sous_un_texel() {
         s: v.s,
         t: v.t,
     });
-    let triangle = prepare(vertices, 0).expect("sol visible");
+    let triangle = prepare(vertices, 0, NO_TEXTURE).expect("sol visible");
 
     let (x0, y0, x1, y1) = triangle.bounds();
     let (mut pire, mut mesures) = (0i128, 0u32);
@@ -650,7 +650,7 @@ fn les_permutations_circulaires_rendent_la_meme_image() {
                 t: -s[k(i)],
             });
             let mut sink = Depths { seen: Vec::new() };
-            if let Some(triangle) = prepare(vertices, 1) {
+            if let Some(triangle) = prepare(vertices, 1, NO_TEXTURE) {
                 fill(&mut sink, CLIP, &triangle);
             }
             sink.seen
@@ -668,4 +668,25 @@ fn les_permutations_circulaires_rendent_la_meme_image() {
         compares > 100,
         "{compares} triangles, échantillon trop maigre"
     );
+}
+
+/// Un triangle préparé porte l'index de texture qu'on lui donne, sentinelle
+/// comprise.
+///
+/// Le seul endroit où cet index se vérifie pour l'instant : c'est le contexte
+/// qui le distribue, mais ses triangles préparés ne montrent pas leurs champs
+/// hors de ce module.
+#[test]
+fn un_triangle_prepare_porte_son_index_de_texture() {
+    let v = [p(2, 2), p(2, 30), p(40, 2)];
+    for index in [NO_TEXTURE, 0, 1, 65_534] {
+        let vertices = v.map(|position| Vertex {
+            position,
+            z: 1 << 31,
+            s: 0,
+            t: 0,
+        });
+        let triangle = prepare(vertices, 0, index).expect("triangle visible");
+        assert_eq!(triangle.texture, index);
+    }
 }

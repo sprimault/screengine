@@ -5,6 +5,7 @@
 
 mod frame;
 
+use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::sync::atomic::{AtomicBool, AtomicU8, AtomicU32, Ordering};
 
@@ -13,8 +14,11 @@ use crate::error::{Argument, Error, Result};
 use crate::math::fixed::MAX_TEXEL_COORD;
 use crate::math::projection::ClipVertex;
 use crate::math::{Affine3, Projection, Vec3};
-use crate::raster::{Bins, Grid, MAX_CLIP_TRIANGLES, Point, Prepared, Vertex, clip, prepare};
+use crate::raster::{
+    Bins, Grid, MAX_CLIP_TRIANGLES, NO_TEXTURE, Point, Prepared, Vertex, clip, prepare,
+};
 use crate::scene::{Camera, Color, Triangle, VertexUv};
+use crate::texture::Texture;
 
 pub use frame::{Frame, Output, Rows};
 
@@ -112,6 +116,15 @@ pub struct Context {
     height: u32,
     /// Les triangles de l'image en cours, dans l'ordre de soumission.
     triangles: Vec<Prepared>,
+    /// Les textures que l'image en cours emploie, une entrée par texture
+    /// **distincte**, dans l'ordre de première soumission.
+    ///
+    /// Une table et non une référence dans chaque triangle préparé : le nombre
+    /// d'incréments atomiques par image devient celui des textures plutôt que
+    /// celui des triangles, et [`Prepared`] garde `Copy`, dont vivent les tests
+    /// du rasteriseur. Elle tient une référence forte, si bien qu'une texture
+    /// détruite pendant qu'une image la référence reste lisible.
+    textures: Vec<Arc<Texture>>,
     bins: Bins,
     /// Vrai pour chaque tuile déjà prise dans l'image en cours.
     ///
@@ -166,6 +179,24 @@ const RENDERING: u8 = 1;
 /// La fin d'image a pris la main : plus aucune tuile ne commence.
 const CLOSING: u8 = 2;
 
+/// Les textures distinctes qu'une image peut employer, pour une capacité de
+/// `triangles` triangles préparés.
+///
+/// **Ce plafond se déduit, il n'est pas un paramètre.** Une texture vaut pour
+/// un lot, un lot porte au moins un triangle : les textures distinctes d'une
+/// image sont donc au plus aussi nombreuses que ses triangles préparés, et la
+/// table ne déborde jamais en pratique. Un champ de configuration n'apprendrait
+/// rien au moteur, et `ScgContextConfig` n'a plus que deux champs réservés
+/// avant qu'une extension exige une structure et une fonction nouvelles.
+///
+/// Le plafond dur vient de la sentinelle : [`NO_TEXTURE`] occupe `u16::MAX`,
+/// il reste donc 65535 index. À huit octets l'entrée, la table coûte 128 Kio à
+/// la capacité par défaut, contre plus de deux mégaoctets de triangles
+/// préparés et de bacs déjà réservés.
+fn texture_capacity(triangles: usize) -> usize {
+    triangles.min(u16::MAX as usize)
+}
+
 impl Context {
     /// Crée un contexte, ou refuse la configuration.
     ///
@@ -185,6 +216,7 @@ impl Context {
             width: config.width,
             height: config.height,
             triangles: reserved(capacity)?,
+            textures: reserved(texture_capacity(capacity))?,
             bins: Bins::new(tiles as usize, capacity)?,
             taken,
             grid: Grid::new(config.width, config.height, config.tile_size),
@@ -264,6 +296,9 @@ impl Context {
     fn drop_closed_frame(&mut self) {
         if *self.stale.get_mut() {
             self.triangles.clear();
+            // Les textures meurent avec les triangles qui les référencent :
+            // les garder ferait vivre une ressource que plus rien ne dessine.
+            self.textures.clear();
             *self.stale.get_mut() = false;
         }
     }
@@ -359,10 +394,29 @@ impl Context {
     where
         F: Fn(usize) -> Result<([Vec3; 3], Color)>,
     {
-        self.submit_each_uv(model, count, |i| {
+        self.submit_each_uv(model, count, None, |i| {
             let (corners, color) = read(i)?;
             Ok((corners.map(VertexUv::untextured), color))
         })
+    }
+
+    /// Soumet un lot de triangles habillés d'une texture.
+    ///
+    /// **La texture vaut pour le lot entier**, et non pour chaque triangle :
+    /// une surface continue se soumet en un seul franchissement, et c'est aussi
+    /// la forme qu'impose la frontière C, dont la structure de triangle est
+    /// publiée et ne peut plus gagner de champ.
+    ///
+    /// Le moteur en garde une référence forte jusqu'à la fin de l'image :
+    /// l'hôte peut la libérer de son côté sans que l'image en cours change.
+    pub fn submit_textured(
+        &mut self,
+        model: Affine3,
+        vertices: &[VertexUv],
+        triangles: &[Triangle],
+        texture: &Arc<Texture>,
+    ) -> Result<()> {
+        self.submit_indexed(model, vertices, triangles, Some(texture))
     }
 
     /// Soumet un lot de triangles dont les sommets portent leurs coordonnées de
@@ -376,7 +430,20 @@ impl Context {
         vertices: &[VertexUv],
         triangles: &[Triangle],
     ) -> Result<()> {
-        self.submit_each_uv(model, triangles.len(), |i| {
+        self.submit_indexed(model, vertices, triangles, None)
+    }
+
+    /// Le corps commun de [`Context::submit_uv`] et
+    /// [`Context::submit_textured`] : la seule différence entre les deux est la
+    /// texture.
+    fn submit_indexed(
+        &mut self,
+        model: Affine3,
+        vertices: &[VertexUv],
+        triangles: &[Triangle],
+        texture: Option<&Arc<Texture>>,
+    ) -> Result<()> {
+        self.submit_each_uv(model, triangles.len(), texture, |i| {
             let triangle = triangles[i];
             let mut corners = [VertexUv::untextured(Vec3::ZERO); 3];
             for (corner, &index) in corners.iter_mut().zip(&triangle.indices) {
@@ -389,8 +456,14 @@ impl Context {
     }
 
     /// La forme générale de [`Context::submit_each`], dont les sommets portent
-    /// leurs coordonnées de texture.
-    pub fn submit_each_uv<F>(&mut self, model: Affine3, count: usize, read: F) -> Result<()>
+    /// leurs coordonnées de texture et le lot son habillage.
+    pub fn submit_each_uv<F>(
+        &mut self,
+        model: Affine3,
+        count: usize,
+        texture: Option<&Arc<Texture>>,
+        read: F,
+    ) -> Result<()>
     where
         F: Fn(usize) -> Result<([VertexUv; 3], Color)>,
     {
@@ -398,17 +471,44 @@ impl Context {
             return Err(Error::InvalidState);
         }
         self.drop_closed_frame();
-        let mark = self.triangles.len();
-        let result = self.submit_batch(model, count, read);
+        let (mark, textures) = (self.triangles.len(), self.textures.len());
+        let result = self
+            .record_texture(texture)
+            .and_then(|index| self.submit_batch(model, count, index, read));
         if result.is_err() {
             self.triangles.truncate(mark);
+            // La texture n'est retirée que si ce lot l'a ajoutée : déjà
+            // présente, la table n'a pas grandi et la troncature ne fait rien.
+            self.textures.truncate(textures);
         }
         result
     }
 
+    /// L'index d'une texture dans la table de l'image, en l'y ajoutant si elle
+    /// n'y est pas encore.
+    ///
+    /// La déduplication se fait par identité de l'allocation et non par
+    /// contenu : deux textures identiques chargées séparément sont deux
+    /// ressources, et les confondre demanderait de comparer des mégaoctets à
+    /// chaque lot. Le balayage est linéaire parce qu'il a lieu une fois par
+    /// lot, jamais par triangle.
+    fn record_texture(&mut self, texture: Option<&Arc<Texture>>) -> Result<u16> {
+        let Some(texture) = texture else {
+            return Ok(NO_TEXTURE);
+        };
+        if let Some(index) = self.textures.iter().position(|t| Arc::ptr_eq(t, texture)) {
+            return Ok(index as u16);
+        }
+        if self.textures.len() >= texture_capacity(self.config.capacity()) {
+            return Err(Error::InvalidArgument(Argument::TextureCapacity));
+        }
+        self.textures.push(Arc::clone(texture));
+        Ok((self.textures.len() - 1) as u16)
+    }
+
     /// Le corps de [`Context::submit_each_uv`], qui peut laisser le lot à
     /// moitié posé.
-    fn submit_batch<F>(&mut self, model: Affine3, count: usize, read: F) -> Result<()>
+    fn submit_batch<F>(&mut self, model: Affine3, count: usize, texture: u16, read: F) -> Result<()>
     where
         F: Fn(usize) -> Result<([VertexUv; 3], Color)>,
     {
@@ -440,6 +540,7 @@ impl Context {
                     v: c.v,
                 }),
                 color,
+                texture,
             )?;
         }
         Ok(())
@@ -449,8 +550,8 @@ impl Context {
     ///
     /// La couleur y est déjà l'entier du rasteriseur : [`Color`] appartient à
     /// la scène, et se convertit au plus tôt.
-    fn push(&mut self, v: [Vertex; 3], color: u32) -> Result<()> {
-        let Some(triangle) = prepare(v, color) else {
+    fn push(&mut self, v: [Vertex; 3], color: u32, texture: u16) -> Result<()> {
+        let Some(triangle) = prepare(v, color, texture) else {
             return Ok(());
         };
         if self.triangles.len() >= self.config.capacity() {
@@ -471,7 +572,7 @@ impl Context {
     ///
     /// Un sommet qu'on ne peut pas projeter fait disparaître le triangle sans
     /// erreur : c'est une donnée, pas un défaut du moteur.
-    fn submit_view(&mut self, view: [ClipSource; 3], color: Color) -> Result<()> {
+    fn submit_view(&mut self, view: [ClipSource; 3], color: Color, texture: u16) -> Result<()> {
         let mut homogeneous = [ClipVertex {
             x: 0.0,
             y: 0.0,
@@ -504,7 +605,7 @@ impl Context {
                     t: projected.t,
                 }
             });
-            self.push(vertices, color.packed())?;
+            self.push(vertices, color.packed(), texture)?;
         }
         Ok(())
     }
