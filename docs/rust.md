@@ -471,6 +471,12 @@ la création du contexte rend une erreur plutôt que de déborder en silence.
   décalage sous-texel tiré d'une table fixe indexée par la position du pixel dans
   l'image. C'est le filtrage par défaut ; le bilinéaire est le niveau au-dessus.
   La table et son motif sont figés à l'étape 2, et testés.
+- **Les deux filtrages s'excluent**, et le bilinéaire reste dans un seul niveau
+  de mipmap. Il **retranche un demi-texel** avant de prendre son voisinage : le
+  centre du texel `(0, 0)` est en `(0,5, 0,5)`, et sans ce recentrage l'image
+  glisserait d'un demi-texel au changement de filtre. Le repli par masque
+  s'applique à chacun des quatre voisins séparément, de sorte qu'une surface
+  pavée mélange son dernier texel avec le premier.
 - **Dans une tuile, les triangles se dessinent dans l'ordre de soumission.** Avec
   le test de profondeur strict, c'est l'ordre qui tranche une égalité : une
   répartition qui le perdrait rendrait une image différente selon la taille des

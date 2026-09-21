@@ -32,4 +32,4 @@ pub use error::{Argument, Error, Result};
 pub use math::{Affine3, Angle, MAX_TEXEL_COORD, Quat, Vec3};
 pub use raster::Rect;
 pub use scene::{Camera, Color, Triangle, VertexUv};
-pub use texture::{MAX_TEXTURE_SIZE, Texture};
+pub use texture::{Filter, MAX_TEXTURE_SIZE, Texture};

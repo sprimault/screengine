@@ -314,6 +314,28 @@ fn la_scene_ne_se_change_pas_pendant_le_rendu() {
         Err(Error::InvalidState)
     );
     assert_eq!(ctx.set_camera(Camera::DEFAULT), Err(Error::InvalidState));
+    assert_eq!(ctx.set_filter(Filter::Bilinear), Err(Error::InvalidState));
+}
+
+/// Le filtrage par défaut est le tramage : un contexte qu'on ne configure pas
+/// rend ce que la classe de moteurs visée rendait.
+#[test]
+fn le_filtrage_par_defaut_est_le_tramage() {
+    let ctx = small();
+    assert_eq!(ctx.filter(), Filter::Dither);
+}
+
+/// Le filtre se change entre deux images, et il tient d'une image à l'autre :
+/// c'est un réglage du contexte, pas un paramètre de soumission.
+#[test]
+fn le_filtre_se_change_entre_deux_images_et_tient() {
+    let mut ctx = small();
+    ctx.set_filter(Filter::Bilinear).expect("hors rendu");
+    assert_eq!(ctx.filter(), Filter::Bilinear);
+
+    let mut pixels = vec![0u8; ctx.width as usize * ctx.height as usize * BYTES_PER_PIXEL];
+    ctx.frame_end(&mut pixels, ctx.width).expect("image rendue");
+    assert_eq!(ctx.filter(), Filter::Bilinear);
 }
 
 /// Les sommets de `ahead`, avec les coordonnées de texture qu'on lui donne.
