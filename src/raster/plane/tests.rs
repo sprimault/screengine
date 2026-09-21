@@ -27,6 +27,23 @@ fn exact(v: [Point; 3], z: [u32; 3], px: i32, py: i32) -> i128 {
     (w0 * z[0] as i128 + w1 * z[1] as i128 + w2 * z[2] as i128) << GRADIENT_BITS
 }
 
+/// Le plan des valeurs `z`, avec le point de référence que `prepare` choisit.
+///
+/// Le choix vit dans le rasteriseur depuis que les plans d'un triangle le
+/// partagent ; les tests le reproduisent ici plutôt que de le recevoir, pour
+/// que la propriété d'indépendance à l'ordre des sommets reste testable.
+fn plane_of(v: [Point; 3], z: [u32; 3], a: i64) -> Plane {
+    let reference = (0..3).min_by_key(|&i| (v[i].y, v[i].x)).unwrap_or(0);
+    Plane::new(v, z.map(i64::from), a, reference)
+}
+
+/// La valeur du plan au point absolu `(px, py)`, écarts pris depuis la même
+/// référence que `plane_of`.
+fn value_at(plane: &Plane, v: [Point; 3], px: i32, py: i32) -> i64 {
+    let reference = (0..3).min_by_key(|&i| (v[i].y, v[i].x)).unwrap_or(0);
+    plane.at((px - v[reference].x) as i64, (py - v[reference].y) as i64)
+}
+
 /// Un point en sous-pixels tiré dans la bande de garde.
 fn point(rng: &mut Rng) -> Point {
     let reach = 4096 * SUBPIXEL_SCALE;
@@ -57,7 +74,7 @@ fn l_erreur_reste_sous_la_marge_aux_extremes() {
             continue;
         }
         let z = [depth(&mut rng), depth(&mut rng), depth(&mut rng)];
-        let plane = Plane::new(v, z, a);
+        let plane = plane_of(v, z, a);
         // Un centre de pixel tiré au hasard, gardé s'il est dans le triangle.
         let px = rng.coord(-4096, 4095) * SUBPIXEL_SCALE + PIXEL_CENTER;
         let py = rng.coord(-4096, 4095) * SUBPIXEL_SCALE + PIXEL_CENTER;
@@ -72,7 +89,7 @@ fn l_erreur_reste_sous_la_marge_aux_extremes() {
         if !inside {
             continue;
         }
-        let got = plane.at(px, py);
+        let got = value_at(&plane, v, px, py);
         let error = ((got as i128 * a as i128 - target).abs() >> GRADIENT_BITS) / a as i128;
         assert!(error < 64, "écart de {error} unités");
         let range = 0..1i64 << (32 + GRADIENT_BITS);
@@ -94,12 +111,12 @@ fn les_permutations_circulaires_rendent_les_memes_bits() {
         }
         let z = [depth(&mut rng), depth(&mut rng), depth(&mut rng)];
         let (px, py) = (rng.coord(-65536, 65535), rng.coord(-65536, 65535));
-        let base = Plane::new(v, z, a).at(px, py);
+        let base = value_at(&plane_of(v, z, a), v, px, py);
         for shift in [1, 2] {
             let rotate = |k: usize| (k + shift) % 3;
             let v2 = [v[rotate(0)], v[rotate(1)], v[rotate(2)]];
             let z2 = [z[rotate(0)], z[rotate(1)], z[rotate(2)]];
-            assert_eq!(Plane::new(v2, z2, area(v2)).at(px, py), base);
+            assert_eq!(value_at(&plane_of(v2, z2, area(v2)), v2, px, py), base);
         }
     }
 }
@@ -119,14 +136,17 @@ fn le_parcours_pas_a_pas_rend_la_forme_close() {
         if a <= 0 {
             continue;
         }
-        let plane = Plane::new(v, [depth(&mut rng), depth(&mut rng), depth(&mut rng)], a);
+        let plane = plane_of(v, [depth(&mut rng), depth(&mut rng), depth(&mut rng)], a);
         let (px, py) = (rng.coord(-60000, 60000), rng.coord(-60000, 60000));
         let steps_x = rng.coord(0, 200);
-        let mut value = plane.at(px, py);
+        let mut value = value_at(&plane, v, px, py);
         for _ in 0..steps_x {
             value = value.wrapping_add(plane.step_x(SUBPIXEL_SCALE));
         }
-        assert_eq!(value, plane.at(px + steps_x * SUBPIXEL_SCALE, py));
+        assert_eq!(
+            value,
+            value_at(&plane, v, px + steps_x * SUBPIXEL_SCALE, py)
+        );
     }
 }
 
@@ -141,8 +161,8 @@ fn le_gradient_s_arrondit_vers_le_bas_des_deux_cotes_de_zero() {
         Point { x: 3, y: 0 },
         Point { x: 0, y: 3 },
     ];
-    assert_eq!(Plane::new(v, [1, 0, 0], area(v)).dx, -1366);
-    assert_eq!(Plane::new(v, [0, 1, 0], area(v)).dx, 1365);
+    assert_eq!(plane_of(v, [1, 0, 0], area(v)).dx, -1366);
+    assert_eq!(plane_of(v, [0, 1, 0], area(v)).dx, 1365);
 }
 
 /// Un plan constant est exact : les gradients sont nuls, et la valeur est
@@ -154,6 +174,9 @@ fn un_plan_constant_est_exact() {
         Point { x: 1600, y: 0 },
         Point { x: 0, y: 1600 },
     ];
-    let plane = Plane::new(v, [123_456_789; 3], area(v));
-    assert_eq!(plane.at(4000, -3000) >> GRADIENT_BITS, 123_456_789);
+    let plane = plane_of(v, [123_456_789; 3], area(v));
+    assert_eq!(
+        value_at(&plane, v, 4000, -3000) >> GRADIENT_BITS,
+        123_456_789
+    );
 }

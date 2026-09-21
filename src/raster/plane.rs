@@ -23,11 +23,13 @@ use super::triangle::Point;
 pub const GRADIENT_BITS: u32 = 12;
 
 /// Un attribut sur un triangle.
+///
+/// Le point de référence n'y figure pas : il est commun aux plans d'un même
+/// triangle, qui le tient une fois pour les trois. Le dupliquer coûterait seize
+/// octets par triangle et ferait recalculer trois fois les mêmes écarts dans la
+/// boucle de pixels.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Plane {
-    /// Le point de référence, en sous-pixels.
-    x: i32,
-    y: i32,
     /// La valeur au point de référence, décalée de [`GRADIENT_BITS`].
     base: i64,
     /// Les gradients par sous-pixel, en [`GRADIENT_BITS`] bits fractionnaires.
@@ -48,17 +50,27 @@ impl Plane {
     /// documentation promet. Un appelant qui normaliserait de son côté pourrait
     /// désaccorder l'aire de ses sommets ; un seul endroit le peut, celui-ci.
     ///
-    /// Le point de référence est le plus petit sommet dans l'ordre (y, x), et
-    /// jamais `v[0]`. Les gradients ne dépendent pas de l'ordre des sommets,
-    /// mais la valeur de départ, si : prise sur `v[0]`, une permutation
-    /// circulaire des sommets — qui ne change ni le triangle ni son orientation
-    /// — changerait l'arrondi en chaque pixel, et deux soumissions du même
-    /// triangle ne rendraient pas la même profondeur. Seul un test de
-    /// permutation le voit.
-    pub fn new(v: [Point; 3], z: [u32; 3], area: i64) -> Self {
+    /// `reference` désigne le sommet d'où part l'évaluation, et il doit être le
+    /// plus petit dans l'ordre (y, x), jamais `v[0]`. Les gradients ne
+    /// dépendent pas de l'ordre des sommets, mais la valeur de départ, si :
+    /// prise sur `v[0]`, une permutation circulaire des sommets — qui ne change
+    /// ni le triangle ni son orientation — changerait l'arrondi en chaque
+    /// pixel, et deux soumissions du même triangle ne rendraient pas la même
+    /// profondeur. Seul un test de permutation le voit. Il arrive en paramètre
+    /// parce que les plans d'un même triangle doivent le partager.
+    pub fn new(v: [Point; 3], z: [i64; 3], area: i64, reference: usize) -> Self {
         debug_assert!(area != 0);
+        // **La précondition n'est pas « les valeurs tiennent dans 2³² » mais
+        // « leur étendue y tient ».** C'est elle qui borne le numérateur à 2⁵⁰
+        // et donc le gradient décalé à 2⁶², un bit sous l'`i64`. Une profondeur
+        // `u32` la vérifie parce qu'elle est positive, un attribut `i32` parce
+        // qu'il est sur 32 bits ; un attribut vraiment étalé sur ±2³² ne la
+        // vérifierait pas, et il n'y a pas de place pour l'accueillir.
+        debug_assert!(
+            z.iter().max().unwrap_or(&0) - z.iter().min().unwrap_or(&0) < 1 << 32,
+            "étendue des valeurs au-delà de 2³²"
+        );
         let (x, y) = (v.map(|p| p.x as i64), v.map(|p| p.y as i64));
-        let z = z.map(|z| z as i64);
 
         // En différences à partir du troisième sommet : c'est ce qui borne le
         // numérateur à 2⁵⁰ au lieu de trois termes de 2⁴⁹.
@@ -71,11 +83,7 @@ impl Plane {
             (numerator_x, numerator_y, area)
         };
 
-        let reference = (0..3).min_by_key(|&i| (v[i].y, v[i].x)).unwrap_or(0);
-
         Self {
-            x: v[reference].x,
-            y: v[reference].y,
             base: z[reference] << GRADIENT_BITS,
             // `div_euclid` avec un diviseur positif arrondit vers le bas, de
             // part et d'autre de zéro. La division `/` tronquerait vers zéro, et
@@ -85,16 +93,22 @@ impl Plane {
         }
     }
 
-    /// La valeur, décalée de [`GRADIENT_BITS`], au point `(px, py)` en
-    /// sous-pixels.
+    /// La valeur, décalée de [`GRADIENT_BITS`], au point d'écarts `(ex, ey)`
+    /// sous-pixels depuis le point de référence.
     ///
-    /// En arithmétique enveloppante, et c'est exact : sur un triangle très fin,
-    /// un gradient peut approcher 2⁶² et un produit déborder, mais en un point
-    /// couvert la vraie valeur tient dans la plage, et le calcul modulo 2⁶⁴ la
-    /// rend telle quelle. Ailleurs, le résultat n'est pas utilisé.
-    pub fn at(&self, px: i32, py: i32) -> i64 {
-        let ex = (px - self.x) as i64;
-        let ey = (py - self.y) as i64;
+    /// En arithmétique enveloppante, et c'est exact **partout dans l'enveloppe
+    /// convexe du triangle**, pas seulement sur les pixels que le parcours
+    /// retient. La valeur exacte y est une combinaison convexe des trois
+    /// valeurs de sommet, donc bornée par leur étendue — 2⁴⁴ une fois décalée
+    /// —, et le biais top-left ne l'élargit que d'un facteur trois au pire :
+    /// dix-sept bits de marge sous l'`i64`. Sur un triangle très fin un
+    /// gradient approche 2⁶² et un produit intermédiaire déborde, mais
+    /// l'addition et la multiplication étant des morphismes modulo 2⁶⁴, le
+    /// résultat reste l'entier exact dès que cet entier tient dans un `i64`.
+    ///
+    /// Cette garantie porte tout le schéma des segments de perspective, dont
+    /// les extrémités sont le span et non des pixels du parcours.
+    pub fn at(&self, ex: i64, ey: i64) -> i64 {
         self.base
             .wrapping_add(self.dx.wrapping_mul(ex))
             .wrapping_add(self.dy.wrapping_mul(ey))
