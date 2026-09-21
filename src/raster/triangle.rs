@@ -499,16 +499,20 @@ fn fill_segment<T: Target>(
     let skipped = (draw.0 - from) as i64;
     let mut uv = [first[0] + slope[0] * skipped, first[1] + slope[1] * skipped];
     for x in draw.0..=draw.1 {
+        let dither = dither_offsets(x, y);
         let z = (depth >> GRADIENT_BITS) as u32;
         if target.test(x, y, z) {
             // Le décalage de niveau porte sur la coordonnée **interpolée**, et
             // non sur les extrémités du segment : appliqué à celles-ci, il
             // quantifierait la pente par 2ⁿ, soit cinq bits perdus au niveau 5.
-            // Les deux décalages restent séparés — le tramage s'insérera entre
-            // eux, et appliqué avant celui du niveau il serait divisé par 2ⁿ et
-            // s'éteindrait dès le niveau 2.
-            let coord = |c: i64| ((c >> level) >> UV_BITS) as i32;
-            let texel = texture.texel(level as usize, coord(uv[0]), coord(uv[1]));
+            // Le tramage s'ajoute **après** lui : ajouté avant, il serait divisé
+            // par 2ⁿ et s'éteindrait dès le niveau 2.
+            let coord = |c: i64, shift: i32| (((c >> level) + i64::from(shift)) >> UV_BITS) as i32;
+            let texel = texture.texel(
+                level as usize,
+                coord(uv[0], dither[0]),
+                coord(uv[1], dither[1]),
+            );
             target.write(x, y, z, texel);
         }
         depth = depth.wrapping_add(depth_x);
@@ -526,6 +530,55 @@ fn fill_segment<T: Target>(
 fn reciprocal(depth: u32) -> u64 {
     debug_assert!(depth > 0, "profondeur nulle en un pixel couvert");
     (1u64 << 56) / depth.max(1) as u64
+}
+
+/// La matrice de Bayer 4×4, en décalages de coordonnée 16.16.
+///
+/// **Le filtrage par défaut du moteur**, et une indirection de table pour tout
+/// coût. Ce qu'il masque est la troncature vers le texel entier, qui commet une
+/// erreur uniforme dans `[0, 1)` texel et **de signe constant** : sur une
+/// surface agrandie, la frontière entre deux texels tombe alors sur une ligne
+/// franche, l'escalier caractéristique. Un décalage nul en moyenne et réparti
+/// sur ±½ texel remplace cette ligne par une bande d'un texel où les deux
+/// voisins alternent selon la position du pixel.
+///
+/// Les entrées valent `(2·M − 15) << 11`, soit les multiples impairs de 2048
+/// entre ±30720 : une amplitude de ±0,469 texel. Moins ne déplacerait rien ;
+/// plus ferait lire un texel à deux de distance, ce qui n'est plus du tramage
+/// mais du bruit, et détruirait en minification ce que le mipmap vient de
+/// moyenner.
+///
+/// **La table est une permutation des seize niveaux, et somme à zéro.** Un
+/// biais constant serait un décalage sous-texel permanent — et comme il
+/// s'ajoute après le décalage de niveau, il vaudrait `biais · 2ⁿ` texels du
+/// niveau 0 : la texture glisserait au passage d'un niveau à l'autre, soit
+/// exactement le scintillement que le mipmap vient de supprimer.
+const DITHER: [i32; 16] = [
+    -30720, 2048, -22528, 10240, //
+    18432, -14336, 26624, -6144, //
+    -18432, 14336, -26624, 6144, //
+    30720, -2048, 22528, -10240,
+];
+
+/// Les décalages de tramage d'un pixel, `u` puis `v`.
+///
+/// **L'index se prend sur la position dans l'image**, jamais sur une position
+/// locale à la tuile : le motif se décalerait d'une tuile à l'autre, et la
+/// conformance ne le verrait même pas, ses deux tailles de tuile étant toutes
+/// deux des multiples de quatre. Seul un test dont les fenêtres commencent à
+/// des abscisses non multiples de quatre l'attrape.
+///
+/// **`v` prend la transposée du même index.** Avec le même, les deux décalages
+/// seraient égaux en tout pixel et le déplacement sous-texel toujours porté par
+/// la diagonale : sur une surface où `u` vaut `v`, la texture ne montrerait que
+/// sa diagonale. La transposée étant une permutation, elle garde à `v` la somme
+/// nulle et les seize niveaux.
+///
+/// `& 3` et non `% 4` : le masque replie aussi une coordonnée négative du bon
+/// côté, pour la même raison que le repli des texels.
+fn dither_offsets(x: i32, y: i32) -> [i32; 2] {
+    let (cx, cy) = ((x & 3) as usize, (y & 3) as usize);
+    [DITHER[cy * 4 + cx], DITHER[cx * 4 + cy]]
 }
 
 /// Le niveau de mipmap d'un segment, depuis ses dérivées et sa réciproque.

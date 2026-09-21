@@ -952,3 +952,93 @@ fn l_interpolation_par_segments_reste_sous_le_texel() {
     assert!(mesures > 60, "{mesures} pixels, échantillon trop maigre");
     assert!(pire <= 1, "écart de {pire} texels sur {mesures} pixels");
 }
+
+/// La table de tramage est une permutation des seize niveaux, et somme à zéro.
+///
+/// La permutation dit plus que la somme : une entrée recopiée sur sa voisine,
+/// compensée ailleurs, laisserait la somme nulle tout en laissant un niveau
+/// jamais visité — donc un biais directionnel dans le bloc de quatre.
+#[test]
+fn la_table_de_tramage_est_une_permutation_de_somme_nulle() {
+    assert_eq!(DITHER.iter().map(|&d| i64::from(d)).sum::<i64>(), 0);
+
+    let mut vus: Vec<i32> = DITHER.to_vec();
+    vus.sort_unstable();
+    let attendus: Vec<i32> = (0..16).map(|k| (2 * k - 15) << 11).collect();
+    assert_eq!(vus, attendus);
+}
+
+/// Le décalage reste sous le demi-texel, des deux côtés.
+///
+/// C'est l'amplitude qui sépare le tramage du bruit : au-delà, un pixel lirait
+/// un texel à deux de distance et détruirait en minification ce que le mipmap
+/// vient de moyenner.
+#[test]
+fn le_tramage_deplace_de_moins_d_un_demi_texel() {
+    let demi = 1 << (UV_BITS - 1);
+    for &d in &DITHER {
+        assert!(d.abs() < demi, "décalage de {d}, demi-texel à {demi}");
+    }
+}
+
+/// `v` prend la transposée de l'index de `u`, et les deux ne coïncident que
+/// sur la diagonale du bloc.
+///
+/// Avec le même index, le déplacement serait toujours porté par la diagonale de
+/// l'espace de texture : sur une surface où `u` vaut `v`, la texture ne
+/// montrerait que sa propre diagonale, et tout le reste serait invisible.
+#[test]
+fn le_tramage_de_v_est_la_transposee_de_celui_de_u() {
+    let mut egaux = 0;
+    for y in 0..4 {
+        for x in 0..4 {
+            let [du, dv] = dither_offsets(x, y);
+            assert_eq!(dv, dither_offsets(y, x)[0], "en ({x}, {y})");
+            if du == dv {
+                egaux += 1;
+            }
+        }
+    }
+    assert_eq!(egaux, 4, "seule la diagonale du bloc doit coïncider");
+}
+
+/// **Le test que la conformance ne peut pas remplacer.** Le motif de tramage
+/// suit la position dans l'image, pas celle dans la fenêtre.
+///
+/// Les deux tailles de tuile de la suite de conformance, 32 et 64, sont des
+/// multiples de quatre : un index pris sur la position locale à la tuile
+/// rendrait exactement la même image dans ses cinq passes, et `make conform`
+/// resterait vert. Seules des fenêtres commençant à des abscisses **non
+/// multiples de quatre** — 17 et 13 ici, choisies pour cela — font apparaître
+/// le décalage du motif.
+#[test]
+fn le_tramage_ne_depend_pas_du_decoupage() {
+    let (triangle, _) = sol_texture_fuyant(12.0, 10.0);
+    let texture = addressed(64);
+
+    let mut entier = Paint::new();
+    fill(&mut entier, CLIP, &triangle, Some(&texture));
+
+    let mut morceaux = Paint::new();
+    for (x, y, width, height) in [
+        (0, 0, 17, 13),
+        (17, 0, 33, 13),
+        (0, 13, 17, 27),
+        (17, 13, 33, 27),
+    ] {
+        let window = Rect {
+            x,
+            y,
+            width,
+            height,
+        };
+        fill(&mut morceaux, window, &triangle, Some(&texture));
+    }
+
+    let peints = entier.color.iter().filter(|c| **c != 0).count();
+    assert!(peints > 200, "{peints} pixels, le cas ne couvre rien");
+    assert!(
+        morceaux.color == entier.color,
+        "le motif de tramage a suivi la fenêtre"
+    );
+}
