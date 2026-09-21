@@ -301,3 +301,41 @@ fn le_sol_texture_est_plus_lisse_au_loin_qu_au_pres() {
         }
     }
 }
+
+/// Le bilinéaire fabrique des couleurs que le tramage ne peut pas rendre.
+///
+/// **C'est la différence de nature entre les deux modes**, et le seul critère
+/// qui ne se calibre pas : le tramage déplace une coordonnée et lit un texel,
+/// il ne peut donc rendre que des couleurs présentes dans la texture ou dans
+/// ses mipmaps ; le bilinéaire en interpole entre elles. Sur un damier de deux
+/// teintes, le compte des couleurs distinctes sépare les deux sans ambiguïté.
+///
+/// Il vaut aussi contrôle de la référence nouvelle : une empreinte dit qu'une
+/// image n'a pas changé, jamais qu'elle est filtrée comme on croit.
+#[test]
+fn le_bilineaire_fabrique_des_couleurs_que_le_tramage_ne_peut_pas() {
+    let couleurs = |scene: Scene| {
+        let view = scene.views()[0];
+        let pixels = scene
+            .render_pixels(Scene::HOST_PASS, view)
+            .expect("scène valide");
+        let mut vues: Vec<[u8; 3]> = Vec::new();
+        for pixel in pixels.chunks_exact(BYTES_PER_PIXEL) {
+            let rgb = [pixel[0], pixel[1], pixel[2]];
+            // Le fond ne dit rien du filtrage, et il est le même des deux côtés.
+            if rgb != [0, 0, 0] && !vues.contains(&rgb) {
+                vues.push(rgb);
+            }
+        }
+        vues.len()
+    };
+
+    let tramage = couleurs(Scene::Textured);
+    let bilineaire = couleurs(Scene::TexturedBilinear);
+
+    assert!(
+        bilineaire > tramage * 4,
+        "{bilineaire} couleurs en bilinéaire contre {tramage} au tramage : \
+         le filtrage n'interpole pas"
+    );
+}

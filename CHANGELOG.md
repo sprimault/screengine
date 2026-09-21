@@ -87,6 +87,12 @@ signature ne change et `SCG_ABI_VERSION` reste à **1**.
 - Une septième scène de conformance, `texture` : un sol en damier qui fuit vers
   l'horizon, motif écrit dans la suite et non chargé. Les six empreintes
   précédentes sont inchangées.
+- Une huitième, `texture-bilineaire` : le même sol au texel près, échantillonné
+  en bilinéaire. Une scène et non une passe de plus — les passes d'une scène
+  doivent rendre la même empreinte, et un filtrage qui change l'image a besoin
+  de sa propre référence. Les sept précédentes sont inchangées.
+- `make conform-images` écrit chaque vue en image : une empreinte dit qu'une
+  image a changé, jamais qu'elle est juste.
 - API Rust : `Context::submit_textured`, qui habille un lot d'une texture. Elle
   vaut pour le lot entier, et le moteur en garde une référence forte jusqu'à la
   fin de l'image : l'hôte peut la libérer de son côté sans que l'image en cours
@@ -192,6 +198,12 @@ is not recorded. No signature changes and `SCG_ABI_VERSION` stays at **1**.
 - A seventh conformance scene, `texture`: a checkerboard floor receding towards
   the horizon, its pattern written in the suite rather than loaded. The six
   previous digests are unchanged.
+- An eighth, `texture-bilineaire`: the same floor down to the texel, sampled
+  bilinearly. A scene and not another pass — the passes of one scene must all
+  produce the same digest, and a filter that changes the image needs its own
+  reference. The seven previous ones are unchanged.
+- `make conform-images` writes every view out as an image: a digest says an
+  image changed, never that it is correct.
 - Rust API: `Context::submit_textured`, dressing a batch with a texture. It
   applies to the whole batch, and the engine keeps a strong reference to it
   until the frame ends: the host may release its own without the current frame
