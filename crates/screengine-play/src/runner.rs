@@ -322,11 +322,15 @@ where
                 exit: false,
                 captured: self.captured,
                 capture: None,
+                title: None,
             };
             (self.update)(&mut self.state, &mut tick);
             let exit = tick.exit;
             if let Some(capture) = tick.capture {
                 self.captured = grab_cursor(&display.window, capture);
+            }
+            if let Some(title) = &tick.title {
+                display.window.set_title(title);
             }
             self.input.end_step();
             self.index += 1;

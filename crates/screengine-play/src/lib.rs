@@ -45,7 +45,7 @@ pub use screengine;
 // Réexportés et non redéfinis : ce crate ajoute du comportement, jamais des
 // données. Deux modèles de scène qui divergeraient seraient la seule façon de
 // le rater.
-pub use screengine::{Affine3, Camera, Color, Quat, Texture, Triangle, Vec3, VertexUv};
+pub use screengine::{Affine3, Camera, Color, Filter, Quat, Texture, Triangle, Vec3, VertexUv};
 pub use texture::load_png;
 pub use winit::event::MouseButton;
 pub use winit::keyboard::KeyCode;
@@ -175,6 +175,7 @@ pub struct Tick<'a> {
     exit: bool,
     captured: bool,
     capture: Option<bool>,
+    title: Option<String>,
 }
 
 impl Tick<'_> {
@@ -218,5 +219,15 @@ impl Tick<'_> {
     /// refuser de démarrer.
     pub fn capture_cursor(&mut self, capture: bool) {
         self.capture = Some(capture);
+    }
+
+    /// Change le titre de la fenêtre, à la fin de ce pas.
+    ///
+    /// La barre de titre est le seul endroit où un jeu peut écrire tant que le
+    /// moteur ne dessine pas de texte : un mode, un compteur, l'état d'un
+    /// réglage qu'on vient de basculer. Appelée plusieurs fois dans le même
+    /// pas, c'est la dernière qui compte.
+    pub fn set_title(&mut self, title: &str) {
+        self.title = Some(title.to_owned());
     }
 }
