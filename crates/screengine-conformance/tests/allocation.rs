@@ -18,7 +18,7 @@
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::cell::Cell;
 
-use screengine::{Affine3, BYTES_PER_PIXEL, Color, Config, Context, Rows, Triangle, Vec3};
+use screengine::{Affine3, BYTES_PER_PIXEL, Color, Config, Context, Rows, Texture, Triangle, Vec3};
 
 /// Le quadrilatère de la scène de référence, resoumis à chaque image.
 ///
@@ -116,6 +116,29 @@ fn le_compteur_voit_une_allocation() {
         std::hint::black_box(Vec::<u8>::with_capacity(64));
     });
     assert!(seen >= 1, "aucune allocation vue");
+}
+
+/// Une texture et toute sa chaîne de mipmaps tiennent dans une allocation, et
+/// une seule.
+///
+/// Le chargement est un appel nommé : il a le droit d'allouer. Ce qu'on vérifie
+/// est qu'il alloue **une fois**, donc que la chaîne entière est engendrée
+/// maintenant. Un niveau produit plus tard, au premier affichage, n'est pas
+/// visible dans le test des images tant qu'aucune n'échantillonne de texture —
+/// mais il se verrait ici, en niveaux comptés séparément.
+#[test]
+fn une_texture_se_charge_en_une_seule_allocation() {
+    let (width, height) = (64, 64);
+    let pixels = vec![0x80u8; width as usize * height as usize * BYTES_PER_PIXEL];
+
+    let mut texture = None;
+    let seen = allocations(|| {
+        texture = Some(Texture::load(width, height, &pixels).expect("texture valide"));
+    });
+
+    let texture = texture.expect("texture valide");
+    assert_eq!(texture.level_count(), 7, "chaîne incomplète");
+    assert_eq!(seen, 1, "{seen} allocation(s) pour une texture");
 }
 
 /// Aucune image n'alloue, la première comprise, une fois le contexte créé et le

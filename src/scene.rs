@@ -120,6 +120,27 @@ impl Color {
     }
 }
 
+/// Un sommet qui porte, en plus de sa position, un point de la texture.
+///
+/// **Les coordonnées vivent dans le sommet et non aux coins du triangle.**
+/// Dupliquer un sommet là où l'habillage se coupe est ce que fait tout maillage
+/// texturé ; porter six coordonnées par triangle coûterait davantage dès qu'un
+/// sommet est partagé, ce qui est le cas courant sur une surface continue.
+///
+/// **En texels, jamais normalisées.** C'est le seul choix qui rende le bornage
+/// vérifiable sur le tableau de sommets seul : normalisées, la borne dépendrait
+/// de la texture avec laquelle le lot est finalement dessiné, donc d'un
+/// paramètre que la validation du tableau n'a pas.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct VertexUv {
+    /// Sa position, dans le repère de l'objet.
+    pub position: Vec3,
+    /// L'abscisse dans la texture, en texels.
+    pub u: f32,
+    /// L'ordonnée dans la texture, en texels.
+    pub v: f32,
+}
+
 /// Un triangle soumis : trois indices dans le tableau de sommets, et sa couleur.
 ///
 /// La couleur est portée par le triangle et non par le lot : une surface entière

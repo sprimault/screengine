@@ -56,6 +56,14 @@ pub enum Argument {
     /// Un champ de vision hors de `]0, π[`, ou un plan proche nul, négatif ou
     /// démesuré.
     Projection,
+    /// Un côté de texture nul, au-delà de [`MAX_TEXTURE_SIZE`], ou qui n'est
+    /// pas une puissance de deux.
+    ///
+    /// [`MAX_TEXTURE_SIZE`]: crate::MAX_TEXTURE_SIZE
+    TextureSize,
+    /// Un bloc de pixels dont la longueur n'est pas exactement
+    /// `largeur × hauteur × 4` octets.
+    TextureLength,
 }
 
 /// Le résultat d'un appel du noyau.

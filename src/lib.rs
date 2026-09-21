@@ -22,6 +22,7 @@ mod raster;
 mod scene;
 #[cfg(test)]
 mod testing;
+mod texture;
 
 pub use context::{
     BYTES_PER_PIXEL, Config, Context, Frame, MAX_RESOLUTION, Output, Rows, TILE_SIZES,
@@ -30,4 +31,5 @@ pub use context::{
 pub use error::{Argument, Error, Result};
 pub use math::{Affine3, Angle, Quat, Vec3};
 pub use raster::Rect;
-pub use scene::{Camera, Color, Triangle};
+pub use scene::{Camera, Color, Triangle, VertexUv};
+pub use texture::{MAX_TEXTURE_SIZE, Texture};
