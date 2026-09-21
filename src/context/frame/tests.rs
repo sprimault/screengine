@@ -33,6 +33,7 @@ fn context(tile_size: u32) -> Context {
         width: W,
         height: H,
         tile_size,
+        max_triangles: 0,
     })
     .expect("configuration saine")
 }

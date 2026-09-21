@@ -39,6 +39,10 @@ pub use error::Error;
 pub use input::Input;
 pub use scale::Scale;
 pub use screengine;
+// Réexportés et non redéfinis : ce crate ajoute du comportement, jamais des
+// données. Deux modèles de scène qui divergeraient seraient la seule façon de
+// le rater.
+pub use screengine::{Affine3, Camera, Color, Quat, Triangle, Vec3};
 pub use winit::event::MouseButton;
 pub use winit::keyboard::KeyCode;
 
@@ -151,6 +155,7 @@ impl Play {
             width,
             height,
             tile_size: self.tile_size,
+            max_triangles: 0,
         })?;
 
         runner::run(self, context, state, update, render)

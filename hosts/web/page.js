@@ -50,6 +50,27 @@ async function main() {
   }
   const ctx = engine.readU32(out);
 
+  // La même scène que la conformance : deux triangles qui partagent une arête,
+  // vus de biais par la caméra par défaut, en coordonnées de monde.
+  const model = engine.alloc(scg.MAT4_SIZE);
+  const vertices = engine.alloc(4 * scg.VERTEX_SIZE);
+  const triangles = engine.alloc(2 * scg.TRIANGLE_SIZE);
+  engine.writeIdentity(model);
+  engine.writeVertices(vertices, [
+    [2.0, 2.5, 1.6],
+    [3.5, -2.5, 1.6],
+    [3.5, -2.5, -1.6],
+    [2.0, 2.5, -1.6],
+  ]);
+  engine.writeTriangles(triangles, [
+    { indices: [0, 2, 1], color: [0xe0, 0xa0, 0x30, 0xff] },
+    { indices: [0, 3, 2], color: [0xa0, 0xe0, 0x30, 0xff] },
+  ]);
+  if (e.scg_submit(ctx, model, vertices, 4, triangles, 2) !== scg.SCG_OK) {
+    status(engine.lastError(ctx));
+    return;
+  }
+
   let code;
   try {
     code = e.scg_frame_end(ctx, pixels, WIDTH);

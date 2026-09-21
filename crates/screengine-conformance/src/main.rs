@@ -164,11 +164,17 @@ enum Mode {
 /// Les scènes que la suite sait rendre.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Scene {
-    /// La scène de démonstration du moteur, en 640×360, que rien ne soumet.
+    /// Deux triangles qui partagent une arête, vus de biais.
     ///
-    /// Les hôtes rendent la même configuration, en tuiles de 64 : la changer ici
-    /// sans eux ferait diverger toutes les empreintes à la fois.
-    Triangle,
+    /// La scène que les quatre hôtes décrivent aussi, chacun dans son langage,
+    /// en tuiles de 64 : c'est elle qui relie leurs empreintes à celle du
+    /// chemin Rust, donc la changer ici sans eux les ferait toutes diverger à
+    /// la fois.
+    ///
+    /// Son arête commune éprouve la propriété la plus coûteuse du moteur, et
+    /// ses deux couleurs la rendent visible à l'œil : un trou ou un
+    /// recouvrement s'y verrait sans attendre qu'une empreinte le dise.
+    Edge,
     /// Un mur si près et si large que ses sommets sortent de la bande de garde.
     ///
     /// C'est le seul chemin qui exerce les quatre plans de garde : sans lui,
@@ -254,7 +260,7 @@ fn wall(context: &mut Context, distance: f32, half_y: f32, half_z: f32) -> scree
 impl Scene {
     /// Toutes les scènes, dans l'ordre où `--check` les rejoue.
     const ALL: [Self; 5] = [
-        Self::Triangle,
+        Self::Edge,
         Self::Guard,
         Self::Lateral,
         Self::Depth,
@@ -270,7 +276,7 @@ impl Scene {
     /// Le nom de la scène, qui est aussi celui de sa référence.
     fn name(self) -> &'static str {
         match self {
-            Self::Triangle => "triangle",
+            Self::Edge => "arete",
             Self::Guard => "garde",
             Self::Lateral => "lateral",
             Self::Depth => "profondeur",
@@ -281,13 +287,34 @@ impl Scene {
     /// Soumet la scène, la caméra restant celle du contexte neuf.
     ///
     /// Les coordonnées sont celles du monde — X vers l'est, Z en haut —, et la
-    /// caméra neutre regarde le +X depuis l'origine. Rien n'est soumis pour
-    /// [`Scene::Triangle`] : c'est le moteur qui rend alors sa scène de
-    /// démonstration, et c'est ce qui garde son empreinte comparable à celle
-    /// des hôtes.
+    /// caméra neutre regarde le +X depuis l'origine.
     fn submit(self, context: &mut Context) -> screengine::Result<()> {
         match self {
-            Self::Triangle => Ok(()),
+            // Le quadrilatère fuit vers la droite, donc chaque pixel a sa
+            // propre profondeur, et il déborde à gauche pour que le parcours
+            // traite des triangles plus larges que l'image. L'ordre des sommets
+            // fait que l'arête commune est parcourue dans un sens par le
+            // premier triangle et dans l'autre par le second : c'est le cas que
+            // la règle top-left doit trancher.
+            Self::Edge => context.submit(
+                Affine3::IDENTITY,
+                &[
+                    Vec3::new(2.0, 2.5, 1.6),
+                    Vec3::new(3.5, -2.5, 1.6),
+                    Vec3::new(3.5, -2.5, -1.6),
+                    Vec3::new(2.0, 2.5, -1.6),
+                ],
+                &[
+                    Triangle {
+                        indices: [0, 2, 1],
+                        color: Color::new(0xE0, 0xA0, 0x30, 0xFF),
+                    },
+                    Triangle {
+                        indices: [0, 3, 2],
+                        color: Color::new(0xA0, 0xE0, 0x30, 0xFF),
+                    },
+                ],
+            ),
             // À une demi-unité de la caméra et dix de large : ses bords partent
             // à plus de six mille pixels du centre, loin au-delà des 4096 de la
             // bande de garde.
@@ -393,6 +420,7 @@ impl Scene {
             width,
             height,
             tile_size: pass.tile_size(),
+            max_triangles: 0,
         })?;
         self.submit(&mut context)?;
         let mut pixels = vec![0u8; width as usize * height as usize * BYTES_PER_PIXEL];

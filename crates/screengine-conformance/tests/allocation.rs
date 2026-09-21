@@ -18,7 +18,32 @@
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::cell::Cell;
 
-use screengine::{BYTES_PER_PIXEL, Config, Context, Rows};
+use screengine::{Affine3, BYTES_PER_PIXEL, Color, Config, Context, Rows, Triangle, Vec3};
+
+/// Le quadrilatère de la scène de référence, resoumis à chaque image.
+///
+/// La soumission est mesurée avec le rendu : elle est un appel nommé, mais
+/// c'est le contexte qui a réservé sa capacité à la création, et une liste de
+/// dessin qui grandirait au premier lot vidé serait exactement le défaut que ce
+/// fichier existe pour voir.
+const VERTICES: [Vec3; 4] = [
+    Vec3::new(2.0, 2.5, 1.6),
+    Vec3::new(3.5, -2.5, 1.6),
+    Vec3::new(3.5, -2.5, -1.6),
+    Vec3::new(2.0, 2.5, -1.6),
+];
+
+/// Ses deux triangles, qui partagent l'arête des sommets 0 et 2.
+const TRIANGLES: [Triangle; 2] = [
+    Triangle {
+        indices: [0, 2, 1],
+        color: Color::new(0xE0, 0xA0, 0x30, 0xFF),
+    },
+    Triangle {
+        indices: [0, 3, 2],
+        color: Color::new(0xA0, 0xE0, 0x30, 0xFF),
+    },
+];
 
 /// L'allocateur du système, qui compte au passage.
 struct Counting;
@@ -104,12 +129,16 @@ fn aucune_image_n_alloue() {
         width,
         height,
         tile_size: 64,
+        max_triangles: 0,
     })
     .expect("configuration valide");
     let mut pixels = vec![0u8; width as usize * height as usize * BYTES_PER_PIXEL];
 
     let seen = allocations(|| {
         for _ in 0..3 {
+            context
+                .submit(Affine3::IDENTITY, &VERTICES, &TRIANGLES)
+                .expect("scène soumise");
             context.frame_end(&mut pixels, width).expect("image rendue");
         }
     });
@@ -129,6 +158,7 @@ fn aucune_tuile_n_alloue_sur_un_autre_thread() {
         width,
         height,
         tile_size: tile,
+        max_triangles: 0,
     })
     .expect("configuration valide");
     let mut pixels = vec![0u8; width as usize * height as usize * BYTES_PER_PIXEL];
@@ -137,9 +167,17 @@ fn aucune_tuile_n_alloue_sur_un_autre_thread() {
 
     for _ in 0..2 {
         let mut frame = None;
-        let begun = allocations(|| frame = Some(context.frame_begin().expect("début")));
+        let begun = allocations(|| {
+            context
+                .submit(Affine3::IDENTITY, &VERTICES, &TRIANGLES)
+                .expect("scène soumise");
+            frame = Some(context.frame_begin().expect("début"));
+        });
         let frame = frame.expect("début");
-        assert_eq!(begun, 0, "{begun} allocation(s) au début d'image");
+        assert_eq!(
+            begun, 0,
+            "{begun} allocation(s) à la soumission ou au début"
+        );
 
         let seen: usize = std::thread::scope(|scope| {
             let workers: Vec<_> = pixels

@@ -19,7 +19,7 @@ fn sane() -> ScgContextConfig {
         width: 640,
         height: 360,
         tile_size: 64,
-        reserved0: 0,
+        max_triangles: 0,
         reserved1: 0,
         reserved2: 0,
     }
@@ -33,20 +33,34 @@ fn convertit_une_configuration_saine() {
     assert_eq!(config.tile_size, 64);
 }
 
-/// Les trois champs, un par un : c'est ce refus qui permettra d'en utiliser
-/// un plus tard sans casser une liaison déjà écrite, et il ne vaut que s'il
-/// couvre chacun d'eux.
+/// Les deux champs encore réservés, un par un : c'est ce refus qui permettra
+/// d'en utiliser un plus tard sans casser une liaison déjà écrite, et il ne
+/// vaut que s'il couvre chacun d'eux.
 #[test]
 fn refuse_un_champ_reserve_non_nul() {
     for set in [
-        (|c: &mut ScgContextConfig| c.reserved0 = 1) as fn(&mut ScgContextConfig),
-        |c| c.reserved1 = 1,
+        (|c: &mut ScgContextConfig| c.reserved1 = 1) as fn(&mut ScgContextConfig),
         |c| c.reserved2 = 1,
     ] {
         let mut config = sane();
         set(&mut config);
         assert_eq!(config.to_core().unwrap_err(), AbiError::RESERVED);
     }
+}
+
+/// Le champ qui était réservé porte désormais la capacité, et ne se refuse
+/// plus quand il est non nul.
+///
+/// C'est l'usage prévu d'un champ réservé : un hôte de la version précédente
+/// passait zéro, et zéro reste le défaut.
+#[test]
+fn le_champ_de_capacite_ne_se_refuse_plus() {
+    let mut config = sane();
+    config.max_triangles = 1_000;
+    assert_eq!(
+        config.to_core().expect("capacité choisie").max_triangles,
+        1_000
+    );
 }
 
 /// Une liaison JavaScript écrit la structure octet par octet d'après les
@@ -65,7 +79,7 @@ fn la_configuration_a_les_decalages_publies() {
         (8, offset_of!(ScgContextConfig, width)),
         (12, offset_of!(ScgContextConfig, height)),
         (16, offset_of!(ScgContextConfig, tile_size)),
-        (20, offset_of!(ScgContextConfig, reserved0)),
+        (20, offset_of!(ScgContextConfig, max_triangles)),
         (24, offset_of!(ScgContextConfig, reserved1)),
         (28, offset_of!(ScgContextConfig, reserved2)),
     ] {

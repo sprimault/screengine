@@ -72,6 +72,25 @@ publié, et explique les conventions du dépôt à qui y contribue.
 - Quatre scènes de conformance : la bande de garde, le débordement latéral sans
   découpe, l'interpénétration avec égalité de profondeur, et un sol qui
   traverse le plan proche.
+- `scg_set_camera` et `scg_submit`, avec `ScgCamera`, `ScgVertex`,
+  `ScgTriangle` et `ScgMat4`. La matrice reçue est celle du **modèle** — objet
+  vers monde —, le moteur composant la vue de sa caméra ; une modèle-vue y
+  appliquerait la vue deux fois. Un lot est accepté ou refusé en entier. Le
+  quaternion se range `x, y, z, w`, et avec l'orientation neutre la caméra
+  regarde le +X du monde, le zénith vers le haut de l'écran. Aucune signature
+  publiée ne change, et `SCG_ABI_VERSION` reste à 1.
+- Le champ `reserved0` de `ScgContextConfig` devient `max_triangles`, la
+  capacité de triangles par image, `0` valant 16384. C'est l'usage prévu d'un
+  champ réservé : un hôte qui passait des zéros garde le comportement par
+  défaut, les décalages ne bougent pas, `SCG_ABI_VERSION` non plus.
+
+### Retiré
+- **Changement volontaire du rendu** : le moteur n'a plus de scène en dur. Un
+  contexte auquel rien n'a été soumis rend une image de fond, sans erreur. Les
+  hôtes qui n'appelaient que `scg_frame_end` obtenaient jusqu'ici une image de
+  démonstration ; ils doivent désormais décrire leur scène par `scg_submit`.
+  Les empreintes de conformance sont inchangées : la même scène, décrite par un
+  hôte, rend la même image.
 
 ### Modifié
 - **Changement volontaire du rendu** : l'image n'est plus un triangle écrit en

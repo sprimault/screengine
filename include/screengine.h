@@ -84,13 +84,91 @@ typedef struct ScgContextConfig {
   uint32_t height;
   // Tile side in pixels: 32 or 64. Any other value is rejected.
   uint32_t tile_size;
-  // Reserved. Must be zero.
-  uint32_t reserved0;
+  // Triangles one frame may hold, or 0 for the default of 16384.
+  //
+  // This counts *prepared* triangles: clipping against the near plane turns
+  // one submitted triangle into up to six, and `scg_submit` rejects the
+  // batch that would exceed the capacity, never a frame already submitted.
+  //
+  // This field was reserved in ABI version 1 and reserved fields had to be
+  // zero, so a host written against that header keeps the default and needs
+  // no change; `SCG_ABI_VERSION` is unchanged.
+  uint32_t max_triangles;
   // Reserved. Must be zero.
   uint32_t reserved1;
   // Reserved. Must be zero.
   uint32_t reserved2;
 } ScgContextConfig;
+
+// Where the camera is, and how wide it sees.
+//
+// With the identity orientation `{0, 0, 0, 1}`, the camera looks towards world
+// +X with the zenith towards the top of the screen. The quaternion is stored
+// `x, y, z, w` — the real part last — and is normalised by the engine, so it
+// need not be unit.
+typedef struct ScgCamera {
+  // Position in world space: x, y, z.
+  float position[3];
+  // Orientation as a quaternion: x, y, z, w.
+  float orientation[4];
+  // Vertical field of view in radians, within ]0, pi[.
+  //
+  // Rejected on the radians themselves, before any conversion: three half
+  // turns would otherwise fold into one and be accepted silently.
+  float fov_y;
+  // Near plane distance, positive and finite.
+  //
+  // Not named `near`: `windows.h` still defines `near` and `far` as empty
+  // macros, inherited from 16-bit segmented memory, and a field by that name
+  // vanishes in any translation unit that includes it first.
+  float near_plane;
+} ScgCamera;
+
+// A 4x4 model matrix, column-major: `m[column * 4 + row]`.
+//
+// The last row — `m[3]`, `m[7]`, `m[11]`, `m[15]` — must be exactly
+// `0, 0, 0, 1`. The engine composes the view itself and inverts the camera
+// pose without a division, which only holds for a rigid transform: a
+// projection or a perspective matrix passed here would be treated as one.
+typedef struct ScgMat4 {
+  // The sixteen coefficients, column by column.
+  float m[16];
+} ScgMat4;
+
+// A vertex position in object space.
+typedef struct ScgVertex {
+  // X coordinate.
+  float x;
+  // Y coordinate.
+  float y;
+  // Z coordinate.
+  float z;
+} ScgVertex;
+
+// A triangle: three indices into the vertex array, and its colour.
+//
+// Indices are not optional: a host without indexed geometry writes 0, 1, 2
+// then 3, 4, 5. The colour belongs to the triangle rather than to the batch,
+// so a whole surface crosses the boundary in one call.
+//
+// Vertices are counter-clockwise as seen from the front face; a triangle given
+// the other way round is a back face and is discarded.
+typedef struct ScgTriangle {
+  // Index of the first vertex.
+  uint32_t i0;
+  // Index of the second vertex.
+  uint32_t i1;
+  // Index of the third vertex.
+  uint32_t i2;
+  // Red, in the memory order of the output pixels.
+  uint8_t r;
+  // Green.
+  uint8_t g;
+  // Blue.
+  uint8_t b;
+  // Alpha. Written as given, never composited.
+  uint8_t a;
+} ScgTriangle;
 
 #ifdef __cplusplus
 extern "C" {
@@ -124,6 +202,48 @@ int32_t scg_create(const struct ScgContextConfig *config, struct ScgContext **ou
 //
 // `ctx` is NULL, or a handle returned by `scg_create` and not yet destroyed.
 void scg_destroy(struct ScgContext *ctx);
+
+// Sets the camera the next frames will render from.
+//
+// Rejected with `SCG_ERR_INVALID_STATE` between `scg_frame_begin` and
+// `scg_frame_end`: the camera holds for a whole frame. The field of view must
+// be within ]0, pi[ radians and the near plane positive, otherwise
+// `SCG_ERR_INVALID_ARGUMENT`. The quaternion is normalised by the engine.
+//
+// # Safety
+//
+// `ctx` is a live handle used by no other thread during the call, and `camera`
+// is NULL or points to a readable `ScgCamera`.
+int32_t scg_set_camera(struct ScgContext *ctx, const struct ScgCamera *camera);
+
+// Submits a batch of triangles to the frame being recorded.
+//
+// `model` carries the object into world space; the engine composes the view
+// from its own camera. Passing a model-view matrix here would apply the view
+// twice.
+//
+// Each triangle indexes three vertices of `vertices` and carries its own
+// colour. **The batch is accepted or rejected as a whole**: an index at or
+// beyond `vertex_count`, a coefficient that is not finite, or a batch that
+// would exceed the triangle capacity leaves the frame exactly as it was. A
+// triangle whose vertices cannot be projected — beyond the guard band, behind
+// the near plane — simply does not appear, which is not an error.
+//
+// A count of zero is accepted and submits nothing. Rejected with
+// `SCG_ERR_INVALID_STATE` between `scg_frame_begin` and `scg_frame_end`.
+//
+// # Safety
+//
+// `ctx` is a live handle used by no other thread during the call; `vertices`
+// points to `vertex_count` readable `ScgVertex`, and `triangles` to
+// `triangle_count` readable `ScgTriangle`. A count of zero allows a null
+// pointer.
+int32_t scg_submit(struct ScgContext *ctx,
+                   const struct ScgMat4 *model,
+                   const struct ScgVertex *vertices,
+                   uint32_t vertex_count,
+                   const struct ScgTriangle *triangles,
+                   uint32_t triangle_count);
 
 // Begins a frame: seals the submitted scene, bins it into tiles, and writes
 // the tile count to `tile_count`.
@@ -258,9 +378,20 @@ SCREENGINE_LAYOUT_ASSERT(offsetof(ScgContextConfig, max_height) == 4, "max_heigh
 SCREENGINE_LAYOUT_ASSERT(offsetof(ScgContextConfig, width) == 8, "width moved");
 SCREENGINE_LAYOUT_ASSERT(offsetof(ScgContextConfig, height) == 12, "height moved");
 SCREENGINE_LAYOUT_ASSERT(offsetof(ScgContextConfig, tile_size) == 16, "tile_size moved");
-SCREENGINE_LAYOUT_ASSERT(offsetof(ScgContextConfig, reserved0) == 20, "reserved0 moved");
+SCREENGINE_LAYOUT_ASSERT(offsetof(ScgContextConfig, max_triangles) == 20, "max_triangles moved");
 SCREENGINE_LAYOUT_ASSERT(offsetof(ScgContextConfig, reserved1) == 24, "reserved1 moved");
 SCREENGINE_LAYOUT_ASSERT(offsetof(ScgContextConfig, reserved2) == 28, "reserved2 moved");
+SCREENGINE_LAYOUT_ASSERT(sizeof(ScgVertex) == 12, "ScgVertex changed size");
+SCREENGINE_LAYOUT_ASSERT(offsetof(ScgVertex, z) == 8, "ScgVertex.z moved");
+SCREENGINE_LAYOUT_ASSERT(sizeof(ScgTriangle) == 16, "ScgTriangle changed size");
+SCREENGINE_LAYOUT_ASSERT(offsetof(ScgTriangle, i2) == 8, "ScgTriangle.i2 moved");
+SCREENGINE_LAYOUT_ASSERT(offsetof(ScgTriangle, r) == 12, "ScgTriangle.r moved");
+SCREENGINE_LAYOUT_ASSERT(offsetof(ScgTriangle, a) == 15, "ScgTriangle.a moved");
+SCREENGINE_LAYOUT_ASSERT(sizeof(ScgCamera) == 36, "ScgCamera changed size");
+SCREENGINE_LAYOUT_ASSERT(offsetof(ScgCamera, orientation) == 12, "orientation moved");
+SCREENGINE_LAYOUT_ASSERT(offsetof(ScgCamera, fov_y) == 28, "fov_y moved");
+SCREENGINE_LAYOUT_ASSERT(offsetof(ScgCamera, near_plane) == 32, "near_plane moved");
+SCREENGINE_LAYOUT_ASSERT(sizeof(ScgMat4) == 64, "ScgMat4 changed size");
 #undef SCREENGINE_LAYOUT_ASSERT
 #endif
 #endif

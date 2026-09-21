@@ -157,6 +157,11 @@ et un cycle de retour lent depuis un poste Windows.
 - **`windows.h` définit une macro `small`**, héritée de `rpcndr.h`. Un
   intégrateur C++ qui nomme ainsi une variable obtient une erreur de syntaxe
   sans rapport apparent avec le moteur.
+- **`windows.h` définit aussi `near` et `far`**, macros vides héritées de la
+  mémoire segmentée 16 bits. Aucun champ ni paramètre de l'ABI ne porte ces
+  noms — le plan proche de `ScgCamera` s'appelle `near_plane` pour cela : un
+  champ nommé `near` disparaîtrait dans toute unité de compilation qui inclut
+  `windows.h` avant le header, et l'erreur ne désignerait pas la cause.
 
 ### Linux
 

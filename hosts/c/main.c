@@ -148,6 +148,42 @@ static ScgContextConfig scene_config(void)
     return config;
 }
 
+/* Le quadrilatère de la scène `arete`, en coordonnées de monde : X vers l'est,
+ * Z en haut. La caméra par défaut le regarde depuis l'origine.
+ *
+ * Ces valeurs sont celles de la scène de conformance, et c'est tout l'objet de
+ * cet hôte : décrire la même scène dans un autre langage, à travers l'ABI, et
+ * retrouver la même empreinte. Les changer ici sans la changer là-bas fait
+ * diverger la comparaison, ce qui est exactement ce qu'on veut qu'il arrive. */
+static const ScgVertex SCENE_VERTICES[4] = {
+    { 2.0f, 2.5f, 1.6f },
+    { 3.5f, -2.5f, 1.6f },
+    { 3.5f, -2.5f, -1.6f },
+    { 2.0f, 2.5f, -1.6f },
+};
+
+/* Deux triangles qui partagent l'arête des sommets 0 et 2, parcourue en sens
+ * opposés par chacun : le cas que la règle top-left doit trancher. */
+static const ScgTriangle SCENE_TRIANGLES[2] = {
+    { 0, 2, 1, 0xE0, 0xA0, 0x30, 0xFF },
+    { 0, 3, 2, 0xA0, 0xE0, 0x30, 0xFF },
+};
+
+/* L'identité, par colonnes. */
+static const ScgMat4 IDENTITY = {
+    { 1.0f, 0.0f, 0.0f, 0.0f,
+      0.0f, 1.0f, 0.0f, 0.0f,
+      0.0f, 0.0f, 1.0f, 0.0f,
+      0.0f, 0.0f, 0.0f, 1.0f }
+};
+
+/* Soumet la scène au contexte, et rend vrai si elle a été acceptée. */
+static int submit_scene(ScgContext *ctx)
+{
+    int32_t code = scg_submit(ctx, &IDENTITY, SCENE_VERTICES, 4, SCENE_TRIANGLES, 2);
+    return code == SCG_OK;
+}
+
 /* Vrai si le message est non nul, terminé, non vide si `expect_text`, et fait
  * d'octets UTF-8 plausibles. Les messages du moteur sont ASCII aujourd'hui ;
  * ce contrôle refuse surtout un octet de contrôle venu d'un tampon non
@@ -246,6 +282,7 @@ static uint64_t render(int *ok)
     uint8_t *pixels = block + GUARD;
     memset(block, SENTINEL, GUARD + body + GUARD);
 
+    check(submit_scene(ctx), "scène soumise");
     int32_t code = scg_frame_end(ctx, pixels, STRIDE);
     check(code == SCG_OK, "scg_frame_end aboutit");
     *ok = code == SCG_OK;
@@ -297,6 +334,7 @@ static void check_tiles(uint64_t expected)
     check(message_ok(scg_last_error(NULL), 1), "message de la tuile dans l'emplacement du thread");
     check(message_ok(scg_last_error(ctx), 0), "message du contexte intact après une tuile refusée");
 
+    check(submit_scene(ctx), "scène soumise");
     check(scg_frame_begin(ctx, NULL) == SCG_ERR_NULL, "compteur de tuiles nul refusé");
     check(scg_frame_begin(ctx, &count) == SCG_OK, "scg_frame_begin aboutit");
     check(count == (WIDTH + TILE - 1) / TILE * ((HEIGHT + TILE - 1) / TILE), "nombre de tuiles de l'image");
@@ -321,10 +359,10 @@ static void check_tiles(uint64_t expected)
 /* Un hôte hostile : exceptions démasquées, arrondi vers le haut, zéro forcé. Le
  * moteur doit rendre la même image, et rendre le registre intact.
  *
- * Aujourd'hui, seuls les masques et la restauration du registre ont un effet
- * observable : le triangle en dur ne passe par aucun calcul que l'arrondi ou
- * DAZ changeraient. La comparaison d'empreinte prendra son sens avec la
- * transformation des sommets, et elle est en place pour ce jour-là. */
+ * La comparaison d'empreinte porte désormais : la scène est soumise en
+ * coordonnées de monde et passe par la transformation des sommets, la
+ * projection et la division, tout ce que l'arrondi et DAZ changeraient si la
+ * frontière ne fixait pas le registre à l'entrée. */
 static void check_float_environment(uint64_t expected)
 {
     fp_word host = fp_read();

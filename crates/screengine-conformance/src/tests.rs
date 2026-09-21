@@ -49,21 +49,19 @@ fn rejects_ambiguous_usage() {
 #[test]
 fn print_exige_une_scene_connue() {
     assert_eq!(
-        parse_mode(&args(&["--print", "triangle"])),
-        Ok(Mode::Print(Scene::Triangle))
+        parse_mode(&args(&["--print", "arete"])),
+        Ok(Mode::Print(Scene::Edge))
     );
     assert!(parse_mode(&args(&["--print", "cube"])).is_err());
     assert!(parse_mode(&args(&["--print"])).is_err());
 }
 
-/// Le triangle se rend, et deux rendus donnent la même empreinte : sans quoi
-/// il n'y aurait rien à comparer entre le chemin Rust et les hôtes.
+/// La scène se rend, et deux rendus donnent la même empreinte : sans quoi il
+/// n'y aurait rien à comparer entre le chemin Rust et les hôtes.
 #[test]
-fn le_triangle_rend_une_empreinte_stable() {
-    let first = Scene::Triangle
-        .render(Scene::HOST_PASS)
-        .expect("scène valide");
-    assert_eq!(Scene::Triangle.render(Scene::HOST_PASS), Ok(first));
+fn la_scene_des_hotes_rend_une_empreinte_stable() {
+    let first = Scene::Edge.render(Scene::HOST_PASS).expect("scène valide");
+    assert_eq!(Scene::Edge.render(Scene::HOST_PASS), Ok(first));
 }
 
 /// Toutes les passes — tailles de tuile, image entière, ordre mélangé,
@@ -72,10 +70,8 @@ fn le_triangle_rend_une_empreinte_stable() {
 /// pour elle.
 #[test]
 fn toutes_les_passes_rendent_l_empreinte_des_hotes() {
-    let host = Scene::Triangle
-        .render(Scene::HOST_PASS)
-        .expect("scène valide");
-    assert_eq!(Scene::Triangle.render_all(), Ok(host));
+    let host = Scene::Edge.render(Scene::HOST_PASS).expect("scène valide");
+    assert_eq!(Scene::Edge.render_all(), Ok(host));
 }
 
 /// Chaque scène couvre une part franche de l'image.
@@ -127,7 +123,7 @@ fn deux_scenes_ne_rendent_pas_la_meme_image() {
 #[test]
 fn une_reference_absente_echoue() {
     let dir = scratch("absente");
-    let error = check(Scene::Triangle, &dir).expect_err("sans référence");
+    let error = check(Scene::Edge, &dir).expect_err("sans référence");
     assert!(error.contains("référence absente"), "{error}");
 }
 
@@ -135,8 +131,8 @@ fn une_reference_absente_echoue() {
 #[test]
 fn check_accepte_ce_qu_update_ecrit() {
     let dir = scratch("aller-retour");
-    update(Scene::Triangle, &dir).expect("écriture");
-    assert!(check(Scene::Triangle, &dir).is_ok());
+    update(Scene::Edge, &dir).expect("écriture");
+    assert!(check(Scene::Edge, &dir).is_ok());
 }
 
 /// Une référence qui diffère d'un seul chiffre est une divergence, et le
@@ -144,8 +140,8 @@ fn check_accepte_ce_qu_update_ecrit() {
 #[test]
 fn une_reference_differente_diverge() {
     let dir = scratch("divergente");
-    let rendered = Scene::Triangle.render_all().expect("scène valide");
-    fs::write(dir.join("triangle"), reference_text(rendered ^ 1)).expect("écriture");
-    let error = check(Scene::Triangle, &dir).expect_err("divergence");
+    let rendered = Scene::Edge.render_all().expect("scène valide");
+    fs::write(dir.join("arete"), reference_text(rendered ^ 1)).expect("écriture");
+    let error = check(Scene::Edge, &dir).expect_err("divergence");
     assert!(error.contains(&hash::format(rendered)), "{error}");
 }

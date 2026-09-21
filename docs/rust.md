@@ -227,6 +227,13 @@ Le contrat est dans [`abi.md`](abi.md). Ce qui suit est la manière de l'écrire
   comportement indéfini, avant même la première ligne de vérification. On reçoit
   un entier, on le convertit en `enum` par `TryFrom`, et l'échec rend
   `SCG_ERR_INVALID_ARGUMENT`.
+- **Un tableau de structures reçu de l'hôte ne se copie pas et ne se
+  réinterprète pas.** Le copier serait une allocation par image ; le
+  réinterpréter imposerait au noyau la disposition mémoire de la frontière,
+  qu'il n'a pas choisie et que `rustfmt` ne garantit pas. Le noyau expose donc
+  la soumission sous une forme qui lit chaque triangle par une fonction
+  d'accès, et la frontière lui donne celle qui lit ses propres structures. La
+  forme par tranches reste celle qu'emploie un appelant Rust.
 - **Les tuiles partagent le handle entre threads.** Le contexte du noyau y vit
   dans un `UnsafeCell`, et l'état de rendu du noyau, atomique, décide de
   l'accès : les tuiles ne forment jamais qu'une référence partagée, et un appel

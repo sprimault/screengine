@@ -72,6 +72,34 @@ public final class Test {
     }
 
     /**
+     * Soumet la scène {@code arete} : le quadrilatère de la conformance, en
+     * coordonnées de monde, vu par la caméra par défaut depuis l'origine.
+     *
+     * <p>Les mêmes valeurs que la scène de référence, décrites ici en Java et
+     * passées à travers JNI puis l'ABI : c'est la comparaison des empreintes
+     * qui dit qu'elles arrivent intactes.
+     *
+     * @param ctx handle du contexte
+     * @return le code de retour de la soumission
+     */
+    private static int submitScene(long ctx) {
+        float[] model = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
+        float[] vertices = {
+            2.0f, 2.5f, 1.6f,
+            3.5f, -2.5f, 1.6f,
+            3.5f, -2.5f, -1.6f,
+            2.0f, 2.5f, -1.6f,
+        };
+        // L'arête des sommets 0 et 2, parcourue en sens opposés par les deux.
+        int[] indices = {0, 2, 1, 0, 3, 2};
+        byte[] colors = {
+            (byte) 0xE0, (byte) 0xA0, 0x30, (byte) 0xFF,
+            (byte) 0xA0, (byte) 0xE0, 0x30, (byte) 0xFF,
+        };
+        return Screengine.submit(ctx, model, vertices, indices, colors);
+    }
+
+    /**
      * Vrai si le message est non vide quand on l'attend, et sans caractère de
      * contrôle venu d'un tampon non initialisé.
      *
@@ -182,6 +210,7 @@ public final class Test {
             check(false, "création du contexte de rendu");
             return null;
         }
+        check(submitScene(out[0]) == Screengine.OK, "scène soumise");
         int code = Screengine.frameEnd(out[0], block, base, STRIDE);
         check(code == Screengine.OK, "scg_frame_end aboutit sur une base désalignée");
 
