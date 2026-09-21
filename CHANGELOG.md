@@ -76,6 +76,14 @@ publié, et explique les conventions du dépôt à qui y contribue.
   à trois résolutions internes. Ses images s'enchaînent en une seule empreinte,
   et un contrôle sans référence vérifie qu'aucune ligne ne montre de trou entre
   les deux triangles.
+- `screengine-play` : `FreeCamera`, une caméra qu'on dirige aux flèches et à la
+  souris — lacet autour du zénith, tangage borné au quart de tour, aucun
+  roulis —, et `Tick::capture_cursor`, qui capture le curseur ou le relâche.
+  Du comportement seulement : la caméra produit celle du noyau, et rien de ce
+  qu'elle permet n'échappe à l'ABI C.
+- L'exemple `couloir` : un couloir qu'on parcourt, avec des caisses dont l'une
+  traverse le sol. La caméra y est à l'intérieur d'une géométrie fermée, ce qui
+  fait travailler le plan proche et la bande de garde à chaque pas.
 - `scg_set_camera` et `scg_submit`, avec `ScgCamera`, `ScgVertex`,
   `ScgTriangle` et `ScgMat4`. La matrice reçue est celle du **modèle** — objet
   vers monde —, le moteur composant la vue de sa caméra ; une modèle-vue y
@@ -148,6 +156,14 @@ publié, et explique les conventions du dépôt à qui y contribue.
 - A fifth, rotating: the shared-edge scene over a full turn, at three internal
   resolutions. Its images chain into a single hash, and a reference-free check
   verifies that no row shows a gap between the two triangles.
+- `screengine-play`: `FreeCamera`, a camera driven with the arrow keys and the
+  mouse — yaw about the zenith, pitch clamped to a quarter turn, no roll — and
+  `Tick::capture_cursor`, which grabs or releases the cursor. Behaviour only:
+  the camera produces the engine's own, and nothing it allows is out of reach
+  of the C ABI.
+- The `couloir` example: a corridor you walk through, with crates, one of them
+  cutting through the floor. The camera sits inside closed geometry, which
+  keeps the near plane and the guard band busy at every step.
 
 ### Changed
 - **Deliberate change of the rendered image**: it is no longer a triangle

@@ -60,23 +60,38 @@ and scales the image up by an integer factor. With no settings at all, it opens
 a working window:
 
 ```rust
-use screengine_play::{KeyCode, Play};
+use screengine_play::{Affine3, Color, KeyCode, Play, Triangle, Vec3};
+
+const VERTICES: [Vec3; 3] = [
+    Vec3::new(4.0, 1.5, -1.0),
+    Vec3::new(4.0, 0.0, 1.5),
+    Vec3::new(4.0, -1.5, -1.0),
+];
+
+const TRIANGLES: [Triangle; 1] = [Triangle {
+    indices: [0, 1, 2],
+    color: Color::new(0xE0, 0xA0, 0x30, 0xFF),
+}];
 
 fn main() -> Result<(), screengine_play::Error> {
     Play::new().run(
         (),
         |_, tick| {
-            if tick.input().pressed(KeyCode::Space) {
-                println!("step {}", tick.index());
+            if tick.input().pressed(KeyCode::Escape) {
+                tick.exit();
             }
         },
-        |_, _context| {},
+        |_, context| {
+            let _ = context.submit(Affine3::IDENTITY, &VERTICES, &TRIANGLES);
+        },
     )
 }
 ```
 
-`make run` launches this example. The Rust path adds convenience, never
-capability: everything it allows can also be done through the C ABI.
+`make run` launches this example. `make example EXAMPLE=couloir` launches
+another: a corridor you walk through with the arrow keys and the mouse, with
+crates sitting on the floor. The Rust path adds convenience, never capability:
+everything it allows can also be done through the C ABI.
 
 ### Embedding, from any language
 
@@ -94,6 +109,11 @@ if (scg_create(&config, &ctx) != SCG_OK) {
     fprintf(stderr, "%s\n", scg_last_error(NULL));
     return 1;
 }
+
+ScgMat4 model = {{1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1}};
+ScgVertex vertices[3] = {{4, 1.5f, -1}, {4, 0, 1.5f}, {4, -1.5f, -1}};
+ScgTriangle triangle = {0, 1, 2, 0xE0, 0xA0, 0x30, 0xFF};
+scg_submit(ctx, &model, vertices, 3, &triangle, 1);
 
 scg_frame_end(ctx, pixels, stride);
 scg_destroy(ctx);

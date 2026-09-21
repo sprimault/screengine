@@ -61,23 +61,38 @@ fixe, et remonte l'image par facteur entier. Sans aucun réglage, il ouvre une
 fenêtre qui marche :
 
 ```rust
-use screengine_play::{KeyCode, Play};
+use screengine_play::{Affine3, Color, KeyCode, Play, Triangle, Vec3};
+
+const VERTICES: [Vec3; 3] = [
+    Vec3::new(4.0, 1.5, -1.0),
+    Vec3::new(4.0, 0.0, 1.5),
+    Vec3::new(4.0, -1.5, -1.0),
+];
+
+const TRIANGLES: [Triangle; 1] = [Triangle {
+    indices: [0, 1, 2],
+    color: Color::new(0xE0, 0xA0, 0x30, 0xFF),
+}];
 
 fn main() -> Result<(), screengine_play::Error> {
     Play::new().run(
         (),
         |_, tick| {
-            if tick.input().pressed(KeyCode::Space) {
-                println!("pas {}", tick.index());
+            if tick.input().pressed(KeyCode::Escape) {
+                tick.exit();
             }
         },
-        |_, _context| {},
+        |_, context| {
+            let _ = context.submit(Affine3::IDENTITY, &VERTICES, &TRIANGLES);
+        },
     )
 }
 ```
 
-`make run` lance cet exemple. Le chemin Rust ajoute du confort, jamais de
-capacité : tout ce qu'il permet se fait aussi par l'ABI C.
+`make run` lance cet exemple. `make example EXAMPLE=couloir` en lance un autre :
+un couloir qu'on parcourt aux flèches et à la souris, avec des caisses posées au
+sol. Le chemin Rust ajoute du confort, jamais de capacité : tout ce qu'il permet
+se fait aussi par l'ABI C.
 
 ### Intégrer, depuis n'importe quel langage
 
@@ -95,6 +110,11 @@ if (scg_create(&config, &ctx) != SCG_OK) {
     fprintf(stderr, "%s\n", scg_last_error(NULL));
     return 1;
 }
+
+ScgMat4 model = {{1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1}};
+ScgVertex vertices[3] = {{4, 1.5f, -1}, {4, 0, 1.5f}, {4, -1.5f, -1}};
+ScgTriangle triangle = {0, 1, 2, 0xE0, 0xA0, 0x30, 0xFF};
+scg_submit(ctx, &model, vertices, 3, &triangle, 1);
 
 scg_frame_end(ctx, pixels, stride);
 scg_destroy(ctx);

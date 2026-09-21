@@ -29,12 +29,14 @@
 //! Le noyau ignore son existence, et ses invariants — `no_std`, zéro allocation
 //! par image, déterminisme — ne s'appliquent pas ici.
 
+mod camera;
 mod clock;
 mod error;
 mod input;
 mod runner;
 mod scale;
 
+pub use camera::FreeCamera;
 pub use error::Error;
 pub use input::Input;
 pub use scale::Scale;
@@ -169,6 +171,8 @@ pub struct Tick<'a> {
     index: u64,
     dt: f32,
     exit: bool,
+    captured: bool,
+    capture: Option<bool>,
 }
 
 impl Tick<'_> {
@@ -194,5 +198,23 @@ impl Tick<'_> {
     /// Demande la fermeture après ce pas.
     pub fn exit(&mut self) {
         self.exit = true;
+    }
+
+    /// Vrai quand le curseur est capturé : caché, et son déplacement rendu à la
+    /// fenêtre plutôt qu'à l'écran.
+    pub fn cursor_captured(&self) -> bool {
+        self.captured
+    }
+
+    /// Capture le curseur, ou le relâche, à la fin de ce pas.
+    ///
+    /// Une caméra à la souris en a besoin : sans capture, le curseur bute sur
+    /// le bord de l'écran et la rotation s'arrête. La demande est appliquée
+    /// après le pas, et `cursor_captured` dit au pas suivant ce qui a
+    /// réellement été obtenu — aucune plateforme ne garantit la capture, et
+    /// celle qui la refuse laisse l'exemple jouable aux flèches plutôt que de
+    /// refuser de démarrer.
+    pub fn capture_cursor(&mut self, capture: bool) {
+        self.capture = Some(capture);
     }
 }
