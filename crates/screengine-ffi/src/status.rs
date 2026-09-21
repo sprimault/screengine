@@ -90,6 +90,12 @@ pub(crate) fn message_of(error: Error) -> &'static str {
         Error::InvalidArgument(Argument::Projection) => {
             "invalid projection: the vertical field of view must be within ]0, pi[ radians, and the near plane positive and finite"
         }
+        Error::InvalidArgument(Argument::TextureSize) => {
+            "invalid texture size: each side must be a power of two between 1 and 2048"
+        }
+        Error::InvalidArgument(Argument::TextureLength) => {
+            "pixel block of the wrong length: needs width x height x 4 bytes"
+        }
         Error::OutOfMemory => "out of memory",
         Error::InvalidState => "call out of sequence: this tile was already rendered in this frame",
     }

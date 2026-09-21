@@ -64,6 +64,12 @@ impl fmt::Display for Error {
                 Argument::Projection => f.write_str(
                     "field of view must be within ]0, pi[ radians, and the near plane positive",
                 ),
+                Argument::TextureSize => {
+                    f.write_str("texture sides must be powers of two between 1 and 2048")
+                }
+                Argument::TextureLength => {
+                    f.write_str("pixel block is not exactly width x height x 4 bytes")
+                }
             },
             Self::Engine(screengine::Error::OutOfMemory) => {
                 f.write_str("the engine could not allocate its buffers")

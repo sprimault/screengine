@@ -46,6 +46,28 @@ publié, et explique les conventions du dépôt à qui y contribue.
 
 ## [Non publié]
 
+### Ajouté
+- API Rust : `Texture::load`, qui copie un bloc de pixels RGBA8 et engendre
+  toute sa chaîne de mipmaps, jusqu'à 1×1, par moyenne des texels et jamais par
+  échantillonnage. Les deux côtés sont des puissances de deux indépendantes,
+  entre 1 et `MAX_TEXTURE_SIZE`. Le bloc est copié : l'hôte peut le libérer au
+  retour, et une texture chargée ne change plus. Tous les niveaux tiennent dans
+  une seule allocation, faite à ce seul appel.
+- API Rust : `VertexUv`, un sommet qui porte ses coordonnées de texture en
+  texels, non normalisées.
+
+***
+
+### Added
+- Rust API: `Texture::load`, which copies a block of RGBA8 pixels and builds its
+  whole mipmap chain down to 1×1, by averaging texels and never by sampling.
+  Both sides are independent powers of two, between 1 and `MAX_TEXTURE_SIZE`.
+  The block is copied: the host may free it once the call returns, and a loaded
+  texture never changes. Every level lives in a single allocation, made in that
+  one call.
+- Rust API: `VertexUv`, a vertex carrying its texture coordinates in texels,
+  unnormalised.
+
 ## [0.1.0] — 2026-09-21 — Le pipeline
 
 **Ce qu'un hôte de la 0.0.0 doit reprendre.** Le moteur n'a plus de scène en
