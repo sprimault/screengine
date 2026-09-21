@@ -22,9 +22,11 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::{fs, io};
 
+use std::sync::Arc;
+
 use screengine::{
-    Affine3, Angle, BYTES_PER_PIXEL, Color, Config, Context, Frame, Quat, Rect, Rows, Triangle,
-    Vec3,
+    Affine3, Angle, BYTES_PER_PIXEL, Color, Config, Context, Frame, Quat, Rect, Rows, Texture,
+    Triangle, Vec3, VertexUv,
 };
 
 /// Une façon de rendre une scène qui ne doit pas changer l'image.
@@ -214,6 +216,76 @@ enum Scene {
     /// porterait quarante-huit fichiers pour une seule scène, et c'est la
     /// comparaison entre passes qui donne déjà cette information.
     Rotation,
+    /// Un sol texturé qui fuit vers l'horizon.
+    ///
+    /// La seule scène où la perspective des coordonnées de texture se voit : un
+    /// sol donne le plus fort rapport de profondeur d'un bord à l'autre, donc
+    /// c'est là qu'une interpolation affine au lieu de perspective, un segment
+    /// mal aligné ou une division au mauvais endroit se lisent à l'œil comme
+    /// une déformation du damier.
+    ///
+    /// **Son motif est écrit ici, pas chargé.** Une empreinte figée sur une
+    /// image produite ailleurs serait irreproductible le jour où il faut la
+    /// refaire, et un damier serré révèle mieux qu'une photographie ce que ce
+    /// chemin peut casser.
+    Textured,
+}
+
+/// Un damier de `side` texels de côté, ses cases de `cell`.
+///
+/// Deux teintes franches et une case qui ne divise pas la texture en deux :
+/// c'est le contraste qui rend un décalage d'un texel visible, et l'asymétrie
+/// qui empêche un repli fautif de passer pour correct.
+fn checker(side: u32, cell: u32) -> Arc<Texture> {
+    let mut bytes = Vec::with_capacity((side * side) as usize * 4);
+    for v in 0..side {
+        for u in 0..side {
+            let dark = ((u / cell) + (v / cell)) % 2 == 0;
+            // Un liseré sur la première colonne et la première ligne de chaque
+            // case : sans lui, un damier reste lisible même décalé d'une case
+            // entière, et le raccord ne se verrait pas.
+            let edge = u % cell == 0 || v % cell == 0;
+            bytes.extend_from_slice(&match (dark, edge) {
+                (_, true) => [0xF0, 0xE0, 0xA0, 0xFF],
+                (true, false) => [0x30, 0x38, 0x50, 0xFF],
+                (false, false) => [0x90, 0x70, 0x50, 0xFF],
+            });
+        }
+    }
+    Arc::new(Texture::load(side, side, &bytes).unwrap_or_else(|_| unreachable!()))
+}
+
+/// Un quadrilatère texturé, deux triangles partageant une diagonale.
+///
+/// Les coordonnées de texture sont prises sur les coordonnées de monde
+/// multipliées par `density`, en texels : c'est ce qui donne au damier un pas
+/// constant au sol, quelle que soit la distance.
+fn textured_quad(
+    context: &mut Context,
+    corners: [Vec3; 4],
+    density: f32,
+    texture: &Arc<Texture>,
+) -> screengine::Result<()> {
+    let vertices: Vec<VertexUv> = corners
+        .iter()
+        .map(|&position| VertexUv {
+            position,
+            u: position.x * density,
+            v: position.y * density,
+        })
+        .collect();
+    let white = Color::new(0xFF, 0xFF, 0xFF, 0xFF);
+    let triangles = [
+        Triangle {
+            indices: [0, 1, 2],
+            color: white,
+        },
+        Triangle {
+            indices: [0, 2, 3],
+            color: white,
+        },
+    ];
+    context.submit_textured(Affine3::IDENTITY, &vertices, &triangles, texture)
 }
 
 /// Le quadrilatère à arêtes partagées, en coordonnées de monde.
@@ -321,13 +393,14 @@ impl View {
 
 impl Scene {
     /// Toutes les scènes, dans l'ordre où `--check` les rejoue.
-    const ALL: [Self; 6] = [
+    const ALL: [Self; 7] = [
         Self::Edge,
         Self::Guard,
         Self::Lateral,
         Self::Depth,
         Self::Near,
         Self::Rotation,
+        Self::Textured,
     ];
 
     /// La passe que `--print` utilise, celle des hôtes.
@@ -359,6 +432,7 @@ impl Scene {
             Self::Depth => "profondeur",
             Self::Near => "proche",
             Self::Rotation => "rotation",
+            Self::Textured => "texture",
         }
     }
 
@@ -473,6 +547,22 @@ impl Scene {
             }
             // Le sol commence derrière la caméra : chaque triangle traverse le
             // plan proche, et aucun n'en sort entier.
+            // Un sol à 1,2 unité sous la caméra, de deux unités devant elle
+            // jusqu'à soixante : le rapport de profondeur d'un bord à l'autre
+            // est de trente, ce qui donne à la perspective de quoi se tromper.
+            // Huit texels par unité et des cases de huit texels : une case fait
+            // une unité au sol, donc la fuite se lit case par case.
+            Self::Textured => textured_quad(
+                context,
+                [
+                    Vec3::new(2.0, -24.0, -1.2),
+                    Vec3::new(60.0, -24.0, -1.2),
+                    Vec3::new(60.0, 24.0, -1.2),
+                    Vec3::new(2.0, 24.0, -1.2),
+                ],
+                8.0,
+                &checker(64, 8),
+            ),
             Self::Near => quad(
                 context,
                 [
