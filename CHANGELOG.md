@@ -62,6 +62,10 @@ signature ne change et `SCG_ABI_VERSION` reste à **1**.
   une seule allocation, faite à ce seul appel.
 - API Rust : `VertexUv`, un sommet qui porte ses coordonnées de texture en
   texels, non normalisées.
+- API Rust : `Context::submit_textured`, qui habille un lot d'une texture. Elle
+  vaut pour le lot entier, et le moteur en garde une référence forte jusqu'à la
+  fin de l'image : l'hôte peut la libérer de son côté sans que l'image en cours
+  change. Rien ne rend encore la texture.
 - API Rust : `Context::submit_uv`, qui soumet un lot dont les sommets portent
   leurs coordonnées de texture. Elles traversent le découpage sans
   prémultiplication — la projection étant linéaire avant la division, le point
@@ -116,6 +120,10 @@ is not recorded. No signature changes and `SCG_ABI_VERSION` stays at **1**.
   one call.
 - Rust API: `VertexUv`, a vertex carrying its texture coordinates in texels,
   unnormalised.
+- Rust API: `Context::submit_textured`, dressing a batch with a texture. It
+  applies to the whole batch, and the engine keeps a strong reference to it
+  until the frame ends: the host may release its own without the current frame
+  changing. Nothing renders the texture yet.
 - Rust API: `Context::submit_uv`, submitting a batch whose vertices carry their
   texture coordinates. They cross the clipper unpremultiplied — projection
   being linear before the divide, the intersection point carries them at no

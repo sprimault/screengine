@@ -389,3 +389,96 @@ fn la_borne_des_coordonnees_de_texture_est_inclusive() {
     );
     assert_eq!(ctx.triangles.len(), 1);
 }
+
+/// Une texture unie de deux texels de côté, pour les cas où seul son identité
+/// compte.
+fn texture() -> Arc<Texture> {
+    Arc::new(Texture::load(2, 2, &[0x80; 16]).expect("texture valide"))
+}
+
+/// Une texture soumise deux fois n'occupe qu'une entrée de la table : la
+/// déduplication porte sur l'identité de l'allocation, puisque comparer les
+/// contenus voudrait dire relire des mégaoctets à chaque lot.
+#[test]
+fn une_texture_resoumise_ne_prend_pas_deux_entrees() {
+    let mut ctx = small();
+    let (a, b) = (texture(), texture());
+
+    ctx.submit_textured(Affine3::IDENTITY, &ahead_uv(0.0, 0.0), &one(), &a)
+        .expect("capacité");
+    ctx.submit_textured(Affine3::IDENTITY, &ahead_uv(0.0, 0.0), &one(), &a)
+        .expect("capacité");
+    assert_eq!(ctx.textures.len(), 1, "la même texture a pris deux entrées");
+
+    ctx.submit_textured(Affine3::IDENTITY, &ahead_uv(0.0, 0.0), &one(), &b)
+        .expect("capacité");
+    assert_eq!(
+        ctx.textures.len(),
+        2,
+        "deux textures de même contenu sont deux ressources"
+    );
+}
+
+/// Les textures d'une image se rangent dans l'ordre de première soumission :
+/// c'est cet ordre que l'index porté par chaque triangle désigne.
+#[test]
+fn les_textures_se_rangent_dans_l_ordre_de_premiere_soumission() {
+    let mut ctx = small();
+    let (a, b) = (texture(), texture());
+
+    ctx.submit_textured(Affine3::IDENTITY, &ahead_uv(0.0, 0.0), &one(), &b)
+        .expect("capacité");
+    ctx.submit_textured(Affine3::IDENTITY, &ahead_uv(0.0, 0.0), &one(), &a)
+        .expect("capacité");
+    ctx.submit_textured(Affine3::IDENTITY, &ahead_uv(0.0, 0.0), &one(), &b)
+        .expect("capacité");
+
+    assert_eq!(ctx.textures.len(), 2);
+    assert!(Arc::ptr_eq(&ctx.textures[0], &b), "la première soumise");
+    assert!(Arc::ptr_eq(&ctx.textures[1], &a));
+}
+
+/// La table se vide avec la liste de dessin, et au même moment : garder une
+/// texture ferait vivre une ressource que plus rien ne dessine.
+#[test]
+fn la_table_de_textures_se_vide_avec_la_liste_de_dessin() {
+    let mut ctx = small();
+    let mut pixels = vec![0u8; 64 * 64 * BYTES_PER_PIXEL];
+    let t = texture();
+
+    ctx.submit_textured(Affine3::IDENTITY, &ahead_uv(0.0, 0.0), &one(), &t)
+        .expect("capacité");
+    ctx.frame_end(&mut pixels, 64).expect("image rendue");
+    assert_eq!(ctx.textures.len(), 1, "l'image close la tient encore");
+
+    ctx.submit_uv(Affine3::IDENTITY, &ahead_uv(0.0, 0.0), &one())
+        .expect("capacité");
+    assert_eq!(ctx.textures.len(), 0, "le lot suivant ne l'a pas vidée");
+    assert_eq!(Arc::strong_count(&t), 1, "le moteur la retient encore");
+}
+
+/// Un lot refusé ne laisse pas sa texture dans la table, et ne retire pas
+/// celle qu'un lot précédent y avait mise.
+#[test]
+fn un_lot_texture_refuse_ne_laisse_pas_sa_texture() {
+    let mut ctx = small();
+    let (a, b) = (texture(), texture());
+    ctx.submit_textured(Affine3::IDENTITY, &ahead_uv(0.0, 0.0), &one(), &a)
+        .expect("capacité");
+
+    let mut vertices = ahead_uv(0.0, 0.0);
+    vertices[1].u = f32::NAN;
+    assert!(
+        ctx.submit_textured(Affine3::IDENTITY, &vertices, &one(), &b)
+            .is_err()
+    );
+    assert_eq!(ctx.textures.len(), 1, "la texture du lot refusé est restée");
+
+    // Le même lot, refusé lui aussi, mais dont la texture était déjà là : la
+    // troncature ne doit pas retirer ce qu'un lot accepté avait posé.
+    assert!(
+        ctx.submit_textured(Affine3::IDENTITY, &vertices, &one(), &a)
+            .is_err()
+    );
+    assert_eq!(ctx.textures.len(), 1, "une texture acceptée a été retirée");
+}

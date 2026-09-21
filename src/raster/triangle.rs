@@ -68,12 +68,20 @@ pub struct Prepared {
     /// `v·d`, qui sont affines en espace écran là où `u` et `v` ne le sont pas.
     uv: [Plane; 2],
     color: u32,
+    /// L'index de la texture dans la table du contexte, ou [`NO_TEXTURE`].
+    texture: u16,
 }
 
-/// Cent vingt-huit octets, deux lignes de cache pleines, et quatre de rab où
-/// l'identifiant de texture entrera sans rien déplacer. La répartition par
+/// Cent vingt-huit octets, deux lignes de cache pleines. La répartition par
 /// tuile parcourt ce tableau deux fois par image : sa taille compte.
 const _: () = assert!(size_of::<Prepared>() == 128);
+
+/// L'index que porte un triangle sans texture.
+///
+/// Une sentinelle plutôt qu'un `Option<u16>` : celui-ci ferait quatre octets
+/// là où deux suffisent, et le test se fait une fois par triangle, hors de la
+/// boucle de pixels.
+pub const NO_TEXTURE: u16 = u16::MAX;
 
 impl Prepared {
     /// Les pixels extrêmes que le triangle peut couvrir : `(x0, y0, x1, y1)`,
@@ -236,7 +244,7 @@ fn last_pixel(subpixel: i32) -> i32 {
 /// son triangle miroir, et jamais en levant le test de signe ci-dessous.
 ///
 /// Rend `None` pour un triangle qui ne peut couvrir aucun centre de pixel.
-pub fn prepare(vertices: [Vertex; 3], color: u32) -> Option<Prepared> {
+pub fn prepare(vertices: [Vertex; 3], color: u32, texture: u16) -> Option<Prepared> {
     let v = vertices.map(|vertex| vertex.position);
     let area = edge(v[0].x, v[0].y, v[1].x, v[1].y, v[2].x, v[2].y);
     // Un seul test pour le dos et pour le dégénéré. Obligatoire et non
@@ -286,6 +294,7 @@ pub fn prepare(vertices: [Vertex; 3], color: u32) -> Option<Prepared> {
             ),
         ],
         color,
+        texture,
     };
     (prepared.x0 <= prepared.x1 && prepared.y0 <= prepared.y1).then_some(prepared)
 }
