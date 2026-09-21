@@ -62,6 +62,15 @@ signature ne change et `SCG_ABI_VERSION` reste à **1**.
   une seule allocation, faite à ce seul appel.
 - API Rust : `VertexUv`, un sommet qui porte ses coordonnées de texture en
   texels, non normalisées.
+- Le remplissage échantillonne une texture, par segments de seize pixels
+  alignés sur la grille de l'image : la réciproque de la profondeur se calcule
+  aux extrémités du segment et les coordonnées s'interpolent affinement entre
+  elles. Les segments se bornent au span du triangle et jamais à la tuile, donc
+  la même surface se texture pareil quel que soit le découpage. Le niveau 0
+  seulement — les mipmaps existent mais rien ne les choisit encore.
+- Une septième scène de conformance, `texture` : un sol en damier qui fuit vers
+  l'horizon, motif écrit dans la suite et non chargé. Les six empreintes
+  précédentes sont inchangées.
 - API Rust : `Context::submit_textured`, qui habille un lot d'une texture. Elle
   vaut pour le lot entier, et le moteur en garde une référence forte jusqu'à la
   fin de l'image : l'hôte peut la libérer de son côté sans que l'image en cours
@@ -124,6 +133,14 @@ is not recorded. No signature changes and `SCG_ABI_VERSION` stays at **1**.
   one call.
 - Rust API: `VertexUv`, a vertex carrying its texture coordinates in texels,
   unnormalised.
+- Filling samples a texture, in sixteen-pixel segments aligned on the image
+  grid: the reciprocal of depth is computed at the segment ends and coordinates
+  are interpolated affinely between them. Segments are bounded by the
+  triangle's span and never by the tile, so the same surface is textured alike
+  whatever the split. Level 0 only — mipmaps exist but nothing selects them yet.
+- A seventh conformance scene, `texture`: a checkerboard floor receding towards
+  the horizon, its pattern written in the suite rather than loaded. The six
+  previous digests are unchanged.
 - Rust API: `Context::submit_textured`, dressing a batch with a texture. It
   applies to the whole batch, and the engine keeps a strong reference to it
   until the frame ends: the host may release its own without the current frame
