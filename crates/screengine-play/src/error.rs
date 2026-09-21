@@ -36,6 +36,12 @@ pub enum Error {
     Window(winit::error::OsError),
     /// La surface de la fenêtre a refusé une opération.
     Surface(softbuffer::SoftBufferError),
+    /// Un PNG passé à [`load_png`](crate::load_png) est illisible.
+    ///
+    /// Celui qui se décode mais que le moteur refuse — un côté qui n'est pas
+    /// une puissance de deux — rend `Engine` : c'est la contrainte du moteur
+    /// qui parle, pas le format.
+    Png(png::DecodingError),
 }
 
 impl fmt::Display for Error {
@@ -99,6 +105,7 @@ impl fmt::Display for Error {
             Self::EventLoop(e) => write!(f, "event loop: {e}"),
             Self::Window(e) => write!(f, "window creation: {e}"),
             Self::Surface(e) => write!(f, "window surface: {e}"),
+            Self::Png(e) => write!(f, "png decoding: {e}"),
         }
     }
 }
@@ -109,6 +116,7 @@ impl std::error::Error for Error {
             Self::EventLoop(e) => Some(e),
             Self::Window(e) => Some(e),
             Self::Surface(e) => Some(e),
+            Self::Png(e) => Some(e),
             Self::Engine(_) | Self::Setting(_) | Self::ScaleTooLarge { .. } => None,
         }
     }
@@ -123,5 +131,11 @@ impl From<screengine::Error> for Error {
 impl From<softbuffer::SoftBufferError> for Error {
     fn from(error: softbuffer::SoftBufferError) -> Self {
         Self::Surface(error)
+    }
+}
+
+impl From<png::DecodingError> for Error {
+    fn from(error: png::DecodingError) -> Self {
+        Self::Png(error)
     }
 }

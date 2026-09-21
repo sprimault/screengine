@@ -8,7 +8,8 @@ you hand it a scene and a buffer, it fills the buffer.
 MIT or Apache-2.0, at your option — see [`LICENSE-MIT`](LICENSE-MIT) and
 [`LICENSE-APACHE`](LICENSE-APACHE). Unless you state otherwise, any contribution
 you submit for inclusion is dual licensed the same way, without additional terms
-or conditions.
+or conditions. The textures in this repository were produced for the project and
+carry the same licences: nothing here comes from an existing game.
 
 The target is the class of 1996–1998 software renderers, done properly: true
 colour, perspective-correct texturing, mipmaps, lightmaps, fog, ordered-dither
@@ -145,7 +146,7 @@ make web       # serves the wasm host page on http://127.0.0.1:8080/
 
 The core is `no_std` and has no dependencies. A fresh clone builds with nothing
 installed beyond a Rust toolchain; only `screengine-play` carries dependencies,
-`winit` and `softbuffer`.
+`winit`, `softbuffer` and `png`.
 
 The wasm host needs Node and the `wasm32-unknown-unknown` target, which
 `make tools` installs; the Android host needs the NDK, SDK, emulator and

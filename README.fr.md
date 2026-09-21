@@ -8,7 +8,8 @@ GPU, pas de fenêtre : on lui donne une scène et un tampon, il remplit le tampo
 MIT ou Apache-2.0, au choix — voir [`LICENSE-MIT`](LICENSE-MIT) et
 [`LICENSE-APACHE`](LICENSE-APACHE). Sauf mention contraire de son auteur, toute
 contribution proposée à l'inclusion est placée sous ces deux mêmes licences, sans
-condition supplémentaire.
+condition supplémentaire. Les textures versionnées sont produites pour le projet
+et suivent les mêmes licences : rien ici ne vient d'un jeu existant.
 
 La cible est la classe des moteurs logiciels de 1996 à 1998, faite proprement :
 couleurs directes, perspective corrigée, mipmaps, lightmaps, brouillard, filtrage
@@ -146,7 +147,7 @@ make web       # sert la page de l'hôte wasm sur http://127.0.0.1:8080/
 
 Le noyau est `no_std` et n'a aucune dépendance. Un dépôt fraîchement cloné
 compile sans rien installer d'autre qu'une chaîne Rust ; seul `screengine-play`
-porte des dépendances, `winit` et `softbuffer`.
+porte des dépendances : `winit`, `softbuffer` et `png`.
 
 L'hôte wasm demande Node et la cible `wasm32-unknown-unknown`, que
 `make tools` installe ; l'hôte Android demande NDK, SDK, émulateur et

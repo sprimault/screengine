@@ -45,7 +45,7 @@ leurs dans le noyau. Et la frontière C exige `std` et `unsafe`, que le noyau re
 | `screengine` | le noyau : maths, pipeline, rasteriseur, formats, monde | non | aucune | chemins SIMD seulement |
 | `screengine-ffi` | la frontière C, en rlib | oui | `screengine` | oui |
 | `screengine-lib` | les bibliothèques publiées, `cdylib` + `staticlib`, sous le nom `screengine` | oui | `screengine-ffi` | non |
-| `screengine-play` | étage d'accueil : fenêtre, entrées, boucle à pas fixe, mise à l'échelle | oui | `winit`, `softbuffer` | non |
+| `screengine-play` | étage d'accueil : fenêtre, entrées, boucle à pas fixe, mise à l'échelle, décodage PNG | oui | `winit`, `softbuffer`, `png` | non |
 | `screengine-conformance` | scènes de référence, empreintes | oui | `screengine` | l'allocateur qui compte, dans son test seulement |
 
 **Un crate se crée pour une contrainte de compilation, jamais pour ranger.** Les
@@ -124,6 +124,10 @@ l'hôte gardant sa fenêtre, sa boucle et ses entrées.
   régulières. Écartés : `pixels` et `wgpu`, qui font dépendre l'affichage d'un
   moteur logiciel d'un pilote graphique, et SDL, qui ajoute une bibliothèque C à
   construire.
+- **Le décodage d'images y est aussi**, par `png`. Le moteur n'ouvre aucun
+  fichier et ne connaît aucun format : il reçoit un bloc de texels RGBA. Un hôte
+  écrit contre l'ABI C décode avec ce que sa plateforme lui donne, et ce crate
+  fait le même travail pour le chemin Rust.
 
 ## Dépendances
 
