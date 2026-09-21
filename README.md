@@ -42,12 +42,12 @@ for those making a game, and the engine does not know it exists.
 
 ## Status
 
-**Step 1 cleared, released as 0.1.0: the pipeline, without textures or
-light.** Vectors, quaternions and table-driven trigonometry, projection,
-clipping in homogeneous space, a depth buffer, an edge-function rasteriser and
-tiled rendering. The host describes its scene — a camera, vertices, coloured
-triangles — and all four reference hosts render the same image, bit for bit.
-Surfaces are flat colours: textures are step 2, light is step 3.
+**Step 2 cleared, released as 0.2.0: textures.** Loading an RGBA8 block whose
+mipmap chain is built on load, perspective corrected over sixteen-pixel
+segments aligned on the image grid, a mipmap level picked per segment, and two
+filters at the host's choice — ordered dithering of texture coordinates by
+default, bilinear above it. All four reference hosts render the same image, bit
+for bit, filtering included. Light is step 3.
 
 The roadmap has ten steps, each one published.
 

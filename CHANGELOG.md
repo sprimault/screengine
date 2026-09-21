@@ -46,6 +46,8 @@ publié, et explique les conventions du dépôt à qui y contribue.
 
 ## [Non publié]
 
+## [0.2.0] — 2026-09-22 — Textures
+
 **Ce qu'un hôte de la 0.1.0 doit reprendre.** Une coordonnée de sommet non
 finie refuse désormais le lot entier, là où elle faisait disparaître son
 triangle en silence ; c'est ce que le contrat d'ABI annonçait déjà. Un hôte qui

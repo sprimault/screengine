@@ -43,13 +43,13 @@ ces hôtes, écrit en Rust pour qui fait un jeu, et le moteur ignore son existen
 
 ## État
 
-**Étape 1 franchie, publiée en 0.1.0 : le pipeline, sans textures ni
-lumière.** Vecteurs, quaternions et trigonométrie par tables, projection,
-découpage en espace homogène, tampon de profondeur, rasteriseur à fonctions de
-bord et rendu par tuiles. L'hôte décrit sa scène — une caméra, des sommets, des
-triangles colorés — et les quatre hôtes de référence rendent la même image au
-bit près. Les surfaces sont des aplats : les textures sont l'étape 2, la
-lumière l'étape 3.
+**Étape 2 franchie, publiée en 0.2.0 : les textures.** Chargement d'un bloc
+RGBA8 dont la chaîne de mipmaps est engendrée au chargement, perspective
+corrigée par segments de seize pixels alignés sur la grille de l'image, niveau
+de mipmap choisi par segment, et deux filtrages au choix de l'hôte — tramage
+ordonné des coordonnées par défaut, bilinéaire au-dessus. Les quatre hôtes de
+référence rendent la même image au bit près, filtrage compris. La lumière est
+l'étape 3.
 
 La feuille de route compte dix étapes, publiées à chacune.
 
