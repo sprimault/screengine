@@ -3,9 +3,9 @@
 Cibles, matrice de compilation, génération du header, liaisons. Toute question
 du genre « pourquoi le `.so` Android ne se charge pas » se tranche ici.
 
-**État : l'étape 0 est livrée.** Ce document décrit la construction telle
-qu'elle est ; les points que l'outillage réel doit encore confirmer sont marqués
-**À vérifier**, et les choix restants **À trancher**.
+**État : l'étape 2 est publiée en 0.2.0.** Ce document décrit la construction
+telle qu'elle est ; les points que l'outillage réel doit encore confirmer sont
+marqués **À vérifier**, et les choix restants **À trancher**.
 
 ## Passer par le `Makefile`
 
@@ -35,8 +35,10 @@ Sans lui, un clone se construit dans `target/`.
 
 Les versions sont épinglées dans le `Makefile` et nulle part ailleurs.
 `make tools` les installe, avec les cibles `thumbv7em-none-eabihf`,
-`wasm32-unknown-unknown` et les trois cibles Android, sur lesquelles `make lint`
-passe aussi clippy. L'intégration
+`wasm32-unknown-unknown` et les trois cibles Android. `make lint` passe aussi
+clippy sur `wasm32-unknown-unknown` et sur les trois cibles Android, là où un
+`cfg` propre à une plateforme ne serait vérifié par rien d'autre ; la cible sans
+`std`, elle, est couverte par `make nostd`, qui la compile. L'intégration
 continue appelle `make tools` et lit les versions par `make print-CBINDGEN_VERSION`
 plutôt que de les recopier.
 
@@ -352,7 +354,9 @@ publiées. Ce qui suit est ce que chaque langage impose au chargement.
 - **JavaScript** : instancie le `.wasm`, alloue par `scg_buffer_alloc`, écrit les
   structures octet par octet selon les décalages du header — d'où l'absence de
   remplissage implicite exigée par `abi.md`.
-- **Java / Kotlin** : par la couche JNI de C3.
+- **Java / Kotlin** : par la couche JNI décrite plus haut, section « Android ».
+  Elle est en C, n'exporte que `JNI_OnLoad`, et enregistre ses méthodes par
+  `RegisterNatives`.
 
 ## Intégration continue
 

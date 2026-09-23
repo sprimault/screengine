@@ -12,6 +12,13 @@
 pub enum Scale {
     /// Le plus grand facteur entier qui tient, image centrée, bandes noires
     /// autour. Chaque pixel devient un carré net, sans aucun mélange.
+    ///
+    /// **Sauf sous la résolution interne**, où aucun facteur entier ne tient :
+    /// l'image se replie alors sur un ajustement à proportions gardées, avec le
+    /// fondu d'un pixel de `Fill`. Rendre des bandes noires autour d'une image
+    /// tronquée serait pire, et refuser d'afficher ferait d'une fenêtre réduite
+    /// une erreur — ce qu'elle n'est pas, la taille changeant aussi avec le
+    /// facteur d'échelle de l'écran.
     #[default]
     Integer,
     /// Toute la fenêtre à proportions gardées, par un facteur quelconque.

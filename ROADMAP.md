@@ -4,8 +4,11 @@ Les numéros font foi : ce sont eux que portent les `todo!("étape N : …")` du
 code.
 
 ```
-rg -o 'todo!\("étape' crates --glob '!*tests*' | wc -l
+rg -o 'todo!\("étape' src crates --glob '!*tests*' | wc -l
 ```
+
+`src` autant que `crates` : le noyau est le paquet racine, et une mesure qui ne
+regarde que `crates/` ignore précisément l'endroit où le travail se fait.
 
 C'est la mesure d'avancement la plus honnête du projet. Elle descend toute
 seule, et elle ne ment pas.
