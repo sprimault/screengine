@@ -157,6 +157,47 @@ impl VertexUv {
     }
 }
 
+/// Un sommet qui porte un second jeu de coordonnées, celui de la lightmap.
+///
+/// **Un type à part plutôt que deux champs de plus sur [`VertexUv`]** : celui-ci
+/// traverse déjà l'ABI sous sa forme publiée, qu'on n'élargit pas. Un hôte qui
+/// n'éclaire rien continue d'écrire des sommets de quatre flottants au lieu de
+/// six, et les surfaces éclairées se soumettent par leur propre chemin.
+///
+/// Les deux jeux sont indépendants : une même surface s'habille d'une texture
+/// répétée plusieurs fois et d'une lightmap étirée une seule fois sur toute son
+/// étendue, ce qui est précisément la raison d'être du second jeu.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct VertexUv2 {
+    /// Sa position, dans le repère de l'objet.
+    pub position: Vec3,
+    /// L'abscisse dans la texture, en texels.
+    pub u: f32,
+    /// L'ordonnée dans la texture, en texels.
+    pub v: f32,
+    /// L'abscisse dans la lightmap, en texels de lightmap.
+    pub u2: f32,
+    /// L'ordonnée dans la lightmap, en texels de lightmap.
+    pub v2: f32,
+}
+
+impl VertexUv2 {
+    /// Le sommet d'une soumission sans éclairage, dont le second jeu est nul.
+    ///
+    /// C'est par là que le chemin ordinaire rejoint le chemin général : la
+    /// soumission travaille sur un seul type de sommet, et les plans du second
+    /// jeu ne se construisent que lorsque le lot en porte.
+    pub const fn unlit(v: VertexUv) -> Self {
+        Self {
+            position: v.position,
+            u: v.u,
+            v: v.v,
+            u2: 0.0,
+            v2: 0.0,
+        }
+    }
+}
+
 /// Un triangle soumis : trois indices dans le tableau de sommets, et sa couleur.
 ///
 /// La couleur est portée par le triangle et non par le lot : une surface entière

@@ -69,6 +69,33 @@ pub struct ClipVertex {
     pub u: f32,
     /// L'ordonnée dans la texture, en texels, telle que soumise.
     pub v: f32,
+    /// L'abscisse dans la lightmap, en texels, telle que soumise.
+    ///
+    /// Portée par tous les sommets, nulle quand le lot n'est pas éclairé.
+    /// Écarté : deux formes de sommet selon que le lot porte une lightmap, qui
+    /// aurait doublé le découpage — le code le plus délicat de l'étape 1 — pour
+    /// économiser huit octets sur une pile qui en a cent vingt-huit mille.
+    pub u2: f32,
+    /// L'ordonnée dans la lightmap, en texels, telle que soumise.
+    pub v2: f32,
+}
+
+impl ClipVertex {
+    /// Le sommet de remplissage des tampons de découpe.
+    ///
+    /// Il ne désigne aucun point — `w` nul n'est pas projetable — et n'est
+    /// jamais lu : seuls les `len` premiers sommets d'un polygone comptent.
+    /// Nommé plutôt que réécrit à chaque tampon, pour qu'un champ ajouté ne se
+    /// rattrape pas à trois endroits.
+    pub const ZERO: Self = Self {
+        x: 0.0,
+        y: 0.0,
+        w: 0.0,
+        u: 0.0,
+        v: 0.0,
+        u2: 0.0,
+        v2: 0.0,
+    };
 }
 
 /// Les cinq plans contre lesquels un triangle se découpe.
@@ -145,6 +172,12 @@ impl Frustum {
             // ci-dessus ne dit rien de particulier sur `x`, `y` et `w`.
             u: (da * b.u - db * a.u) * inverse,
             v: (da * b.v - db * a.v) * inverse,
+            // La lightmap est un second placage sur la même surface : elle est
+            // affine dans le même paramètre que le premier, et s'interpole donc
+            // par la même expression, sans quoi les deux glisseraient l'un par
+            // rapport à l'autre le long d'une arête découpée.
+            u2: (da * b.u2 - db * a.u2) * inverse,
+            v2: (da * b.v2 - db * a.v2) * inverse,
         }
     }
 
@@ -248,7 +281,10 @@ impl Projection {
     /// distance de plan ne puisse déborder. Un `NaN` tomberait du côté extérieur
     /// de chaque plan, donc disparaîtrait de lui-même — mais un seul sommet
     /// suffirait à empoisonner les deux autres par le calcul d'intersection.
-    pub fn to_clip(self, view: Vec3, u: f32, v: f32) -> Option<ClipVertex> {
+    /// `u2` et `v2` sont les coordonnées de lightmap, nulles sur un sommet qui
+    /// n'en porte pas : le second jeu traverse toute la chaîne, et seuls ses
+    /// plans se construisent à la demande.
+    pub fn to_clip(self, view: Vec3, u: f32, v: f32, u2: f32, v2: f32) -> Option<ClipVertex> {
         let over = |v: f32| v.is_nan() || v.abs() > COORDINATE_LIMIT;
         // Après la multiplication, jamais avant : c'est la coordonnée de clip
         // qui entre dans le découpage. Les facteurs d'échelle étant finis et
@@ -268,6 +304,8 @@ impl Projection {
             w: view.z,
             u,
             v,
+            u2,
+            v2,
         })
     }
 
@@ -298,6 +336,11 @@ impl Projection {
             z: to_depth(depth),
             s: to_texel(v.u * depth),
             t: to_texel(v.v * depth),
+            // La même profondeur, et c'est essentiel : deux placages formés sur
+            // des profondeurs différentes se décaleraient l'un par rapport à
+            // l'autre au pixel, alors qu'ils désignent la même surface.
+            s2: to_texel(v.u2 * depth),
+            t2: to_texel(v.v2 * depth),
         }
     }
 }
@@ -322,6 +365,14 @@ pub struct ProjectedVertex {
     pub s: i32,
     /// L'ordonnée de texture multipliée par la profondeur, en 14.12.
     pub t: i32,
+    /// L'abscisse de lightmap multipliée par la profondeur, en 14.12.
+    ///
+    /// Le format des deux placages est le même, à l'identique : la lightmap
+    /// s'interpole, se divise et se replie exactement comme la texture, et rien
+    /// du remplissage n'a de constante propre à elle.
+    pub s2: i32,
+    /// L'ordonnée de lightmap multipliée par la profondeur, en 14.12.
+    pub t2: i32,
 }
 
 #[cfg(test)]

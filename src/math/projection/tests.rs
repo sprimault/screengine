@@ -19,17 +19,16 @@ fn projection() -> Projection {
 /// Le passage en espace de clip d'un sommet sans texture, pour les cas où les
 /// coordonnées de texture ne sont pas le sujet.
 fn to_clip(p: Projection, view: Vec3) -> Option<ClipVertex> {
-    Projection::to_clip(p, view, 0.0, 0.0)
+    Projection::to_clip(p, view, 0.0, 0.0, 0.0, 0.0)
 }
 
-/// Un sommet de clip sans texture, écrit par ses trois coordonnées.
+/// Un sommet de clip sans placage, écrit par ses trois coordonnées.
 fn cv(x: f32, y: f32, w: f32) -> ClipVertex {
     ClipVertex {
         x,
         y,
         w,
-        u: 0.0,
-        v: 0.0,
+        ..ClipVertex::ZERO
     }
 }
 
@@ -137,14 +136,19 @@ fn la_coordonnee_de_texture_se_forme_sur_la_profondeur_rendue() {
     for _ in 0..1000 {
         let u = rng.unit_f32() * 2000.0 - 1000.0;
         let w = 0.2 + rng.unit_f32() * 50.0;
-        let clip =
-            Projection::to_clip(p, Vec3::new(0.5, -0.25, w), u, -u).expect("sommet projetable");
+        // Le second jeu passe par le même chemin, sur des valeurs sans rapport
+        // avec le premier : un axe échangé entre les deux jeux se verrait ici.
+        let (u2, v2) = (u * 0.125, 3.0 - u);
+        let clip = Projection::to_clip(p, Vec3::new(0.5, -0.25, w), u, -u, u2, v2)
+            .expect("sommet projetable");
         let v = p.to_vertex(clip);
 
         let depth = p.near * (1.0 / w);
         assert_eq!(v.z, to_depth(depth));
         assert_eq!(v.s, to_texel(u * depth), "u {u}, w {w}");
         assert_eq!(v.t, to_texel(-u * depth), "u {u}, w {w}");
+        assert_eq!(v.s2, to_texel(u2 * depth), "u2 {u2}, w {w}");
+        assert_eq!(v.t2, to_texel(v2 * depth), "v2 {v2}, w {w}");
     }
 }
 
@@ -242,6 +246,11 @@ fn l_intersection_est_symetrique_au_bit_pres() {
             w: rng.unit_f32() * 20.0 - 5.0,
             u: rng.unit_f32() * 512.0 - 256.0,
             v: rng.unit_f32() * 512.0 - 256.0,
+            // La lightmap entre dans le tirage au même titre : elle passe par
+            // la même expression d'intersection, et une asymétrie qui ne
+            // toucherait qu'elle ne se verrait nulle part ailleurs.
+            u2: rng.unit_f32() * 512.0 - 256.0,
+            v2: rng.unit_f32() * 512.0 - 256.0,
         };
         let (a, b) = (point(&mut rng), point(&mut rng));
         for plane in 0..PLANE_COUNT {

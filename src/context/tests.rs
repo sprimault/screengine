@@ -596,3 +596,159 @@ fn le_tampon_ressort_opaque_quelle_que_soit_la_couleur_soumise() {
         "{peints} pixels peints, le cas ne couvre rien"
     );
 }
+
+/// Les sommets de `ahead`, habillés des deux jeux de coordonnées.
+fn ahead_uv2(u: f32, v: f32, u2: f32, v2: f32) -> [VertexUv2; 3] {
+    ahead().map(|position| VertexUv2 {
+        position,
+        u,
+        v,
+        u2,
+        v2,
+    })
+}
+
+/// Soumet un lot éclairé d'un seul triangle, par la forme à fonction d'accès.
+fn submit_lit(ctx: &mut Context, vertices: [VertexUv2; 3]) -> Result<()> {
+    ctx.submit_each_lit(Affine3::IDENTITY, 1, None, |_| {
+        Ok((vertices, one()[0].color))
+    })
+}
+
+/// Un lot éclairé range ses plans dans le tableau annexe, et chaque triangle
+/// préparé désigne sa propre place.
+///
+/// Le triangle est **découpé par le plan proche**, donc il en produit
+/// plusieurs : c'est le seul cas où la correspondance peut se décaler, un
+/// triangle soumis donnant plusieurs triangles préparés.
+#[test]
+fn un_lot_eclaire_range_ses_plans_dans_l_ordre() {
+    let mut ctx = small();
+    // Un sommet derrière la caméra, deux devant : le découpage par le plan
+    // proche engendre un quadrilatère, donc deux triangles préparés.
+    let coupe = [
+        Vec3::new(-10.0, -2.0, -2.0),
+        Vec3::new(10.0, 0.0, 2.0),
+        Vec3::new(10.0, 2.0, -2.0),
+    ];
+    let vertices = [0, 1, 2].map(|i| VertexUv2 {
+        position: coupe[i],
+        u: 0.0,
+        v: 0.0,
+        u2: i as f32,
+        v2: -(i as f32),
+    });
+    submit_lit(&mut ctx, vertices).expect("capacité");
+
+    assert!(ctx.triangles.len() > 1, "le cas n'a pas été découpé");
+    assert_eq!(ctx.lighting.len(), ctx.triangles.len());
+    for (place, triangle) in ctx.triangles.iter().enumerate() {
+        assert_eq!(
+            triangle.lighting() as usize,
+            place,
+            "le triangle {place} désigne la place d'un autre"
+        );
+    }
+}
+
+/// Un lot ordinaire ne touche pas au tableau annexe, et ses triangles portent
+/// la sentinelle : le second jeu existe dans les sommets, mais ses plans ne se
+/// construisent que pour un lot qui les demande.
+#[test]
+fn un_lot_ordinaire_ne_remplit_pas_le_tableau_annexe() {
+    let mut ctx = small();
+    ctx.submit_uv(Affine3::IDENTITY, &ahead_uv(4.0, 8.0), &one())
+        .expect("capacité");
+
+    assert_eq!(ctx.triangles.len(), 1);
+    assert!(ctx.lighting.is_empty());
+    assert_eq!(ctx.triangles[0].lighting(), NO_LIGHTING);
+}
+
+/// Un lot éclairé refusé ne laisse rien dans le tableau annexe.
+///
+/// Sans la troncature, les places survivantes décaleraient toutes celles des
+/// lots suivants : chaque triangle lirait les coordonnées de son voisin, sans
+/// qu'aucune longueur ne cesse de concorder.
+#[test]
+fn un_lot_eclaire_refuse_ne_laisse_aucune_place() {
+    let mut ctx = small();
+    submit_lit(&mut ctx, ahead_uv2(0.0, 0.0, 1.0, 2.0)).expect("capacité");
+    let pose = ctx.lighting.len();
+    assert_eq!(pose, 1);
+
+    // Le second triangle du lot est refusé, le premier était bon : c'est le
+    // cas où une troncature manquante ne se voit pas dans les longueurs.
+    let vertices = ahead_uv2(0.0, 0.0, 1.0, 2.0);
+    let mauvais = ahead_uv2(0.0, 0.0, MAX_TEXEL_COORD * 1.5, 0.0);
+    assert_eq!(
+        ctx.submit_each_lit(Affine3::IDENTITY, 2, None, |i| {
+            Ok((if i == 0 { vertices } else { mauvais }, one()[0].color))
+        }),
+        Err(Error::InvalidArgument(Argument::TextureCoordinate))
+    );
+    assert_eq!(ctx.lighting.len(), pose, "une place a survécu au refus");
+    assert_eq!(ctx.triangles.len(), 1);
+}
+
+/// La borne des coordonnées porte aussi sur le second jeu.
+#[test]
+fn une_coordonnee_de_lightmap_hors_borne_refuse_le_lot() {
+    for bad in [f32::NAN, f32::INFINITY, MAX_TEXEL_COORD * 1.5] {
+        let mut ctx = small();
+        assert_eq!(
+            submit_lit(&mut ctx, ahead_uv2(0.0, 0.0, bad, 0.0)),
+            Err(Error::InvalidArgument(Argument::TextureCoordinate)),
+            "{bad}"
+        );
+        assert_eq!(
+            submit_lit(&mut ctx, ahead_uv2(0.0, 0.0, 0.0, bad)),
+            Err(Error::InvalidArgument(Argument::TextureCoordinate)),
+            "{bad}"
+        );
+    }
+}
+
+/// **Le critère du lot** : un lot éclairé rend exactement l'image qu'il
+/// rendrait sans l'être.
+///
+/// Le second jeu de coordonnées traverse toute la chaîne — soumission,
+/// projection, découpage, préparation — et rien ne le lit encore. Un seul
+/// pixel de différence voudrait dire qu'il a débordé sur le premier jeu quelque
+/// part, et c'est le genre d'écart qu'on ne retrouve plus une fois le
+/// remplissage éclairé écrit par-dessus.
+#[test]
+fn un_lot_eclaire_rend_la_meme_image_qu_un_lot_ordinaire() {
+    let mut eclaire = small();
+    let mut ordinaire = small();
+    submit_lit(&mut eclaire, ahead_uv2(4.0, 8.0, 0.25, -0.75)).expect("capacité");
+    ordinaire
+        .submit_uv(Affine3::IDENTITY, &ahead_uv(4.0, 8.0), &one())
+        .expect("capacité");
+
+    let render = |ctx: &mut Context| {
+        let mut pixels = vec![0u8; 64 * 64 * BYTES_PER_PIXEL];
+        ctx.frame_end(&mut pixels, 64).expect("image rendue");
+        pixels
+    };
+    let (a, b) = (render(&mut eclaire), render(&mut ordinaire));
+    assert!(
+        a.chunks_exact(BYTES_PER_PIXEL).any(|p| p[0] == 0xFF),
+        "le cas ne peint rien"
+    );
+    assert!(a == b, "le second jeu de coordonnées a changé l'image");
+}
+
+/// La fin d'image vide le tableau annexe comme elle vide les triangles : gardé,
+/// il ferait démarrer l'image suivante sur des places déjà prises.
+#[test]
+fn la_fin_d_image_vide_le_tableau_annexe() {
+    let mut ctx = small();
+    submit_lit(&mut ctx, ahead_uv2(0.0, 0.0, 1.0, 2.0)).expect("capacité");
+    let mut pixels = vec![0u8; 64 * 64 * BYTES_PER_PIXEL];
+    ctx.frame_end(&mut pixels, 64).expect("image rendue");
+
+    submit_lit(&mut ctx, ahead_uv2(0.0, 0.0, 1.0, 2.0)).expect("capacité");
+    assert_eq!(ctx.lighting.len(), 1);
+    assert_eq!(ctx.triangles[0].lighting(), 0);
+}

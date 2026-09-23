@@ -15,9 +15,10 @@ use crate::math::fixed::MAX_TEXEL_COORD;
 use crate::math::projection::ClipVertex;
 use crate::math::{Affine3, Projection, Vec3};
 use crate::raster::{
-    Bins, Grid, MAX_CLIP_TRIANGLES, NO_TEXTURE, Point, Prepared, Vertex, clip, prepare,
+    Bins, Grid, Lighting, MAX_CLIP_TRIANGLES, NO_LIGHTING, NO_TEXTURE, Point, Prepared, Vertex,
+    clip, prepare, prepare_lit,
 };
-use crate::scene::{Camera, Color, Triangle, VertexUv};
+use crate::scene::{Camera, Color, Triangle, VertexUv, VertexUv2};
 use crate::texture::{Filter, Texture};
 
 pub use frame::{Frame, Output, Rows};
@@ -131,6 +132,14 @@ pub struct Context {
     /// du rasteriseur. Elle tient une référence forte, si bien qu'une texture
     /// détruite pendant qu'une image la référence reste lisible.
     textures: Vec<Arc<Texture>>,
+    /// Les plans d'éclairage des triangles qui en portent, indexés par la place
+    /// que chacun retient.
+    ///
+    /// Un tableau annexe plutôt que deux plans de plus dans [`Prepared`] :
+    /// voir [`Lighting`]. Il est réservé pour la capacité entière parce qu'une
+    /// image peut n'avoir que des triangles éclairés, et grandir en cours
+    /// d'image est exactement ce que le moteur s'interdit.
+    lighting: Vec<Lighting>,
     bins: Bins,
     /// Vrai pour chaque tuile déjà prise dans l'image en cours.
     ///
@@ -176,6 +185,10 @@ struct ClipSource {
     u: f32,
     /// L'ordonnée de texture, en texels.
     v: f32,
+    /// L'abscisse de lightmap, nulle sur un lot qui n'en porte pas.
+    u2: f32,
+    /// L'ordonnée de lightmap, nulle sur un lot qui n'en porte pas.
+    v2: f32,
 }
 
 /// Le contexte accepte la scène : aucune image n'est commencée.
@@ -205,6 +218,22 @@ fn texture_capacity(triangles: usize) -> usize {
     triangles.min(u16::MAX as usize)
 }
 
+/// Les triangles éclairés qu'une image peut porter, pour une capacité de
+/// `triangles` triangles préparés.
+///
+/// Même plafond dur et pour la même raison que la table de textures :
+/// [`NO_LIGHTING`] occupe `u16::MAX`, et c'est un `u16` que [`Prepared`] garde
+/// dans les deux octets qu'il avait en bourrage. Au-delà, un lot éclairé se
+/// refuse par la capacité de triangles — c'en est une, celle des triangles qui
+/// portent un second jeu de coordonnées.
+///
+/// Une capacité qui dépasse ce plafond n'est donc pas une capacité éclairée
+/// équivalente ; en dessous, et c'est le cas de la valeur par défaut, les deux
+/// se confondent et aucun triangle ne se refuse pour cette raison.
+fn lighting_capacity(triangles: usize) -> usize {
+    triangles.min(NO_LIGHTING as usize)
+}
+
 impl Context {
     /// Crée un contexte, ou refuse la configuration.
     ///
@@ -225,6 +254,7 @@ impl Context {
             height: config.height,
             triangles: reserved(capacity)?,
             textures: reserved(texture_capacity(capacity))?,
+            lighting: reserved(lighting_capacity(capacity))?,
             bins: Bins::new(tiles as usize, capacity)?,
             taken,
             grid: Grid::new(config.width, config.height, config.tile_size),
@@ -325,6 +355,7 @@ impl Context {
     fn drop_closed_frame(&mut self) {
         if *self.stale.get_mut() {
             self.triangles.clear();
+            self.lighting.clear();
             // Les textures meurent avec les triangles qui les référencent :
             // les garder ferait vivre une ressource que plus rien ne dessine.
             self.textures.clear();
@@ -429,6 +460,29 @@ impl Context {
         })
     }
 
+    /// Soumet un lot dont les sommets portent un second jeu de coordonnées.
+    ///
+    /// Même contrat que [`Context::submit_each_uv`] pour le reste. Les plans du
+    /// second jeu vont dans le tableau annexe de l'image, et rien ne les lit
+    /// encore : un lot soumis par ici rend exactement ce qu'il rendrait par
+    /// [`Context::submit_each_uv`].
+    ///
+    /// Le nombre de triangles **éclairés** d'une image est plafonné par la
+    /// sentinelle du tableau annexe, plus bas que la capacité quand celle-ci
+    /// dépasse 65535 ; le dépassement se refuse par la capacité de triangles.
+    pub fn submit_each_lit<F>(
+        &mut self,
+        model: Affine3,
+        count: usize,
+        texture: Option<&Arc<Texture>>,
+        read: F,
+    ) -> Result<()>
+    where
+        F: Fn(usize) -> Result<([VertexUv2; 3], Color)>,
+    {
+        self.submit_lot(model, count, texture, true, read)
+    }
+
     /// Soumet un lot de triangles habillés d'une texture.
     ///
     /// **La texture vaut pour le lot entier**, et non pour chaque triangle :
@@ -496,14 +550,35 @@ impl Context {
     where
         F: Fn(usize) -> Result<([VertexUv; 3], Color)>,
     {
+        self.submit_lot(model, count, texture, false, |i| {
+            let (corners, color) = read(i)?;
+            Ok((corners.map(VertexUv2::unlit), color))
+        })
+    }
+
+    /// Le corps commun des deux soumissions par fonction d'accès : le second
+    /// jeu de coordonnées est toujours là, `lit` dit seulement si ses plans se
+    /// construisent.
+    fn submit_lot<F>(
+        &mut self,
+        model: Affine3,
+        count: usize,
+        texture: Option<&Arc<Texture>>,
+        lit: bool,
+        read: F,
+    ) -> Result<()>
+    where
+        F: Fn(usize) -> Result<([VertexUv2; 3], Color)>,
+    {
         if *self.state.get_mut() != RECORDING {
             return Err(Error::InvalidState);
         }
         self.drop_closed_frame();
         let (mark, textures) = (self.triangles.len(), self.textures.len());
+        let lights = self.lighting.len();
         let result = self
             .record_texture(texture)
-            .and_then(|index| self.submit_batch(model, count, index, read));
+            .and_then(|index| self.submit_batch(model, count, index, lit, read));
         // Un lot refusé, mais aussi un lot accepté dont pas un triangle n'a
         // survécu à la projection : dans les deux cas la table garderait une
         // texture que plus rien ne référence, et le plafond ne se déduirait
@@ -511,6 +586,7 @@ impl Context {
         // lots invisibles pour le remplir.
         if result.is_err() || self.triangles.len() == mark {
             self.triangles.truncate(mark);
+            self.lighting.truncate(lights);
             // La texture n'est retirée que si ce lot l'a ajoutée : déjà
             // présente, la table n'a pas grandi et la troncature ne fait rien.
             self.textures.truncate(textures);
@@ -542,9 +618,16 @@ impl Context {
 
     /// Le corps de [`Context::submit_each_uv`], qui peut laisser le lot à
     /// moitié posé.
-    fn submit_batch<F>(&mut self, model: Affine3, count: usize, texture: u16, read: F) -> Result<()>
+    fn submit_batch<F>(
+        &mut self,
+        model: Affine3,
+        count: usize,
+        texture: u16,
+        lit: bool,
+        read: F,
+    ) -> Result<()>
     where
-        F: Fn(usize) -> Result<([VertexUv; 3], Color)>,
+        F: Fn(usize) -> Result<([VertexUv2; 3], Color)>,
     {
         let transform = self.view.product(model);
         for i in 0..count {
@@ -564,7 +647,10 @@ impl Context {
             // convexes. Revalider en aval serait de la défensive sur une valeur
             // qui ne peut plus sortir que par un défaut du moteur.
             let off = |c: f32| c.is_nan() || c.abs() > MAX_TEXEL_COORD;
-            if corners.iter().any(|c| off(c.u) || off(c.v)) {
+            if corners
+                .iter()
+                .any(|c| off(c.u) || off(c.v) || off(c.u2) || off(c.v2))
+            {
                 return Err(Error::InvalidArgument(Argument::TextureCoordinate));
             }
             self.submit_view(
@@ -572,9 +658,12 @@ impl Context {
                     view: transform.transform_point(c.position),
                     u: c.u,
                     v: c.v,
+                    u2: c.u2,
+                    v2: c.v2,
                 }),
                 color,
                 texture,
+                lit,
             )?;
         }
         Ok(())
@@ -584,14 +673,32 @@ impl Context {
     ///
     /// La couleur y est déjà l'entier du rasteriseur : [`Color`] appartient à
     /// la scène, et se convertit au plus tôt.
-    fn push(&mut self, v: [Vertex; 3], color: u32, texture: u16) -> Result<()> {
-        let Some(triangle) = prepare(v, color, texture) else {
+    ///
+    /// Un triangle éclairé range ses plans dans le tableau annexe à la place
+    /// qu'il retient. Le rangement se fait après les deux refus : un triangle
+    /// qu'on n'ajoute pas ne doit rien laisser derrière lui, et le tableau
+    /// annexe n'a aucun moyen de désigner ses trous.
+    fn push(&mut self, v: [Vertex; 3], color: u32, texture: u16, lit: bool) -> Result<()> {
+        let slot = self.lighting.len();
+        let prepared = if lit {
+            if slot >= lighting_capacity(self.config.capacity()) {
+                return Err(Error::InvalidArgument(Argument::TriangleCapacity));
+            }
+            // `slot` est sous la sentinelle, donc sous `u16::MAX`.
+            prepare_lit(v, color, texture, slot as u16).map(|(p, l)| (p, Some(l)))
+        } else {
+            prepare(v, color, texture).map(|p| (p, None))
+        };
+        let Some((triangle, lighting)) = prepared else {
             return Ok(());
         };
         if self.triangles.len() >= self.config.capacity() {
             return Err(Error::InvalidArgument(Argument::TriangleCapacity));
         }
         self.triangles.push(triangle);
+        if let Some(lighting) = lighting {
+            self.lighting.push(lighting);
+        }
         Ok(())
     }
 
@@ -606,16 +713,19 @@ impl Context {
     ///
     /// Un sommet qu'on ne peut pas projeter fait disparaître le triangle sans
     /// erreur : c'est une donnée, pas un défaut du moteur.
-    fn submit_view(&mut self, view: [ClipSource; 3], color: Color, texture: u16) -> Result<()> {
-        let mut homogeneous = [ClipVertex {
-            x: 0.0,
-            y: 0.0,
-            w: 0.0,
-            u: 0.0,
-            v: 0.0,
-        }; 3];
+    fn submit_view(
+        &mut self,
+        view: [ClipSource; 3],
+        color: Color,
+        texture: u16,
+        lit: bool,
+    ) -> Result<()> {
+        let mut homogeneous = [ClipVertex::ZERO; 3];
         for (slot, source) in homogeneous.iter_mut().zip(view) {
-            match self.projection.to_clip(source.view, source.u, source.v) {
+            match self
+                .projection
+                .to_clip(source.view, source.u, source.v, source.u2, source.v2)
+            {
                 Some(vertex) => *slot = vertex,
                 None => return Ok(()),
             }
@@ -637,9 +747,11 @@ impl Context {
                     z: projected.z,
                     s: projected.s,
                     t: projected.t,
+                    s2: projected.s2,
+                    t2: projected.t2,
                 }
             });
-            self.push(vertices, color.packed(), texture)?;
+            self.push(vertices, color.packed(), texture, lit)?;
         }
         Ok(())
     }
