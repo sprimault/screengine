@@ -132,6 +132,23 @@ impl Scaler {
         }
     }
 
+    /// La résolution interne pour laquelle la disposition est calculée.
+    pub(crate) fn source(&self) -> (u32, u32) {
+        (self.source.0 as u32, self.source.1 as u32)
+    }
+
+    /// Change la résolution interne, la fenêtre restant celle qu'on a.
+    ///
+    /// Le moteur peut en changer entre deux images, et toute la disposition en
+    /// dépend : facteur d'agrandissement, marges, et les mélanges que
+    /// [`Scale::Fill`] précalcule. La laisser derrière afficherait l'image
+    /// nouvelle avec la géométrie de l'ancienne.
+    pub(crate) fn set_source(&mut self, width: u32, height: u32) {
+        self.source = (width as usize, height as usize);
+        let (target_width, target_height) = self.target;
+        self.resize(target_width as u32, target_height as u32);
+    }
+
     /// Recalcule la disposition pour une fenêtre de `width × height`, non nulle.
     pub(crate) fn resize(&mut self, width: u32, height: u32) {
         let (sw, sh) = self.source;

@@ -734,6 +734,7 @@ int32_t scg_set_fog(ScgContext *ctx, uint8_t r, uint8_t g, uint8_t b,
                     float start, float end);
 int32_t scg_clear_fog(ScgContext *ctx);
 int32_t scg_set_lights(ScgContext *ctx, const ScgLight *lights, uint32_t count);
+int32_t scg_set_resolution(ScgContext *ctx, uint32_t width, uint32_t height);
 ```
 
 ```c
@@ -749,7 +750,7 @@ typedef struct ScgLight {
 typedef struct ScgVertexUv2 { float x, y, z, u, v, u2, v2; } ScgVertexUv2;
 ```
 
-Cinq fonctions ajoutées, deux structures nouvelles, aucune constante :
+Six fonctions ajoutées, deux structures nouvelles, aucune constante :
 `SCG_ABI_VERSION` reste à **1**.
 
 - **Une structure de sommet nouvelle, et non deux champs de plus sur
@@ -802,7 +803,22 @@ Cinq fonctions ajoutées, deux structures nouvelles, aucune constante :
   hors de portée s'éteint au lieu de garder sa couleur : sinon la frontière
   entre une surface qu'une lumière atteint et une qu'elle n'atteint pas serait
   une marche franche au milieu d'une géométrie continue.
-- **Aucun code d'erreur nouveau**, quatre messages de plus.
+- **La résolution interne se change par `scg_set_resolution`**, sous le
+  maximum reçu à la création, et rien ne s'alloue : tout ce qu'une image
+  consomme a été dimensionné sur ce maximum, et c'est la raison pour laquelle
+  il ne se relève pas. Au-delà, ou sur une dimension nulle,
+  `SCG_ERR_INVALID_ARGUMENT`, et le contexte garde la résolution qu'il avait.
+  Refusée pendant le rendu et dès qu'un triangle de l'image est retenu, comme
+  `scg_set_camera` et pour la même raison.
+
+  **Le tampon de l'hôte ne suit pas.** Après une hausse, un tampon laissé à sa
+  taille d'avant est trop court, et le moteur ne peut pas s'en apercevoir — il
+  ne reçoit pas sa longueur. Le nombre de tuiles change aussi : un hôte
+  rappelle `scg_frame_begin` au lieu de réutiliser le compte de l'image
+  précédente. Écartée : une fonction qui rendrait la résolution courante ;
+  l'hôte vient de la fixer, et elle pourra s'ajouter sans changer la version
+  d'ABI.
+- **Aucun code d'erreur nouveau**, cinq messages de plus.
 
 ### Étapes suivantes
 
@@ -813,7 +829,7 @@ noms ne le sont pas.
 |---|---|
 | 1 | ✓ début d'image et rendu d'une tuile (voir « Rendu par tuiles »), caméra et projection, soumission de triangles avec une matrice |
 | 2 | ✓ chargement d'une texture, mipmaps engendrés au chargement, niveau de qualité du filtrage par `scg_set_filter` |
-| 3 | ✓ soumission d'un lot éclairé, réglage du sur-éclairement, du brouillard et des lumières dynamiques ; reste : changement de résolution interne, post-traitement |
+| 3 | ✓ soumission d'un lot éclairé, réglage du sur-éclairement, du brouillard, des lumières dynamiques et de la résolution interne ; reste : post-traitement |
 | 4 | chargement d'un maillage et d'une carte depuis un bloc d'octets, libération |
 | 5 | rendu du monde depuis la caméra, calcul des lightmaps d'une cellule et reprise d'un cache |
 | 6 | interpolation entre trames, sprites orientés caméra |

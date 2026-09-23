@@ -359,15 +359,45 @@ void scg_destroy(struct ScgContext *ctx);
 // Sets the camera the next frames will render from.
 //
 // Rejected with `SCG_ERR_INVALID_STATE` between `scg_frame_begin` and
-// `scg_frame_end`: the camera holds for a whole frame. The field of view must
-// be within ]0, pi[ radians and the near plane positive, otherwise
-// `SCG_ERR_INVALID_ARGUMENT`. The quaternion is normalised by the engine.
+// `scg_frame_end`, and **as soon as a triangle of the current frame is kept**:
+// the camera holds for a whole frame, and every submission projects
+// immediately, so a camera changed midway would leave two screen spaces in the
+// same image, each one correct and the whole wrong. Set it before submitting,
+// or after `scg_frame_end`.
+//
+// The field of view must be within ]0, pi[ radians and the near plane
+// positive, otherwise `SCG_ERR_INVALID_ARGUMENT`. The quaternion is normalised
+// by the engine.
 //
 // # Safety
 //
 // `ctx` is a live handle used by no other thread during the call, and `camera`
 // is NULL or points to a readable `ScgCamera`.
 int32_t scg_set_camera(struct ScgContext *ctx, const struct ScgCamera *camera);
+
+// Sets the internal resolution, from the next frames on.
+//
+// Both sides must be at least 1 and within the `max_width` and `max_height`
+// given to `scg_create`, otherwise `SCG_ERR_INVALID_ARGUMENT` and the context
+// keeps the resolution it had. Nothing is allocated: every buffer a frame
+// needs was sized for the maximum, which is why that maximum is fixed once
+// and cannot be raised.
+//
+// Rejected with `SCG_ERR_INVALID_STATE` between `scg_frame_begin` and
+// `scg_frame_end`, and as soon as a triangle of the current frame is kept —
+// the same rule as `scg_set_camera`, and for the same reason: projection
+// happens at submission time.
+//
+// **The output buffer does not follow on its own.** After a raise, a buffer
+// left at its former size is too short, and the engine cannot detect it — it
+// never receives the length. Resize it, and pass the new `stride`. The tile
+// count changes too: call `scg_frame_begin` again rather than reusing the
+// count from the previous frame.
+//
+// # Safety
+//
+// `ctx` is a live handle used by no other thread during the call.
+int32_t scg_set_resolution(struct ScgContext *ctx, uint32_t width, uint32_t height);
 
 // Sets how textures are sampled from the next frames on.
 //

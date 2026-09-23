@@ -546,6 +546,13 @@ void check_refusals()
     }
     check(message_ok(scg_last_error(ctx.get()), false), "message vide après un succès");
 
+    check(scg_set_resolution(ctx.get(), WIDTH, HEIGHT) == SCG_OK, "la résolution du maximum est acceptée");
+    check(scg_set_resolution(ctx.get(), WIDTH + 1, HEIGHT) == SCG_ERR_INVALID_ARGUMENT, "largeur au-delà du maximum refusée");
+    check(scg_set_resolution(ctx.get(), WIDTH, HEIGHT + 1) == SCG_ERR_INVALID_ARGUMENT, "hauteur au-delà du maximum refusée");
+    check(scg_set_resolution(ctx.get(), 0, HEIGHT) == SCG_ERR_INVALID_ARGUMENT, "largeur nulle refusée");
+    check(message_ok(scg_last_error(ctx.get()), true), "message du contexte après une résolution refusée");
+    check(scg_set_resolution(nullptr, WIDTH, HEIGHT) == SCG_ERR_NULL, "contexte nul refusé par scg_set_resolution");
+
     // Pas `small` : windows.h en fait une macro.
     uint8_t scratch[16] = {};
     check(scg_frame_end(ctx.get(), nullptr, WIDTH) == SCG_ERR_NULL, "tampon nul refusé");
@@ -612,6 +619,39 @@ uint64_t render(bool &ok)
     check(opaque, "l'alpha est écrit à 255 sur chaque pixel");
 
     return fingerprint(pixels, WIDTH, HEIGHT, STRIDE);
+}
+
+/// La résolution interne change sans recréer le contexte, et l'image ne dépend
+/// pas de celle qu'il avait à l'ouverture.
+///
+/// Le contexte s'ouvre en 1×1 sous un maximum de WIDTH×HEIGHT, puis passe à la
+/// résolution de la scène : son empreinte doit être celle qu'un contexte
+/// ouvert directement dessus a rendue. Ouvrir en 1×1 plutôt qu'à la résolution
+/// finale est ce qui rend une projection laissée périmée visible ici.
+void check_resize(uint64_t expected)
+{
+    ScgContextConfig config = scene_config();
+    config.width = 1;
+    config.height = 1;
+
+    ScgContext *raw = nullptr;
+    if (scg_create(&config, &raw) != SCG_OK) {
+        check(false, "création du contexte redimensionnable");
+        return;
+    }
+    Context ctx(raw);
+    std::vector<uint8_t> pixels(size_t{STRIDE} * HEIGHT * 4);
+
+    check(scg_set_resolution(ctx.get(), WIDTH, HEIGHT) == SCG_OK, "la résolution passe de 1×1 au maximum");
+    check(submit_scene(ctx.get()), "scène soumise après redimensionnement");
+    check(scg_frame_end(ctx.get(), pixels.data(), STRIDE) == SCG_OK, "image rendue après redimensionnement");
+    check(fingerprint(pixels.data(), WIDTH, HEIGHT, STRIDE) == expected,
+          "un contexte redimensionné rend l'empreinte d'un contexte neuf");
+
+    // Après une soumission, la résolution est figée pour l'image en cours,
+    // comme la caméra : la projection a déjà eu lieu.
+    check(submit_scene(ctx.get()), "seconde scène soumise");
+    check(scg_set_resolution(ctx.get(), 1, 1) == SCG_ERR_INVALID_STATE, "résolution refusée après une soumission");
 }
 
 /// Le rendu par tuiles depuis plusieurs threads, comme un moteur C++ le fera
@@ -705,6 +745,7 @@ int main()
 #endif
     if (ok) {
         check_tiles(hash);
+        check_resize(hash);
     }
 
     bool textured_ok = false;

@@ -53,7 +53,7 @@ ABIS := arm64-v8a armeabi-v7a x86_64
 # Un seul nombre pour les cinq paliers : ceux qui rendraient un nombre
 # différent de scènes ne se compareraient plus ligne à ligne, et la divergence
 # passerait pour une égalité.
-SCENE_COUNT ?= 3
+SCENE_COUNT ?= 6
 
 triple_arm64-v8a   := aarch64-linux-android
 triple_armeabi-v7a := armv7-linux-androideabi

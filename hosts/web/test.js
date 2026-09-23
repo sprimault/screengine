@@ -724,6 +724,13 @@ function checkRefusals(engine) {
     check(messageOk(() => engine.lastError(ctx), false), "message vide après un succès");
     check(messageOk(() => engine.lastError(0), false), "message sans contexte vidé par un appel réussi");
 
+    check(e.scg_set_resolution(ctx, WIDTH, HEIGHT) === scg.SCG_OK, "la résolution du maximum est acceptée");
+    check(e.scg_set_resolution(ctx, WIDTH + 1, HEIGHT) === scg.SCG_ERR_INVALID_ARGUMENT, "largeur au-delà du maximum refusée");
+    check(e.scg_set_resolution(ctx, WIDTH, HEIGHT + 1) === scg.SCG_ERR_INVALID_ARGUMENT, "hauteur au-delà du maximum refusée");
+    check(e.scg_set_resolution(ctx, 0, HEIGHT) === scg.SCG_ERR_INVALID_ARGUMENT, "largeur nulle refusée");
+    check(messageOk(() => engine.lastError(ctx), true), "message du contexte après une résolution refusée");
+    check(e.scg_set_resolution(0, WIDTH, HEIGHT) === scg.SCG_ERR_NULL, "contexte nul refusé par scg_set_resolution");
+
     check(e.scg_frame_end(ctx, 0, WIDTH) === scg.SCG_ERR_NULL, "tampon nul refusé");
     check(e.scg_frame_end(ctx, small, WIDTH - 1) === scg.SCG_ERR_INVALID_ARGUMENT, "stride inférieur à la largeur refusé");
     check(messageOk(() => engine.lastError(ctx), true), "message du contexte après un stride refusé");
@@ -836,6 +843,51 @@ function render(engine) {
 }
 
 /**
+ * La résolution interne change sans recréer le contexte, et l'image ne dépend
+ * pas de celle qu'il avait à l'ouverture.
+ *
+ * Le contexte s'ouvre en 1×1 sous un maximum de WIDTH×HEIGHT, puis passe à la
+ * résolution de la scène : son empreinte doit être celle qu'un contexte ouvert
+ * directement dessus a rendue. Ouvrir en 1×1 plutôt qu'à la résolution finale
+ * est ce qui rend une projection laissée périmée visible ici.
+ *
+ * @param {scg.Screengine} engine
+ * @param {bigint} expected
+ */
+function checkResize(engine, expected) {
+  const e = engine.exports;
+  const body = STRIDE * HEIGHT * scg.BYTES_PER_PIXEL;
+  const pixels = engine.alloc(body);
+  const config = engine.alloc(scg.CONFIG_SIZE);
+  const out = engine.alloc(4);
+
+  engine.writeConfig(config, { ...sceneConfig(), width: 1, height: 1 });
+  if (pixels === 0 || e.scg_create(config, out) !== scg.SCG_OK) {
+    check(false, "création du contexte redimensionnable");
+    return;
+  }
+  const ctx = engine.readU32(out);
+
+  check(e.scg_set_resolution(ctx, WIDTH, HEIGHT) === scg.SCG_OK, "la résolution passe de 1×1 au maximum");
+  check(submitScene(engine, ctx), "scène soumise après redimensionnement");
+  check(e.scg_frame_end(ctx, pixels, STRIDE) === scg.SCG_OK, "image rendue après redimensionnement");
+  check(
+    engine.fingerprint(pixels, WIDTH, HEIGHT, STRIDE) === expected,
+    "un contexte redimensionné rend l'empreinte d'un contexte neuf",
+  );
+
+  // Après une soumission, la résolution est figée pour l'image en cours,
+  // comme la caméra : la projection a déjà eu lieu.
+  check(submitScene(engine, ctx), "seconde scène soumise");
+  check(e.scg_set_resolution(ctx, 1, 1) === scg.SCG_ERR_INVALID_STATE, "résolution refusée après une soumission");
+
+  e.scg_destroy(ctx);
+  engine.free(out, 4);
+  engine.free(config, scg.CONFIG_SIZE);
+  engine.free(pixels, body);
+}
+
+/**
  * Le rendu par tuiles sans threads, comme une page le fera : la séquence et ses
  * refus, puis une partie des tuiles dans l'ordre inverse et le reste laissé à
  * la fin, dont l'empreinte doit être celle de la fin seule.
@@ -906,6 +958,7 @@ async function main() {
   const hash = render(engine);
   if (hash !== null) {
     checkTiles(engine, hash);
+    checkResize(engine, hash);
   }
 
   if (failures > 0 || hash === null) {

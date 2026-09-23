@@ -739,6 +739,97 @@ fn refuse_de_changer_le_filtre_pendant_une_image() {
     unsafe { scg_destroy(ctx) };
 }
 
+/// La résolution se pose sous le maximum de la création, et rien d'autre.
+///
+/// Le maximum est ce sur quoi tous les tampons ont été dimensionnés : au-delà,
+/// l'accepter demanderait une réallocation, c'est-à-dire ce que « zéro
+/// allocation par image » interdit.
+#[test]
+fn pose_une_resolution_sous_le_maximum_et_refuse_le_reste() {
+    let ctx = create(&sane());
+
+    for (width, height) in [(32u32, 16u32), (64, 32), (1, 1)] {
+        // SAFETY: `ctx` est un handle vivant, employé par ce seul thread.
+        assert_eq!(unsafe { scg_set_resolution(ctx, width, height) }, SCG_OK);
+    }
+
+    for (width, height) in [(65u32, 32u32), (64, 33), (0, 32), (32, 0)] {
+        // SAFETY: mêmes préconditions.
+        let refus = unsafe { scg_set_resolution(ctx, width, height) };
+        assert_eq!(refus, SCG_ERR_INVALID_ARGUMENT, "{width}×{height}");
+        assert!(last_error(ctx).contains("resolution"));
+    }
+
+    // SAFETY: le pointeur nul est le cas que la fonction doit refuser.
+    let nul = unsafe { scg_set_resolution(ptr::null_mut(), 32, 16) };
+    assert_eq!(nul, SCG_ERR_NULL);
+
+    // SAFETY: le handle est vivant et détruit une seule fois.
+    unsafe { scg_destroy(ctx) };
+}
+
+/// Le nombre de tuiles suit la résolution, et c'est le piège d'ABI du
+/// redimensionnement : un hôte qui garde le compte de l'image précédente boucle
+/// au-delà de la grille.
+#[test]
+fn le_nombre_de_tuiles_suit_la_resolution() {
+    let ctx = create(&sane());
+    let mut avant = 0;
+    // SAFETY: `ctx` est vivant, le compteur est local, l'image se referme plus
+    // bas.
+    assert_eq!(unsafe { scg_frame_begin(ctx, &mut avant) }, SCG_OK);
+    let mut pixels = vec![0u8; 64 * 32 * 4];
+    // SAFETY: le tampon porte `stride × hauteur × 4` octets.
+    let clos = unsafe { scg_frame_end(ctx, pixels.as_mut_ptr(), 64) };
+    assert_eq!(clos, SCG_OK);
+
+    // SAFETY: l'image est close, le réglage est permis.
+    assert_eq!(unsafe { scg_set_resolution(ctx, 32, 16) }, SCG_OK);
+
+    let mut apres = 0;
+    // SAFETY: mêmes préconditions.
+    assert_eq!(unsafe { scg_frame_begin(ctx, &mut apres) }, SCG_OK);
+    assert!(apres < avant, "{apres} tuiles, contre {avant} avant");
+
+    // SAFETY: l'index vient du compte que la grille rétrécie a rendu.
+    let hors = unsafe { scg_frame_tile(ctx, avant - 1, pixels.as_mut_ptr(), 32) };
+    assert_eq!(hors, SCG_ERR_INVALID_ARGUMENT, "l'ancien compte est périmé");
+
+    // SAFETY: le tampon reste assez long pour la résolution réduite.
+    let reduit = unsafe { scg_frame_end(ctx, pixels.as_mut_ptr(), 32) };
+    assert_eq!(reduit, SCG_OK);
+
+    // SAFETY: le handle est vivant et détruit une seule fois.
+    unsafe { scg_destroy(ctx) };
+}
+
+/// La résolution ne se change pas pendant une image, pour la raison qui vaut
+/// pour le filtre : les tuiles se rendent depuis des threads que le moteur ne
+/// connaît pas, et une grille changée au milieu ne décrirait plus rien.
+#[test]
+fn refuse_de_changer_la_resolution_pendant_une_image() {
+    let ctx = create(&sane());
+    let mut tiles = 0;
+    // SAFETY: `ctx` est vivant, le compteur est local, l'image se referme plus
+    // bas.
+    assert_eq!(unsafe { scg_frame_begin(ctx, &mut tiles) }, SCG_OK);
+
+    // SAFETY: mêmes préconditions.
+    let pendant = unsafe { scg_set_resolution(ctx, 32, 16) };
+    assert_eq!(pendant, SCG_ERR_INVALID_STATE);
+
+    let mut pixels = vec![0u8; 64 * 32 * 4];
+    // SAFETY: le tampon porte `stride × hauteur × 4` octets.
+    let clos = unsafe { scg_frame_end(ctx, pixels.as_mut_ptr(), 64) };
+    assert_eq!(clos, SCG_OK);
+
+    // SAFETY: l'image est close, le réglage redevient permis.
+    assert_eq!(unsafe { scg_set_resolution(ctx, 32, 16) }, SCG_OK);
+
+    // SAFETY: le handle est vivant et détruit une seule fois.
+    unsafe { scg_destroy(ctx) };
+}
+
 /// La caméra ne se change plus dès qu'un triangle est retenu : la soumission
 /// projette tout de suite, et deux espaces écran dans la même image ne
 /// décriraient rien.

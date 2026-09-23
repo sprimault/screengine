@@ -376,6 +376,14 @@ static jint submit_lit(JNIEnv *env, jclass cls, jlong ctx, jfloatArray model,
     return code;
 }
 
+/* scg_set_resolution. */
+static jint set_resolution(JNIEnv *env, jclass cls, jlong ctx, jint width, jint height)
+{
+    (void)env;
+    (void)cls;
+    return scg_set_resolution((ScgContext *)(intptr_t)ctx, (uint32_t)width, (uint32_t)height);
+}
+
 /* scg_set_overbright. */
 static jint set_overbright(JNIEnv *env, jclass cls, jlong ctx, jint shift)
 {
@@ -471,6 +479,7 @@ static const JNINativeMethod METHODS[] = {
     {"textureDestroy", "(J)V", (void *)texture_destroy},
     {"submitTextured", "(J[F[F[I[BJ)I", (void *)submit_textured},
     {"submitLit", "(J[F[F[I[BJJ)I", (void *)submit_lit},
+    {"setResolution", "(JII)I", (void *)set_resolution},
     {"setFilter", "(JI)I", (void *)set_filter},
     {"setOverbright", "(JI)I", (void *)set_overbright},
     {"setFog", "(JIIIFF)I", (void *)set_fog},
