@@ -86,6 +86,9 @@ impl fmt::Display for Error {
                     f.write_str("pixel block is not exactly width x height x 4 bytes")
                 }
                 Argument::Overbright => f.write_str("overbright shift must be 0, 1 or 2"),
+                Argument::Fog => {
+                    f.write_str("fog range must be finite, not negative, and end beyond start")
+                }
             },
             Self::Engine(screengine::Error::OutOfMemory) => {
                 f.write_str("the engine could not allocate its buffers")

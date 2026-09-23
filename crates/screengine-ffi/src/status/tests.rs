@@ -70,6 +70,7 @@ fn chaque_argument_refuse_a_son_message() {
         Argument::TextureSize,
         Argument::TextureLength,
         Argument::Overbright,
+        Argument::Fog,
     ];
     for (i, a) in arguments.iter().enumerate() {
         let error = Error::InvalidArgument(*a);

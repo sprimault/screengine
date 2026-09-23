@@ -64,6 +64,12 @@ publié, et explique les conventions du dépôt à qui y contribue.
   `SCG_ABI_VERSION` reste à **1** : deux fonctions ajoutées, une structure
   nouvelle, aucun code d'erreur de plus. Les quatre hôtes de référence rendent
   la scène éclairée au bit près.
+- Le brouillard par la distance : `Context::set_fog` prend une couleur et deux
+  distances, `Context::clear_fog` l'éteint, et il est éteint par défaut. Il
+  s'applique pendant la recopie de tuile, qui a déjà la profondeur sous la
+  main, si bien que **le fond de l'image en prend la couleur sans que l'hôte
+  ait à l'effacer** : la géométrie lointaine rejoint l'horizon sans ligne de
+  démarcation.
 
 ### Modifié
 
@@ -96,6 +102,11 @@ publié, et explique les conventions du dépôt à qui y contribue.
   how an untextured wall renders `colour × lightmap` — while `lightmap` does
   not. `SCG_ABI_VERSION` stays at **1**: two functions added, one new struct,
   no new error code. All four reference hosts render the lit scene bit for bit.
+- Distance fog: `Context::set_fog` takes a colour and two distances,
+  `Context::clear_fog` turns it off, and it is off by default. It is applied
+  while a tile is copied out, where depth is already at hand, so **the image's
+  background takes its colour without the host having to clear with it**:
+  distant geometry meets the horizon with no dividing line.
 
 ### Changed
 

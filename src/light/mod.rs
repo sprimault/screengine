@@ -3,8 +3,11 @@
 
 //! Ce qui éclaire un pixel une fois sa couleur trouvée.
 //!
-//! La combinaison d'un texel et de son éclairage, et le sur-éclairement qui
-//! l'accompagne. Le brouillard et le post-traitement de tuile viendront ici.
+//! La combinaison d'un texel et de son éclairage, le sur-éclairement qui
+//! l'accompagne, et le brouillard par la distance. Le post-traitement de tuile
+//! viendra ici.
+
+pub mod fog;
 
 /// Le décalage le plus fort qu'un contexte accepte.
 ///

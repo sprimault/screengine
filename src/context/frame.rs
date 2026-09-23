@@ -13,6 +13,7 @@ use crate::context::{
     BYTES_PER_PIXEL, CLEAR_COLOR, CLOSING, Context, OPAQUE, RECORDING, RENDERING,
 };
 use crate::error::{Argument, Error, Result};
+use crate::light;
 use crate::raster::{Lit, NO_LIGHTING, NO_TEXTURE, Rect, Sampling, Target, fill};
 
 /// Le plus grand côté de tuile, qui dimensionne le tampon de travail posé sur
@@ -347,10 +348,36 @@ impl Context {
         }
 
         let width = rect.width as usize;
-        for (row, source) in scratch.color.chunks_exact(width.max(1)).enumerate() {
+        let fog = self.fog.is_set().then_some((&self.fog, self.fog.color()));
+        for (row, (source, depths)) in scratch
+            .color
+            .chunks_exact(width.max(1))
+            .zip(scratch.depth.chunks_exact(width.max(1)))
+            .enumerate()
+        {
             let span = out
                 .span(rect.x, rect.y + row as u32, rect.width)
                 .ok_or(Error::InvalidArgument(Argument::BufferLength))?;
+            // **Le brouillard s'applique ici**, et non dans le remplissage :
+            // la profondeur de la tuile est déjà sous la main, un pixel que
+            // rien n'a peint la garde nulle — donc infiniment lointaine —, et
+            // le fond prend ainsi le brouillard plein sans traitement à part.
+            // C'est cette absence de traitement à part qui supprime la couture
+            // d'horizon.
+            if let Some((fog, color)) = fog {
+                let y = rect.y + row as u32;
+                for (i, (pixel, slot)) in source
+                    .iter()
+                    .zip(span.chunks_exact_mut(BYTES_PER_PIXEL))
+                    .enumerate()
+                {
+                    let x = rect.x + i as u32;
+                    let factor = fog.factor(depths[i]);
+                    let mixed = light::fog::blend(*pixel, color, factor, light::fog::dither(x, y));
+                    slot.copy_from_slice(&(mixed | OPAQUE).to_le_bytes());
+                }
+                continue;
+            }
             for (pixel, slot) in source.iter().zip(span.chunks_exact_mut(BYTES_PER_PIXEL)) {
                 // L'alpha est forcé ici, au seul endroit que les deux chemins
                 // de sortie traversent. Le contrat d'ABI le promet opaque, et

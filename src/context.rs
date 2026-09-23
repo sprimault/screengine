@@ -12,6 +12,7 @@ use core::sync::atomic::{AtomicBool, AtomicU8, AtomicU32, Ordering};
 use crate::buffer::reserved;
 use crate::error::{Argument, Error, Result};
 use crate::light::MAX_OVERBRIGHT;
+use crate::light::fog::Fog;
 use crate::math::fixed::MAX_TEXEL_COORD;
 use crate::math::projection::ClipVertex;
 use crate::math::{Affine3, Projection, Vec3};
@@ -155,6 +156,14 @@ pub struct Context {
     filter: Filter,
     /// Le décalage de sur-éclairement, de même.
     overbright: u32,
+    /// Le brouillard, éteint par défaut.
+    ///
+    /// Sa table dépend du plan proche de la caméra, qui convertit une
+    /// profondeur en distance : elle se refait quand l'un ou l'autre change,
+    /// et jamais par image.
+    fog: Fog,
+    /// La rampe du brouillard, gardée pour la refaire quand la caméra change.
+    fog_range: (f32, f32),
     /// Le monde vers l'espace de vue, recalculé avec la caméra.
     ///
     /// Gardée plutôt que recomposée à chaque soumission : la composer est une
@@ -264,6 +273,8 @@ impl Context {
             camera,
             filter: Filter::default(),
             overbright: 0,
+            fog: Fog::new()?,
+            fog_range: (0.0, 0.0),
             view: camera.view(),
             projection: Projection::new(config.width, config.height, camera.fov_y, camera.near)?,
             state: AtomicU8::new(RECORDING),
@@ -293,7 +304,18 @@ impl Context {
         }
         self.projection = Projection::new(self.width, self.height, camera.fov_y, camera.near)?;
         self.view = camera.view();
+        let moved_near = self.camera.near != camera.near;
         self.camera = camera;
+        // **La table du brouillard dépend du plan proche**, qui convertit une
+        // profondeur en distance. Sans ce refait, une caméra dont le plan
+        // proche change déplacerait toute la rampe sans que rien ne le dise :
+        // le brouillard resterait cohérent avec lui-même, et faux par rapport
+        // aux distances que l'hôte a demandées.
+        if moved_near && self.fog.is_set() {
+            let (start, end) = self.fog_range;
+            let color = self.fog.color();
+            self.fog.set(color, camera.near, start, end)?;
+        }
         Ok(())
     }
 
@@ -343,6 +365,41 @@ impl Context {
         }
         self.overbright = overbright;
         Ok(())
+    }
+
+    /// Règle le brouillard : sa couleur, et les distances de vue entre
+    /// lesquelles il s'épaissit.
+    ///
+    /// Éteint par défaut, et éteint par [`Context::clear_fog`]. Les distances
+    /// sont en unités de monde, comptées depuis la caméra ; `start` ne peut
+    /// pas être négatif, et `end` doit être strictement au-delà.
+    ///
+    /// **Le fond de l'image prend le brouillard plein**, sans que l'hôte ait
+    /// à effacer avec sa couleur : un pixel qu'aucun triangle n'a peint est
+    /// infiniment lointain, et c'est ce qui supprime la couture d'horizon.
+    ///
+    /// Refusé pendant le rendu, comme les autres réglages d'image.
+    pub fn set_fog(&mut self, color: Color, start: f32, end: f32) -> Result<()> {
+        if *self.state.get_mut() != RECORDING {
+            return Err(Error::InvalidState);
+        }
+        self.fog.set(color.packed(), self.camera.near, start, end)?;
+        self.fog_range = (start, end);
+        Ok(())
+    }
+
+    /// Éteint le brouillard.
+    pub fn clear_fog(&mut self) -> Result<()> {
+        if *self.state.get_mut() != RECORDING {
+            return Err(Error::InvalidState);
+        }
+        self.fog.clear();
+        Ok(())
+    }
+
+    /// Vrai si le brouillard est réglé.
+    pub fn has_fog(&self) -> bool {
+        self.fog.is_set()
     }
 
     /// La configuration reçue à la création.
