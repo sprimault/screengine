@@ -417,6 +417,14 @@ int32_t scg_frame_end(ScgContext *ctx, uint8_t *pixels, uint32_t stride);
   lancées se terminent ; les suivantes et `scg_frame_end` rendent
   `SCG_ERR_FAULTED`, et le texte de la panique se lit par `scg_last_error(ctx)`
   après la fin. C'est le code de `scg_frame_end` qui dit si l'image est bonne.
+
+  **La garantie ne dépend pas de qui gagne la course.** Le décompte des tuiles
+  en vol et la marque de défaillance sont une seule valeur atomique, posée d'une
+  seule opération quand une tuile ne revient pas de son rendu : il n'existe donc
+  aucun instant où la fin d'image verrait zéro tuile en vol sans voir la tuile
+  perdue. En deux valeurs, cet instant existe — quelques instructions entre le
+  décompte relâché et la défaillance posée —, et c'est exactement le cas que
+  cette clause sert à couvrir.
 - **Chaque tuile tient sa couleur et sa profondeur sur la pile de l'appel.** Le
   thread qui appelle `scg_frame_tile` ou `scg_frame_end` doit disposer d'au
   moins 128 Ko de pile. Écartés : des tampons par tuile dans le contexte, jusqu'à

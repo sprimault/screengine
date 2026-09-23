@@ -23,6 +23,19 @@ pub enum Error {
     OutOfMemory,
     /// Un appel hors séquence : une tuile déjà rendue dans cette image.
     InvalidState,
+    /// Une tuile n'est pas sortie de son rendu, et l'image ne vaut plus rien.
+    ///
+    /// Le noyau ne connaît pas les paniques — il n'a pas `std` et n'en rattrape
+    /// aucune —, mais il voit qu'une tuile est entrée sans ressortir : son
+    /// garde de décompte le note avant de rendre la main. C'est ce qui permet à
+    /// la fin d'image de refuser de conclure, au lieu d'annoncer une image
+    /// complète dont un rectangle n'a jamais été dessiné.
+    ///
+    /// Sans quoi une course s'ouvre, et elle est réelle : le décompte retombe
+    /// pendant le dépliage, donc **avant** que la couche qui rattrape la panique
+    /// n'ait pu marquer quoi que ce soit. Entre les deux, une fin d'image voit
+    /// zéro tuile en vol et un contexte sain.
+    Faulted,
 }
 
 /// L'argument qu'une [`Error::InvalidArgument`] refuse.

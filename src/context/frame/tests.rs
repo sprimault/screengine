@@ -287,6 +287,59 @@ fn des_threads_rendent_la_reference() {
     assert!(out == expected);
 }
 
+/// Une sortie dont l'écriture panique, pour éprouver une tuile qui ne revient
+/// pas.
+///
+/// La vérification passe, la prise de la tuile aussi : la panique tombe au
+/// moment où le rendu recopie sa région, donc au milieu de l'état que la fin
+/// d'image va lire.
+struct SortieQuiPanique;
+
+impl Output for SortieQuiPanique {
+    fn check(&self, _rect: Rect) -> Result<()> {
+        Ok(())
+    }
+
+    fn span(&mut self, _x: u32, _y: u32, _width: u32) -> Option<&mut [u8]> {
+        panic!("tuile interrompue");
+    }
+}
+
+/// Une tuile qui ne revient pas de son rendu fait refuser la fin d'image.
+///
+/// **La course que ce test reproduit** : le garde de décompte est relâché
+/// pendant le dépliage de la panique, donc avant que la couche qui la rattrape
+/// n'ait pu marquer quoi que ce soit. Entre les deux, une fin d'image voit zéro
+/// tuile en vol et un contexte sain — et conclut que l'image est bonne, alors
+/// que le rectangle de cette tuile n'a jamais été dessiné.
+///
+/// Elle se ferme ici sans thread : `catch_unwind` rend la main exactement là où
+/// la fenêtre est ouverte, et la fin d'image appelée juste après tombe dedans.
+/// C'est l'ordre des deux gestes du garde, et lui seul, qui la referme.
+#[test]
+fn une_tuile_qui_ne_revient_pas_fait_refuser_la_fin() {
+    extern crate std;
+    use std::panic::{AssertUnwindSafe, catch_unwind};
+
+    let mut context = context(32);
+    scene(&mut context, 3);
+    let frame = open(&mut context);
+
+    // La panique est attendue ; son message par défaut part sur la sortie
+    // d'erreur du test, comme pour les autres cas rattrapés du dépôt.
+    let interrompue = catch_unwind(AssertUnwindSafe(|| {
+        let _ = frame.tile(0, &mut SortieQuiPanique);
+    }));
+    assert!(interrompue.is_err(), "la tuile aurait dû paniquer");
+
+    let mut out = pixels();
+    assert_eq!(
+        frame.end(&mut Rows::new(&mut out, W)),
+        Err(Error::Faulted),
+        "la fin a conclu sur une image dont une tuile manque"
+    );
+}
+
 /// Une tuile se rend une fois par image : la seconde prise est un appel hors
 /// séquence, pas un second rendu silencieux.
 #[test]

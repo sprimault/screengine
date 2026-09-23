@@ -60,6 +60,12 @@ non opaque voyait ce canal ressortir, et un navigateur l'y composait ; il
 obtient maintenant une image opaque.
 
 ### Corrigé
+- `scg_frame_end` pouvait rendre `SCG_OK` alors qu'une tuile avait paniqué et
+  que son rectangle n'était pas dessiné. Le contrat annonce `SCG_ERR_FAULTED`
+  dans ce cas, et c'est désormais vrai quel que soit l'entrelacement : le
+  décompte des tuiles en vol et la marque de défaillance sont une seule valeur
+  atomique, là où deux valeurs laissaient entre elles un instant pendant lequel
+  la fin d'image concluait à tort.
 - Les quatre points d'entrée qui ne rendent pas de code — les deux
   destructions, la libération et l'allocation de tampon — passent désormais par
   l'enveloppe commune : une panique n'y traverse plus la frontière C,
@@ -101,6 +107,11 @@ that channel come out, and a browser composited it; it now gets an opaque
 image.
 
 ### Fixed
+- `scg_frame_end` could return `SCG_OK` although a tile had panicked and its
+  rectangle was never drawn. The contract states `SCG_ERR_FAULTED` in that
+  case, and it now holds whatever the interleaving: the in-flight tile count
+  and the fault mark are a single atomic value, where two values left an
+  instant between them during which the frame end concluded wrongly.
 - The four entry points that return no code — both destructors, the buffer
   release and the buffer allocation — now go through the common wrapper: a
   panic no longer crosses the C boundary there, the floating-point environment
