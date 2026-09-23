@@ -121,6 +121,13 @@ publié, et explique les conventions du dépôt à qui y contribue.
   caméra vaut pour l'image entière » — sans que le moteur la tienne.
   `SCG_ABI_VERSION` reste à **1** : un hôte conforme ne fait jamais cet appel,
   et n'observe donc aucune différence.
+- `scg_frame_end` et `Context::frame_end` vérifient la sortie **avant**
+  d'ouvrir l'image quand personne ne l'a commencée. Un `stride` plus court que
+  la largeur laissait jusqu'ici le contexte en rendu, si bien qu'un hôte qui
+  s'était seulement trompé de tampon voyait tous ses appels suivants rendre
+  `SCG_ERR_INVALID_STATE`, sans rien pour en comprendre la cause. Après un
+  début que l'hôte a demandé, une fin refusée laisse l'image ouverte comme
+  avant : celle-là, il l'a voulue.
 
 ***
 
@@ -183,6 +190,22 @@ publié, et explique les conventions du dépôt à qui y contribue.
   surface moves a few dozen metres away, which an open-sky set does by
   construction. The clause is amended, and the chain is generated as for a
   texture.
+
+### Fixed
+
+- `scg_set_camera` and `Context::set_camera` are rejected with
+  `SCG_ERR_INVALID_STATE` as soon as a triangle of the current frame is kept.
+  Every submission projects immediately, so a camera changed midway left two
+  screen spaces in the same image, each one correctly rasterised and the whole
+  wrong. `docs/abi.md` already carried the rule — "the camera holds for a whole
+  frame" — without the engine keeping it. `SCG_ABI_VERSION` stays at **1**: a
+  conforming host never makes that call, and sees no difference.
+- `scg_frame_end` and `Context::frame_end` check the output **before** opening
+  the frame when no one has begun one. A `stride` shorter than the width used
+  to leave the context rendering, so a host that had merely passed the wrong
+  buffer saw every later call return `SCG_ERR_INVALID_STATE`, with nothing to
+  explain it. After a frame the host did begin, a refused end still leaves it
+  open: that one was asked for.
 
 ## [0.2.1] — 2026-09-23
 

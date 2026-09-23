@@ -105,6 +105,38 @@ fn refuse_un_tampon_trop_court_pour_son_stride() {
     );
 }
 
+/// Une fin d'image refusée sur sa sortie laisse le contexte en enregistrement.
+///
+/// `frame_end` ouvre l'image elle-même quand personne ne l'a fait. Si elle
+/// l'ouvrait avant de regarder la sortie, un `stride` ou un tampon fautif
+/// laisserait derrière lui un contexte en rendu : la fin échouée rend la main
+/// à l'état de rendu — ce qui est juste pour une image que l'hôte a commencée,
+/// et absurde pour celle-ci, qu'il n'a jamais demandée. Tout appel exclusif
+/// serait ensuite refusé, sans que rien n'en dise la raison.
+#[test]
+fn une_sortie_refusee_ne_laisse_pas_le_contexte_en_rendu() {
+    let mut ctx = small();
+    let (width, height) = ctx.resolution();
+    let mut pixels = vec![0u8; width as usize * height as usize * BYTES_PER_PIXEL];
+
+    assert_eq!(
+        ctx.frame_end(&mut pixels, width - 1),
+        Err(Error::InvalidArgument(Argument::Stride))
+    );
+    assert!(!ctx.is_rendering(), "un stride refusé a ouvert l'image");
+
+    assert_eq!(
+        ctx.frame_end(&mut pixels[..4], width),
+        Err(Error::InvalidArgument(Argument::BufferLength))
+    );
+    assert!(!ctx.is_rendering(), "un tampon trop court a ouvert l'image");
+
+    // La preuve utile n'est pas le code de retour, c'est que le contexte
+    // répond encore : un hôte qui se trompe de tampon ne perd pas sa session.
+    ctx.set_camera(Camera::DEFAULT).expect("en enregistrement");
+    ctx.frame_end(&mut pixels, width).expect("image rendue");
+}
+
 /// Un contexte de quoi rendre sans y consacrer un mégaoctet.
 fn small() -> Context {
     Context::new(Config {

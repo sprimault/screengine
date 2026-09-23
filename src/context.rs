@@ -18,8 +18,8 @@ use crate::math::fixed::MAX_TEXEL_COORD;
 use crate::math::projection::ClipVertex;
 use crate::math::{Affine3, Projection, Vec3};
 use crate::raster::{
-    Bins, Grid, Lighting, MAX_CLIP_TRIANGLES, NO_LIGHTING, NO_TEXTURE, Prepared, Vertex, clip,
-    prepare, prepare_lit,
+    Bins, Grid, Lighting, MAX_CLIP_TRIANGLES, NO_LIGHTING, NO_TEXTURE, Prepared, Rect, Vertex,
+    clip, prepare, prepare_lit,
 };
 use crate::scene::{Camera, Color, Light, Triangle, VertexUv, VertexUv2};
 use crate::texture::{Filter, Texture};
@@ -493,6 +493,27 @@ impl Context {
         (self.width, self.height)
     }
 
+    /// Vérifie qu'une sortie peut recevoir l'image entière à la résolution
+    /// courante.
+    ///
+    /// À appeler **avant** d'ouvrir une image que l'appelant n'a pas commencée
+    /// lui-même : une fin qui échoue rend la main à l'état de rendu, ce qui est
+    /// juste pour une image demandée et absurde pour celle qu'on vient
+    /// d'ouvrir pour elle. Le contexte resterait en rendu sur un simple
+    /// `stride` fautif, et tout appel exclusif serait refusé ensuite.
+    ///
+    /// Elle est publique parce que la frontière C ouvre l'image elle-même, et
+    /// qu'on ne lui fait pas reconstruire le rectangle de l'image : ce serait
+    /// de la logique dans une couche qui n'en porte pas.
+    pub fn check_output<O: Output>(&self, out: &O) -> Result<()> {
+        out.check(Rect {
+            x: 0,
+            y: 0,
+            width: self.width,
+            height: self.height,
+        })
+    }
+
     /// Change la résolution interne, sous le maximum fixé à la création.
     ///
     /// Aucune allocation : tout ce que l'image consomme est dimensionné sur la
@@ -624,6 +645,13 @@ impl Context {
     /// qui distingue les deux chemins.
     pub fn frame_end(&mut self, pixels: &mut [u8], stride: u32) -> Result<()> {
         if !self.is_rendering() {
+            // La sortie se vérifie **avant** d'ouvrir l'image. Ouvrir d'abord
+            // ferait qu'un `stride` refusé laisse le contexte en rendu : la
+            // fin échouée y rend la main à l'état de rendu, ce qui est juste
+            // pour une image que l'hôte a commencée lui-même, et absurde pour
+            // celle-ci, qu'il n'a jamais demandée. Tout appel exclusif
+            // deviendrait alors `InvalidState`, sans que rien ne dise pourquoi.
+            self.check_output(&Rows::new(pixels, stride))?;
             self.begin()?;
         }
         self.end(&mut Rows::new(pixels, stride))

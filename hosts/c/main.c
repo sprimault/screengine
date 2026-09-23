@@ -341,6 +341,11 @@ static void check_refusals(void)
     check(message_ok(scg_last_error(ctx), 1), "message du contexte après un stride refusé");
     check(scg_frame_end(NULL, small, WIDTH) == SCG_ERR_NULL, "contexte nul refusé");
 
+    /* La fin d'image ouvre l'image elle-même quand personne ne l'a fait :
+     * l'ouvrir avant de vérifier la sortie laisserait le contexte en rendu
+     * après les refus ci-dessus, et tout appel exclusif serait perdu. */
+    check(scg_set_resolution(ctx, WIDTH, HEIGHT) == SCG_OK, "le contexte répond encore après une sortie refusée");
+
     scg_destroy(ctx);
     scg_destroy(NULL);
 }
