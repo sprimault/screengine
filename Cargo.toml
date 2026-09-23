@@ -16,6 +16,12 @@ repository.workspace = true
 authors.workspace = true
 publish.workspace = true
 
+# Harnais maison : `#[bench]` n'existe qu'en nightly, et le noyau n'a aucune
+# dépendance, `dev-dependencies` comprises — donc pas de criterion non plus.
+[[bench]]
+name = "remplissage"
+harness = false
+
 [lints]
 workspace = true
 
