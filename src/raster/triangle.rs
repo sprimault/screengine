@@ -11,6 +11,7 @@
 
 use crate::light;
 use crate::math::fixed::{PIXEL_CENTER, SUBPIXEL_SCALE, UV_BITS};
+use crate::math::projection::ProjectedVertex;
 
 use super::plane::{GRADIENT_BITS, Plane};
 use super::{Rect, Target};
@@ -235,6 +236,62 @@ impl Lighting {
     /// Vrai si une lumière dynamique éclaire ce triangle.
     pub fn is_lit(&self) -> bool {
         self.lit
+    }
+}
+
+impl From<ProjectedVertex> for Vertex {
+    /// Le sommet du rasteriseur, depuis celui que la projection rend.
+    ///
+    /// **Un seul endroit reprend les attributs un à un.** Ils étaient recopiés
+    /// champ par champ à quatre endroits — la soumission et trois helpers de
+    /// test —, si bien que chaque attribut ajouté au sommet les cassait tous
+    /// les quatre. Le type de passage existe précisément pour que `math`
+    /// ignore le rasteriseur ; la conversion, elle, n'a pas à être écrite
+    /// quatre fois.
+    fn from(v: ProjectedVertex) -> Self {
+        Self {
+            position: Point { x: v.x, y: v.y },
+            z: v.z,
+            s: v.s,
+            t: v.t,
+            s2: v.s2,
+            t2: v.t2,
+            light: v.light,
+        }
+    }
+}
+
+#[cfg(test)]
+impl Vertex {
+    /// Un sommet nu : sa position en sous-pixels, sa profondeur, et aucun
+    /// attribut.
+    ///
+    /// **Réservé aux tests.** Le pipeline construit ses sommets depuis la
+    /// projection, qui les remplit tous ; un test, lui, n'a presque jamais
+    /// besoin de plus de deux champs. Sans ce constructeur, chaque attribut
+    /// ajouté au sommet fait écrire des zéros dans une vingtaine de sites qui
+    /// ne s'en servent pas, et ce bruit finit par cacher les rares endroits où
+    /// la valeur compte.
+    pub(crate) fn plain(x: i32, y: i32, z: u32) -> Self {
+        Self {
+            position: Point { x, y },
+            z,
+            s: 0,
+            t: 0,
+            s2: 0,
+            t2: 0,
+            light: [0; 3],
+        }
+    }
+
+    /// Le même, avec ses coordonnées de texture.
+    pub(crate) fn uv(self, s: i32, t: i32) -> Self {
+        Self { s, t, ..self }
+    }
+
+    /// Le même, avec ses coordonnées de lightmap.
+    pub(crate) fn uv2(self, s2: i32, t2: i32) -> Self {
+        Self { s2, t2, ..self }
     }
 }
 
