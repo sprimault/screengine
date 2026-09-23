@@ -73,6 +73,15 @@ jobs:
       - name: Header
         run: make header-verif
 
+      # La version minimale que `Cargo.toml` déclare et que `CONTRIBUTING`
+      # reprend : tout le reste se construit avec une chaîne récente, et une
+      # fonction stabilisée depuis passerait sans bruit jusqu'à ce que quelqu'un
+      # ouvre le dépôt avec la chaîne annoncée. Une étape de ce job plutôt qu'un
+      # job à part : la protection de branche exige les contrôles par leur nom,
+      # et un job nouveau échouerait sans rien bloquer tant qu'il n'y est pas.
+      - name: Version minimale
+        run: make msrv
+
       - name: Licences et provenance
         run: make deny
 
@@ -126,6 +135,11 @@ jobs:
             "ndk;$(version NDK_VERSION)" "build-tools;$(version BUILD_TOOLS)" \
             "platforms;$(version PLATFORM)" > /dev/null
           echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/$(version NDK_VERSION)" >> "$GITHUB_ENV"
+          # L'émulateur veut le niveau seul, la plateforme le porte préfixé.
+          # Le dériver plutôt que l'écrire : un émulateur d'un autre niveau que
+          # la plateforme installée démarre quand même, et ne teste plus ce
+          # qu'on croit.
+          echo "API_LEVEL=$(version PLATFORM | sed 's/^android-//')" >> "$GITHUB_ENV"
 
       # Sous Linux, make test entier tourne une fois l'émulateur démarré : c'est
       # le seul moment où l'hôte Android a un appareil.
@@ -133,7 +147,7 @@ jobs:
         if: runner.os == 'Linux'
         uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
         with:
-          api-level: 36
+          api-level: ${{ env.API_LEVEL }}
           target: default
           arch: x86_64
           emulator-options: -no-window -no-audio -no-boot-anim -no-snapshot -gpu swiftshader_indirect
