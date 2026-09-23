@@ -232,6 +232,112 @@ function renderTextured(engine, filter) {
 }
 
 /**
+ * Les trois lumières de la scène `lumieres`, aux mêmes valeurs que la scène de
+ * conformance.
+ */
+const SCENE_LIGHTS = [
+  { position: [8.0, -3.0, 1.5], radius: 12.0, color: [0xff, 0x30, 0x20] },
+  { position: [16.0, 3.0, 1.5], radius: 12.0, color: [0x20, 0xff, 0x40] },
+  { position: [24.0, -2.0, 2.5], radius: 14.0, color: [0x30, 0x50, 0xff] },
+];
+
+/**
+ * Rend la scène éclairée par des lumières, ou `null` en cas d'échec.
+ *
+ * Le sol et le mur sont découpés en panneaux : l'atténuation étant par sommet,
+ * une surface d'un seul quadrilatère ne rendrait qu'un dégradé entre ses
+ * quatre coins. Le sol va au-delà de la portée des trois lumières, si bien que
+ * ses derniers panneaux s'éteignent — en continuité.
+ *
+ * @param {scg.Screengine} engine
+ * @returns {string | null}
+ */
+function renderLights(engine) {
+  const e = engine.exports;
+  const out = engine.alloc(4);
+  const config = engine.alloc(scg.CONFIG_SIZE);
+  engine.writeConfig(config, sceneConfig());
+  if (e.scg_create(config, out) !== scg.SCG_OK) {
+    check(false, "création du contexte éclairé");
+    return null;
+  }
+  const ctx = engine.readU32(out);
+
+  // Un champ réservé non nul est refusé : c'est le mécanisme d'extension de
+  // l'ABI, et il ne vaut que si personne n'y écrit.
+  const dirty = engine.alloc(scg.LIGHT_SIZE);
+  engine.writeLights(dirty, [SCENE_LIGHTS[0]]);
+  new DataView(engine.memory.buffer).setUint8(dirty + 19, 1);
+  check(
+    e.scg_set_lights(ctx, dirty, 1) === scg.SCG_ERR_INVALID_ARGUMENT,
+    "un champ réservé non nul est refusé",
+  );
+
+  const lights = engine.alloc(SCENE_LIGHTS.length * scg.LIGHT_SIZE);
+  engine.writeLights(lights, SCENE_LIGHTS);
+  check(
+    e.scg_set_lights(ctx, lights, SCENE_LIGHTS.length) === scg.SCG_OK,
+    "les lumières se règlent",
+  );
+
+  const panels = 16;
+  const nearEdge = 2.0;
+  const farEdge = 50.0;
+  const step = (farEdge - nearEdge) / panels;
+  const model = engine.alloc(scg.MAT4_SIZE);
+  engine.writeIdentity(model);
+  let submitted = scg.SCG_OK;
+  for (let i = 0; i < panels && submitted === scg.SCG_OK; i++) {
+    const a = nearEdge + i * step;
+    const b = nearEdge + (i + 1) * step;
+    const surfaces = [
+      {
+        corners: [
+          [a, -7.0, -1.2],
+          [b, -7.0, -1.2],
+          [b, 7.0, -1.2],
+          [a, 7.0, -1.2],
+        ],
+        color: [0xb0, 0xb0, 0xb0, 0xff],
+      },
+      {
+        corners: [
+          [a, -7.0, 4.0],
+          [b, -7.0, 4.0],
+          [b, -7.0, -1.2],
+          [a, -7.0, -1.2],
+        ],
+        color: [0x90, 0x90, 0x98, 0xff],
+      },
+    ];
+    for (const surface of surfaces) {
+      if (submitted !== scg.SCG_OK) {
+        break;
+      }
+      const vertices = engine.alloc(4 * scg.VERTEX_SIZE);
+      const triangles = engine.alloc(2 * scg.TRIANGLE_SIZE);
+      engine.writeVertices(vertices, surface.corners);
+      engine.writeTriangles(triangles, [
+        { indices: [0, 1, 2], color: surface.color },
+        { indices: [0, 2, 3], color: surface.color },
+      ]);
+      submitted = e.scg_submit(ctx, model, vertices, 4, triangles, 2);
+    }
+  }
+  check(submitted === scg.SCG_OK, "les panneaux éclairés sont acceptés");
+
+  const pixels = engine.alloc(STRIDE * HEIGHT * scg.BYTES_PER_PIXEL);
+  const code = e.scg_frame_end(ctx, pixels, STRIDE);
+  check(code === scg.SCG_OK, "l'image éclairée se rend");
+  const hash = code === scg.SCG_OK
+    ? engine.fingerprint(pixels, WIDTH, HEIGHT, STRIDE)
+    : null;
+
+  e.scg_destroy(ctx);
+  return hash;
+}
+
+/**
  * Le sol de la scène `brouillard`, plus long que la rampe : sa moitié
  * lointaine se confond avec le fond, sa moitié proche garde son damier.
  */
@@ -561,6 +667,7 @@ function checkLayout(header) {
     ScgVertex: scg.VERTEX_SIZE,
     ScgVertexUv: scg.VERTEX_UV_SIZE,
     ScgVertexUv2: scg.VERTEX_UV2_SIZE,
+    ScgLight: scg.LIGHT_SIZE,
     ScgTextureDesc: scg.TEXTURE_DESC_SIZE,
     ScgTriangle: scg.TRIANGLE_SIZE,
     ScgMat4: scg.MAT4_SIZE,
@@ -809,18 +916,22 @@ async function main() {
   const bilinear = renderTextured(engine, scg.SCG_FILTER_BILINEAR);
   const lit = renderLit(engine);
   const fog = renderFog(engine);
+  const lights = renderLights(engine);
   if (
     failures > 0 ||
     textured === null ||
     bilinear === null ||
     lit === null ||
-    fog === null
+    fog === null ||
+    lights === null
   ) {
     process.stderr.write(`${failures} vérification(s) en échec\n`);
     return 1;
   }
 
-  process.stdout.write(`${hash}\n${textured}\n${bilinear}\n${lit}\n${fog}\n`);
+  process.stdout.write(
+    `${hash}\n${textured}\n${bilinear}\n${lit}\n${fog}\n${lights}\n`,
+  );
   return 0;
 }
 

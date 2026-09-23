@@ -11,7 +11,7 @@
 //! nouvelle et une fonction nouvelle, ce que la règle d'extension prévoit — un
 //! champ qui dort en attendant ce jour-là serait un pari sur sa forme.
 
-use screengine::{Affine3, Camera, Color, Filter, Quat, Vec3, VertexUv, VertexUv2};
+use screengine::{Affine3, Camera, Color, Filter, Light, Quat, Vec3, VertexUv, VertexUv2};
 
 use crate::entry::AbiError;
 
@@ -257,6 +257,63 @@ impl ScgVertexUv2 {
             u2: self.u2,
             v2: self.v2,
         }
+    }
+}
+
+/// A point light that adds to the lighting of a surface.
+///
+/// Twenty bytes, offsets 0 to 19 on every target, with no padding.
+///
+/// **Its falloff is computed per vertex, not per pixel.** There is no distance
+/// on the integer side of the pipeline, which begins at projection. A wall of
+/// two triangles therefore renders a gradient between its corners rather than
+/// a halo: split it into panels for a source that moves across it.
+///
+/// **Once a light is set, it holds for the whole scene.** A surface out of
+/// range goes dark rather than keeping its colour — otherwise the boundary
+/// between a surface a light reaches and one it does not would be a hard step
+/// in the middle of continuous geometry.
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct ScgLight {
+    /// X coordinate of its position, in world space.
+    pub x: f32,
+    /// Y coordinate.
+    pub y: f32,
+    /// Z coordinate.
+    pub z: f32,
+    /// Its radius, beyond which it lights nothing.
+    ///
+    /// Finite and strictly positive. Falloff reaches zero at the radius **with
+    /// a zero derivative**, so no ring marks the edge — which a falloff linear
+    /// in squared distance would draw.
+    pub radius: f32,
+    /// Red, in the memory order of the output pixels.
+    pub r: u8,
+    /// Green.
+    pub g: u8,
+    /// Blue.
+    pub b: u8,
+    /// Reserved, must be zero.
+    ///
+    /// **Not an alpha**: a light adds, it does not blend, so a fourth channel
+    /// would be a value the engine ignores. The byte exists to keep the
+    /// structure free of implicit padding, and a later version may give it a
+    /// meaning — which is why zero is required rather than merely advised.
+    pub _reserved: u8,
+}
+
+impl ScgLight {
+    /// La lumière du noyau.
+    pub(crate) fn to_core(self) -> Result<Light, AbiError> {
+        if self._reserved != 0 {
+            return Err(AbiError::RESERVED);
+        }
+        Ok(Light {
+            position: Vec3::new(self.x, self.y, self.z),
+            radius: self.radius,
+            color: Color::new(self.r, self.g, self.b, 0xFF),
+        })
     }
 }
 

@@ -144,6 +144,17 @@ vienne de l'hôte ou du noyau.
 étalonnage —, jamais en passe plein écran. Ce qui lit les pixels voisins en est
 exclu : une tuile ne voit pas au-delà de son bord.
 
+**L'atténuation d'une lumière dynamique ne dépend que de la distance**, jamais
+de l'orientation de la surface. Les faces d'une caisse à égale distance d'une
+torche reçoivent donc la même lumière, et la caisse ressemble à un bloc
+uniformément éclairci plutôt qu'à un objet dont une face capte la lumière.
+
+Y ajouter du relief demanderait une **normale par sommet**, donc une structure
+de sommet de plus dans l'ABI — et une structure publiée ne se retire jamais.
+C'est pourquoi la question se tranche **à la fin de cette étape et pas avant** :
+la capture qui la franchit dira si les objets ont l'air plats, et décider plus
+tôt reviendrait à graver une structure pour un besoin que rien ne mesure.
+
 **Franchie quand** une capture est montrable sans qu'on ait à expliquer ce qu'on
 regarde. C'est la première version qui donne envie de continuer, et ce n'est pas
 une considération accessoire sur un projet de cette longueur.
@@ -261,6 +272,18 @@ et non dans l'arithmétique ordinaire, que le déterminisme se perd.
   est une surface modulée que le jeu place, et l'étape 6 en donne la
   primitive. Le moteur calcule bien des ombres, mais à l'étape 5 et une fois
   pour toutes : ce sont les lightmaps du décor.
+
+  **Une variante étroite reste à examiner, après l'étape 6.** Ce que le budget
+  exclut, c'est de recalculer les ombres partout, à chaque image, pour huit
+  lumières : une passe de rendu par lumière, deux millions d'accès dispersés à
+  l'écran, plusieurs mégaoctets de trafic par image — alors qu'une scène
+  chargée consomme déjà près de la moitié du budget d'une image à 60 i/s. Une
+  **seule** lumière portant des ombres, en basse résolution, sur les **seuls
+  objets mobiles**, coûterait environ une milliseconde : c'est ce que faisaient
+  les moteurs de la toute fin de cette époque. Le décor garderait ses
+  lightmaps, meilleures et déjà payées. À trancher quand il y aura un objet
+  mobile à ombrer, pas avant : dimensionner pour des objets qui n'existent pas
+  revient à choisir une résolution au hasard.
 - Post-traitement plein écran : FXAA, bloom, tout ce qui lit les pixels voisins.
 - Modèles animés par squelette : les trames interpolées suffisent à la classe
   visée.

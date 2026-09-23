@@ -181,6 +181,80 @@ std::vector<uint8_t> make_checker()
     return texels;
 }
 
+/// Les trois lumières de la scène `lumieres`, aux mêmes valeurs que la scène
+/// de conformance. Le champ réservé est nul, comme l'ABI l'exige.
+constexpr ScgLight SCENE_LIGHTS[3] = {
+    {  8.0f, -3.0f, 1.5f, 12.0f, 0xFF, 0x30, 0x20, 0 },
+    { 16.0f,  3.0f, 1.5f, 12.0f, 0x20, 0xFF, 0x40, 0 },
+    { 24.0f, -2.0f, 2.5f, 14.0f, 0x30, 0x50, 0xFF, 0 },
+};
+
+/// Rend la scène éclairée par des lumières et hache son image.
+///
+/// Le sol et le mur sont découpés en panneaux : l'atténuation étant par
+/// sommet, une surface d'un seul quadrilatère ne rendrait qu'un dégradé entre
+/// ses quatre coins. Le sol va au-delà de la portée des trois lumières, si
+/// bien que ses derniers panneaux s'éteignent — en continuité.
+uint64_t render_lights(bool &ok)
+{
+    constexpr int PANELS = 16;
+    constexpr float NEAR_EDGE = 2.0f, FAR_EDGE = 50.0f;
+    constexpr float STEP = (FAR_EDGE - NEAR_EDGE) / PANELS;
+
+    ok = false;
+    ScgContextConfig config = scene_config();
+    ScgContext *ctx = nullptr;
+    check(scg_create(&config, &ctx) == SCG_OK, "création du contexte éclairé");
+    if (ctx == nullptr) {
+        return 0;
+    }
+
+    // Un champ réservé non nul est refusé : c'est le mécanisme d'extension de
+    // l'ABI, et il ne vaut que si personne n'y écrit.
+    ScgLight dirty = SCENE_LIGHTS[0];
+    dirty._reserved = 1;
+    check(scg_set_lights(ctx, &dirty, 1) == SCG_ERR_INVALID_ARGUMENT,
+          "un champ réservé non nul est refusé");
+    check(scg_set_lights(ctx, SCENE_LIGHTS, 3) == SCG_OK, "les lumières se règlent");
+
+    int32_t submitted = SCG_OK;
+    for (int i = 0; i < PANELS && submitted == SCG_OK; i++) {
+        const float a = NEAR_EDGE + static_cast<float>(i) * STEP;
+        const float b = NEAR_EDGE + static_cast<float>(i + 1) * STEP;
+        const ScgVertex floor_v[4] = {
+            { a, -7.0f, -1.2f }, { b, -7.0f, -1.2f },
+            { b,  7.0f, -1.2f }, { a,  7.0f, -1.2f },
+        };
+        const ScgTriangle floor_t[2] = {
+            { 0, 1, 2, 0xB0, 0xB0, 0xB0, 0xFF },
+            { 0, 2, 3, 0xB0, 0xB0, 0xB0, 0xFF },
+        };
+        submitted = scg_submit(ctx, &IDENTITY, floor_v, 4, floor_t, 2);
+
+        const ScgVertex wall_v[4] = {
+            { a, -7.0f,  4.0f }, { b, -7.0f,  4.0f },
+            { b, -7.0f, -1.2f }, { a, -7.0f, -1.2f },
+        };
+        const ScgTriangle wall_t[2] = {
+            { 0, 1, 2, 0x90, 0x90, 0x98, 0xFF },
+            { 0, 2, 3, 0x90, 0x90, 0x98, 0xFF },
+        };
+        if (submitted == SCG_OK) {
+            submitted = scg_submit(ctx, &IDENTITY, wall_v, 4, wall_t, 2);
+        }
+    }
+    check(submitted == SCG_OK, "les panneaux éclairés sont acceptés");
+
+    std::vector<uint8_t> pixels(static_cast<size_t>(STRIDE) * HEIGHT * 4);
+    const int32_t code = scg_frame_end(ctx, pixels.data(), STRIDE);
+    check(code == SCG_OK, "l'image éclairée se rend");
+    ok = code == SCG_OK;
+
+    const uint64_t hash = fingerprint(pixels.data(), WIDTH, HEIGHT, STRIDE);
+    scg_destroy(ctx);
+    return hash;
+}
+
 /// Le sol de la scène `brouillard`, plus long que la rampe : sa moitié
 /// lointaine se confond avec le fond, sa moitié proche garde son damier.
 constexpr ScgVertexUv FOG_FLOOR[4] = {
@@ -645,7 +719,11 @@ int main()
     bool fog_ok = false;
     const uint64_t fog = render_fog(fog_ok);
 
-    if (failures > 0 || !ok || !textured_ok || !bilinear_ok || !lit_ok || !fog_ok) {
+    bool lights_ok = false;
+    const uint64_t lights = render_lights(lights_ok);
+
+    if (failures > 0 || !ok || !textured_ok || !bilinear_ok || !lit_ok || !fog_ok
+        || !lights_ok) {
         std::fprintf(stderr, "%d vérification(s) en échec\n", failures);
         return 1;
     }
@@ -654,5 +732,6 @@ int main()
     std::printf("%016llx\n", static_cast<unsigned long long>(bilinear));
     std::printf("%016llx\n", static_cast<unsigned long long>(lit));
     std::printf("%016llx\n", static_cast<unsigned long long>(fog));
+    std::printf("%016llx\n", static_cast<unsigned long long>(lights));
     return 0;
 }

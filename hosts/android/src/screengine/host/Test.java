@@ -191,6 +191,87 @@ public final class Test {
     }
 
     /**
+     * Rend la scène éclairée par des lumières, ou {@code null} si le rendu a
+     * échoué.
+     *
+     * <p>Le sol et le mur sont découpés en panneaux : l'atténuation étant par
+     * sommet, une surface d'un seul quadrilatère ne rendrait qu'un dégradé
+     * entre ses quatre coins. Le sol va au-delà de la portée des trois
+     * lumières, si bien que ses derniers panneaux s'éteignent — en continuité.
+     *
+     * @return l'empreinte
+     */
+    private static String renderLights() {
+        long[] out = {0};
+        if (Screengine.create(sceneConfig(), out) != Screengine.OK) {
+            check(false, "création du contexte éclairé");
+            return null;
+        }
+
+        // Quatre flottants de pose et trois octets de couleur par lumière,
+        // aux mêmes valeurs que la scène de conformance.
+        float[] poses = {
+            8.0f, -3.0f, 1.5f, 12.0f,
+            16.0f, 3.0f, 1.5f, 12.0f,
+            24.0f, -2.0f, 2.5f, 14.0f,
+        };
+        byte[] colors = {
+            (byte) 0xFF, (byte) 0x30, (byte) 0x20,
+            (byte) 0x20, (byte) 0xFF, (byte) 0x40,
+            (byte) 0x30, (byte) 0x50, (byte) 0xFF,
+        };
+        // Des tableaux de longueurs incompatibles sont refusés : le pont ne
+        // peut pas deviner combien de lumières on lui donne.
+        check(Screengine.setLights(out[0], poses, new byte[] {0, 0, 0})
+                == Screengine.ERR_INVALID_ARGUMENT, "des tableaux dépareillés sont refusés");
+        check(Screengine.setLights(out[0], poses, colors) == Screengine.OK,
+                "les lumières se règlent");
+
+        final int panels = 16;
+        final float nearEdge = 2.0f;
+        final float farEdge = 50.0f;
+        final float step = (farEdge - nearEdge) / panels;
+        float[] model = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
+        int[] indices = {0, 1, 2, 0, 2, 3};
+        byte[] floorColor = {
+            (byte) 0xB0, (byte) 0xB0, (byte) 0xB0, (byte) 0xFF,
+            (byte) 0xB0, (byte) 0xB0, (byte) 0xB0, (byte) 0xFF,
+        };
+        byte[] wallColor = {
+            (byte) 0x90, (byte) 0x90, (byte) 0x98, (byte) 0xFF,
+            (byte) 0x90, (byte) 0x90, (byte) 0x98, (byte) 0xFF,
+        };
+
+        int submitted = Screengine.OK;
+        for (int i = 0; i < panels && submitted == Screengine.OK; i++) {
+            float a = nearEdge + i * step;
+            float b = nearEdge + (i + 1) * step;
+            float[] floorV = {
+                a, -7.0f, -1.2f, b, -7.0f, -1.2f,
+                b, 7.0f, -1.2f, a, 7.0f, -1.2f,
+            };
+            submitted = Screengine.submit(out[0], model, floorV, indices, floorColor);
+            if (submitted == Screengine.OK) {
+                float[] wallV = {
+                    a, -7.0f, 4.0f, b, -7.0f, 4.0f,
+                    b, -7.0f, -1.2f, a, -7.0f, -1.2f,
+                };
+                submitted = Screengine.submit(out[0], model, wallV, indices, wallColor);
+            }
+        }
+        check(submitted == Screengine.OK, "les panneaux éclairés sont acceptés");
+
+        int body = STRIDE * HEIGHT * Screengine.BYTES_PER_PIXEL;
+        ByteBuffer block = ByteBuffer.allocateDirect(body);
+        int code = Screengine.frameEnd(out[0], block, 0, STRIDE);
+        check(code == Screengine.OK, "l'image éclairée se rend");
+
+        String hash = fingerprint(block, 0, STRIDE);
+        Screengine.destroy(out[0]);
+        return code == Screengine.OK ? hash : null;
+    }
+
+    /**
      * Rend la scène embrumée, ou {@code null} si le rendu a échoué.
      *
      * <p>Le fond n'est effacé de rien : c'est le moteur qui lui donne la
@@ -508,9 +589,10 @@ public final class Test {
         String bilinear = renderTextured(Screengine.FILTER_BILINEAR);
         String lit = renderLit();
         String fog = renderFog();
+        String lights = renderLights();
 
         if (failures > 0 || hash == null || textured == null || bilinear == null
-                || lit == null || fog == null) {
+                || lit == null || fog == null || lights == null) {
             System.err.println(failures + " vérification(s) en échec");
             System.exit(1);
         }
@@ -519,6 +601,7 @@ public final class Test {
         System.out.println(bilinear);
         System.out.println(lit);
         System.out.println(fog);
+        System.out.println(lights);
         System.exit(0);
     }
 }
