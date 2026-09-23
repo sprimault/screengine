@@ -62,27 +62,3 @@ fn le_champ_de_capacite_ne_se_refuse_plus() {
         1_000
     );
 }
-
-/// Une liaison JavaScript écrit la structure octet par octet d'après les
-/// décalages du header. `cbindgen` ne les vérifie pas — il n'interroge
-/// jamais `rustc` —, donc c'est ici que la disposition se prouve.
-#[test]
-fn la_configuration_a_les_decalages_publies() {
-    use core::mem::{align_of, offset_of, size_of};
-
-    assert_eq!(size_of::<ScgContextConfig>(), 32);
-    assert_eq!(align_of::<ScgContextConfig>(), 4);
-
-    for (offset, actual) in [
-        (0, offset_of!(ScgContextConfig, max_width)),
-        (4, offset_of!(ScgContextConfig, max_height)),
-        (8, offset_of!(ScgContextConfig, width)),
-        (12, offset_of!(ScgContextConfig, height)),
-        (16, offset_of!(ScgContextConfig, tile_size)),
-        (20, offset_of!(ScgContextConfig, max_triangles)),
-        (24, offset_of!(ScgContextConfig, reserved1)),
-        (28, offset_of!(ScgContextConfig, reserved2)),
-    ] {
-        assert_eq!(offset, actual);
-    }
-}

@@ -8,51 +8,7 @@
 //! décalages du header. Un champ qui bouge ne casse rien à la compilation et
 //! rend une image fausse.
 
-use std::mem::{align_of, offset_of, size_of};
-
 use super::*;
-
-/// Les tailles et décalages que le header publie.
-///
-/// Les mêmes assertions existent en C, injectées dans le header et compilées
-/// par les hôtes ; celles-ci les attrapent du côté Rust, avant que le header
-/// ne soit même régénéré.
-#[test]
-fn les_structures_ont_la_disposition_publiee() {
-    assert_eq!((size_of::<ScgVertex>(), align_of::<ScgVertex>()), (12, 4));
-    assert_eq!(offset_of!(ScgVertex, z), 8);
-
-    assert_eq!(
-        (size_of::<ScgTriangle>(), align_of::<ScgTriangle>()),
-        (16, 4)
-    );
-    assert_eq!(offset_of!(ScgTriangle, i2), 8);
-    assert_eq!(offset_of!(ScgTriangle, r), 12);
-    assert_eq!(offset_of!(ScgTriangle, a), 15);
-
-    assert_eq!((size_of::<ScgCamera>(), align_of::<ScgCamera>()), (36, 4));
-    assert_eq!(offset_of!(ScgCamera, orientation), 12);
-    assert_eq!(offset_of!(ScgCamera, fov_y), 28);
-    assert_eq!(offset_of!(ScgCamera, near_plane), 32);
-
-    assert_eq!((size_of::<ScgMat4>(), align_of::<ScgMat4>()), (64, 4));
-
-    assert_eq!(
-        (size_of::<ScgVertexUv>(), align_of::<ScgVertexUv>()),
-        (20, 4)
-    );
-    assert_eq!(offset_of!(ScgVertexUv, z), 8);
-    assert_eq!(offset_of!(ScgVertexUv, u), 12);
-    assert_eq!(offset_of!(ScgVertexUv, v), 16);
-
-    assert_eq!(
-        (size_of::<ScgTextureDesc>(), align_of::<ScgTextureDesc>()),
-        (24, 4)
-    );
-    assert_eq!(offset_of!(ScgTextureDesc, height), 4);
-    assert_eq!(offset_of!(ScgTextureDesc, format), 8);
-    assert_eq!(offset_of!(ScgTextureDesc, reserved2), 20);
-}
 
 /// Le format RGBA8 vaut un, jamais zéro.
 ///

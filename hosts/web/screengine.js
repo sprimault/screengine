@@ -126,7 +126,8 @@ const BYTE = Array.from({ length: 256 }, (_, i) => BigInt(i));
  * @property {number} width largeur initiale
  * @property {number} height hauteur initiale
  * @property {number} tileSize côté de tuile, 32 ou 64
- * @property {number[]} [reserved] les trois champs réservés, nuls par défaut
+ * @property {number} [maxTriangles] triangles préparés par image, 0 pour le défaut
+ * @property {number[]} [reserved] les deux champs réservés, nuls par défaut
  */
 
 /** Une instance du module et l'accès à sa mémoire. */
@@ -212,7 +213,7 @@ export class Screengine {
    */
   writeConfig(ptr, config) {
     const view = new DataView(this.memory.buffer, ptr, CONFIG_SIZE);
-    const reserved = config.reserved ?? [0, 0, 0];
+    const reserved = config.reserved ?? [0, 0];
     new Uint8Array(this.memory.buffer, ptr, CONFIG_SIZE).fill(0);
     view.setUint32(0, config.maxWidth, true);
     view.setUint32(4, config.maxHeight, true);

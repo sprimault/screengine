@@ -60,6 +60,20 @@ non opaque voyait ce canal ressortir, et un navigateur l'y composait ; il
 obtient maintenant une image opaque.
 
 ### Corrigé
+- Les quatre points d'entrée qui ne rendent pas de code — les deux
+  destructions, la libération et l'allocation de tampon — passent désormais par
+  l'enveloppe commune : une panique n'y traverse plus la frontière C,
+  l'environnement flottant y est fixé comme ailleurs, et l'emplacement d'erreur
+  par thread y est vidé à l'entrée. Ce dernier point était violable **sans
+  aucune panique** : sur un thread de pool, un chargement de texture qui
+  échouait laissait son message, et l'appel suivant le rendait comme s'il était
+  le sien.
+- Le header donne le repère complet de la caméra — le monde en main droite, Z
+  en haut, le zénith vers le haut de l'écran et le −Y vers la droite — là où il
+  n'en disait que la direction du regard, ce qui laissait le roulis
+  indéterminé. Il dit aussi que la couleur d'un triangle est ignorée sur le
+  chemin texturé, et le message de `SCG_ERR_INVALID_STATE` ne parle plus de
+  tuiles : il couvre aussi une soumission faite pendant le rendu.
 - Une texture restait dans la table de l'image quand son lot était accepté sans
   qu'aucun de ses triangles ne survive à la projection. L'entrée n'était plus
   désignée par rien, et le plafond de la table, qui se déduit du nombre de
@@ -87,6 +101,19 @@ that channel come out, and a browser composited it; it now gets an opaque
 image.
 
 ### Fixed
+- The four entry points that return no code — both destructors, the buffer
+  release and the buffer allocation — now go through the common wrapper: a
+  panic no longer crosses the C boundary there, the floating-point environment
+  is set as elsewhere, and the per-thread error slot is cleared on entry. That
+  last point was breakable **with no panic at all**: on a pool thread, a failing
+  texture load left its message behind, and the next call returned it as its
+  own.
+- The header now gives the camera's full frame — right-handed world, Z up,
+  zenith towards the top of the screen and world −Y towards the right — where it
+  only stated the viewing direction, leaving the roll undetermined. It also
+  states that a triangle's colour is ignored on the textured path, and the
+  `SCG_ERR_INVALID_STATE` message no longer talks about tiles: it also covers a
+  submission made during rendering.
 - A texture stayed in the frame's table when its batch was accepted without a
   single triangle surviving projection. Nothing referenced the entry any more,
   and the table's ceiling, derived from the number of prepared triangles,

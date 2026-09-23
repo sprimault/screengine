@@ -106,7 +106,13 @@ pub(crate) fn message_of(error: Error) -> &'static str {
             "pixel block of the wrong length: needs width x height x 4 bytes"
         }
         Error::OutOfMemory => "out of memory",
-        Error::InvalidState => "call out of sequence: this tile was already rendered in this frame",
+        // Un seul message pour toute la variante, et il ne nomme aucun cas :
+        // le noyau ne distingue pas une tuile déjà rendue d'une soumission
+        // pendant le rendu, et un texte qui parlerait de tuiles enverrait sur
+        // une fausse piste l'hôte qui a simplement soumis trop tard.
+        Error::InvalidState => {
+            "call out of sequence: check the frame state and whether this tile was already rendered"
+        }
     }
 }
 
