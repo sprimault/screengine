@@ -336,10 +336,23 @@ aux fonctions de bord.
   et `-0.4` et `0.4` ne tomberaient pas du même côté.
 - **Aucun appel à la libm.** Pas de `sin`, `cos`, `tan`, `sqrt`, `powf`, `exp`,
   `ln` ni de leurs cousins : leur résultat dépend de l'implémentation — musl,
-  Darwin, le CRT de MSVC. Trigonométrie et racine inverse passent par les tables
-  et polynômes du noyau. Le `no_std` en écarte la plupart d'office ; la règle vaut
-  aussi dans les crates qui ont `std`, dès qu'un résultat entre dans une
-  empreinte.
+  Darwin, le CRT de MSVC. Trigonométrie, racine inverse, exponentielle et
+  logarithme passent par les tables et polynômes du noyau. Le `no_std` en écarte
+  la plupart d'office ; la règle vaut aussi dans les crates qui ont `std`, dès
+  qu'un résultat entre dans une empreinte.
+
+  **Ce que la liste de `clippy.toml` doit couvrir en `f64` autant qu'en `f32`.**
+  Le noyau n'y accède pas — ces méthodes sont `std` —, mais la frontière et la
+  conformance, si, et une liste tenue d'un seul côté laisse le chemin ouvert
+  précisément là où une empreinte se calcule.
+- **Le `f64` est permis hors image, interdit par pixel.** Il ne vivait jusqu'ici
+  que dans les `const fn` qui remplissent les tables et dans les tests ; une
+  table calculée au moment d'un réglage l'emploie aussi à l'exécution. Le
+  déterminisme n'en souffre pas : IEEE 754 impose les quatre opérations au bit
+  près en `f64` comme en `f32`, et une cible sans unité double passe par
+  `compiler-builtins`, correctement arrondi lui aussi. Ce qui l'exclut d'une
+  image n'est pas sa justesse mais son coût, et la virgule fixe après
+  projection, qui ne laisse de toute façon aucun flottant arriver au pixel.
 - **Pas de `mul_add`.** Sur une cible sans instruction FMA, il retombe sur la
   libm ; sur une autre, il ne rend pas les mêmes bits qu'une multiplication
   suivie d'une addition.
