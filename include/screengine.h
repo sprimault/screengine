@@ -368,6 +368,51 @@ int32_t scg_set_filter(struct ScgContext *ctx, uint32_t filter);
 // `ctx` is a live handle used by no other thread during the call.
 int32_t scg_set_overbright(struct ScgContext *ctx, uint32_t shift);
 
+// Turns on distance fog, from the next frames on.
+//
+// `start` and `end` are view distances in world units, counted from the
+// camera: `start` must be finite and not negative, `end` finite and strictly
+// beyond `start`. Anything else is `SCG_ERR_INVALID_ARGUMENT`, and the
+// context keeps the fog it had.
+//
+// **The image's background takes the fog colour on its own**, without the
+// host clearing with it: a pixel no triangle painted is infinitely distant,
+// and fog is applied where depth is already at hand. That is what makes
+// distant geometry meet the horizon with no dividing line — clearing
+// separately would draw back the very seam this avoids.
+//
+// **Three channels, not four.** The output buffer is opaque by contract, so
+// an alpha on the fog colour would be a value the engine ignores, and a host
+// would rightly wonder what it does.
+//
+// Off by default, and turned off again by `scg_clear_fog`. Rejected with
+// `SCG_ERR_INVALID_STATE` between `scg_frame_begin` and `scg_frame_end`, for
+// the reason that holds for every frame setting.
+//
+// # Safety
+//
+// `ctx` is a live handle used by no other thread during the call.
+int32_t scg_set_fog(struct ScgContext *ctx,
+                    uint8_t r,
+                    uint8_t g,
+                    uint8_t b,
+                    float start,
+                    float end);
+
+// Turns distance fog off, from the next frames on.
+//
+// Calling it on a context that has no fog is not an error: a host that turns
+// fog off at the end of a level does not have to remember whether it turned
+// it on.
+//
+// Rejected with `SCG_ERR_INVALID_STATE` during a frame, like every other
+// frame setting.
+//
+// # Safety
+//
+// `ctx` is a live handle used by no other thread during the call.
+int32_t scg_clear_fog(struct ScgContext *ctx);
+
 // Submits a batch of triangles to the frame being recorded.
 //
 // `model` carries the object into world space; the engine composes the view

@@ -384,6 +384,28 @@ static jint set_overbright(JNIEnv *env, jclass cls, jlong ctx, jint shift)
     return scg_set_overbright((ScgContext *)(intptr_t)ctx, (uint32_t)shift);
 }
 
+/*
+ * scg_set_fog : les trois canaux arrivent en `jint` parce que Java n'a pas
+ * d'octet non signé, et une couleur passée en `jbyte` obligerait chaque
+ * appelant à masquer.
+ */
+static jint set_fog(JNIEnv *env, jclass cls, jlong ctx, jint r, jint g, jint b,
+                    jfloat start, jfloat end)
+{
+    (void)env;
+    (void)cls;
+    return scg_set_fog((ScgContext *)(intptr_t)ctx, (uint8_t)r, (uint8_t)g, (uint8_t)b,
+                       start, end);
+}
+
+/* scg_clear_fog. */
+static jint clear_fog(JNIEnv *env, jclass cls, jlong ctx)
+{
+    (void)env;
+    (void)cls;
+    return scg_clear_fog((ScgContext *)(intptr_t)ctx);
+}
+
 /* Les méthodes `native` de la classe, avec leur signature JNI. */
 static const JNINativeMethod METHODS[] = {
     {"abiVersion", "()I", (void *)abi_version},
@@ -401,6 +423,8 @@ static const JNINativeMethod METHODS[] = {
     {"submitLit", "(J[F[F[I[BJJ)I", (void *)submit_lit},
     {"setFilter", "(JI)I", (void *)set_filter},
     {"setOverbright", "(JI)I", (void *)set_overbright},
+    {"setFog", "(JIIIFF)I", (void *)set_fog},
+    {"clearFog", "(J)I", (void *)clear_fog},
 };
 
 /* Enregistre les méthodes ; un échec empêche le chargement de la bibliothèque. */

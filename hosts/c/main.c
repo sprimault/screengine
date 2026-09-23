@@ -539,6 +539,78 @@ static uint64_t render_textured(int *ok, uint32_t filter)
     return hash;
 }
 
+/* Le sol de la scène `brouillard`, plus long que la rampe : sa moitié
+ * lointaine se confond avec le fond, sa moitié proche garde son damier. */
+static const ScgVertexUv FOG_FLOOR[4] = {
+    {  1.0f, -20.0f, -1.2f,   1.0f * 8.0f, -20.0f * 8.0f },
+    { 50.0f, -20.0f, -1.2f,  50.0f * 8.0f, -20.0f * 8.0f },
+    { 50.0f,  20.0f, -1.2f,  50.0f * 8.0f,  20.0f * 8.0f },
+    {  1.0f,  20.0f, -1.2f,   1.0f * 8.0f,  20.0f * 8.0f },
+};
+
+/* Rend la scène embrumée et en donne l'empreinte.
+ *
+ * Le fond n'est effacé de rien : c'est le moteur qui lui donne la couleur du
+ * brouillard, parce qu'un pixel non peint est infiniment lointain. Un hôte qui
+ * effacerait lui-même redessinerait la couture qu'on cherche à supprimer, et
+ * l'empreinte le dirait. */
+static uint64_t render_fog(int *ok)
+{
+    ScgContextConfig config = scene_config();
+    ScgContext *ctx = NULL;
+    ScgTexture *texture = NULL;
+    uint8_t *pixels = malloc((size_t)STRIDE * HEIGHT * 4);
+    uint8_t *texels = malloc((size_t)FLOOR_SIDE * FLOOR_SIDE * 4);
+    uint64_t hash = 0;
+
+    *ok = 0;
+    if (pixels == NULL || texels == NULL) {
+        check(0, "allocation des tampons de la scène embrumée");
+        free(pixels);
+        free(texels);
+        return 0;
+    }
+    make_checker(texels);
+
+    ScgTextureDesc desc;
+    memset(&desc, 0, sizeof desc);
+    desc.width = FLOOR_SIDE;
+    desc.height = FLOOR_SIDE;
+    desc.format = SCG_TEXTURE_FORMAT_RGBA8;
+    int loaded = scg_texture_load(&desc, texels, (size_t)FLOOR_SIDE * FLOOR_SIDE * 4, &texture);
+    check(loaded == SCG_OK, "la texture du sol embrumé se charge");
+    check(scg_create(&config, &ctx) == SCG_OK, "création du contexte embrumé");
+
+    if (loaded == SCG_OK && ctx != NULL) {
+        /* Une rampe vide est refusée : c'est une division par zéro, et
+         * l'appelant voulait vraisemblablement éteindre le brouillard. */
+        check(scg_set_fog(ctx, 0x30, 0x38, 0x48, 10.0f, 10.0f) == SCG_ERR_INVALID_ARGUMENT,
+              "une rampe vide est refusée");
+        /* Éteindre un brouillard qui n'existe pas n'est pas une erreur. */
+        check(scg_clear_fog(ctx) == SCG_OK, "l'extinction sans brouillard passe");
+
+        check(scg_set_fog(ctx, 0x30, 0x38, 0x48, 3.0f, 14.0f) == SCG_OK,
+              "le brouillard se règle");
+
+        int32_t code = scg_submit_textured(ctx, &IDENTITY, FOG_FLOOR, 4,
+                                           FLOOR_TRIANGLES, 2, texture);
+        check(code == SCG_OK, "le sol embrumé est accepté");
+        scg_texture_destroy(texture);
+        texture = NULL;
+
+        code = scg_frame_end(ctx, pixels, STRIDE);
+        check(code == SCG_OK, "l'image embrumée se rend");
+        *ok = code == SCG_OK;
+        hash = fingerprint(pixels, WIDTH, HEIGHT, STRIDE);
+    }
+
+    scg_texture_destroy(texture);
+    scg_destroy(ctx);
+    free(pixels);
+    free(texels);
+    return hash;
+}
+
 /* Rend la scène éclairée et en donne l'empreinte.
  *
  * Deux lots : le sol, texturé et éclairé, puis le mur, éclairé seul. Le second
@@ -649,7 +721,10 @@ int main(void)
     int lit_ok = 0;
     uint64_t lit = render_lit(&lit_ok);
 
-    if (failures > 0 || !ok || !textured_ok || !bilinear_ok || !lit_ok) {
+    int fog_ok = 0;
+    uint64_t fog = render_fog(&fog_ok);
+
+    if (failures > 0 || !ok || !textured_ok || !bilinear_ok || !lit_ok || !fog_ok) {
         fprintf(stderr, "%d vérification(s) en échec\n", failures);
         return 1;
     }
@@ -657,5 +732,6 @@ int main(void)
     printf("%016llx\n", (unsigned long long)textured);
     printf("%016llx\n", (unsigned long long)bilinear);
     printf("%016llx\n", (unsigned long long)lit);
+    printf("%016llx\n", (unsigned long long)fog);
     return 0;
 }

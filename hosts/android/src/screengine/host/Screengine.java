@@ -240,4 +240,34 @@ public final class Screengine {
      * @return le code de retour
      */
     static native int setOverbright(long ctx, int shift);
+
+    /**
+     * {@code scg_set_fog}.
+     *
+     * <p>Les trois canaux sont des entiers et non des octets : Java n'a pas
+     * d'octet non signé, et une couleur passée en {@code byte} obligerait
+     * chaque appelant à masquer.
+     *
+     * <p>Le fond de l'image prend la couleur du brouillard de lui-même : il
+     * n'y a rien à effacer avec elle.
+     *
+     * @param ctx handle, ou 0
+     * @param r canal rouge, de 0 à 255
+     * @param g canal vert
+     * @param b canal bleu
+     * @param start distance où le brouillard commence
+     * @param end distance où il est plein
+     * @return le code de retour
+     */
+    static native int setFog(long ctx, int r, int g, int b, float start, float end);
+
+    /**
+     * {@code scg_clear_fog}.
+     *
+     * <p>Éteindre un brouillard qui n'existe pas n'est pas une erreur.
+     *
+     * @param ctx handle, ou 0
+     * @return le code de retour
+     */
+    static native int clearFog(long ctx);
 }

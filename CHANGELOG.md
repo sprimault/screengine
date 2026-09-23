@@ -70,6 +70,11 @@ publié, et explique les conventions du dépôt à qui y contribue.
   main, si bien que **le fond de l'image en prend la couleur sans que l'hôte
   ait à l'effacer** : la géométrie lointaine rejoint l'horizon sans ligne de
   démarcation.
+- La frontière C expose le brouillard : `scg_set_fog` et `scg_clear_fog`. La
+  couleur y tient en trois canaux, le tampon de sortie étant opaque par
+  contrat, et éteindre un brouillard qui n'existe pas n'est pas une erreur.
+  `SCG_ABI_VERSION` reste à **1**. Les quatre hôtes de référence rendent la
+  scène embrumée au bit près.
 
 ### Modifié
 
@@ -107,6 +112,10 @@ publié, et explique les conventions du dépôt à qui y contribue.
   while a tile is copied out, where depth is already at hand, so **the image's
   background takes its colour without the host having to clear with it**:
   distant geometry meets the horizon with no dividing line.
+- The C boundary exposes fog: `scg_set_fog` and `scg_clear_fog`. Its colour
+  takes three channels there, the output buffer being opaque by contract, and
+  turning off fog that was never on is not an error. `SCG_ABI_VERSION` stays at
+  **1**. All four reference hosts render the fogged scene bit for bit.
 
 ### Changed
 
