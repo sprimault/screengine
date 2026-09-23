@@ -102,6 +102,17 @@ publié, et explique les conventions du dépôt à qui y contribue.
   ciel ouvert fait par construction. La clause est amendée, et la chaîne est
   engendrée comme pour une texture.
 
+### Corrigé
+
+- `scg_set_camera` et `Context::set_camera` sont refusés, par
+  `SCG_ERR_INVALID_STATE`, dès qu'un triangle de l'image en cours est retenu.
+  Chaque soumission projette immédiatement : une caméra changée au milieu
+  laissait dans la même image deux espaces écran, chacun correctement
+  rasterisé et l'ensemble faux. `docs/abi.md` portait déjà la règle — « la
+  caméra vaut pour l'image entière » — sans que le moteur la tienne.
+  `SCG_ABI_VERSION` reste à **1** : un hôte conforme ne fait jamais cet appel,
+  et n'observe donc aucune différence.
+
 ***
 
 ### Added

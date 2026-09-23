@@ -739,6 +739,44 @@ fn refuse_de_changer_le_filtre_pendant_une_image() {
     unsafe { scg_destroy(ctx) };
 }
 
+/// La caméra ne se change plus dès qu'un triangle est retenu : la soumission
+/// projette tout de suite, et deux espaces écran dans la même image ne
+/// décriraient rien.
+///
+/// Le refus tombe avec l'image : un hôte qui règle sa caméra dès le retour de
+/// `scg_frame_end` est servi, sans quoi la boucle la plus naturelle — régler,
+/// soumettre, rendre — serait refusée dès sa deuxième itération.
+#[test]
+fn refuse_de_changer_la_camera_apres_une_soumission() {
+    let ctx = create(&sane());
+    let camera = ScgCamera {
+        position: [1.0, 0.0, 0.0],
+        orientation: [0.0, 0.0, 0.0, 1.0],
+        fov_y: 1.2,
+        near_plane: 0.1,
+    };
+
+    // SAFETY: `ctx` est vivant, et `camera` est un local qui vit jusqu'au
+    // retour de l'appel — le moteur n'en garde aucune référence.
+    assert_eq!(unsafe { scg_set_camera(ctx, &camera) }, SCG_OK);
+    assert_eq!(submit_scene(ctx), SCG_OK);
+
+    // SAFETY: mêmes préconditions.
+    let apres = unsafe { scg_set_camera(ctx, &camera) };
+    assert_eq!(apres, SCG_ERR_INVALID_STATE);
+
+    let mut pixels = vec![0u8; 64 * 32 * 4];
+    // SAFETY: le tampon porte bien `stride × hauteur × 4` octets.
+    let code = unsafe { scg_frame_end(ctx, pixels.as_mut_ptr(), 64) };
+    assert_eq!(code, SCG_OK);
+
+    // SAFETY: l'image est close, sa liste de dessin ne compte plus.
+    assert_eq!(unsafe { scg_set_camera(ctx, &camera) }, SCG_OK);
+
+    // SAFETY: le handle est vivant et détruit une seule fois.
+    unsafe { scg_destroy(ctx) };
+}
+
 /// Une coordonnée de texture non finie refuse le lot, et un sommet nul aussi :
 /// les deux contrôles de la frontière valent pour le chemin texturé.
 #[test]

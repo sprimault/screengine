@@ -317,6 +317,59 @@ fn la_scene_ne_se_change_pas_pendant_le_rendu() {
     assert_eq!(ctx.set_filter(Filter::Bilinear), Err(Error::InvalidState));
 }
 
+/// Une caméra ailleurs que la neutre, pour que le refus se voie.
+fn moved_camera() -> Camera {
+    Camera {
+        position: Vec3::new(1.0, 0.0, 0.0),
+        ..Camera::DEFAULT
+    }
+}
+
+/// La caméra vaut pour l'image entière, et la soumission projette tout de
+/// suite : la changer après un lot laisserait dans la même image deux espaces
+/// écran, chacun correctement rasterisé et l'ensemble faux.
+///
+/// Le refus est le seul remède : la géométrie source n'est pas conservée, donc
+/// rien en aval ne pourrait reprojeter ce qui a déjà été préparé.
+#[test]
+fn la_camera_ne_se_change_pas_apres_une_soumission() {
+    let mut ctx = small();
+    ctx.submit(Affine3::IDENTITY, &ahead(), &one())
+        .expect("capacité");
+    assert_eq!(ctx.set_camera(moved_camera()), Err(Error::InvalidState));
+    assert_eq!(ctx.camera(), Camera::DEFAULT, "le refus ne change rien");
+}
+
+/// Le refus porte sur les triangles retenus, pas sur les lots reçus : un lot
+/// dont rien n'a survécu à la projection ne met rien dans l'image, et il n'y a
+/// alors rien à mêler.
+///
+/// Sans cette distinction, un hôte qui balaie son décor et dont la première
+/// cellule tombe hors champ ne pourrait plus bouger sa caméra de l'image.
+#[test]
+fn un_lot_entierement_elimine_ne_bloque_pas_la_camera() {
+    let mut ctx = small();
+    ctx.submit(Affine3::IDENTITY, &behind(), &one())
+        .expect("capacité");
+    assert_eq!(ctx.triangles.len(), 0, "derrière la caméra");
+    ctx.set_camera(moved_camera()).expect("rien dans l'image");
+}
+
+/// La liste d'une image close appartient à la précédente : un hôte qui règle
+/// sa caméra dès le retour de la fin doit être servi, sans quoi le refus
+/// gagnerait une image de retard et rendrait la boucle la plus naturelle
+/// inutilisable.
+#[test]
+fn la_camera_se_change_des_le_retour_de_la_fin_d_image() {
+    let mut ctx = small();
+    ctx.submit(Affine3::IDENTITY, &ahead(), &one())
+        .expect("capacité");
+    let mut pixels = vec![0u8; ctx.width as usize * ctx.height as usize * BYTES_PER_PIXEL];
+    ctx.frame_end(&mut pixels, ctx.width).expect("image rendue");
+    ctx.set_camera(moved_camera()).expect("image close");
+    assert_eq!(ctx.camera(), moved_camera());
+}
+
 /// Le filtrage par défaut est le tramage : un contexte qu'on ne configure pas
 /// rend ce que la classe de moteurs visée rendait.
 #[test]

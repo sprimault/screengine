@@ -306,9 +306,13 @@ impl Context {
 
     /// Change la caméra, ou refuse son champ de vision et son plan proche.
     ///
-    /// Refusée pendant le rendu, comme toute écriture dans l'état du contexte.
-    /// La caméra vaut pour l'image entière : la déplacer entre deux soumissions
-    /// du même lot rendrait une image que rien ne décrit.
+    /// Refusée pendant le rendu, comme toute écriture dans l'état du contexte,
+    /// et refusée dès qu'un triangle de l'image en cours est retenu.
+    ///
+    /// La caméra vaut pour l'image entière, et chaque soumission projette
+    /// immédiatement : changer de caméra au milieu laisserait dans la même
+    /// image deux espaces écran, chacun juste et l'ensemble faux. Rien en aval
+    /// ne pourrait le rattraper, la géométrie source n'étant pas conservée.
     ///
     /// Le quaternion n'est pas exigé unitaire, il est normalisé ici ; en
     /// revanche `fov_y` est refusé **sur les radians**, avant toute conversion
@@ -318,6 +322,7 @@ impl Context {
         if *self.state.get_mut() != RECORDING {
             return Err(Error::InvalidState);
         }
+        self.require_empty_frame()?;
         self.projection = Projection::new(self.width, self.height, camera.fov_y, camera.near)?;
         self.view = camera.view();
         let moved_near = self.camera.near != camera.near;
@@ -521,6 +526,25 @@ impl Context {
             // les garder ferait vivre une ressource que plus rien ne dessine.
             self.textures.clear();
             *self.stale.get_mut() = false;
+        }
+    }
+
+    /// Refuse un réglage qui vaut pour l'image entière quand l'image en cours
+    /// tient déjà de la géométrie.
+    ///
+    /// La liste d'une image close ne compte pas : elle appartient à la
+    /// précédente, et un hôte qui soumet dès le retour de la fin doit pouvoir
+    /// régler sa vue avant de le faire.
+    ///
+    /// Le test porte sur les triangles **retenus**, et non sur les lots reçus :
+    /// un lot dont pas un triangle n'a survécu à la projection ne laisse rien
+    /// dans l'image, donc rien à mêler.
+    fn require_empty_frame(&mut self) -> Result<()> {
+        self.drop_closed_frame();
+        if self.triangles.is_empty() {
+            Ok(())
+        } else {
+            Err(Error::InvalidState)
         }
     }
 
