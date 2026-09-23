@@ -314,6 +314,76 @@ static jint submit_textured(JNIEnv *env, jclass cls, jlong ctx, jfloatArray mode
     return code;
 }
 
+/*
+ * scg_submit_lit : mêmes tableaux que `submitTextured`, les sommets portant
+ * sept `float` au lieu de cinq, et deux handles d'image au lieu d'un.
+ *
+ * `texture` vaut zéro pour un lot uni, ce que le moteur accepte ici ; une
+ * `lightmap` nulle, elle, est refusée, et ce n'est pas ce pont qui le décide.
+ */
+static jint submit_lit(JNIEnv *env, jclass cls, jlong ctx, jfloatArray model,
+                       jfloatArray vertices, jintArray indices, jbyteArray colors,
+                       jlong texture, jlong lightmap)
+{
+    (void)cls;
+    if (model == NULL || vertices == NULL || indices == NULL || colors == NULL) {
+        return SCG_ERR_NULL;
+    }
+
+    jsize floats = (*env)->GetArrayLength(env, vertices);
+    jsize index_count = (*env)->GetArrayLength(env, indices);
+    jsize channels = (*env)->GetArrayLength(env, colors);
+    if ((*env)->GetArrayLength(env, model) != 16 || floats % 7 != 0 || index_count % 3 != 0
+        || channels != index_count / 3 * 4) {
+        return SCG_ERR_INVALID_ARGUMENT;
+    }
+
+    uint32_t vertex_count = (uint32_t)(floats / 7);
+    uint32_t triangle_count = (uint32_t)(index_count / 3);
+    ScgMat4 matrix;
+    ScgVertexUv2 *points = calloc(vertex_count ? vertex_count : 1, sizeof *points);
+    ScgTriangle *faces = calloc(triangle_count ? triangle_count : 1, sizeof *faces);
+    jint *raw_indices = calloc(index_count ? (size_t)index_count : 1, sizeof *raw_indices);
+    jbyte *raw_colors = calloc(channels ? (size_t)channels : 1, sizeof *raw_colors);
+    int32_t code = SCG_ERR_OUT_OF_MEMORY;
+
+    if (points != NULL && faces != NULL && raw_indices != NULL && raw_colors != NULL) {
+        (*env)->GetFloatArrayRegion(env, model, 0, 16, matrix.m);
+        /* `ScgVertexUv2` est exactement sept `float` contigus, ce que les
+         * assertions du header vérifient sur cette cible même. */
+        (*env)->GetFloatArrayRegion(env, vertices, 0, floats, (jfloat *)points);
+        (*env)->GetIntArrayRegion(env, indices, 0, index_count, raw_indices);
+        (*env)->GetByteArrayRegion(env, colors, 0, channels, raw_colors);
+
+        for (uint32_t i = 0; i < triangle_count; i++) {
+            faces[i].i0 = (uint32_t)raw_indices[i * 3];
+            faces[i].i1 = (uint32_t)raw_indices[i * 3 + 1];
+            faces[i].i2 = (uint32_t)raw_indices[i * 3 + 2];
+            faces[i].r = (uint8_t)raw_colors[i * 4];
+            faces[i].g = (uint8_t)raw_colors[i * 4 + 1];
+            faces[i].b = (uint8_t)raw_colors[i * 4 + 2];
+            faces[i].a = (uint8_t)raw_colors[i * 4 + 3];
+        }
+        code = scg_submit_lit((ScgContext *)(intptr_t)ctx, &matrix, points, vertex_count,
+                              faces, triangle_count, (ScgTexture *)(intptr_t)texture,
+                              (ScgTexture *)(intptr_t)lightmap);
+    }
+
+    free(points);
+    free(faces);
+    free(raw_indices);
+    free(raw_colors);
+    return code;
+}
+
+/* scg_set_overbright. */
+static jint set_overbright(JNIEnv *env, jclass cls, jlong ctx, jint shift)
+{
+    (void)env;
+    (void)cls;
+    return scg_set_overbright((ScgContext *)(intptr_t)ctx, (uint32_t)shift);
+}
+
 /* Les méthodes `native` de la classe, avec leur signature JNI. */
 static const JNINativeMethod METHODS[] = {
     {"abiVersion", "()I", (void *)abi_version},
@@ -328,7 +398,9 @@ static const JNINativeMethod METHODS[] = {
     {"textureLoad", "(II[B)J", (void *)texture_load},
     {"textureDestroy", "(J)V", (void *)texture_destroy},
     {"submitTextured", "(J[F[F[I[BJ)I", (void *)submit_textured},
+    {"submitLit", "(J[F[F[I[BJJ)I", (void *)submit_lit},
     {"setFilter", "(JI)I", (void *)set_filter},
+    {"setOverbright", "(JI)I", (void *)set_overbright},
 };
 
 /* Enregistre les méthodes ; un échec empêche le chargement de la bibliothèque. */

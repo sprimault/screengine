@@ -27,7 +27,7 @@ use std::ptr;
 
 use std::sync::Arc;
 
-use screengine::{Argument, Context, Error as CoreError, Texture, Vec3, VertexUv};
+use screengine::{Argument, Context, Error as CoreError, Texture, Vec3, VertexUv, VertexUv2};
 
 use entry::AbiError;
 use output::HostRows;
@@ -35,7 +35,7 @@ use output::HostRows;
 pub use context::{ScgContext, ScgContextConfig};
 pub use scene::{
     SCG_FILTER_BILINEAR, SCG_FILTER_DITHER, SCG_TEXTURE_FORMAT_RGBA8, ScgCamera, ScgMat4,
-    ScgTextureDesc, ScgTriangle, ScgVertex, ScgVertexUv,
+    ScgTextureDesc, ScgTriangle, ScgVertex, ScgVertexUv, ScgVertexUv2,
 };
 pub use status::{
     SCG_ERR_FAULTED, SCG_ERR_INVALID_ARGUMENT, SCG_ERR_INVALID_STATE, SCG_ERR_NULL,
@@ -164,6 +164,35 @@ pub unsafe extern "C" fn scg_set_camera(ctx: *mut ScgContext, camera: *const Scg
 pub unsafe extern "C" fn scg_set_filter(ctx: *mut ScgContext, filter: u32) -> i32 {
     let set = |mut core: entry::Core<'_>| {
         core.exclusive()?.set_filter(scene::filter_of(filter)?)?;
+        Ok(())
+    };
+
+    // SAFETY: précondition de la fonction — `ctx` est nul ou un handle vivant.
+    unsafe { entry::with_context(ctx, set) }
+}
+
+/// Sets how much lit surfaces are brightened, from the next frames on.
+///
+/// `shift` is `0`, `1` or `2`; anything else is `SCG_ERR_INVALID_ARGUMENT`,
+/// and the context keeps the value it had.
+///
+/// **Zero is the default, and it is the faithful setting**: under full light a
+/// texel comes out untouched, and never brighter. It is also a dull scene —
+/// a real lightmap reaches white nowhere, so every surface ends up darker than
+/// its texture. One or two double or quadruple the combined value, saturating
+/// where light is strong, and that is what gives a lit scene its range.
+///
+/// Rejected with `SCG_ERR_INVALID_STATE` between `scg_frame_begin` and
+/// `scg_frame_end`, for the same reason as `scg_set_filter`: a frame whose
+/// tiles did not all share one setting is described by nothing.
+///
+/// # Safety
+///
+/// `ctx` is a live handle used by no other thread during the call.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn scg_set_overbright(ctx: *mut ScgContext, shift: u32) -> i32 {
+    let set = |mut core: entry::Core<'_>| {
+        core.exclusive()?.set_overbright(shift)?;
         Ok(())
     };
 
@@ -606,6 +635,90 @@ pub unsafe extern "C" fn scg_submit_textured(
                 }
                 Ok((corners, triangle.color()))
             })
+            .map_err(AbiError::from)
+    };
+
+    // SAFETY: précondition de la fonction — `ctx` est nul ou un handle vivant.
+    unsafe { entry::with_context(ctx, submit) }
+}
+
+/// Submits a batch of triangles lit by a lightmap.
+///
+/// Same contract as `scg_submit_textured`, with two differences: the vertices
+/// carry a second set of coordinates, and the batch carries a lightmap on top
+/// of its texture. Both apply to the whole batch.
+///
+/// **`texture` may be null, and `lightmap` may not.** That asymmetry is
+/// deliberate and is the one thing to get right here: a plain wall lit by a
+/// lightmap is the commonest surface of a set, and it renders `colour x
+/// lightmap`, each triangle's own colour standing in for the texel. A null
+/// `lightmap`, on the other hand, is `SCG_ERR_NULL` — a batch without one has
+/// no business on this path, and `scg_submit` or `scg_submit_textured` renders
+/// it.
+///
+/// Where `texture` is given, each triangle's colour is ignored exactly as on
+/// `scg_submit_textured`.
+///
+/// The lightmap is read bilinearly whatever `scg_set_filter` says, and through
+/// its own mipmap chain. The engine keeps its own strong reference to both
+/// images until the end of the frame: a host may destroy them on return.
+///
+/// # Safety
+///
+/// Same preconditions as `scg_submit`, `vertices` pointing to `vertex_count`
+/// readable `ScgVertexUv2`; `lightmap` must be a live handle from
+/// `scg_texture_load`, and `texture` must be null or such a handle.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn scg_submit_lit(
+    ctx: *mut ScgContext,
+    model: *const ScgMat4,
+    vertices: *const ScgVertexUv2,
+    vertex_count: u32,
+    triangles: *const ScgTriangle,
+    triangle_count: u32,
+    texture: *const ScgTexture,
+    lightmap: *const ScgTexture,
+) -> i32 {
+    let submit = |mut core: entry::Core<'_>| {
+        // SAFETY: précondition de la fonction — chaque pointeur est nul ou vise
+        // une valeur lisible.
+        let model = unsafe { model.as_ref() }.ok_or(AbiError::NULL)?;
+        let model = model.to_core()?;
+        // SAFETY: précondition de la fonction — `lightmap` est un handle
+        // vivant, `texture` est nul ou un handle vivant.
+        let (texture, lightmap) = unsafe { (texture.as_ref(), lightmap.as_ref()) };
+        let lightmap = lightmap.ok_or(AbiError::NULL)?;
+        // SAFETY: précondition de la fonction — chaque pointeur couvre son
+        // nombre d'éléments.
+        let (vertices, triangles) = unsafe {
+            (
+                slice_of(vertices, vertex_count),
+                slice_of(triangles, triangle_count),
+            )
+        };
+        scene::check_finite_uv2(vertices)?;
+        core.exclusive()?
+            .submit_each_lit(
+                model,
+                triangles.len(),
+                texture.map(|t| &t.inner),
+                &lightmap.inner,
+                |i| {
+                    let triangle = triangles[i];
+                    let mut corners = [VertexUv2::unlit(VertexUv::untextured(Vec3::ZERO)); 3];
+                    for (corner, index) in
+                        corners
+                            .iter_mut()
+                            .zip([triangle.i0, triangle.i1, triangle.i2])
+                    {
+                        *corner = vertices
+                            .get(index as usize)
+                            .ok_or(CoreError::InvalidArgument(Argument::VertexIndex))?
+                            .to_core();
+                    }
+                    Ok((corners, triangle.color()))
+                },
+            )
             .map_err(AbiError::from)
     };
 

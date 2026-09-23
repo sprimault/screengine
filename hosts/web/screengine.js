@@ -81,7 +81,9 @@ export const EXPORTS = [
   "scg_texture_load",
   "scg_texture_destroy",
   "scg_submit_textured",
+  "scg_submit_lit",
   "scg_set_filter",
+  "scg_set_overbright",
 ];
 
 /** Taille de `ScgContextConfig`, celle qu'affirme le header. */
@@ -92,6 +94,9 @@ export const VERTEX_SIZE = 12;
 
 /** Taille de `ScgVertexUv` : trois `float` de position, puis `u` et `v`. */
 export const VERTEX_UV_SIZE = 20;
+
+/** Taille de `ScgVertexUv2` : la précédente, plus `u2` et `v2`. */
+export const VERTEX_UV2_SIZE = 28;
 
 /** Taille de `ScgTextureDesc` : six `uint32_t`. */
 export const TEXTURE_DESC_SIZE = 24;
@@ -267,6 +272,23 @@ export class Screengine {
     const view = new DataView(this.memory.buffer, ptr, vertices.length * VERTEX_UV_SIZE);
     vertices.forEach((vertex, i) => {
       vertex.forEach((value, k) => view.setFloat32(i * VERTEX_UV_SIZE + k * 4, value, true));
+    });
+  }
+
+  /**
+   * Écrit un tableau de sommets éclairés : les cinq `float` du sommet texturé,
+   * puis `u2` et `v2` en texels de la lightmap.
+   *
+   * Les sept valeurs sont jointives, sans bourrage : c'est ce que le header
+   * affirme, et ce que cette liaison écrit octet par octet.
+   *
+   * @param {number} ptr adresse d'au moins `vertices.length * VERTEX_UV2_SIZE` octets
+   * @param {number[][]} vertices septuplets `[x, y, z, u, v, u2, v2]`
+   */
+  writeVerticesUv2(ptr, vertices) {
+    const view = new DataView(this.memory.buffer, ptr, vertices.length * VERTEX_UV2_SIZE);
+    vertices.forEach((vertex, i) => {
+      vertex.forEach((value, k) => view.setFloat32(i * VERTEX_UV2_SIZE + k * 4, value, true));
     });
   }
 

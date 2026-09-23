@@ -58,6 +58,12 @@ publié, et explique les conventions du dépôt à qui y contribue.
   lumière. Un triangle non texturé s'éclaire aussi, sa couleur tenant lieu de
   texel. Le sur-éclairement se règle par `Context::set_overbright`, de zéro à
   deux, et vaut zéro par défaut.
+- La frontière C expose l'éclairage : `ScgVertexUv2`, `scg_submit_lit` et
+  `scg_set_overbright`. **`texture` y accepte un pointeur nul** — c'est ainsi
+  qu'un mur sans texture rend `couleur × lightmap` —, `lightmap` non.
+  `SCG_ABI_VERSION` reste à **1** : deux fonctions ajoutées, une structure
+  nouvelle, aucun code d'erreur de plus. Les quatre hôtes de référence rendent
+  la scène éclairée au bit près.
 
 ### Modifié
 
@@ -81,6 +87,11 @@ publié, et explique les conventions du dépôt à qui y contribue.
   An untextured triangle is lit as well, its colour standing in for the texel.
   Overbright is set through `Context::set_overbright`, from zero to two, and
   defaults to zero.
+- The C boundary exposes lighting: `ScgVertexUv2`, `scg_submit_lit` and
+  `scg_set_overbright`. **`texture` accepts a null pointer there** — that is
+  how an untextured wall renders `colour × lightmap` — while `lightmap` does
+  not. `SCG_ABI_VERSION` stays at **1**: two functions added, one new struct,
+  no new error code. All four reference hosts render the lit scene bit for bit.
 
 ### Changed
 

@@ -707,6 +707,46 @@ Quatre fonctions ajoutées, deux structures nouvelles, trois constantes :
   l'étape 4 : `SCG_ERR_INVALID_FORMAT` nomme un format de fichier versionné,
   qu'un bloc de pixels brut n'a pas. Ce qui grossit, ce sont les messages.
 
+### Étape 3
+
+```c
+int32_t scg_submit_lit(ScgContext *ctx, const ScgMat4 *model,
+                       const ScgVertexUv2 *vertices, uint32_t vertex_count,
+                       const ScgTriangle *triangles, uint32_t triangle_count,
+                       const ScgTexture *texture, const ScgTexture *lightmap);
+int32_t scg_set_overbright(ScgContext *ctx, uint32_t shift);
+```
+
+```c
+typedef struct ScgVertexUv2 { float x, y, z, u, v, u2, v2; } ScgVertexUv2;
+```
+
+Deux fonctions ajoutées, une structure nouvelle, aucune constante :
+`SCG_ABI_VERSION` reste à **1**.
+
+- **Une structure de sommet nouvelle, et non deux champs de plus sur
+  `ScgVertexUv`.** Celle-ci est publiée et ne s'élargit pas : un hôte qui
+  n'éclaire rien continue d'écrire cinq flottants par sommet. Vingt-huit
+  octets, offsets 0 à 24 sur toutes les cibles, sans bourrage.
+- **`texture` peut être nul, `lightmap` non**, et c'est le seul point de cette
+  section qu'une liaison écrite de mémoire se trompera. Un mur uni éclairé est
+  la surface la plus courante d'un décor : il rend `couleur × lightmap`, la
+  couleur de chaque triangle tenant lieu de texel. Une `lightmap` nulle, elle,
+  est `SCG_ERR_NULL` — un lot qui n'en a pas n'a rien à faire sur ce chemin, et
+  `scg_submit` ou `scg_submit_textured` le rend. C'est une différence avec
+  cette dernière, où un pointeur nul est une erreur.
+- **Les deux jeux de coordonnées sont indépendants**, tous deux en texels de
+  leur propre image et bornés de la même façon. C'est la raison d'être du
+  second : une surface répète sa texture plusieurs fois et étire sa lightmap
+  une seule fois sur toute son étendue.
+- **Le sur-éclairement vaut zéro par défaut**, ce qui rend le texel intact sous
+  pleine lumière et jamais plus clair. C'est le réglage juste et une scène
+  terne — une lightmap réelle n'atteint le blanc nulle part. Un décalage de un
+  ou deux double ou quadruple la valeur combinée, avec saturation.
+  `scg_set_overbright` est refusé entre `scg_frame_begin` et `scg_frame_end`,
+  pour la raison qui vaut pour `scg_set_filter`.
+- **Aucun code d'erreur nouveau**, un message de plus.
+
 ### Étapes suivantes
 
 Prévisionnel. Ce qui doit être exposé est arrêté par la feuille de route ; les
@@ -716,7 +756,7 @@ noms ne le sont pas.
 |---|---|
 | 1 | ✓ début d'image et rendu d'une tuile (voir « Rendu par tuiles »), caméra et projection, soumission de triangles avec une matrice |
 | 2 | ✓ chargement d'une texture, mipmaps engendrés au chargement, niveau de qualité du filtrage par `scg_set_filter` |
-| 3 | changement de résolution interne, chargement d'une lightmap et soumission d'un lot éclairé, réglage du sur-éclairement, lumières dynamiques, brouillard, post-traitement |
+| 3 | ✓ soumission d'un lot éclairé et réglage du sur-éclairement ; reste : changement de résolution interne, lumières dynamiques, brouillard, post-traitement |
 | 4 | chargement d'un maillage et d'une carte depuis un bloc d'octets, libération |
 | 5 | rendu du monde depuis la caméra, calcul des lightmaps d'une cellule et reprise d'un cache |
 | 6 | interpolation entre trames, sprites orientés caméra |

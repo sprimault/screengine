@@ -231,6 +231,161 @@ function renderTextured(engine, filter) {
   return hash;
 }
 
+/** Côté de la lightmap de la scène `lumiere`, en texels. */
+const LIGHT_SIDE = 16;
+
+/**
+ * Le sol de `lumiere`, texturé comme le précédent et éclairé par-dessus.
+ *
+ * Les coordonnées de lightmap vont d'un demi-texel à un demi-texel du bord
+ * opposé : une lightmap ne se pave pas, et le bilinéaire irait autrement
+ * chercher son voisin par le repli.
+ */
+const LIT_FLOOR = [
+  [2.0, -16.0, -1.2, 2.0 * 8.0, -16.0 * 8.0, 0.5, 0.5],
+  [40.0, -16.0, -1.2, 40.0 * 8.0, -16.0 * 8.0, 15.5, 0.5],
+  [40.0, 16.0, -1.2, 40.0 * 8.0, 16.0 * 8.0, 15.5, 15.5],
+  [2.0, 16.0, -1.2, 2.0 * 8.0, 16.0 * 8.0, 0.5, 15.5],
+];
+
+/**
+ * Le mur du fond, sans texture : c'est la couleur du triangle qui tient lieu
+ * de texel, et ses coordonnées de texture sont donc nulles.
+ */
+const LIT_WALL = [
+  [40.0, -16.0, -1.2, 0.0, 0.0, 0.5, 0.5],
+  [40.0, -16.0, 10.0, 0.0, 0.0, 15.5, 0.5],
+  [40.0, 16.0, 10.0, 0.0, 0.0, 15.5, 15.5],
+  [40.0, 16.0, -1.2, 0.0, 0.0, 0.5, 15.5],
+];
+
+/** Ses deux triangles, dont la couleur est celle du mur. */
+const WALL_TRIANGLES = [
+  { indices: [0, 1, 2], color: [0xc0, 0xb0, 0x90, 0xff] },
+  { indices: [0, 2, 3], color: [0xc0, 0xb0, 0x90, 0xff] },
+];
+
+/**
+ * Le dégradé de lightmap, recopié de la suite de conformance.
+ *
+ * Les deux axes n'y font pas la même chose : un dégradé symétrique laisserait
+ * passer un axe échangé entre les deux jeux de coordonnées.
+ *
+ * @returns {Uint8Array} `LIGHT_SIDE` au carré texels de quatre octets
+ */
+function makeGradient() {
+  const luxels = new Uint8Array(LIGHT_SIDE * LIGHT_SIDE * 4);
+  const scale = (c) => 32 + Math.floor((c * 223) / (LIGHT_SIDE - 1));
+  for (let v = 0; v < LIGHT_SIDE; v++) {
+    for (let u = 0; u < LIGHT_SIDE; u++) {
+      const base = (v * LIGHT_SIDE + u) * 4;
+      luxels.set([scale(u), scale(Math.floor((u + v) / 2)), scale(v)], base);
+      luxels[base + 3] = 0xff;
+    }
+  }
+  return luxels;
+}
+
+/**
+ * Rend la scène éclairée, ou `null` en cas d'échec.
+ *
+ * Deux lots : le sol, texturé et éclairé, puis le mur, éclairé seul. Le second
+ * passe une texture nulle, ce que ce point d'entrée accepte là où
+ * `scg_submit_textured` la refuse — l'asymétrie que le header signale, et que
+ * cet hôte exerce pour de bon.
+ *
+ * @param {scg.Screengine} engine
+ * @returns {string | null}
+ */
+function renderLit(engine) {
+  const e = engine.exports;
+  const out = engine.alloc(4);
+  const desc = engine.alloc(scg.TEXTURE_DESC_SIZE);
+
+  const texels = makeChecker();
+  const texelBlock = engine.alloc(texels.length);
+  engine.writeTextureDesc(desc, FLOOR_SIDE, FLOOR_SIDE);
+  engine.bytes().set(texels, texelBlock);
+  const texLoaded = e.scg_texture_load(desc, texelBlock, texels.length, out);
+  check(texLoaded === scg.SCG_OK, "la texture du sol se charge");
+  const texture = engine.readU32(out);
+
+  const luxels = makeGradient();
+  const luxelBlock = engine.alloc(luxels.length);
+  engine.writeTextureDesc(desc, LIGHT_SIDE, LIGHT_SIDE);
+  engine.bytes().set(luxels, luxelBlock);
+  const lightLoaded = e.scg_texture_load(desc, luxelBlock, luxels.length, out);
+  check(lightLoaded === scg.SCG_OK, "la lightmap se charge par le meme chemin");
+  const lightmap = engine.readU32(out);
+
+  const config = engine.alloc(scg.CONFIG_SIZE);
+  engine.writeConfig(config, sceneConfig());
+  if (
+    texLoaded !== scg.SCG_OK ||
+    lightLoaded !== scg.SCG_OK ||
+    e.scg_create(config, out) !== scg.SCG_OK
+  ) {
+    check(false, "création du contexte éclairé");
+    return null;
+  }
+  const ctx = engine.readU32(out);
+
+  const model = engine.alloc(scg.MAT4_SIZE);
+  engine.writeIdentity(model);
+  const submit = (corners, batch, tex) => {
+    const vertices = engine.alloc(corners.length * scg.VERTEX_UV2_SIZE);
+    const triangles = engine.alloc(batch.length * scg.TRIANGLE_SIZE);
+    engine.writeVerticesUv2(vertices, corners);
+    engine.writeTriangles(triangles, batch);
+    return e.scg_submit_lit(
+      ctx,
+      model,
+      vertices,
+      corners.length,
+      triangles,
+      batch.length,
+      tex,
+      lightmap,
+    );
+  };
+
+  // Une lightmap nulle est refusée, elle : sans elle, ce lot n'a rien à faire
+  // sur ce chemin.
+  const vertices = engine.alloc(LIT_FLOOR.length * scg.VERTEX_UV2_SIZE);
+  const triangles = engine.alloc(FLOOR_TRIANGLES.length * scg.TRIANGLE_SIZE);
+  engine.writeVerticesUv2(vertices, LIT_FLOOR);
+  engine.writeTriangles(triangles, FLOOR_TRIANGLES);
+  const refused = e.scg_submit_lit(
+    ctx,
+    model,
+    vertices,
+    LIT_FLOOR.length,
+    triangles,
+    FLOOR_TRIANGLES.length,
+    texture,
+    0,
+  );
+  check(refused === scg.SCG_ERR_NULL, "une lightmap nulle est refusée");
+
+  check(submit(LIT_FLOOR, FLOOR_TRIANGLES, texture) === scg.SCG_OK,
+    "le sol texturé et éclairé est accepté");
+  check(submit(LIT_WALL, WALL_TRIANGLES, 0) === scg.SCG_OK,
+    "le mur uni et éclairé est accepté");
+
+  e.scg_texture_destroy(texture);
+  e.scg_texture_destroy(lightmap);
+
+  const pixels = engine.alloc(STRIDE * HEIGHT * scg.BYTES_PER_PIXEL);
+  const code = e.scg_frame_end(ctx, pixels, STRIDE);
+  check(code === scg.SCG_OK, "l'image éclairée se rend");
+  const hash = code === scg.SCG_OK
+    ? engine.fingerprint(pixels, WIDTH, HEIGHT, STRIDE)
+    : null;
+
+  e.scg_destroy(ctx);
+  return hash;
+}
+
 /**
  * Vrai si le message se décode en UTF-8 strict, est non vide si `expectText`,
  * et ne contient aucun caractère de contrôle venu d'un tampon non initialisé.
@@ -319,6 +474,7 @@ function checkLayout(header) {
     ScgContextConfig: scg.CONFIG_SIZE,
     ScgVertex: scg.VERTEX_SIZE,
     ScgVertexUv: scg.VERTEX_UV_SIZE,
+    ScgVertexUv2: scg.VERTEX_UV2_SIZE,
     ScgTextureDesc: scg.TEXTURE_DESC_SIZE,
     ScgTriangle: scg.TRIANGLE_SIZE,
     ScgMat4: scg.MAT4_SIZE,
@@ -565,12 +721,13 @@ async function main() {
   }
   const textured = renderTextured(engine, scg.SCG_FILTER_DITHER);
   const bilinear = renderTextured(engine, scg.SCG_FILTER_BILINEAR);
-  if (failures > 0 || textured === null || bilinear === null) {
+  const lit = renderLit(engine);
+  if (failures > 0 || textured === null || bilinear === null || lit === null) {
     process.stderr.write(`${failures} vérification(s) en échec\n`);
     return 1;
   }
 
-  process.stdout.write(`${hash}\n${textured}\n${bilinear}\n`);
+  process.stdout.write(`${hash}\n${textured}\n${bilinear}\n${lit}\n`);
   return 0;
 }
 
