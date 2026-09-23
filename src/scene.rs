@@ -215,5 +215,28 @@ pub struct Triangle {
     pub color: Color,
 }
 
+/// Une lumière ponctuelle, qui s'ajoute à l'éclairage d'une surface.
+///
+/// **Son atténuation se calcule par sommet, pas par pixel.** Il n'existe aucune
+/// distance du côté entier du pipeline — la virgule fixe commence à la
+/// projection, et la racine inverse du noyau vit avant elle. Un mur de deux
+/// triangles rend donc un dégradé entre ses coins et non un halo : une source
+/// qui doit s'y déplacer demande un mur découpé en panneaux.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Light {
+    /// Sa position dans le monde.
+    pub position: Vec3,
+    /// Son rayon, au-delà duquel elle n'éclaire plus rien.
+    ///
+    /// Strictement positif. L'atténuation s'y annule **avec une dérivée
+    /// nulle**, si bien qu'aucun anneau ne marque le bord — ce que ferait une
+    /// atténuation linéaire en `d²`.
+    pub radius: f32,
+    /// Sa couleur, à pleine intensité au centre.
+    ///
+    /// L'alpha est ignoré : une lumière s'ajoute, elle ne se mélange pas.
+    pub color: Color,
+}
+
 #[cfg(test)]
 mod tests;

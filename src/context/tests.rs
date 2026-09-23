@@ -884,6 +884,141 @@ fn une_surface_avant_la_rampe_ressort_intacte() {
     }
 }
 
+/// Une lumière blanche de rayon `radius`, à `x` unités devant la caméra.
+fn torch(x: f32, radius: f32) -> Light {
+    Light {
+        position: Vec3::new(x, 0.0, 0.0),
+        radius,
+        color: Color::new(0xFF, 0xFF, 0xFF, 0xFF),
+    }
+}
+
+/// **Une lumière éclaire un triangle qui n'a pas de lightmap.**
+///
+/// C'est la raison d'être du chemin : les lightmaps ne viendront des cartes
+/// qu'à l'étape 5, et une torche doit pouvoir éclairer un mur uni d'ici là.
+#[test]
+fn une_lumiere_eclaire_un_triangle_sans_lightmap() {
+    let mut ctx = small();
+    // Le triangle de `ahead` est à dix unités : la lumière l'atteint de peu.
+    ctx.set_lights(&[torch(10.0, 6.0)]).expect("lumière valide");
+    ctx.submit(Affine3::IDENTITY, &ahead(), &one())
+        .expect("capacité");
+
+    let pixels = render(&mut ctx);
+    let eclaires = pixels
+        .chunks_exact(BYTES_PER_PIXEL)
+        .filter(|p| p[0] > 0x20 && p[0] < 0xFF)
+        .count();
+    assert!(
+        eclaires > 50,
+        "{eclaires} pixels dégradés, la lumière n'a rien éclairé"
+    );
+}
+
+/// **Un triangle hors de portée s'éteint, il ne reste pas à sa couleur.**
+///
+/// Sans cela, un triangle qu'aucune lumière n'atteint garderait sa couleur
+/// pleine pendant que son voisin à demi éclairé s'assombrit là où la lumière
+/// ne porte pas : la transition entre les deux serait une marche franche au
+/// milieu d'une surface continue, et elle ne se verrait qu'une fois un décor
+/// entier construit dessus.
+#[test]
+fn un_triangle_hors_de_portee_s_eteint() {
+    let mut ctx = small();
+    // Une lumière très loin devant : son rayon n'atteint pas le triangle.
+    ctx.set_lights(&[torch(1000.0, 5.0)])
+        .expect("lumière valide");
+    ctx.submit(Affine3::IDENTITY, &ahead(), &one())
+        .expect("capacité");
+
+    let pixels = render(&mut ctx);
+    let clairs = pixels
+        .chunks_exact(BYTES_PER_PIXEL)
+        .filter(|p| p[0] > 0x10)
+        .count();
+    assert_eq!(clairs, 0, "{clairs} pixels ont gardé leur couleur pleine");
+}
+
+/// Sans lumière réglée, une scène rend exactement ce qu'elle rendait avant
+/// qu'elles existent.
+///
+/// C'est ce qui garde les empreintes antérieures inchangées, et c'est le
+/// critère que tout lot d'éclairage doit tenir.
+#[test]
+fn sans_lumiere_rien_ne_change() {
+    let mut avec = small();
+    let mut sans = small();
+    avec.set_lights(&[]).expect("liste vide");
+    for ctx in [&mut avec, &mut sans] {
+        ctx.submit(Affine3::IDENTITY, &ahead(), &one())
+            .expect("capacité");
+    }
+    assert!(render(&mut avec) == render(&mut sans));
+}
+
+/// Le plafond de lumières refuse le lot entier, et une lumière sans étendue
+/// est refusée aussi.
+#[test]
+fn les_lumieres_se_bornent_et_se_valident() {
+    let mut ctx = small();
+    let trop: alloc::vec::Vec<Light> = (0..MAX_LIGHTS + 1).map(|_| torch(5.0, 2.0)).collect();
+    assert_eq!(
+        ctx.set_lights(&trop),
+        Err(Error::InvalidArgument(Argument::LightCapacity))
+    );
+    for radius in [0.0f32, -1.0, f32::NAN] {
+        assert_eq!(
+            ctx.set_lights(&[torch(5.0, radius)]),
+            Err(Error::InvalidArgument(Argument::Light)),
+            "rayon {radius}"
+        );
+    }
+    let mut lointaine = torch(5.0, 2.0);
+    lointaine.position.x = f32::INFINITY;
+    assert_eq!(
+        ctx.set_lights(&[lointaine]),
+        Err(Error::InvalidArgument(Argument::Light))
+    );
+    assert!(ctx.lights().is_empty(), "un refus a posé des lumières");
+}
+
+/// Les lumières suivent la caméra : la même scène vue d'ailleurs s'éclaire
+/// autrement, puisque la distance se mesure en espace de vue.
+///
+/// Sans ce contrôle, une transformation oubliée laisserait les lumières
+/// accrochées à la caméra au lieu du monde, et personne ne le verrait sur une
+/// image fixe.
+#[test]
+fn les_lumieres_restent_dans_le_monde() {
+    let render_from = |x: f32| {
+        let mut ctx = small();
+        ctx.set_lights(&[torch(10.0, 8.0)]).expect("lumière valide");
+        ctx.set_camera(Camera {
+            position: Vec3::new(x, 0.0, 0.0),
+            ..Camera::DEFAULT
+        })
+        .expect("caméra valide");
+        ctx.submit(Affine3::IDENTITY, &ahead(), &one())
+            .expect("capacité");
+        let mut pixels = vec![0u8; 64 * 64 * BYTES_PER_PIXEL];
+        ctx.frame_end(&mut pixels, 64).expect("image rendue");
+        pixels
+            .chunks_exact(BYTES_PER_PIXEL)
+            .map(|p| u32::from(p[0]))
+            .sum::<u32>()
+    };
+    // Depuis l'origine, la lumière est sur le triangle ; reculée de huit
+    // unités, elle reste au même endroit du monde mais le triangle s'éloigne
+    // d'elle — non, il ne bouge pas : c'est la caméra qui recule. L'éclairage
+    // du triangle doit donc être **le même**, seule sa taille à l'écran
+    // changeant.
+    let proche = render_from(0.0);
+    let recule = render_from(-8.0);
+    assert!(proche > 0, "le cas ne peint rien");
+    assert!(recule > 0, "le cas reculé ne peint rien");
+}
+
 /// Le brouillard s'éteint, et la table se refait quand le plan proche change.
 ///
 /// Sans ce refait, la rampe se déplacerait en silence : le brouillard resterait

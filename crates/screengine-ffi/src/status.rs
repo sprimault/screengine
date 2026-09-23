@@ -112,6 +112,10 @@ pub(crate) fn message_of(error: Error) -> &'static str {
         Error::InvalidArgument(Argument::Fog) => {
             "invalid fog range: start must be finite and not negative, end finite and beyond start"
         }
+        Error::InvalidArgument(Argument::LightCapacity) => "too many dynamic lights for one frame",
+        Error::InvalidArgument(Argument::Light) => {
+            "invalid light: position must be finite, and radius finite and positive"
+        }
         Error::InvalidArgument(Argument::TextureLength) => {
             "pixel block of the wrong length: needs width x height x 4 bytes"
         }
