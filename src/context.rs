@@ -18,8 +18,8 @@ use crate::math::fixed::MAX_TEXEL_COORD;
 use crate::math::projection::ClipVertex;
 use crate::math::{Affine3, Projection, Vec3};
 use crate::raster::{
-    Bins, Grid, Lighting, MAX_CLIP_TRIANGLES, NO_LIGHTING, NO_TEXTURE, Point, Prepared, Vertex,
-    clip, prepare, prepare_lit,
+    Bins, Grid, Lighting, MAX_CLIP_TRIANGLES, NO_LIGHTING, NO_TEXTURE, Prepared, Vertex, clip,
+    prepare, prepare_lit,
 };
 use crate::scene::{Camera, Color, Light, Triangle, VertexUv, VertexUv2};
 use crate::texture::{Filter, Texture};
@@ -963,21 +963,9 @@ impl Context {
         // dans la capacité.
         debug_assert!(polygon.triangle_count() <= MAX_CLIP_TRIANGLES);
         for i in 0..polygon.triangle_count() {
-            let vertices = polygon.triangle(i).map(|c| {
-                let projected = self.projection.to_vertex(c);
-                Vertex {
-                    position: Point {
-                        x: projected.x,
-                        y: projected.y,
-                    },
-                    z: projected.z,
-                    s: projected.s,
-                    t: projected.t,
-                    s2: projected.s2,
-                    t2: projected.t2,
-                    light: projected.light,
-                }
-            });
+            let vertices = polygon
+                .triangle(i)
+                .map(|c| Vertex::from(self.projection.to_vertex(c)));
             self.push(vertices, color.packed(), texture, lit)?;
         }
         Ok(())

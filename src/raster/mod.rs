@@ -17,8 +17,7 @@ pub use bins::{Bins, Grid};
 pub use clip::{MAX_CLIP_TRIANGLES, clip};
 pub(crate) use triangle::DITHER;
 pub use triangle::{
-    Lighting, Lit, NO_LIGHTING, NO_TEXTURE, Point, Prepared, Sampling, Vertex, fill, prepare,
-    prepare_lit,
+    Lighting, Lit, NO_LIGHTING, NO_TEXTURE, Prepared, Sampling, Vertex, fill, prepare, prepare_lit,
 };
 
 /// Un rectangle de l'image, en pixels.

@@ -15,7 +15,7 @@ use core::sync::atomic::Ordering;
 use super::*;
 use crate::context::{Config, TRIANGLE_CAPACITY};
 use crate::math::fixed::{DEPTH_MARGIN, SUBPIXEL_SCALE};
-use crate::raster::{NO_TEXTURE, Point, Vertex};
+use crate::raster::{NO_TEXTURE, Vertex};
 use crate::testing::Rng;
 use crate::texture::Texture;
 
@@ -74,27 +74,20 @@ fn scene(context: &mut Context, seed: u64) {
             // profondeur du sommet les garde dans le domaine que la mise en
             // place attend, au lieu de valeurs qui satureraient les gradients.
             let scale = |c: i64| ((c * i64::from(z >> 16)) >> 4) as i32;
-            Vertex {
-                position: Point {
-                    x: (cx + rng.coord(-reach, reach)) * SUBPIXEL_SCALE + rng.coord(0, 15),
-                    y: (cy + rng.coord(-reach, reach)) * SUBPIXEL_SCALE + rng.coord(0, 15),
-                },
+            // Ni lightmap ni lumière : le constructeur les laisse nulles, et
+            // la scène n'a rien à en dire.
+            let vertex = Vertex::plain(
+                (cx + rng.coord(-reach, reach)) * SUBPIXEL_SCALE + rng.coord(0, 15),
+                (cy + rng.coord(-reach, reach)) * SUBPIXEL_SCALE + rng.coord(0, 15),
                 z,
-                s: if textured {
-                    scale(i64::from(rng.coord(0, 63)))
-                } else {
-                    0
-                },
-                t: if textured {
-                    scale(i64::from(rng.coord(0, 63)))
-                } else {
-                    0
-                },
-                // Aucune lightmap tant que le remplissage ne la lit pas : ces
-                // deux-là se rempliront avec le lot qui les fait rendre.
-                s2: 0,
-                t2: 0,
-                light: [0; 3],
+            );
+            if textured {
+                vertex.uv(
+                    scale(i64::from(rng.coord(0, 63))),
+                    scale(i64::from(rng.coord(0, 63))),
+                )
+            } else {
+                vertex
             }
         };
         let (a, b, c) = (vertex(), vertex(), vertex());
@@ -550,18 +543,7 @@ fn une_region_invalide_est_refusee() {
 
 /// Un sommet à une profondeur donnée, en pixels entiers.
 fn at(x: i32, y: i32, z: u32) -> Vertex {
-    Vertex {
-        position: Point {
-            x: x * SUBPIXEL_SCALE,
-            y: y * SUBPIXEL_SCALE,
-        },
-        z,
-        s: 0,
-        t: 0,
-        s2: 0,
-        t2: 0,
-        light: [0; 3],
-    }
+    Vertex::plain(x * SUBPIXEL_SCALE, y * SUBPIXEL_SCALE, z)
 }
 
 /// La couleur rendue au pixel `(x, y)` de la référence.

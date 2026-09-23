@@ -45,15 +45,7 @@ const CLIP: Rect = Rect {
 /// Prépare puis remplit, comme le fait une image entière. La profondeur est
 /// constante : l'étanchéité ne porte que sur les positions.
 fn fill_triangle<T: Target>(target: &mut T, window: Rect, v: [Point; 3], color: u32) {
-    let vertices = v.map(|position| Vertex {
-        position,
-        z: 1 << 31,
-        s: 0,
-        t: 0,
-        s2: 0,
-        t2: 0,
-        light: [0; 3],
-    });
+    let vertices = v.map(|position| nu(position, 1 << 31));
     if let Some(triangle) = prepare(vertices, color, NO_TEXTURE) {
         fill(target, window, &triangle, None, None);
     }
@@ -146,6 +138,14 @@ fn p(x: i32, y: i32) -> Point {
         x: x * SUBPIXEL_SCALE,
         y: y * SUBPIXEL_SCALE,
     }
+}
+
+/// Un sommet nu à un point déjà en sous-pixels.
+///
+/// Ces tests raisonnent en points ; le constructeur prend deux coordonnées,
+/// parce que ses autres appelants n'ont pas de `Point` sous la main.
+fn nu(at: Point, z: u32) -> Vertex {
+    Vertex::plain(at.x, at.y, z)
 }
 
 /// Translate un polygone, en sous-pixels.
@@ -478,15 +478,7 @@ fn le_span_coincide_avec_le_test_par_pixel() {
             p(rng.coord(-10, W + 10), rng.coord(-10, H + 10)),
             p(rng.coord(-10, W + 10), rng.coord(-10, H + 10)),
         ];
-        let vertices = v.map(|position| Vertex {
-            position,
-            z: 1 << 31,
-            s: 0,
-            t: 0,
-            s2: 0,
-            t2: 0,
-            light: [0; 3],
-        });
+        let vertices = v.map(|position| nu(position, 1 << 31));
         let Some(triangle) = prepare(vertices, 0, NO_TEXTURE) else {
             continue;
         };
@@ -573,15 +565,7 @@ fn l_erreur_des_attributs_reste_sous_un_texel() {
     // horaire à l'écran une fois l'axe Y retourné.
     let corners = [sol(2.0, -3.0), sol(200.0, 40.0), sol(200.0, -40.0)];
     let projected = corners.map(|c| p.to_vertex(c));
-    let vertices = projected.map(|v| Vertex {
-        position: Point { x: v.x, y: v.y },
-        z: v.z,
-        s: v.s,
-        t: v.t,
-        s2: v.s2,
-        t2: v.t2,
-        light: v.light,
-    });
+    let vertices = projected.map(Vertex::from);
     let triangle = prepare(vertices, 0, NO_TEXTURE).expect("sol visible");
 
     let (x0, y0, x1, y1) = triangle.bounds();
@@ -678,15 +662,7 @@ fn les_permutations_circulaires_rendent_la_meme_image() {
 
         let render = |shift: usize| {
             let k = |i: usize| (i + shift) % 3;
-            let vertices = [0, 1, 2].map(|i| Vertex {
-                position: v[k(i)],
-                z: z[k(i)],
-                s: s[k(i)],
-                t: -s[k(i)],
-                s2: 0,
-                t2: 0,
-                light: [0; 3],
-            });
+            let vertices = [0, 1, 2].map(|i| nu(v[k(i)], z[k(i)]).uv(s[k(i)], -s[k(i)]));
             let mut sink = Depths { seen: Vec::new() };
             if let Some(triangle) = prepare(vertices, 1, NO_TEXTURE) {
                 fill(&mut sink, CLIP, &triangle, None, None);
@@ -718,15 +694,7 @@ fn les_permutations_circulaires_rendent_la_meme_image() {
 fn un_triangle_prepare_porte_son_index_de_texture() {
     let v = [p(2, 2), p(2, 30), p(40, 2)];
     for index in [NO_TEXTURE, 0, 1, 65_534] {
-        let vertices = v.map(|position| Vertex {
-            position,
-            z: 1 << 31,
-            s: 0,
-            t: 0,
-            s2: 0,
-            t2: 0,
-            light: [0; 3],
-        });
+        let vertices = v.map(|position| nu(position, 1 << 31));
         let triangle = prepare(vertices, 0, index).expect("triangle visible");
         assert_eq!(triangle.texture, index);
     }
@@ -787,24 +755,8 @@ fn un_pixel_occulte_est_teste_mais_pas_ecrit() {
 
     // Le même triangle deux fois : le premier passe partout, le second est
     // derrière lui au sens strict du test, donc refusé partout.
-    let proche = devant.map(|position| Vertex {
-        position,
-        z: 3 << 30,
-        s: 0,
-        t: 0,
-        s2: 0,
-        t2: 0,
-        light: [0; 3],
-    });
-    let loin = devant.map(|position| Vertex {
-        position,
-        z: 1 << 30,
-        s: 0,
-        t: 0,
-        s2: 0,
-        t2: 0,
-        light: [0; 3],
-    });
+    let proche = devant.map(|position| nu(position, 3 << 30));
+    let loin = devant.map(|position| nu(position, 1 << 30));
     for vertices in [proche, loin] {
         let triangle = prepare(vertices, 1, NO_TEXTURE).expect("triangle visible");
         fill(&mut sink, CLIP, &triangle, None, None);
@@ -889,18 +841,7 @@ fn sol_texture_fuyant(devant: f32, densite: f32) -> (Prepared, [Vertex; 3]) {
     };
     let large = devant / 3.0;
     let corners = [sol(1.5, -2.0), sol(devant, large), sol(devant, -large)];
-    let vertices = corners.map(|c| {
-        let v = p.to_vertex(c);
-        Vertex {
-            position: Point { x: v.x, y: v.y },
-            z: v.z,
-            s: v.s,
-            t: v.t,
-            s2: v.s2,
-            t2: v.t2,
-            light: v.light,
-        }
-    });
+    let vertices = corners.map(|c| Vertex::from(p.to_vertex(c)));
     (prepare(vertices, 0, 0).expect("sol visible"), vertices)
 }
 
@@ -1238,18 +1179,7 @@ fn triangle_pointe_a_droite() -> Prepared {
         at(0.80, 0.90, 2.0),
         at(0.40, 0.05, 1.0),
     ];
-    let vertices = corners.map(|c| {
-        let v = p.to_vertex(c);
-        Vertex {
-            position: Point { x: v.x, y: v.y },
-            z: v.z,
-            s: v.s,
-            t: v.t,
-            s2: v.s2,
-            t2: v.t2,
-            light: v.light,
-        }
-    });
+    let vertices = corners.map(|c| Vertex::from(p.to_vertex(c)));
     prepare(vertices, 0, 0).expect("triangle visible")
 }
 
@@ -1404,24 +1334,8 @@ fn les_plans_du_second_jeu_valent_ceux_du_premier_sur_les_memes_valeurs() {
     let v = [p(3, 2), p(5, 35), p(44, 9)];
     let (s2, t2) = ([1200, -700, 9000], [-40, 6100, 250]);
 
-    let lit = [0, 1, 2].map(|i| Vertex {
-        position: v[i],
-        z: 1 << 31,
-        s: 17,
-        t: -17,
-        s2: s2[i],
-        t2: t2[i],
-        light: [0; 3],
-    });
-    let temoin = [0, 1, 2].map(|i| Vertex {
-        position: v[i],
-        z: 1 << 31,
-        s: s2[i],
-        t: t2[i],
-        s2: 0,
-        t2: 0,
-        light: [0; 3],
-    });
+    let lit = [0, 1, 2].map(|i| nu(v[i], 1 << 31).uv(17, -17).uv2(s2[i], t2[i]));
+    let temoin = [0, 1, 2].map(|i| nu(v[i], 1 << 31).uv(s2[i], t2[i]));
 
     let (triangle, lighting) =
         prepare_lit(lit, 0, NO_TEXTURE, 3, false, 7).expect("triangle visible");
@@ -1440,15 +1354,7 @@ fn les_plans_du_second_jeu_valent_ceux_du_premier_sur_les_memes_valeurs() {
 #[test]
 fn un_triangle_sans_eclairage_porte_la_sentinelle() {
     let v = [p(2, 2), p(2, 30), p(40, 2)];
-    let vertices = v.map(|position| Vertex {
-        position,
-        z: 1 << 31,
-        s: 0,
-        t: 0,
-        s2: 500,
-        t2: -500,
-        light: [0; 3],
-    });
+    let vertices = v.map(|position| nu(position, 1 << 31).uv2(500, -500));
     let triangle = prepare(vertices, 0, NO_TEXTURE).expect("triangle visible");
     assert_eq!(triangle.lighting(), NO_LIGHTING);
 }
@@ -1458,15 +1364,7 @@ fn un_triangle_sans_eclairage_porte_la_sentinelle() {
 #[test]
 fn un_triangle_de_dos_ne_reserve_aucune_place() {
     let v = [p(2, 2), p(40, 2), p(2, 30)];
-    let vertices = v.map(|position| Vertex {
-        position,
-        z: 1 << 31,
-        s: 0,
-        t: 0,
-        s2: 0,
-        t2: 0,
-        light: [0; 3],
-    });
+    let vertices = v.map(|position| nu(position, 1 << 31));
     assert!(prepare(vertices, 0, NO_TEXTURE).is_none());
     assert!(prepare_lit(vertices, 0, NO_TEXTURE, 0, false, 0).is_none());
 }
@@ -1494,18 +1392,7 @@ fn sol_eclaire(devant: f32, densite: f32, densite_lightmap: f32) -> (Prepared, L
     };
     let large = devant / 3.0;
     let corners = [sol(1.5, -2.0), sol(devant, large), sol(devant, -large)];
-    let vertices = corners.map(|c| {
-        let v = p.to_vertex(c);
-        Vertex {
-            position: Point { x: v.x, y: v.y },
-            z: v.z,
-            s: v.s,
-            t: v.t,
-            s2: v.s2,
-            t2: v.t2,
-            light: v.light,
-        }
-    });
+    let vertices = corners.map(|c| Vertex::from(p.to_vertex(c)));
     prepare_lit(vertices, 0xFFFF_FFFF, 0, 0, false, 0).expect("sol visible")
 }
 

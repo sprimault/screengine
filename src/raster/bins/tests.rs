@@ -7,23 +7,12 @@ use alloc::vec::Vec;
 
 use super::*;
 use crate::math::fixed::SUBPIXEL_SCALE;
-use crate::raster::{NO_TEXTURE, Point, Vertex, prepare};
+use crate::raster::{NO_TEXTURE, Vertex, prepare};
 
 /// Un triangle rectangle qui couvre les pixels `x0..x1` × `y0..y1`, dans le
 /// sens de la face avant — antihoraire à l'écran.
 fn triangle(x0: i32, y0: i32, x1: i32, y1: i32) -> Prepared {
-    let p = |x: i32, y: i32| Vertex {
-        position: Point {
-            x: x * SUBPIXEL_SCALE,
-            y: y * SUBPIXEL_SCALE,
-        },
-        z: 1 << 31,
-        s: 0,
-        t: 0,
-        s2: 0,
-        t2: 0,
-        light: [0; 3],
-    };
+    let p = |x: i32, y: i32| Vertex::plain(x * SUBPIXEL_SCALE, y * SUBPIXEL_SCALE, 1 << 31);
     prepare([p(x0, y0), p(x0, y1), p(x1, y0)], 0, NO_TEXTURE).expect("triangle visible")
 }
 
