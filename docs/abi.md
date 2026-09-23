@@ -623,6 +623,21 @@ typedef struct ScgMat4 { float m[16]; } ScgMat4;
 - **La caméra vaut pour l'image entière.** `scg_set_camera` et `scg_submit`
   sont refusés entre le début et la fin d'une image, comme toute écriture dans
   l'état du contexte.
+
+  **Et `scg_set_camera` est refusé dès qu'un triangle de l'image en cours est
+  retenu**, par `SCG_ERR_INVALID_STATE` : chaque soumission projette
+  immédiatement, si bien qu'une caméra changée au milieu laisserait dans la
+  même image deux espaces écran, chacun correctement rasterisé et l'ensemble
+  faux. Aucune reprojection n'est possible en aval, la géométrie source n'étant
+  pas conservée. Le refus porte sur les triangles **retenus** et non sur les
+  lots reçus : un lot dont pas un triangle n'a survécu à la projection ne
+  laisse rien dans l'image, donc rien à mêler.
+
+  Cette clause a toujours été la règle ; jusqu'à la 0.2.1 le moteur ne la
+  tenait pas, et l'appel passait en rendant une image que rien ne décrit.
+  `SCG_ABI_VERSION` ne bouge pas : un hôte conforme ne fait jamais cet appel,
+  et n'observe donc aucune différence — le même raisonnement qu'au passage du
+  premier champ réservé à `max_triangles`.
 - **La liste de dessin se vide à la fin de l'image**, pas à son début : un hôte
   qui soumet dès le retour de `scg_frame_end` doit retrouver sa scène.
 
