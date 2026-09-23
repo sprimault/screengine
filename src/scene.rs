@@ -104,7 +104,8 @@ pub struct Color {
     pub g: u8,
     /// Bleu.
     pub b: u8,
-    /// Alpha. Le moteur l'écrit tel quel et n'en compose rien.
+    /// Alpha. **Il ne ressort pas** : la sortie force l'opacité, et ce champ
+    /// n'existe que parce qu'une couleur en compte quatre.
     pub a: u8,
 }
 
@@ -167,7 +168,9 @@ impl VertexUv {
 pub struct Triangle {
     /// Les trois sommets, en sens antihoraire vus de la face avant.
     pub indices: [u32; 3],
-    /// Sa couleur, uniforme jusqu'à ce que les textures existent.
+    /// Sa couleur, uniforme sur toute sa surface. **Ignorée dès que le lot
+    /// porte une texture** : c'est alors le texel qui décide, et la couleur ne
+    /// le teinte pas.
     pub color: Color,
 }
 

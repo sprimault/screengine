@@ -74,7 +74,8 @@ pub struct ScgTriangle {
     pub g: u8,
     /// Blue.
     pub b: u8,
-    /// Alpha. Written as given, never composited.
+    /// Alpha. Ignored: the output is always fully opaque, as the ABI
+    /// guarantees. The field only exists because a colour has four channels.
     pub a: u8,
 }
 

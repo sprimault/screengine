@@ -9,7 +9,9 @@
 
 use core::sync::atomic::{AtomicU32, Ordering};
 
-use crate::context::{BYTES_PER_PIXEL, CLEAR_COLOR, CLOSING, Context, RECORDING, RENDERING};
+use crate::context::{
+    BYTES_PER_PIXEL, CLEAR_COLOR, CLOSING, Context, OPAQUE, RECORDING, RENDERING,
+};
 use crate::error::{Argument, Error, Result};
 use crate::raster::{NO_TEXTURE, Rect, Sampling, Target, fill};
 
@@ -267,7 +269,13 @@ impl Context {
                 .span(rect.x, rect.y + row as u32, rect.width)
                 .ok_or(Error::InvalidArgument(Argument::BufferLength))?;
             for (pixel, slot) in source.iter().zip(span.chunks_exact_mut(BYTES_PER_PIXEL)) {
-                slot.copy_from_slice(&pixel.to_le_bytes());
+                // L'alpha est forcé ici, au seul endroit que les deux chemins
+                // de sortie traversent. Le contrat d'ABI le promet opaque, et
+                // c'est ce qui permet aux hôtes d'annoncer l'opacité pour que
+                // le compositeur saute le mélange — un canal laissé à la valeur
+                // de l'hôte rendrait un décor troué dans un navigateur, seule
+                // cible où il est réellement composité.
+                slot.copy_from_slice(&(pixel | OPAQUE).to_le_bytes());
             }
         }
         Ok(())

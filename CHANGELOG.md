@@ -53,7 +53,18 @@ sur le dernier segment de chaque ligne. Le filtrage par défaut rend exactement
 la même image, l'écart tombant sous le texel qu'il tramait déjà. Aucune
 signature ne change et `SCG_ABI_VERSION` reste à **1**.
 
+**Ce qu'un hôte doit savoir.** Le canal alpha du tampon de sortie est désormais
+écrit à 255 partout, comme le contrat d'ABI l'annonce, là où la valeur soumise
+avec la couleur d'un triangle le traversait. Un hôte qui soumettait une couleur
+non opaque voyait ce canal ressortir, et un navigateur l'y composait ; il
+obtient maintenant une image opaque.
+
 ### Corrigé
+- Une texture restait dans la table de l'image quand son lot était accepté sans
+  qu'aucun de ses triangles ne survive à la projection. L'entrée n'était plus
+  désignée par rien, et le plafond de la table, qui se déduit du nombre de
+  triangles préparés, cessait d'être une borne : des lots invisibles suffisaient
+  à le remplir.
 - Le remplissage prenait l'appui de sa pente au pixel qui suit le segment même
   lorsque ce pixel n'était plus couvert : la borne testée était la boîte
   englobante du triangle, qui déborde le span sur toute ligne d'un triangle non
@@ -69,7 +80,17 @@ on each row's last segment. Default filtering renders exactly the same image,
 the gap staying below the texel it was already dithering. No signature changes
 and `SCG_ABI_VERSION` stays at **1**.
 
+**What a host should know.** The output buffer's alpha channel is now written
+at 255 everywhere, as the ABI contract states, where the value submitted with a
+triangle's colour used to reach it. A host submitting a non-opaque colour saw
+that channel come out, and a browser composited it; it now gets an opaque
+image.
+
 ### Fixed
+- A texture stayed in the frame's table when its batch was accepted without a
+  single triangle surviving projection. Nothing referenced the entry any more,
+  and the table's ceiling, derived from the number of prepared triangles,
+  stopped being a bound: invisible batches were enough to fill it.
 - The fill took its slope anchor at the pixel following the segment even when
   that pixel was no longer covered: the bound being tested was the triangle's
   bounding box, which overshoots the span on every row of a non-right triangle.

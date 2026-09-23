@@ -504,3 +504,95 @@ fn un_lot_texture_refuse_ne_laisse_pas_sa_texture() {
     );
     assert_eq!(ctx.textures.len(), 1, "une texture acceptée a été retirée");
 }
+
+/// Un lot **accepté** dont aucun triangle ne survit à la projection ne laisse
+/// pas sa texture dans la table.
+///
+/// C'est le cas que le refus ne couvre pas : la soumission rend `Ok`, puisqu'un
+/// triangle hors du champ est une donnée et non une erreur, et pourtant elle ne
+/// pose rien. Une texture restée là occuperait une entrée que plus aucun
+/// triangle ne désigne — et le plafond de la table, qui se déduit du nombre de
+/// triangles préparés, cesserait d'être une borne : il suffirait de soumettre
+/// des lots invisibles pour le remplir.
+#[test]
+fn un_lot_texture_sans_triangle_visible_ne_laisse_pas_sa_texture() {
+    let mut ctx = small();
+    let t = texture();
+
+    let invisible = behind().map(|position| VertexUv {
+        position,
+        u: 0.0,
+        v: 0.0,
+    });
+    assert_eq!(
+        ctx.submit_textured(Affine3::IDENTITY, &invisible, &one(), &t),
+        Ok(()),
+        "un triangle hors du champ est une donnée, pas une erreur"
+    );
+
+    assert_eq!(ctx.triangles.len(), 0, "le triangle aurait dû disparaître");
+    assert_eq!(ctx.textures.len(), 0, "sa texture est restée dans la table");
+}
+
+/// Une texture déjà posée par un lot visible survit à un lot invisible qui la
+/// réemploie.
+///
+/// La troncature porte sur ce que le lot a ajouté, jamais sur ce qu'il a
+/// seulement retrouvé : retirer l'entrée d'un lot précédent invaliderait les
+/// index que ses triangles portent déjà.
+#[test]
+fn un_lot_invisible_ne_retire_pas_une_texture_deja_posee() {
+    let mut ctx = small();
+    let t = texture();
+    ctx.submit_textured(Affine3::IDENTITY, &ahead_uv(0.0, 0.0), &one(), &t)
+        .expect("capacité");
+
+    let invisible = behind().map(|position| VertexUv {
+        position,
+        u: 0.0,
+        v: 0.0,
+    });
+    ctx.submit_textured(Affine3::IDENTITY, &invisible, &one(), &t)
+        .expect("capacité");
+
+    assert_eq!(ctx.triangles.len(), 1);
+    assert_eq!(ctx.textures.len(), 1, "la texture du lot visible a sauté");
+    assert_eq!(ctx.triangles[0].texture(), 0, "son index a changé");
+}
+
+/// Le tampon de l'hôte ressort opaque, quelle que soit la couleur soumise.
+///
+/// Le contrat d'ABI le promet, et c'est ce qui permet aux hôtes d'annoncer
+/// l'opacité pour que le compositeur saute le mélange. Sur le web, seule cible
+/// où ce canal est réellement composité, un alpha laissé à la valeur de l'hôte
+/// rend un décor troué — sans erreur, et sans que rien d'autre ne le signale.
+#[test]
+fn le_tampon_ressort_opaque_quelle_que_soit_la_couleur_soumise() {
+    let mut ctx = small();
+    let mut pixels = vec![0u8; 64 * 64 * BYTES_PER_PIXEL];
+
+    let translucide = [Triangle {
+        indices: [0, 1, 2],
+        color: Color::new(0x20, 0x40, 0x60, 0x00),
+    }];
+    ctx.submit(Affine3::IDENTITY, &ahead(), &translucide)
+        .expect("capacité");
+    ctx.frame_end(&mut pixels, 64).expect("image rendue");
+
+    let opaques = pixels
+        .chunks_exact(BYTES_PER_PIXEL)
+        .filter(|p| p[3] == 0xFF)
+        .count();
+    assert_eq!(opaques, 64 * 64, "des pixels sont ressortis translucides");
+
+    // Et le triangle a bien été peint : sans ce contrôle, un tampon resté au
+    // fond passerait le test précédent, le fond étant opaque lui aussi.
+    let peints = pixels
+        .chunks_exact(BYTES_PER_PIXEL)
+        .filter(|p| p[0] == 0x20 && p[1] == 0x40 && p[2] == 0x60)
+        .count();
+    assert!(
+        peints > 100,
+        "{peints} pixels peints, le cas ne couvre rien"
+    );
+}
