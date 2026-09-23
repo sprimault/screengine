@@ -130,6 +130,18 @@ impl Plane {
     pub fn step_y(&self, pixel: i32) -> i64 {
         self.dy.wrapping_mul(pixel as i64)
     }
+
+    /// Annule le gradient vertical, pour les tests qui isolent ce qu'il apporte.
+    ///
+    /// Un plan sans pente verticale n'a aucun sens géométrique — il ne sort
+    /// d'aucun triplet de sommets —, d'où le `cfg(test)` : c'est une sonde, pas
+    /// une opération du moteur. Elle sert à montrer que le choix du niveau de
+    /// mipmap dépend bien de cette pente, le seul moyen de le prouver étant de
+    /// comparer avec et sans.
+    #[cfg(test)]
+    pub(crate) fn flatten_y(&mut self) {
+        self.dy = 0;
+    }
 }
 
 #[cfg(test)]

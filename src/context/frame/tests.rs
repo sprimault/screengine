@@ -17,6 +17,7 @@ use crate::context::{Config, TRIANGLE_CAPACITY};
 use crate::math::fixed::{DEPTH_MARGIN, SUBPIXEL_SCALE};
 use crate::raster::{NO_TEXTURE, Point, Vertex};
 use crate::testing::Rng;
+use crate::texture::Texture;
 
 /// Largeur de l'image des tests, multiple ni de 32 ni de 64 : les tuiles de
 /// bord sont partielles dans les deux découpages.
@@ -44,9 +45,18 @@ fn context(tile_size: u32) -> Context {
 /// s'interpénètrent. Un quart sont plats, à l'une de deux profondeurs seulement :
 /// à égalité, c'est l'ordre de soumission qui décide du pixel, et la
 /// répartition doit le conserver.
+///
+/// **Un triangle sur deux est texturé**, et ce n'est pas un raffinement : le
+/// chemin texturé découpe la ligne en segments alignés sur la grille de
+/// l'image, choisit un niveau de mipmap et trame les coordonnées. Rien de tout
+/// cela n'existe sur le chemin uni, et c'est précisément là qu'une dépendance
+/// au découpage se cacherait — une scène sans texture laisserait l'essentiel du
+/// remplissage hors de la comparaison.
 fn scene(context: &mut Context, seed: u64) {
     let mut rng = Rng::new(seed);
     context.triangles.clear();
+    context.textures.clear();
+    context.textures.push(alloc::sync::Arc::new(damier()));
     let span = (u32::MAX - 2 * DEPTH_MARGIN) as u64;
     for _ in 0..300 {
         let reach = if rng.next() % 4 == 0 { 400 } else { 40 };
@@ -57,26 +67,65 @@ fn scene(context: &mut Context, seed: u64) {
             1 => Some(3 << 30),
             _ => None,
         };
-        let mut vertex = || Vertex {
-            position: Point {
-                x: (cx + rng.coord(-reach, reach)) * SUBPIXEL_SCALE + rng.coord(0, 15),
-                y: (cy + rng.coord(-reach, reach)) * SUBPIXEL_SCALE + rng.coord(0, 15),
-            },
-            z: flat.unwrap_or(DEPTH_MARGIN + (rng.next() % span) as u32),
-            s: 0,
-            t: 0,
+        let textured = rng.next() % 2 == 0;
+        let mut vertex = || {
+            let z = flat.unwrap_or(DEPTH_MARGIN + (rng.next() % span) as u32);
+            // `s` et `t` sont `u·d` et `v·d` : les tirer à partir de la
+            // profondeur du sommet les garde dans le domaine que la mise en
+            // place attend, au lieu de valeurs qui satureraient les gradients.
+            let scale = |c: i64| ((c * i64::from(z >> 16)) >> 4) as i32;
+            Vertex {
+                position: Point {
+                    x: (cx + rng.coord(-reach, reach)) * SUBPIXEL_SCALE + rng.coord(0, 15),
+                    y: (cy + rng.coord(-reach, reach)) * SUBPIXEL_SCALE + rng.coord(0, 15),
+                },
+                z,
+                s: if textured {
+                    scale(i64::from(rng.coord(0, 63)))
+                } else {
+                    0
+                },
+                t: if textured {
+                    scale(i64::from(rng.coord(0, 63)))
+                } else {
+                    0
+                },
+            }
         };
         let (a, b, c) = (vertex(), vertex(), vertex());
         let color = rng.next() as u32 | 0xFF00_0000;
+        let texture = if textured { 0 } else { NO_TEXTURE };
         // Les deux orientations, pour que la moitié des tirages ne soit pas
         // éliminée comme dos de face.
-        context
-            .push([a, b, c], color, NO_TEXTURE)
-            .expect("capacité");
-        context
-            .push([a, c, b], color, NO_TEXTURE)
-            .expect("capacité");
+        context.push([a, b, c], color, texture).expect("capacité");
+        context.push([a, c, b], color, texture).expect("capacité");
     }
+
+    // Sans quoi la scène pourrait n'avoir aucun triangle texturé et toutes les
+    // comparaisons resteraient vertes en ne mesurant que le chemin uni.
+    let textures = context
+        .triangles
+        .iter()
+        .filter(|t| t.texture() != NO_TEXTURE)
+        .count();
+    assert!(textures > 50, "{textures} triangles texturés, trop peu");
+}
+
+/// Une texture en damier de 64 texels de côté, dont la chaîne descend jusqu'à
+/// 1×1.
+///
+/// Un damier plutôt qu'un aplat : deux texels voisins y diffèrent toujours,
+/// donc un texel lu au mauvais endroit change la couleur du pixel. Sur un
+/// aplat, une coordonnée fausse ne se verrait pas.
+fn damier() -> Texture {
+    let side = 64;
+    let mut pixels = vec![0u8; side * side * 4];
+    for (i, texel) in pixels.chunks_exact_mut(4).enumerate() {
+        let (x, y) = (i % side, i / side);
+        let value = if (x ^ y) & 1 == 0 { 0x20 } else { 0xE0 };
+        texel.copy_from_slice(&[value, value, value, 0xFF]);
+    }
+    Texture::load(side as u32, side as u32, &pixels).expect("texture valide")
 }
 
 /// Un tampon d'hôte vide à la taille de l'image.
@@ -105,6 +154,62 @@ fn reference(context: &mut Context) -> Vec<u8> {
         .region(image, &mut color, &mut depth, &mut Rows::new(&mut out, W))
         .expect("région");
     out
+}
+
+/// Une résolution interne **inférieure au maximum** rend la même image que la
+/// région de référence, dans les deux découpages.
+///
+/// Rien ne l'éprouvait : tous les autres cas rendent à la résolution maximale,
+/// où la grille de tuiles couvre exactement l'image. Sous le maximum, la grille
+/// se recalcule et les tampons réservés à la création restent plus grands que
+/// ce qui sert — c'est là qu'un index calculé sur la mauvaise largeur se
+/// cacherait. L'étape 3 rend cette résolution modifiable en cours de route, et
+/// sur téléphone le rendu ne se fait jamais à la résolution de l'écran.
+#[test]
+fn une_resolution_sous_le_maximum_rend_la_reference() {
+    let (width, height) = (W - 61, H - 47);
+    for tile_size in [32, 64] {
+        let mut context = Context::new(Config {
+            max_width: W,
+            max_height: H,
+            width,
+            height,
+            tile_size,
+            max_triangles: 0,
+        })
+        .expect("configuration saine");
+        scene(&mut context, 7);
+
+        let mut out = vec![0u8; width as usize * height as usize * BYTES_PER_PIXEL];
+        let mut color = vec![0u32; width as usize * height as usize];
+        let mut depth = color.clone();
+        let image = Rect {
+            x: 0,
+            y: 0,
+            width,
+            height,
+        };
+        open(&mut context)
+            .region(
+                image,
+                &mut color,
+                &mut depth,
+                &mut Rows::new(&mut out, width),
+            )
+            .expect("région");
+
+        let mut tiled = vec![0u8; width as usize * height as usize * BYTES_PER_PIXEL];
+        open(&mut context)
+            .end(&mut Rows::new(&mut tiled, width))
+            .expect("image");
+
+        assert!(tiled == out, "tuiles de {tile_size} sous le maximum");
+        assert!(
+            out.chunks_exact(BYTES_PER_PIXEL)
+                .any(|p| p[..3] != [0, 0, 0]),
+            "l'image est vide, le cas ne prouve rien"
+        );
+    }
 }
 
 /// Les tuiles de 32 et de 64, rendues par la fin seule, donnent la

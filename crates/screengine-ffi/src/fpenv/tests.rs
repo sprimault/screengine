@@ -36,6 +36,26 @@ fn la_normalisation_masque_les_exceptions() {
     assert_eq!(arch::normalize(0) & 0x1F80, 0x1F80);
 }
 
+/// La normalisation **efface** aussi ce que l'hôte a posé : arrondi, zéro
+/// forcé, dénormaux mis à zéro.
+///
+/// L'autre moitié du travail, et la seule qui change l'image. Un hôte en
+/// arrondi vers le haut, ou en zéro forcé, rendrait des pixels différents des
+/// empreintes versionnées ; poser les masques d'exception ne suffit donc pas, et
+/// un test qui ne vérifie que ceux-là laisse passer une normalisation qui
+/// n'efface rien.
+#[test]
+#[cfg(target_arch = "x86_64")]
+fn la_normalisation_efface_l_arrondi_et_le_zero_force() {
+    // Arrondi vers le haut (14:13 = 10), zéro forcé (15), dénormaux à zéro (6).
+    let hostile = 0x4000 | 0x8000 | 0x0040;
+    let normalized = arch::normalize(hostile);
+
+    assert_eq!(normalized & 0x6000, 0, "arrondi au plus proche");
+    assert_eq!(normalized & 0x8000, 0, "zéro forcé");
+    assert_eq!(normalized & 0x0040, 0, "dénormaux mis à zéro");
+}
+
 /// L'équivalent ARM : les autorisations de piège de FPCR sont effacées.
 #[test]
 #[cfg(target_arch = "aarch64")]

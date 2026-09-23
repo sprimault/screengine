@@ -295,6 +295,11 @@ fn un_hote_aux_exceptions_demasquees_ne_tombe_pas() {
     let ctx = create(&sane());
     let mut pixels = [0u8; 64 * 32 * 4];
 
+    // Une scène, et pas une image vide : sans triangle, le pipeline ne fait
+    // aucune multiplication flottante, et le registre hostile n'a rien à
+    // piéger. Le test passerait alors quelle que soit l'enveloppe.
+    assert_eq!(submit_scene(ctx), SCG_OK);
+
     let default = mxcsr();
     // Masques effacés (12:7), arrondi vers le haut (14:13 = 10), DAZ et FZ.
     let hostile = (default & !0x7F80) | 0x4000 | 0x8040;

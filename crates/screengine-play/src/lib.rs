@@ -178,7 +178,26 @@ pub struct Tick<'a> {
     title: Option<String>,
 }
 
-impl Tick<'_> {
+impl<'a> Tick<'a> {
+    /// Un pas fabriqué de toutes pièces, pour les tests du crate.
+    ///
+    /// La boucle est le seul endroit qui construit un `Tick` en vrai, et elle
+    /// exige une fenêtre. Sans cette porte, tout ce qui consomme un pas —
+    /// au premier rang la caméra libre — ne se testerait qu'en réécrivant ses
+    /// calculs dans le test, qui ne vérifierait alors que lui-même.
+    #[cfg(test)]
+    pub(crate) fn for_test(input: &'a Input, dt: f32, captured: bool) -> Self {
+        Self {
+            input,
+            index: 0,
+            dt,
+            exit: false,
+            captured,
+            capture: None,
+            title: None,
+        }
+    }
+
     /// L'état du clavier et de la souris.
     pub fn input(&self) -> &Input {
         self.input

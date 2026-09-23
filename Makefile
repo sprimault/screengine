@@ -227,9 +227,13 @@ lint: lint-doc-tests
 # au lieu d'échouer — le contrôle attendrait indéfiniment, ou ne vérifierait
 # rien.
 lint-doc-tests:
-	@awk '/#\[test\]/ { if (prev !~ /\/\/\//) { print FILENAME ":" FNR ": #[test] sans documentation"; bad = 1 } } { prev = $$0 } END { exit bad }' \
+	@awk '/#\[test\]/ { if (prev !~ /\/\/\//) { print FILENAME ":" FNR ": #[test] sans documentation"; bad = 1 } } \
+	      FILENAME ~ /tests\.rs$$|\/tests\// && /^(fn|const|struct|enum|static|type) / { \
+	        if (prev !~ /\/\/\// && prev !~ /^[[:space:]]*#\[/) { \
+	          print FILENAME ":" FNR ": declaration de test sans documentation"; bad = 1 } } \
+	      { prev = $$0 } END { exit bad }' \
 	  $$(find src crates -name '*.rs') < /dev/null \
-	  || (echo "Chaque fonction de test porte sa documentation, comme toute declaration." && exit 1)
+	  || (echo "Chaque declaration d un module de test porte sa documentation, aides comprises." && exit 1)
 
 # Le noyau seul, sur une cible sans std. Les autres crates en sont dispensés :
 # l'étage d'accueil ouvre une fenêtre, la conformance écrit des fichiers, la
