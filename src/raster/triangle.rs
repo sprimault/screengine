@@ -998,7 +998,7 @@ fn reciprocal(depth: u32) -> u64 {
 /// s'ajoute après le décalage de niveau, il vaudrait `biais · 2ⁿ` texels du
 /// niveau 0 : la texture glisserait au passage d'un niveau à l'autre, soit
 /// exactement le scintillement que le mipmap vient de supprimer.
-const DITHER: [i32; 16] = [
+pub(crate) const DITHER: [i32; 16] = [
     -30720, 2048, -22528, 10240, //
     18432, -14336, 26624, -6144, //
     -18432, 14336, -26624, 6144, //

@@ -109,6 +109,13 @@ pub enum Argument {
     ///
     /// [`MAX_OVERBRIGHT`]: crate::MAX_OVERBRIGHT
     Overbright,
+    /// Une rampe de brouillard dont une distance n'est pas finie, dont le début
+    /// est négatif, ou dont la fin n'est pas strictement au-delà du début.
+    ///
+    /// Une rampe vide — début et fin confondus — n'est pas un brouillard qui
+    /// commence partout : c'est une division par zéro, et l'appelant voulait
+    /// vraisemblablement l'éteindre.
+    Fog,
 }
 
 /// Le résultat d'un appel du noyau.

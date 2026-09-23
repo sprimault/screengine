@@ -109,6 +109,9 @@ pub(crate) fn message_of(error: Error) -> &'static str {
         Error::InvalidArgument(Argument::Overbright) => {
             "invalid overbright shift: must be 0, 1 or 2"
         }
+        Error::InvalidArgument(Argument::Fog) => {
+            "invalid fog range: start must be finite and not negative, end finite and beyond start"
+        }
         Error::InvalidArgument(Argument::TextureLength) => {
             "pixel block of the wrong length: needs width x height x 4 bytes"
         }

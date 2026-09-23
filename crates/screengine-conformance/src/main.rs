@@ -253,6 +253,18 @@ enum Scene {
     /// la seule disposition où un axe échangé entre les deux jeux de
     /// coordonnées, ou un jeu recopié à la place de l'autre, change l'image.
     Lit,
+    /// Un sol qui fuit jusqu'à l'horizon, noyé de brouillard.
+    ///
+    /// **Le fond est le sujet, autant que le sol.** Un pixel qu'aucun triangle
+    /// n'a peint doit sortir de la couleur du brouillard, sans qu'on l'ait
+    /// effacé avec : c'est ce qui fait que la géométrie lointaine rejoint le
+    /// ciel sans ligne de démarcation. Une couture d'un seul niveau s'y verrait
+    /// à l'œil, et l'empreinte la fige.
+    ///
+    /// La rampe est courte devant la longueur du sol, pour que la moitié
+    /// lointaine soit pleinement embrumée et la moitié proche à peine : les
+    /// deux bouts du mélange sont alors dans la même image.
+    Fog,
     /// La même, avec le sur-éclairement au maximum.
     ///
     /// Une scène et non une passe, pour la raison qui sépare déjà les deux
@@ -486,7 +498,7 @@ impl View {
 
 impl Scene {
     /// Toutes les scènes, dans l'ordre où `--check` les rejoue.
-    const ALL: [Self; 10] = [
+    const ALL: [Self; 11] = [
         Self::Edge,
         Self::Guard,
         Self::Lateral,
@@ -497,6 +509,7 @@ impl Scene {
         Self::TexturedBilinear,
         Self::Lit,
         Self::LitOverbright,
+        Self::Fog,
     ];
 
     /// La passe que `--print` utilise, celle des hôtes.
@@ -532,6 +545,19 @@ impl Scene {
             Self::TexturedBilinear => "texture-bilineaire",
             Self::Lit => "lumiere",
             Self::LitOverbright => "lumiere-surbrillance",
+            Self::Fog => "brouillard",
+        }
+    }
+
+    /// Le brouillard que la scène demande au contexte : sa couleur et sa
+    /// rampe, ou rien.
+    ///
+    /// Éteint partout ailleurs, et c'est ce qui garde les autres empreintes
+    /// inchangées : un contexte qu'on ne configure pas ne brume rien.
+    fn fog(self) -> Option<(Color, f32, f32)> {
+        match self {
+            Self::Fog => Some((Color::new(0x30, 0x38, 0x48, 0xFF), 3.0, 14.0)),
+            _ => None,
         }
     }
 
@@ -689,6 +715,21 @@ impl Scene {
                 8.0,
                 &checker(64, 8),
             ),
+            // Un sol qui fuit bien au-delà de la fin de la rampe : sa moitié
+            // lointaine se confond avec le fond, sa moitié proche garde son
+            // damier. Texturé, pour que le brouillard ait un motif à effacer —
+            // sur un aplat, on ne verrait pas où il agit.
+            Self::Fog => textured_quad(
+                context,
+                [
+                    Vec3::new(1.0, -20.0, -1.2),
+                    Vec3::new(50.0, -20.0, -1.2),
+                    Vec3::new(50.0, 20.0, -1.2),
+                    Vec3::new(1.0, 20.0, -1.2),
+                ],
+                8.0,
+                &checker(64, 8),
+            ),
             // Un sol texturé qui fuit, et un mur uni au fond : les deux
             // chemins éclairés dans la même image. Le mur est en retrait du
             // bout du sol pour qu'on voie les deux se rejoindre, et sa couleur
@@ -766,6 +807,9 @@ impl Scene {
         })?;
         context.set_filter(self.filter())?;
         context.set_overbright(self.overbright())?;
+        if let Some((color, start, end)) = self.fog() {
+            context.set_fog(color, start, end)?;
+        }
         self.submit(&mut context, view)?;
         let mut pixels = vec![0u8; width as usize * height as usize * BYTES_PER_PIXEL];
         pass.render(context.frame_begin()?, &mut pixels, width, height)?;

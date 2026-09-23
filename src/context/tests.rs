@@ -814,3 +814,108 @@ fn la_fin_d_image_vide_le_tableau_annexe() {
     assert_eq!(ctx.lighting.len(), 1);
     assert_eq!(ctx.triangles[0].lighting(), 0);
 }
+
+/// Rend une image et en donne les pixels.
+fn render(ctx: &mut Context) -> alloc::vec::Vec<u8> {
+    let mut pixels = vec![0u8; 64 * 64 * BYTES_PER_PIXEL];
+    ctx.frame_end(&mut pixels, 64).expect("image rendue");
+    pixels
+}
+
+/// **Le fond prend le brouillard plein, exactement.**
+///
+/// C'est la clause qui supprime la couture d'horizon : un pixel qu'aucun
+/// triangle n'a peint garde une profondeur nulle, donc infiniment lointaine.
+/// S'il fallait l'effacer séparément avec la couleur du brouillard, le moindre
+/// écart d'arrondi entre les deux chemins dessinerait la ligne qu'on cherche à
+/// faire disparaître — et cet écart d'un seul niveau ne se verrait sur aucune
+/// image avant qu'un décor entier soit construit dessus.
+#[test]
+fn le_fond_prend_exactement_la_couleur_du_brouillard() {
+    let mut ctx = small();
+    let color = Color::new(0x30, 0x38, 0x48, 0xFF);
+    ctx.set_fog(color, 1.0, 20.0).expect("rampe valide");
+
+    let pixels = render(&mut ctx);
+    for (i, p) in pixels.chunks_exact(BYTES_PER_PIXEL).enumerate() {
+        assert_eq!(
+            [p[0], p[1], p[2]],
+            [0x30, 0x38, 0x48],
+            "pixel {i} du fond embrumé"
+        );
+    }
+}
+
+/// Une surface **avant** la rampe ressort intacte, au bit près.
+///
+/// L'autre bout du mélange, et la raison des neuf bits du facteur : à huit, ce
+/// test échouerait d'une unité sur chaque canal, sur toute la géométrie
+/// proche.
+#[test]
+fn une_surface_avant_la_rampe_ressort_intacte() {
+    let mut avec = small();
+    let mut sans = small();
+    // Le triangle de `ahead` est à dix unités : la rampe commence bien au-delà.
+    avec.set_fog(Color::new(0x30, 0x38, 0x48, 0xFF), 40.0, 80.0)
+        .expect("rampe valide");
+    for ctx in [&mut avec, &mut sans] {
+        ctx.submit(Affine3::IDENTITY, &ahead(), &one())
+            .expect("capacité");
+    }
+
+    let (brume, clair) = (render(&mut avec), render(&mut sans));
+    let peints = clair
+        .chunks_exact(BYTES_PER_PIXEL)
+        .filter(|p| p[0] == 0xFF)
+        .count();
+    assert!(
+        peints > 100,
+        "{peints} pixels peints, le cas ne couvre rien"
+    );
+    // Le fond, lui, est embrumé : les deux images diffèrent donc ailleurs que
+    // sur le triangle, et comparer les images entières ne dirait rien.
+    for (a, b) in brume
+        .chunks_exact(BYTES_PER_PIXEL)
+        .zip(clair.chunks_exact(BYTES_PER_PIXEL))
+    {
+        if b[0] == 0xFF && b[1] == 0xFF && b[2] == 0xFF {
+            assert_eq!([a[0], a[1], a[2]], [b[0], b[1], b[2]], "un pixel proche");
+        }
+    }
+}
+
+/// Le brouillard s'éteint, et la table se refait quand le plan proche change.
+///
+/// Sans ce refait, la rampe se déplacerait en silence : le brouillard resterait
+/// cohérent avec lui-même et faux par rapport aux distances demandées.
+#[test]
+fn le_brouillard_s_eteint_et_suit_le_plan_proche() {
+    let mut ctx = small();
+    assert!(!ctx.has_fog());
+    ctx.set_fog(Color::new(0x20, 0x20, 0x20, 0xFF), 5.0, 25.0)
+        .expect("rampe valide");
+    assert!(ctx.has_fog());
+
+    // À quinze unités, la rampe est à mi-course quel que soit le plan proche :
+    // c'est ce que le refait garantit, et ce qu'un oubli déplacerait.
+    let depth = crate::math::fixed::to_depth(ctx.camera.near / 15.0);
+    let avant = ctx.fog.factor(depth);
+
+    ctx.set_camera(Camera {
+        near: ctx.camera.near * 4.0,
+        ..Camera::DEFAULT
+    })
+    .expect("caméra valide");
+    let apres = ctx
+        .fog
+        .factor(crate::math::fixed::to_depth(ctx.camera.near / 15.0));
+    assert_eq!(avant, apres, "la rampe a bougé avec le plan proche");
+
+    ctx.clear_fog().expect("extinction");
+    assert!(!ctx.has_fog());
+    let pixels = render(&mut ctx);
+    assert!(
+        pixels.chunks_exact(BYTES_PER_PIXEL).all(|p| p[0] == 0),
+        "le fond est resté embrumé"
+    );
+}
