@@ -190,6 +190,64 @@ public final class Test {
         return code == Screengine.OK ? hash : null;
     }
 
+    /**
+     * Rend la scène embrumée, ou {@code null} si le rendu a échoué.
+     *
+     * <p>Le fond n'est effacé de rien : c'est le moteur qui lui donne la
+     * couleur du brouillard, parce qu'un pixel non peint est infiniment
+     * lointain. Un hôte qui effacerait lui-même redessinerait la couture qu'on
+     * cherche à supprimer, et l'empreinte le dirait.
+     *
+     * @return l'empreinte
+     */
+    private static String renderFog() {
+        long texture = Screengine.textureLoad(FLOOR_SIDE, FLOOR_SIDE, makeChecker());
+        check(texture != 0, "la texture du sol embrumé se charge");
+
+        long[] out = {0};
+        if (texture == 0 || Screengine.create(sceneConfig(), out) != Screengine.OK) {
+            check(false, "création du contexte embrumé");
+            return null;
+        }
+
+        // Une rampe vide est refusée : c'est une division par zéro, et
+        // l'appelant voulait vraisemblablement éteindre le brouillard.
+        check(Screengine.setFog(out[0], 0x30, 0x38, 0x48, 10.0f, 10.0f)
+                == Screengine.ERR_INVALID_ARGUMENT, "une rampe vide est refusée");
+        // Éteindre un brouillard qui n'existe pas n'est pas une erreur.
+        check(Screengine.clearFog(out[0]) == Screengine.OK,
+                "l'extinction sans brouillard passe");
+        check(Screengine.setFog(out[0], 0x30, 0x38, 0x48, 3.0f, 14.0f) == Screengine.OK,
+                "le brouillard se règle");
+
+        float[] model = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
+        // Le sol est plus long que la rampe : sa moitié lointaine se confond
+        // avec le fond, sa moitié proche garde son damier.
+        float[] vertices = {
+            1.0f, -20.0f, -1.2f, 1.0f * 8.0f, -20.0f * 8.0f,
+            50.0f, -20.0f, -1.2f, 50.0f * 8.0f, -20.0f * 8.0f,
+            50.0f, 20.0f, -1.2f, 50.0f * 8.0f, 20.0f * 8.0f,
+            1.0f, 20.0f, -1.2f, 1.0f * 8.0f, 20.0f * 8.0f,
+        };
+        int[] indices = {0, 1, 2, 0, 2, 3};
+        byte[] colors = {
+            (byte) 0xFF, (byte) 0xFF, (byte) 0xFF, (byte) 0xFF,
+            (byte) 0xFF, (byte) 0xFF, (byte) 0xFF, (byte) 0xFF,
+        };
+        check(Screengine.submitTextured(out[0], model, vertices, indices, colors, texture)
+                == Screengine.OK, "le sol embrumé est accepté");
+        Screengine.textureDestroy(texture);
+
+        int body = STRIDE * HEIGHT * Screengine.BYTES_PER_PIXEL;
+        ByteBuffer block = ByteBuffer.allocateDirect(body);
+        int code = Screengine.frameEnd(out[0], block, 0, STRIDE);
+        check(code == Screengine.OK, "l'image embrumée se rend");
+
+        String hash = fingerprint(block, 0, STRIDE);
+        Screengine.destroy(out[0]);
+        return code == Screengine.OK ? hash : null;
+    }
+
     /** Côté de la lightmap de la scène {@code lumiere}, en texels. */
     private static final int LIGHT_SIDE = 16;
 
@@ -449,8 +507,10 @@ public final class Test {
         String textured = renderTextured(Screengine.FILTER_DITHER);
         String bilinear = renderTextured(Screengine.FILTER_BILINEAR);
         String lit = renderLit();
+        String fog = renderFog();
 
-        if (failures > 0 || hash == null || textured == null || bilinear == null || lit == null) {
+        if (failures > 0 || hash == null || textured == null || bilinear == null
+                || lit == null || fog == null) {
             System.err.println(failures + " vérification(s) en échec");
             System.exit(1);
         }
@@ -458,6 +518,7 @@ public final class Test {
         System.out.println(textured);
         System.out.println(bilinear);
         System.out.println(lit);
+        System.out.println(fog);
         System.exit(0);
     }
 }

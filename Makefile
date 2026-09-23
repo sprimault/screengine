@@ -152,7 +152,7 @@ HOST_OUT = $(abspath $(SORTIE))/host-$(host_dir_$*)
 # change que le filtrage, donc c'est `scg_set_filter` seul qu'elle éprouve de
 # bout en bout. Une scène ajoutée ici est une scène à écrire dans les quatre
 # hôtes, et c'est voulu : c'est ce qui rend leur comparaison possible.
-HOST_SCENES := arete texture texture-bilineaire lumiere
+HOST_SCENES := arete texture texture-bilineaire lumiere brouillard
 
 # Sans l'outillage de l'hôte, la cible saute et dit pourquoi. En intégration
 # continue (CI défini), le même saut est une erreur : un contrôle qui ne tourne

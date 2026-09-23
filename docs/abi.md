@@ -715,13 +715,16 @@ int32_t scg_submit_lit(ScgContext *ctx, const ScgMat4 *model,
                        const ScgTriangle *triangles, uint32_t triangle_count,
                        const ScgTexture *texture, const ScgTexture *lightmap);
 int32_t scg_set_overbright(ScgContext *ctx, uint32_t shift);
+int32_t scg_set_fog(ScgContext *ctx, uint8_t r, uint8_t g, uint8_t b,
+                    float start, float end);
+int32_t scg_clear_fog(ScgContext *ctx);
 ```
 
 ```c
 typedef struct ScgVertexUv2 { float x, y, z, u, v, u2, v2; } ScgVertexUv2;
 ```
 
-Deux fonctions ajoutées, une structure nouvelle, aucune constante :
+Quatre fonctions ajoutées, une structure nouvelle, aucune constante :
 `SCG_ABI_VERSION` reste à **1**.
 
 - **Une structure de sommet nouvelle, et non deux champs de plus sur
@@ -745,7 +748,19 @@ Deux fonctions ajoutées, une structure nouvelle, aucune constante :
   ou deux double ou quadruple la valeur combinée, avec saturation.
   `scg_set_overbright` est refusé entre `scg_frame_begin` et `scg_frame_end`,
   pour la raison qui vaut pour `scg_set_filter`.
-- **Aucun code d'erreur nouveau**, un message de plus.
+- **Le brouillard ne demande pas à l'hôte d'effacer avec sa couleur.** Il
+  s'applique pendant la recopie d'une tuile, où la profondeur est déjà sous la
+  main, et un pixel qu'aucun triangle n'a peint est infiniment lointain : le
+  fond en prend donc la couleur de lui-même. Effacer séparément redessinerait
+  la couture d'horizon au moindre écart d'arrondi entre les deux chemins, et
+  cet écart d'un seul niveau ne se voit sur aucune image avant qu'un décor
+  entier soit construit dessus.
+- **Trois canaux de couleur, pas quatre.** Le tampon de sortie est opaque par
+  contrat : un alpha sur la couleur du brouillard serait une valeur que le
+  moteur ignore, et un hôte se demanderait légitimement ce qu'elle fait.
+- **`scg_clear_fog` sur un contexte sans brouillard n'est pas une erreur.** Un
+  hôte qui l'éteint en fin de niveau n'a pas à se souvenir s'il l'avait allumé.
+- **Aucun code d'erreur nouveau**, deux messages de plus.
 
 ### Étapes suivantes
 
@@ -756,7 +771,7 @@ noms ne le sont pas.
 |---|---|
 | 1 | ✓ début d'image et rendu d'une tuile (voir « Rendu par tuiles »), caméra et projection, soumission de triangles avec une matrice |
 | 2 | ✓ chargement d'une texture, mipmaps engendrés au chargement, niveau de qualité du filtrage par `scg_set_filter` |
-| 3 | ✓ soumission d'un lot éclairé et réglage du sur-éclairement ; reste : changement de résolution interne, lumières dynamiques, brouillard, post-traitement |
+| 3 | ✓ soumission d'un lot éclairé, réglage du sur-éclairement et du brouillard ; reste : changement de résolution interne, lumières dynamiques, post-traitement |
 | 4 | chargement d'un maillage et d'une carte depuis un bloc d'octets, libération |
 | 5 | rendu du monde depuis la caméra, calcul des lightmaps d'une cellule et reprise d'un cache |
 | 6 | interpolation entre trames, sprites orientés caméra |

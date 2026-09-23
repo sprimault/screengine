@@ -84,6 +84,8 @@ export const EXPORTS = [
   "scg_submit_lit",
   "scg_set_filter",
   "scg_set_overbright",
+  "scg_set_fog",
+  "scg_clear_fog",
 ];
 
 /** Taille de `ScgContextConfig`, celle qu'affirme le header. */

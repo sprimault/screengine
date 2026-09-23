@@ -181,6 +181,66 @@ std::vector<uint8_t> make_checker()
     return texels;
 }
 
+/// Le sol de la scène `brouillard`, plus long que la rampe : sa moitié
+/// lointaine se confond avec le fond, sa moitié proche garde son damier.
+constexpr ScgVertexUv FOG_FLOOR[4] = {
+    {  1.0f, -20.0f, -1.2f,   1.0f * 8.0f, -20.0f * 8.0f },
+    { 50.0f, -20.0f, -1.2f,  50.0f * 8.0f, -20.0f * 8.0f },
+    { 50.0f,  20.0f, -1.2f,  50.0f * 8.0f,  20.0f * 8.0f },
+    {  1.0f,  20.0f, -1.2f,   1.0f * 8.0f,  20.0f * 8.0f },
+};
+
+/// Rend la scène embrumée et hache son image.
+///
+/// Le fond n'est effacé de rien : c'est le moteur qui lui donne la couleur du
+/// brouillard, parce qu'un pixel non peint est infiniment lointain. Un hôte
+/// qui effacerait lui-même redessinerait la couture qu'on cherche à supprimer,
+/// et l'empreinte le dirait.
+uint64_t render_fog(bool &ok)
+{
+    ok = false;
+    ScgContextConfig config = scene_config();
+    ScgContext *ctx = nullptr;
+    ScgTexture *texture = nullptr;
+    const std::vector<uint8_t> texels = make_checker();
+
+    ScgTextureDesc desc{};
+    desc.width = FLOOR_SIDE;
+    desc.height = FLOOR_SIDE;
+    desc.format = SCG_TEXTURE_FORMAT_RGBA8;
+    check(scg_texture_load(&desc, texels.data(), texels.size(), &texture) == SCG_OK,
+          "la texture du sol embrumé se charge");
+    check(scg_create(&config, &ctx) == SCG_OK, "création du contexte embrumé");
+    if (texture == nullptr || ctx == nullptr) {
+        scg_texture_destroy(texture);
+        scg_destroy(ctx);
+        return 0;
+    }
+
+    // Une rampe vide est refusée : c'est une division par zéro, et l'appelant
+    // voulait vraisemblablement éteindre le brouillard.
+    check(scg_set_fog(ctx, 0x30, 0x38, 0x48, 10.0f, 10.0f) == SCG_ERR_INVALID_ARGUMENT,
+          "une rampe vide est refusée");
+    // Éteindre un brouillard qui n'existe pas n'est pas une erreur.
+    check(scg_clear_fog(ctx) == SCG_OK, "l'extinction sans brouillard passe");
+    check(scg_set_fog(ctx, 0x30, 0x38, 0x48, 3.0f, 14.0f) == SCG_OK,
+          "le brouillard se règle");
+
+    check(scg_submit_textured(ctx, &IDENTITY, FOG_FLOOR, 4, FLOOR_TRIANGLES, 2, texture)
+              == SCG_OK,
+          "le sol embrumé est accepté");
+    scg_texture_destroy(texture);
+
+    std::vector<uint8_t> pixels(static_cast<size_t>(STRIDE) * HEIGHT * 4);
+    const int32_t code = scg_frame_end(ctx, pixels.data(), STRIDE);
+    check(code == SCG_OK, "l'image embrumée se rend");
+    ok = code == SCG_OK;
+
+    const uint64_t hash = fingerprint(pixels.data(), WIDTH, HEIGHT, STRIDE);
+    scg_destroy(ctx);
+    return hash;
+}
+
 /// Le côté de la lightmap de la scène `lumiere`, en texels.
 constexpr uint32_t LIGHT_SIDE = 16;
 
@@ -582,7 +642,10 @@ int main()
     bool lit_ok = false;
     const uint64_t lit = render_lit(lit_ok);
 
-    if (failures > 0 || !ok || !textured_ok || !bilinear_ok || !lit_ok) {
+    bool fog_ok = false;
+    const uint64_t fog = render_fog(fog_ok);
+
+    if (failures > 0 || !ok || !textured_ok || !bilinear_ok || !lit_ok || !fog_ok) {
         std::fprintf(stderr, "%d vérification(s) en échec\n", failures);
         return 1;
     }
@@ -590,5 +653,6 @@ int main()
     std::printf("%016llx\n", static_cast<unsigned long long>(textured));
     std::printf("%016llx\n", static_cast<unsigned long long>(bilinear));
     std::printf("%016llx\n", static_cast<unsigned long long>(lit));
+    std::printf("%016llx\n", static_cast<unsigned long long>(fog));
     return 0;
 }

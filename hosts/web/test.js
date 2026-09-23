@@ -231,6 +231,92 @@ function renderTextured(engine, filter) {
   return hash;
 }
 
+/**
+ * Le sol de la scène `brouillard`, plus long que la rampe : sa moitié
+ * lointaine se confond avec le fond, sa moitié proche garde son damier.
+ */
+const FOG_FLOOR = [
+  [1.0, -20.0, -1.2, 1.0 * 8.0, -20.0 * 8.0],
+  [50.0, -20.0, -1.2, 50.0 * 8.0, -20.0 * 8.0],
+  [50.0, 20.0, -1.2, 50.0 * 8.0, 20.0 * 8.0],
+  [1.0, 20.0, -1.2, 1.0 * 8.0, 20.0 * 8.0],
+];
+
+/**
+ * Rend la scène embrumée, ou `null` en cas d'échec.
+ *
+ * Le fond n'est effacé de rien : c'est le moteur qui lui donne la couleur du
+ * brouillard, parce qu'un pixel non peint est infiniment lointain. Un hôte qui
+ * effacerait lui-même redessinerait la couture qu'on cherche à supprimer, et
+ * l'empreinte le dirait.
+ *
+ * @param {scg.Screengine} engine
+ * @returns {string | null}
+ */
+function renderFog(engine) {
+  const e = engine.exports;
+  const texels = makeChecker();
+  const desc = engine.alloc(scg.TEXTURE_DESC_SIZE);
+  const block = engine.alloc(texels.length);
+  const out = engine.alloc(4);
+  const config = engine.alloc(scg.CONFIG_SIZE);
+
+  engine.writeTextureDesc(desc, FLOOR_SIDE, FLOOR_SIDE);
+  engine.bytes().set(texels, block);
+  const loaded = e.scg_texture_load(desc, block, texels.length, out);
+  check(loaded === scg.SCG_OK, "la texture du sol embrumé se charge");
+  const texture = engine.readU32(out);
+
+  engine.writeConfig(config, sceneConfig());
+  if (loaded !== scg.SCG_OK || e.scg_create(config, out) !== scg.SCG_OK) {
+    check(false, "création du contexte embrumé");
+    return null;
+  }
+  const ctx = engine.readU32(out);
+
+  // Une rampe vide est refusée : c'est une division par zéro, et l'appelant
+  // voulait vraisemblablement éteindre le brouillard.
+  check(
+    e.scg_set_fog(ctx, 0x30, 0x38, 0x48, 10.0, 10.0) === scg.SCG_ERR_INVALID_ARGUMENT,
+    "une rampe vide est refusée",
+  );
+  // Éteindre un brouillard qui n'existe pas n'est pas une erreur.
+  check(e.scg_clear_fog(ctx) === scg.SCG_OK, "l'extinction sans brouillard passe");
+  check(
+    e.scg_set_fog(ctx, 0x30, 0x38, 0x48, 3.0, 14.0) === scg.SCG_OK,
+    "le brouillard se règle",
+  );
+
+  const model = engine.alloc(scg.MAT4_SIZE);
+  const vertices = engine.alloc(FOG_FLOOR.length * scg.VERTEX_UV_SIZE);
+  const triangles = engine.alloc(FLOOR_TRIANGLES.length * scg.TRIANGLE_SIZE);
+  engine.writeIdentity(model);
+  engine.writeVerticesUv(vertices, FOG_FLOOR);
+  engine.writeTriangles(triangles, FLOOR_TRIANGLES);
+
+  const submitted = e.scg_submit_textured(
+    ctx,
+    model,
+    vertices,
+    FOG_FLOOR.length,
+    triangles,
+    FLOOR_TRIANGLES.length,
+    texture,
+  );
+  check(submitted === scg.SCG_OK, "le sol embrumé est accepté");
+  e.scg_texture_destroy(texture);
+
+  const pixels = engine.alloc(STRIDE * HEIGHT * scg.BYTES_PER_PIXEL);
+  const code = e.scg_frame_end(ctx, pixels, STRIDE);
+  check(code === scg.SCG_OK, "l'image embrumée se rend");
+  const hash = code === scg.SCG_OK
+    ? engine.fingerprint(pixels, WIDTH, HEIGHT, STRIDE)
+    : null;
+
+  e.scg_destroy(ctx);
+  return hash;
+}
+
 /** Côté de la lightmap de la scène `lumiere`, en texels. */
 const LIGHT_SIDE = 16;
 
@@ -722,12 +808,19 @@ async function main() {
   const textured = renderTextured(engine, scg.SCG_FILTER_DITHER);
   const bilinear = renderTextured(engine, scg.SCG_FILTER_BILINEAR);
   const lit = renderLit(engine);
-  if (failures > 0 || textured === null || bilinear === null || lit === null) {
+  const fog = renderFog(engine);
+  if (
+    failures > 0 ||
+    textured === null ||
+    bilinear === null ||
+    lit === null ||
+    fog === null
+  ) {
     process.stderr.write(`${failures} vérification(s) en échec\n`);
     return 1;
   }
 
-  process.stdout.write(`${hash}\n${textured}\n${bilinear}\n${lit}\n`);
+  process.stdout.write(`${hash}\n${textured}\n${bilinear}\n${lit}\n${fog}\n`);
   return 0;
 }
 
