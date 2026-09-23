@@ -57,7 +57,7 @@ directly.
 Code conventions and the testing doctrine are in [`docs/rust.md`](docs/rust.md).
 What follows is the enforceable summary.
 
-- `make fmt && make lint && make test && make conform && make nostd && make header-verif && make audit` pass.
+- `make fmt && make lint && make test && make conform && make nostd && make header-verif && make deny && make audit` pass.
 - Every declaration is documented. Comments say *why*; they never paraphrase
   the next line.
 - No banners, no decorative emoji, neither in code nor in commit messages.
@@ -96,7 +96,7 @@ the branch on both sides.
 **Check before pushing, not after:**
 
 ```
-make fmt && make lint && make test && make conform && make nostd && make header-verif && make audit
+make fmt && make lint && make test && make conform && make nostd && make header-verif && make deny && make audit
 ```
 
 **The list is fixed and runs in full**, never trimmed to what the change you

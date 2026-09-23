@@ -293,8 +293,10 @@ dans la mémoire linéaire après le trap, sans rappeler le module.
   fonctions de bord en `i64` — sont calculés sur cette borne.
 
   Tous les tampons propres à l'image — triangles préparés, répartition par
-  tuile, tampons de clipping — sont dimensionnés dès la création, pour la
-  capacité de triangles et pour le nombre de tuiles de la résolution maximale.
+  tuile — sont dimensionnés dès la création, pour la capacité de triangles et
+  pour le nombre de tuiles de la résolution maximale. Le clipping n'en a aucun :
+  l'intersection d'un triangle avec les cinq plans tient en huit sommets, dont
+  le pire cas est prouvé, et ses deux tampons vivent sur la pile de l'appel.
   Couleur et profondeur n'existent pas à l'échelle de l'image : chaque tuile les
   tient sur la pile de l'appel qui la rend. Changer de résolution sous le
   maximum n'alloue rien ; au-delà, c'est une erreur. La mémoire qui dépend de la scène — textures, mipmaps, lightmaps —
@@ -321,15 +323,16 @@ dans la mémoire linéaire après le trap, sans rappeler le module.
   chemins SIMD de l'étape 9, qui liront le tampon de l'hôte et non un bloc du
   moteur. C'est pour la seule chose qui l'exige vraiment, les chargements alignés
   de SSE. Il est gratuit sur bureau, où l'allocateur système donne déjà 16.
-- **Octets de données** (cartes, maillages, textures). **À trancher — A8**,
-  échéance étape 4 : le moteur copie ce qu'il garde, ou emprunte le bloc de
-  l'hôte. Recommandation : il copie. L'hôte peut libérer son bloc dès le retour
-  de l'appel, et aucune durée de vie ne traverse la frontière.
-- **Ressources** (textures, maillages, mondes). Même échéance, même point : elles
-  sont indépendantes de tout contexte, ce qu'impose la collision sans rendu de
-  l'étape 7. Leur mémoire est allouée à leur chargement, mipmaps compris ; celle
-  des lightmaps, à l'appel qui les calcule. Détruire une ressource encore
-  référencée par un appel de dessin est une précondition, pas un cas d'erreur.
+- **Octets de données.** **Tranché pour les textures à l'étape 2 : le moteur
+  copie.** L'hôte peut libérer son bloc dès le retour de l'appel, et aucune
+  durée de vie ne traverse la frontière. **À trancher — A8**, échéance étape 4,
+  pour les cartes et les maillages seuls, dont la sémantique de mutation n'est
+  pas décidée ; la recommandation reste la copie, pour la même raison.
+- **Ressources** (textures, maillages, mondes). Elles sont indépendantes de tout
+  contexte, ce qu'impose la collision sans rendu de l'étape 7. Leur mémoire est
+  allouée à leur chargement, mipmaps compris ; celle des lightmaps, à l'appel
+  qui les calcule. Détruire une ressource encore référencée par un appel de
+  dessin est une précondition, pas un cas d'erreur.
 
 ## Concurrence
 
@@ -348,8 +351,9 @@ Arrêté :
 - **L'image ne dépend ni de la taille des tuiles, ni du nombre de threads, ni de
   l'ordre dans lequel les tuiles sont rendues.**
 
-Le partage d'une ressource en lecture entre deux contextes sur deux threads se
-tranche avec A8.
+**Une texture immuable se partage en lecture entre contextes et entre threads**,
+tranché à l'étape 2. Il en ira de même des autres ressources, mais ce n'est
+acquis que pour celles dont la copie à l'entrée est décidée — voir A8.
 
 ### Rendu par tuiles
 
@@ -621,7 +625,7 @@ typedef struct ScgTextureDesc {
 } ScgTextureDesc;
 ```
 
-Trois fonctions ajoutées, deux structures nouvelles, trois constantes :
+Quatre fonctions ajoutées, deux structures nouvelles, trois constantes :
 `SCG_ABI_VERSION` reste à **1**.
 
 - **Un seul format, `SCG_TEXTURE_FORMAT_RGBA8`, qui vaut 1 et non 0.** Une
@@ -683,7 +687,7 @@ noms ne le sont pas.
 
 | Étape | Ce qui doit être exposé |
 |---|---|
-| 1 | début d'image et rendu d'une tuile (voir « Rendu par tuiles »), caméra et projection, soumission de triangles avec une matrice |
+| 1 | ✓ début d'image et rendu d'une tuile (voir « Rendu par tuiles »), caméra et projection, soumission de triangles avec une matrice |
 | 2 | ✓ chargement d'une texture, mipmaps engendrés au chargement, niveau de qualité du filtrage par `scg_set_filter` |
 | 3 | changement de résolution interne, calcul des lightmaps d'une cellule et reprise d'un cache, lumières dynamiques, brouillard, post-traitement |
 | 4 | chargement d'un maillage et d'une carte depuis un bloc d'octets, libération |

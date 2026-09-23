@@ -28,9 +28,14 @@ benches/            mesures du noyau
 crates/
   screengine-ffi/           src/, tests/
   screengine-lib/           src/, build.rs
-  screengine-play/          src/, examples/
-  screengine-conformance/   src/, references/
+  screengine-play/          src/, examples/, assets/
+  screengine-conformance/   src/, references/, tests/
 ```
+
+Les trois répertoires du noyau n'existent pas encore : `tests/` et `examples/`
+naîtront avec leur premier fichier, et `benches/` avec la première mesure —
+celle que l'étape 3 réclame, puisqu'elle ajoute une lecture de texture par
+pixel et qu'une régression ne s'attribue pas sans référence prise avant.
 
 **Le noyau est le paquet racine**, avec la disposition standard de Cargo ; les
 quatre autres crates la reprennent chacun dans `crates/`. Un répertoire naît avec
@@ -443,7 +448,7 @@ la création du contexte rend une erreur plutôt que de déborder en silence.
 | Fonctions de bord | `i64` | un écart entre sommets atteint 2¹⁷ en 28.4, un produit 2³⁴ : `i32` déborde dès que la bande de garde sert |
 | Règle top-left | biais de −1 sur les arêtes ni hautes ni gauches | deux triangles partageant une arête se partagent ses pixels, sans trou ni recouvrement |
 | Profondeur | `u32`, `near/w` en 0.32, bornée par `to_depth` à 64 unités des bornes | plus grand est plus proche ; `near/w` est affine en espace écran, donc s'interpole par une équation de plan. La marge couvre l'arrondi des gradients : aucun bornage par pixel. Test strict : à égalité, le premier triangle soumis reste |
-| Attributs interpolés | valeurs de sommet bornées à ±2³², gradients par sous-pixel en `i64` à 12 bits fractionnaires | équation de plan établie à la mise en place du triangle, gradients arrondis vers le bas par `div_euclid` sur une aire positive, point de référence au plus petit sommet en (y, x) ; évaluation en forme close, enveloppante, exacte sur les pixels couverts, à moins de 64 unités de la valeur exacte. Ce qui s'interpole pour les textures — `u·z` et `v·z` divisés par `z`, ou un `1/w` séparé — se tranche à l'étape 2 |
+| Attributs interpolés | valeurs de sommet bornées à ±2³², gradients par sous-pixel en `i64` à 12 bits fractionnaires | équation de plan établie à la mise en place du triangle, gradients arrondis vers le bas par `div_euclid` sur une aire positive, point de référence au plus petit sommet en (y, x) ; évaluation en forme close, enveloppante, exacte sur les pixels couverts, à moins de 64 unités de la valeur exacte. **Les textures interpolent `u·z` et `v·z`**, tranché à l'étape 2 : ce sont eux qui sont affines en espace écran, et leur quotient par `z` absorbe l'erreur relative commune — un `1/w` séparé aurait demandé un plan de plus pour le même résultat |
 | Coordonnées de texture après division | `i32`, 16.16 | textures en puissance de deux, repli par masque |
 | Poids du bilinéaire | 8 bits, tirés des bits fractionnaires | mélange entier, arrondi `(… + 128) >> 8` |
 
@@ -709,8 +714,12 @@ Il vit dans `crates/screengine-conformance/tests/allocation.rs`, binaire de test
 à part : un allocateur global vaut pour tout le binaire. Le compte est par
 thread, armé autour des images seulement, y compris dans les threads qui rendent
 des tuiles — le harnais de test alloue sur ses propres threads pendant la
-mesure. Aujourd'hui la scène est le triangle en dur,
-sur trois images ; chaque ressource chargeable y entrera avec son étape.
+mesure. La scène est un quadrilatère, soumis sur trois images, **avec et sans
+texture** : le chemin texturé remplit la table de textures du contexte, que le
+chemin uni ne touche jamais, et une mesure qui l'ignorerait laisserait hors
+d'elle ce que tout décor emprunte. Chaque ressource chargeable y entre avec son
+étape, et se charge hors de la mesure — un chargement est un appel nommé, qui a
+le droit d'allouer.
 
 ### Tests aléatoires
 

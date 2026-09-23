@@ -57,7 +57,7 @@ Le reste — code, tests, documentation d'accompagnement — se propose directem
 Les conventions de code et la doctrine de test sont dans
 [`docs/rust.md`](docs/rust.md). Ce qui suit en est le résumé exigible.
 
-- `make fmt && make lint && make test && make conform && make nostd && make header-verif && make audit` passent.
+- `make fmt && make lint && make test && make conform && make nostd && make header-verif && make deny && make audit` passent.
 - Toute déclaration a sa documentation. Les commentaires disent *pourquoi*, ils
   ne paraphrasent jamais la ligne suivante.
 - Pas de bannière, pas d'emoji décoratif, ni dans le code, ni dans les messages
@@ -99,7 +99,7 @@ supprime la branche des deux côtés.
 **Vérifier avant de pousser, pas après :**
 
 ```
-make fmt && make lint && make test && make conform && make nostd && make header-verif && make audit
+make fmt && make lint && make test && make conform && make nostd && make header-verif && make deny && make audit
 ```
 
 **La liste est fixe et se passe entière**, jamais réduite à ce qui touche au
