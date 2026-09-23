@@ -468,6 +468,15 @@ int32_t scg_frame_end(ScgContext *ctx, uint8_t *pixels, uint32_t stride);
   tramage est une table fixe du noyau, indexée par la position du pixel dans
   l'image : il n'a pas de graine, et rien de ce qu'il produit ne dépend de
   l'hôte.
+
+  **Il règle l'échantillonnage des textures, et lui seul.** Une lightmap se lit
+  toujours en bilinéaire, quel que soit ce réglage : elle est grossie d'un
+  facteur seize à soixante-quatre par construction, et sans filtrage chaque
+  luxel deviendrait un pavé franc de seize pixels de côté. Le tramage n'y
+  aiderait pas — il ne toucherait que la frontière entre deux luxels, et y
+  remplacerait un escalier par du bruit régulier. Elle n'a pas non plus de
+  mipmaps : elle n'est jamais réduite, et son contenu ne porte aucun détail
+  au-dessus de sa propre finesse.
 - **Le post-traitement** — gamma, tonemapping, étalonnage — s'applique pendant
   l'écriture de chaque tuile dans le tampon de l'hôte. Il n'y a pas de passe plein
   écran, et donc rien qui lise les pixels voisins.
@@ -697,9 +706,9 @@ noms ne le sont pas.
 |---|---|
 | 1 | ✓ début d'image et rendu d'une tuile (voir « Rendu par tuiles »), caméra et projection, soumission de triangles avec une matrice |
 | 2 | ✓ chargement d'une texture, mipmaps engendrés au chargement, niveau de qualité du filtrage par `scg_set_filter` |
-| 3 | changement de résolution interne, calcul des lightmaps d'une cellule et reprise d'un cache, lumières dynamiques, brouillard, post-traitement |
+| 3 | changement de résolution interne, chargement d'une lightmap et soumission d'un lot éclairé, réglage du sur-éclairement, lumières dynamiques, brouillard, post-traitement |
 | 4 | chargement d'un maillage et d'une carte depuis un bloc d'octets, libération |
-| 5 | rendu du monde depuis la caméra |
+| 5 | rendu du monde depuis la caméra, calcul des lightmaps d'une cellule et reprise d'un cache |
 | 6 | interpolation entre trames, sprites orientés caméra |
 | 7 | module de collision, utilisable sans contexte de rendu |
 | 8 | tracé de lignes et de points, interrogation de la scène, modification d'une cellule par identifiant |

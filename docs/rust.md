@@ -467,6 +467,12 @@ la création du contexte rend une erreur plutôt que de déborder en silence.
 | Attributs interpolés | valeurs de sommet bornées à ±2³², gradients par sous-pixel en `i64` à 12 bits fractionnaires | équation de plan établie à la mise en place du triangle, gradients arrondis vers le bas par `div_euclid` sur une aire positive, point de référence au plus petit sommet en (y, x) ; évaluation en forme close, enveloppante, exacte sur les pixels couverts, à moins de 64 unités de la valeur exacte. **Les textures interpolent `u·z` et `v·z`**, tranché à l'étape 2 : ce sont eux qui sont affines en espace écran, et leur quotient par `z` absorbe l'erreur relative commune — un `1/w` séparé aurait demandé un plan de plus pour le même résultat |
 | Coordonnées de texture après division | `i32`, 16.16 | textures en puissance de deux, repli par masque |
 | Poids du bilinéaire | 8 bits, tirés des bits fractionnaires | mélange entier, arrondi `(… + 128) >> 8` |
+| Coordonnées de lightmap | **le format des coordonnées de texture, à l'identique** : `lu·z` et `lv·z` interpolés par équation de plan, `i32` 16.16 après division | un second jeu `u, v` par sommet, et non une application affine des premières : celle-ci serait impossible sur un lot **sans** texture, où les coordonnées valent zéro partout — or un mur uni éclairé est le premier cas de l'étape. La division est partagée : la réciproque dépend de la profondeur seule, pas de l'attribut, et une seconde série coûterait cinq divisions `u64` de plus par segment |
+| Combinaison texel × lightmap | `(t·l + t) >> 8` par canal, `l` sur 8 bits où **255 est le neutre** | **pas `(t·l + 128) >> 8`**, qui est la forme de la ligne au-dessus et ne vaut que pour des poids sommant à 256 : sur un facteur en 255 elle rend le blanc à 254 sous pleine lumière, un assombrissement de 1/256 sur toute surface éclairée. `t·(l+1) >> 8` rend le texel intact à `l = 255`, zéro à `l = 0`, sans division ni table. Écart à l'idéal au plus d'une unité, toujours éclaircissant, nul là où il se verrait |
+| Sur-éclairement | décalage de contexte `k ∈ {0, 1, 2}` dans la combinaison : `min(255, t·(l+1) >> (8 − k))` | sans lui, toute surface éclairée est plus sombre que sa texture et la scène entière est terne. Dans la combinaison et non dans le post-traitement : appliqué après coup, un doublement ne rendrait que des valeurs paires, et éclaircirait aussi ce qui n'est pas éclairé. Un décalage plutôt qu'un facteur quelconque, pour que l'expression reste exacte et sans division. Saturation **écrite**, jamais laissée à une conversion |
+| Facteur de brouillard | `u16` valant `f ∈ [0, 256]`, **256 = brouillard plein** | neuf bits et non huit, pour que le mélange soit exact **aux deux bouts** : une surface non embrumée doit sortir identique au rendu sans brouillard, et un décalage d'un seul niveau entre la géométrie lointaine et le fond effacé *est* la couture d'horizon. Mélange à deux voies dans `0x00FF00FF`, sans retenue entre elles — chaque voie vaut au plus `255·256 + 128`, soit 65 408, sous 2¹⁶ | 
+| Index de brouillard | exposant et mantisse de la profondeur, par `leading_zeros`, table de 2048 entrées | indexer linéairement une profondeur 0.32 est inutilisable : tout le monde visible vit sous 2²⁶. La table se remplit **linéairement en distance** — un brouillard linéaire en `near/w`, pourtant gratuit, atteint 56 % à un dixième de sa rampe et cesse d'être un indice de profondeur. L'index se prend comme celui du mipmap, et le reste de quantification se trame par la même table ordonnée, transposée pour ne pas se corréler avec celle des texels |
+| Atténuation d'une lumière dynamique | `(1 − d²/r²)²` en `f32`, **par sommet**, portée par un plan comme les autres attributs | l'atténuation a besoin d'une distance, et il n'existe aucune distance du côté entier du pipeline : la racine inverse du noyau vit avant la projection. Le carré s'annule en `r` **avec une dérivée nulle**, donc sans l'anneau visible que `1 − d²/r²` seule dessine à son bord. Aucune racine n'est appelée |
 
 - **Tout s'évalue en coordonnées globales.** Une fonction de bord ou un attribut
   en un pixel se calcule à partir des sommets et de la position du pixel dans
@@ -498,6 +504,16 @@ la création du contexte rend une erreur plutôt que de déborder en silence.
   glisserait d'un demi-texel au changement de filtre. Le repli par masque
   s'applique à chacun des quatre voisins séparément, de sorte qu'une surface
   pavée mélange son dernier texel avec le premier.
+- **Un attribut nouveau n'entre pas dans le triangle préparé, mais dans un
+  tableau annexe compacté.** La répartition par tuile parcourt le tableau des
+  triangles **deux fois par image** et n'y lit que la boîte englobante, seize
+  octets sur cent vingt-huit. Y ajouter des plans ferait streamer leur volume
+  entier sur une passe qui ne les lit jamais — au défaut de capacité, plus d'un
+  mégaoctet par image, sur la bande passante que le projet désigne comme la
+  vraie limite du téléphone. Rangés ailleurs, les mêmes octets ne coûtent rien à
+  cette passe. Le triangle préparé garde donc ses cent vingt-huit octets, deux
+  lignes de cache, et porte des index vers l'annexe ; compactée aux seuls
+  triangles concernés, pour qu'une scène sans lightmap n'écrive pas de zéros.
 - **Dans une tuile, les triangles se dessinent dans l'ordre de soumission.** Avec
   le test de profondeur strict, c'est l'ordre qui tranche une égalité : une
   répartition qui le perdrait rendrait une image différente selon la taille des

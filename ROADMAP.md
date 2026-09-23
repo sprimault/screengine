@@ -130,10 +130,15 @@ Lightmaps, quelques lumières dynamiques ajoutées aux lightmaps, brouillard par
 la distance, couleurs directes, résolution interne paramétrable sans recréation
 du contexte, post-traitement local au pixel.
 
-**Les lightmaps sont un cache dérivable.** Le noyau les calcule à partir de la
-carte, cellule par cellule, sur appel explicite de l'hôte ; l'hôte peut garder le
-résultat et le rendre au chargement suivant. Une cellule modifiée recalcule ses
-lightmaps, pas celles du niveau. Aucune ne se calcule pendant une image.
+**À cette étape, une lightmap est une ressource fournie par l'hôte**, chargée
+comme une texture et échantillonnée par un second jeu de coordonnées au sommet.
+Le noyau n'en calcule aucune : il n'a rien à partir de quoi le faire, le format
+de carte arrivant à l'étape 4 et les cellules à l'étape 5. Les numéros ordonnent
+les dépendances, et cette étape-ci ne peut pas les devancer.
+
+**Le calcul est à l'étape 5**, avec la traversée qui lui donne son unité. Ce qui
+s'y décidera ne change rien ici : une lightmap reste un bloc de texels, qu'il
+vienne de l'hôte ou du noyau.
 
 **Le post-traitement se fait pendant la recopie de tuile** — gamma, tonemapping,
 étalonnage —, jamais en passe plein écran. Ce qui lit les pixels voisins en est
@@ -164,6 +169,14 @@ profondeur. La cellule de la caméra se suit par ses traversées de portails.
 Aucune étape de compilation. Les liens de portails se déduisent au chargement.
 Une cellule n'a pas à être convexe : avec le z-buffer, une cellule non convexe
 rend la traversée conservatrice, jamais fausse.
+
+**Le calcul des lightmaps arrive ici**, et non à l'étape 3 : c'est la cellule
+qui lui donne son unité, et elle n'existe pas avant. **Elles restent un cache
+dérivable** — le noyau les calcule à partir de la carte, cellule par cellule,
+sur appel explicite de l'hôte, qui peut garder le résultat et le rendre au
+chargement suivant. Une cellule modifiée recalcule les siennes, pas celles du
+niveau. Aucune ne se calcule pendant une image. L'étape 3 les échantillonne
+déjà, fournies par l'hôte : rien du remplissage n'est à reprendre.
 
 **C'est le vrai test d'architecture du projet.** Si la traversée est propre, tout
 ce qui suit se déroule. Si elle est bancale, il y aura des trous dans l'image
