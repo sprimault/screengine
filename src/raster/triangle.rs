@@ -826,7 +826,7 @@ fn textured<T: Target, const BILINEAR: bool>(
             ey,
             ends,
             |walk: Walk<'_, T>, glow, overbright| {
-                walk.run(TexelLight::<BILINEAR, _, _> {
+                walk.run(TexelLight::<BILINEAR, _> {
                     texel,
                     texture,
                     glow,
@@ -957,9 +957,20 @@ struct Glow<'a, const MAPPED: bool, const DYNAMIC: bool> {
     dynamic: Ramp,
 }
 
-impl<const MAPPED: bool, const DYNAMIC: bool> Glow<'_, MAPPED, DYNAMIC> {
+/// Ce qui éclaire une surface, quelles que soient ses sources.
+///
+/// **Un trait plutôt que deux paramètres constants portés par les ombrages** :
+/// ceux-ci s'infèrent à l'appel, et l'inférence d'un paramètre constant
+/// n'existe pas dans la version minimale de Rust que le projet vise. Le trait
+/// ramène le choix à un paramètre de type, qui s'infère partout.
+trait Glowing {
     /// L'éclairage au pixel `(x, y)`, trois canaux de huit bits saturés.
-    ///
+    fn at(&self, x: i32, y: i32) -> u32;
+    /// Avance d'un pixel vers la droite.
+    fn step(&mut self);
+}
+
+impl<const MAPPED: bool, const DYNAMIC: bool> Glowing for Glow<'_, MAPPED, DYNAMIC> {
     /// **La somme sature après l'addition**, comme celle des lumières entre
     /// elles : une lightmap presque pleine ne doit pas éteindre la torche qui
     /// passe, elle doit porter le total au blanc.
@@ -995,13 +1006,13 @@ impl<const MAPPED: bool, const DYNAMIC: bool> Glow<'_, MAPPED, DYNAMIC> {
 
 /// Une surface unie qu'un éclairage couvre : la couleur du triangle y tient
 /// lieu de texel.
-struct Light<'a, const MAPPED: bool, const DYNAMIC: bool> {
+struct Light<G: Glowing> {
     color: u32,
-    glow: Glow<'a, MAPPED, DYNAMIC>,
+    glow: G,
     overbright: u32,
 }
 
-impl<const MAPPED: bool, const DYNAMIC: bool> Shade for Light<'_, MAPPED, DYNAMIC> {
+impl<G: Glowing> Shade for Light<G> {
     #[inline]
     fn pixel(&self, x: i32, y: i32) -> u32 {
         light::modulate(self.color, self.glow.at(x, y), self.overbright)
@@ -1014,16 +1025,14 @@ impl<const MAPPED: bool, const DYNAMIC: bool> Shade for Light<'_, MAPPED, DYNAMI
 }
 
 /// Une surface texturée qu'un éclairage couvre.
-struct TexelLight<'a, const BILINEAR: bool, const MAPPED: bool, const DYNAMIC: bool> {
+struct TexelLight<'a, const BILINEAR: bool, G: Glowing> {
     texel: Crawl,
     texture: &'a Texture,
-    glow: Glow<'a, MAPPED, DYNAMIC>,
+    glow: G,
     overbright: u32,
 }
 
-impl<const BILINEAR: bool, const MAPPED: bool, const DYNAMIC: bool> Shade
-    for TexelLight<'_, BILINEAR, MAPPED, DYNAMIC>
-{
+impl<const BILINEAR: bool, G: Glowing> Shade for TexelLight<'_, BILINEAR, G> {
     #[inline]
     fn pixel(&self, x: i32, y: i32) -> u32 {
         let texel = self.texel.sample::<BILINEAR>(self.texture, x, y);
