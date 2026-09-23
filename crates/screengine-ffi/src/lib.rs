@@ -103,13 +103,18 @@ pub unsafe extern "C" fn scg_create(
 /// `ctx` is NULL, or a handle returned by `scg_create` and not yet destroyed.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn scg_destroy(ctx: *mut ScgContext) {
-    if ctx.is_null() {
-        return;
-    }
-    // SAFETY: précondition de la fonction — `ctx` vient de `Box::into_raw` dans
-    // `scg_create` et n'a pas encore été rendu. C'est le seul endroit du crate
-    // qui reprend cette allocation.
-    drop(unsafe { Box::from_raw(ctx) });
+    // L'enveloppe englobe le test de nullité : elle vide l'emplacement par
+    // thread en entrant, et un `scg_destroy(NULL)` qui ressortirait avant
+    // laisserait le message d'une tâche précédente sur un thread de pool.
+    entry::nothing(|| {
+        if ctx.is_null() {
+            return;
+        }
+        // SAFETY: précondition de la fonction — `ctx` vient de `Box::into_raw`
+        // dans `scg_create` et n'a pas encore été rendu. C'est le seul endroit
+        // du crate qui reprend cette allocation.
+        drop(unsafe { Box::from_raw(ctx) });
+    });
 }
 
 /// Sets the camera the next frames will render from.
@@ -424,15 +429,17 @@ pub unsafe extern "C" fn scg_last_error(ctx: *const ScgContext) -> *const c_char
 /// Callable from any thread.
 #[unsafe(no_mangle)]
 pub extern "C" fn scg_buffer_alloc(len: usize) -> *mut u8 {
-    let Ok(layout) = Layout::from_size_align(len, SCG_BUFFER_ALIGNMENT) else {
-        return ptr::null_mut();
-    };
-    if layout.size() == 0 {
-        return ptr::null_mut();
-    }
-    // SAFETY: la taille est non nulle, ce que `alloc` exige. Un échec rend le
-    // pointeur nul, que cette fonction transmet tel quel.
-    unsafe { alloc::alloc(layout) }
+    entry::producing(ptr::null_mut(), || {
+        let Ok(layout) = Layout::from_size_align(len, SCG_BUFFER_ALIGNMENT) else {
+            return ptr::null_mut();
+        };
+        if layout.size() == 0 {
+            return ptr::null_mut();
+        }
+        // SAFETY: la taille est non nulle, ce que `alloc` exige. Un échec rend
+        // le pointeur nul, que cette fonction transmet tel quel.
+        unsafe { alloc::alloc(layout) }
+    })
 }
 
 /// Releases a buffer obtained from `scg_buffer_alloc`.
@@ -451,19 +458,22 @@ pub extern "C" fn scg_buffer_alloc(len: usize) -> *mut u8 {
 /// freed, with the same `len`.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn scg_buffer_free(ptr: *mut u8, len: usize) {
-    if ptr.is_null() {
-        return;
-    }
-    let Ok(layout) = Layout::from_size_align(len, SCG_BUFFER_ALIGNMENT) else {
-        return;
-    };
-    if layout.size() == 0 {
-        return;
-    }
-    // SAFETY: précondition de la fonction — `ptr` vient de `scg_buffer_alloc`
-    // avec cette même longueur, et l'alignement est une constante de l'ABI, ce
-    // qui reconstruit à l'identique la description de l'allocation.
-    unsafe { alloc::dealloc(ptr, layout) }
+    entry::nothing(|| {
+        if ptr.is_null() {
+            return;
+        }
+        let Ok(layout) = Layout::from_size_align(len, SCG_BUFFER_ALIGNMENT) else {
+            return;
+        };
+        if layout.size() == 0 {
+            return;
+        }
+        // SAFETY: précondition de la fonction — `ptr` vient de
+        // `scg_buffer_alloc` avec cette même longueur, et l'alignement est une
+        // constante de l'ABI, ce qui reconstruit à l'identique la description
+        // de l'allocation.
+        unsafe { alloc::dealloc(ptr, layout) }
+    });
 }
 
 /// Loads a texture from a block of pixels and writes its handle to `out`.
@@ -531,12 +541,14 @@ pub unsafe extern "C" fn scg_texture_load(
 /// yet destroyed.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn scg_texture_destroy(texture: *mut ScgTexture) {
-    if texture.is_null() {
-        return;
-    }
-    // SAFETY: précondition de la fonction — le handle vient de `Box::into_raw`
-    // dans `scg_texture_load` et n'a pas encore été rendu.
-    drop(unsafe { Box::from_raw(texture) });
+    entry::nothing(|| {
+        if texture.is_null() {
+            return;
+        }
+        // SAFETY: précondition de la fonction — le handle vient de
+        // `Box::into_raw` dans `scg_texture_load` et n'a pas encore été rendu.
+        drop(unsafe { Box::from_raw(texture) });
+    });
 }
 
 /// Submits a batch of triangles dressed with a texture.
@@ -544,6 +556,9 @@ pub unsafe extern "C" fn scg_texture_destroy(texture: *mut ScgTexture) {
 /// Same contract as `scg_submit`, with two differences: the vertices carry
 /// their texture coordinates, in texels, and the texture applies to the whole
 /// batch. Coordinates beyond 16384 texels, or not finite, reject the batch.
+///
+/// Each triangle's colour is **ignored** on this path: the texel decides, and
+/// the colour does not tint it. Fill `r`, `g`, `b` and `a` with anything.
 ///
 /// # Safety
 ///

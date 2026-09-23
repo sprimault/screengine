@@ -194,5 +194,25 @@ impl ScgContext {
     }
 }
 
+/// Les décalages que le header publie, vérifiés **à la compilation**.
+///
+/// Même raison que pour les structures de scène : un test ne s'exécute que sur
+/// la cible hôte, quand une liaison JavaScript reproduit ces décalages sur
+/// wasm32 et une liaison JNI sur armv7. Tout est en `uint32_t` précisément pour
+/// que ces trente-deux octets soient les mêmes partout.
+const _: () = {
+    use core::mem::{align_of, offset_of, size_of};
+
+    assert!(size_of::<ScgContextConfig>() == 32 && align_of::<ScgContextConfig>() == 4);
+    assert!(offset_of!(ScgContextConfig, max_width) == 0);
+    assert!(offset_of!(ScgContextConfig, max_height) == 4);
+    assert!(offset_of!(ScgContextConfig, width) == 8);
+    assert!(offset_of!(ScgContextConfig, height) == 12);
+    assert!(offset_of!(ScgContextConfig, tile_size) == 16);
+    assert!(offset_of!(ScgContextConfig, max_triangles) == 20);
+    assert!(offset_of!(ScgContextConfig, reserved1) == 24);
+    assert!(offset_of!(ScgContextConfig, reserved2) == 28);
+};
+
 #[cfg(test)]
 mod tests;

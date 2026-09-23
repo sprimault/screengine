@@ -160,9 +160,9 @@ fn install_panic_hook() {
 /// le dépliage s'arrête donc avant elle, sa destruction a toujours lieu sur un
 /// retour normal, et le message de panique se formate encore sous
 /// l'environnement par défaut.
-fn guarded<F>(f: F) -> Result<(), Failure>
+fn guarded<T, F>(f: F) -> Result<T, Failure>
 where
-    F: FnOnce() -> Result<(), AbiError>,
+    F: FnOnce() -> Result<T, AbiError>,
 {
     #[cfg(target_arch = "wasm32")]
     install_panic_hook();
@@ -172,7 +172,7 @@ where
     // `AssertUnwindSafe` ne se pose qu'ici : c'est l'état défaillant qui la rend
     // honnête, puisque l'état laissé par une panique n'est plus jamais observé.
     match catch_unwind(AssertUnwindSafe(f)) {
-        Ok(Ok(())) => Ok(()),
+        Ok(Ok(value)) => Ok(value),
         Ok(Err(error)) => Err(Failure::Abi(error)),
         Err(payload) => Err(Failure::Panic(payload)),
     }
@@ -323,6 +323,57 @@ where
         Err(Failure::Panic(payload)) => {
             message::set_orphan(panic_text(&*payload));
             SCG_ERR_PANIC
+        }
+    }
+}
+
+/// Enveloppe un appel qui ne rend rien, et qu'aucun code ne peut donc porter.
+///
+/// C'est le cas des destructions. Une panique y est avalée : le handle est
+/// rendu, l'appel n'a pas de retour, et la propager vers du C serait un
+/// comportement indéfini. Son texte va tout de même dans l'emplacement par
+/// thread, seule trace qu'un hôte puisse en lire — et c'est pourquoi une
+/// destruction qui panique reste un défaut du moteur, pas un cas prévu.
+///
+/// Le vidage de l'emplacement en entrée vaut ici comme ailleurs : sans lui, un
+/// thread de pool rendrait le message d'une tâche précédente.
+pub(crate) fn nothing<F>(f: F)
+where
+    F: FnOnce(),
+{
+    message::clear_orphan();
+
+    let call = || {
+        f();
+        Ok(())
+    };
+    if let Err(Failure::Panic(payload)) = guarded(call) {
+        message::set_orphan(panic_text(&*payload));
+    }
+}
+
+/// Enveloppe un appel qui rend une valeur plutôt qu'un code, et donne `fallback`
+/// si cet appel panique.
+///
+/// C'est le cas de l'allocation de tampon, qui rend un pointeur nul en cas
+/// d'échec comme le ferait `malloc` : l'ABI la nomme parmi les exceptions à la
+/// règle du code de retour, et une panique doit donc y ressembler à un échec
+/// d'allocation ordinaire.
+pub(crate) fn producing<T, F>(fallback: T, f: F) -> T
+where
+    F: FnOnce() -> T,
+{
+    message::clear_orphan();
+
+    match guarded(|| Ok(f())) {
+        Ok(value) => value,
+        Err(Failure::Panic(payload)) => {
+            message::set_orphan(panic_text(&*payload));
+            fallback
+        }
+        Err(Failure::Abi(error)) => {
+            message::set_orphan(error.message);
+            fallback
         }
     }
 }

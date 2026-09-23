@@ -799,3 +799,101 @@ fn refuse_un_sommet_texture_non_fini() {
     // SAFETY: idem.
     unsafe { scg_destroy(ctx) };
 }
+
+/// Laisse un message dans l'emplacement par thread, et vérifie qu'il y est.
+///
+/// Une configuration refusée est le moyen le plus court : `scg_create` n'a pas
+/// de contexte auquel rattacher son erreur, elle écrit donc là.
+fn laisse_un_message() {
+    let config = ScgContextConfig {
+        tile_size: 7,
+        ..sane()
+    };
+    let mut ctx = ptr::null_mut();
+    // SAFETY: les deux pointeurs visent des valeurs locales vivantes.
+    let code = unsafe { scg_create(&config, &mut ctx) };
+    assert_eq!(code, SCG_ERR_INVALID_ARGUMENT);
+    assert!(!last_error(ptr::null()).is_empty(), "rien à vider");
+}
+
+/// Chaque point d'entrée vide l'emplacement par thread en entrant, **y compris
+/// ceux qui ne rendent aucun code**.
+///
+/// Le contrat d'ABI l'exige sans exception, et la raison n'a rien à voir avec
+/// les paniques : sur un thread de pool, une tâche qui échoue laisse son
+/// message, et la tâche suivante le relit comme s'il était le sien. Les quatre
+/// fonctions testées ici sont celles qui ne peuvent rien rendre — une
+/// destruction, une libération — ou qui rendent une valeur plutôt qu'un code.
+///
+/// Chacune est vérifiée séparément : une seule qui oublierait le vidage suffit
+/// à rendre la clause fausse, et c'est toujours la dernière ajoutée.
+#[test]
+fn les_appels_sans_code_vident_le_message_du_thread() {
+    laisse_un_message();
+    let ptr = scg_buffer_alloc(64);
+    assert!(!ptr.is_null());
+    assert_eq!(last_error(ptr::null()), "", "scg_buffer_alloc n'a pas vidé");
+
+    laisse_un_message();
+    // SAFETY: `ptr` vient de l'allocation ci-dessus, avec la même longueur.
+    unsafe { scg_buffer_free(ptr, 64) };
+    assert_eq!(last_error(ptr::null()), "", "scg_buffer_free n'a pas vidé");
+
+    let ctx = create(&sane());
+    laisse_un_message();
+    // SAFETY: le handle est vivant et détruit une seule fois.
+    unsafe { scg_destroy(ctx) };
+    assert_eq!(last_error(ptr::null()), "", "scg_destroy n'a pas vidé");
+
+    let pixels = [0u8; 4];
+    let desc = ScgTextureDesc {
+        width: 1,
+        height: 1,
+        format: SCG_TEXTURE_FORMAT_RGBA8,
+        reserved0: 0,
+        reserved1: 0,
+        reserved2: 0,
+    };
+    let mut texture = ptr::null_mut();
+    // SAFETY: la description et le bloc de pixels s'accordent, et la sortie
+    // vise une variable locale vivante.
+    let code = unsafe { scg_texture_load(&desc, pixels.as_ptr(), pixels.len(), &mut texture) };
+    assert_eq!(code, SCG_OK);
+
+    laisse_un_message();
+    // SAFETY: le handle vient du chargement ci-dessus et n'a pas été détruit.
+    unsafe { scg_texture_destroy(texture) };
+    assert_eq!(
+        last_error(ptr::null()),
+        "",
+        "scg_texture_destroy n'a pas vidé"
+    );
+}
+
+/// Un pointeur nul passé à une destruction vide quand même l'emplacement.
+///
+/// C'est le cas limite qui se perd : ces fonctions rendent la main tout de
+/// suite sur un handle nul, et il serait naturel de sortir avant l'enveloppe.
+/// Le contrat ne fait pas cette exception — un hôte qui libère en boucle des
+/// handles dont certains sont nuls laisserait passer un message sur deux.
+#[test]
+fn une_destruction_d_un_pointeur_nul_vide_aussi_le_message() {
+    laisse_un_message();
+    // SAFETY: le pointeur nul est explicitement permis.
+    unsafe { scg_destroy(ptr::null_mut()) };
+    assert_eq!(
+        last_error(ptr::null()),
+        "",
+        "scg_destroy(NULL) n'a pas vidé"
+    );
+
+    laisse_un_message();
+    // SAFETY: idem.
+    unsafe { scg_texture_destroy(ptr::null_mut()) };
+    assert_eq!(last_error(ptr::null()), "", "destruction nulle sans vidage");
+
+    laisse_un_message();
+    // SAFETY: idem, et la longueur d'un pointeur nul n'est pas lue.
+    unsafe { scg_buffer_free(ptr::null_mut(), 0) };
+    assert_eq!(last_error(ptr::null()), "", "libération nulle sans vidage");
+}

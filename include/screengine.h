@@ -130,10 +130,14 @@ typedef struct ScgContextConfig {
 
 // Where the camera is, and how wide it sees.
 //
-// With the identity orientation `{0, 0, 0, 1}`, the camera looks towards world
-// +X with the zenith towards the top of the screen. The quaternion is stored
-// `x, y, z, w` — the real part last — and is normalised by the engine, so it
-// need not be unit.
+// The world is right-handed with Z up. With the identity orientation
+// `{0, 0, 0, 1}`, the camera looks towards world +X, with the zenith towards
+// the top of the screen and world −Y towards the right. Naming the third axis
+// matters: "looking towards +X" alone leaves the roll undetermined, and roll
+// is what a sign mistake flips without changing where the camera points.
+//
+// The quaternion is stored `x, y, z, w` — the real part last — and is
+// normalised by the engine, so it need not be unit.
 typedef struct ScgCamera {
   // Position in world space: x, y, z.
   float position[3];
@@ -497,6 +501,9 @@ void scg_texture_destroy(struct ScgTexture *texture);
 // Same contract as `scg_submit`, with two differences: the vertices carry
 // their texture coordinates, in texels, and the texture applies to the whole
 // batch. Coordinates beyond 16384 texels, or not finite, reject the batch.
+//
+// Each triangle's colour is **ignored** on this path: the texel decides, and
+// the colour does not tint it. Fill `r`, `g`, `b` and `a` with anything.
 //
 // # Safety
 //

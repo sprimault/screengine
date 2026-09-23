@@ -88,10 +88,14 @@ impl ScgTriangle {
 
 /// Where the camera is, and how wide it sees.
 ///
-/// With the identity orientation `{0, 0, 0, 1}`, the camera looks towards world
-/// +X with the zenith towards the top of the screen. The quaternion is stored
-/// `x, y, z, w` — the real part last — and is normalised by the engine, so it
-/// need not be unit.
+/// The world is right-handed with Z up. With the identity orientation
+/// `{0, 0, 0, 1}`, the camera looks towards world +X, with the zenith towards
+/// the top of the screen and world −Y towards the right. Naming the third axis
+/// matters: "looking towards +X" alone leaves the roll undetermined, and roll
+/// is what a sign mistake flips without changing where the camera points.
+///
+/// The quaternion is stored `x, y, z, w` — the real part last — and is
+/// normalised by the engine, so it need not be unit.
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
 pub struct ScgCamera {
@@ -307,3 +311,43 @@ impl ScgTextureDesc {
         Ok(())
     }
 }
+
+/// Les tailles et décalages que le header publie, vérifiés **à la compilation**.
+///
+/// En assertions de constante et non en test : un test ne s'exécute que sur la
+/// cible hôte, alors qu'une liaison JavaScript reproduit ces décalages sur
+/// wasm32 et une liaison JNI sur armv7. Ici, toute cible que la compilation
+/// traverse les vérifie — `make lint` passe clippy sur wasm32 et sur les trois
+/// ABI Android, et un champ qui bougerait y échouerait franchement.
+///
+/// Les mêmes assertions existent en C, injectées dans le header par `cbindgen`
+/// et compilées par les hôtes. Celles-ci les attrapent avant que le header ne
+/// soit même régénéré.
+const _: () = {
+    use core::mem::{align_of, offset_of, size_of};
+
+    assert!(size_of::<ScgVertex>() == 12 && align_of::<ScgVertex>() == 4);
+    assert!(offset_of!(ScgVertex, z) == 8);
+
+    assert!(size_of::<ScgTriangle>() == 16 && align_of::<ScgTriangle>() == 4);
+    assert!(offset_of!(ScgTriangle, i2) == 8);
+    assert!(offset_of!(ScgTriangle, r) == 12);
+    assert!(offset_of!(ScgTriangle, a) == 15);
+
+    assert!(size_of::<ScgCamera>() == 36 && align_of::<ScgCamera>() == 4);
+    assert!(offset_of!(ScgCamera, orientation) == 12);
+    assert!(offset_of!(ScgCamera, fov_y) == 28);
+    assert!(offset_of!(ScgCamera, near_plane) == 32);
+
+    assert!(size_of::<ScgMat4>() == 64 && align_of::<ScgMat4>() == 4);
+
+    assert!(size_of::<ScgVertexUv>() == 20 && align_of::<ScgVertexUv>() == 4);
+    assert!(offset_of!(ScgVertexUv, z) == 8);
+    assert!(offset_of!(ScgVertexUv, u) == 12);
+    assert!(offset_of!(ScgVertexUv, v) == 16);
+
+    assert!(size_of::<ScgTextureDesc>() == 24 && align_of::<ScgTextureDesc>() == 4);
+    assert!(offset_of!(ScgTextureDesc, height) == 4);
+    assert!(offset_of!(ScgTextureDesc, format) == 8);
+    assert!(offset_of!(ScgTextureDesc, reserved2) == 20);
+};
