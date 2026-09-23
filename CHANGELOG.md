@@ -46,6 +46,8 @@ publié, et explique les conventions du dépôt à qui y contribue.
 
 ## [Non publié]
 
+## [0.2.1] — 2026-09-23
+
 **Ce que cette version rend autrement.** Sur une scène inchangée, un sol
 échantillonné en bilinéaire change de onze pixels sur 230 400, d'une unité sur
 un canal : la pente des coordonnées de texture était sous-estimée d'un seizième
