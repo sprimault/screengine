@@ -52,6 +52,30 @@ fn le_facteur_entier_fait_des_carres_et_centre_l_image() {
     }
 }
 
+/// Changer la résolution interne refait la disposition pour la fenêtre qu'on a
+/// déjà, et rend exactement ce qu'un recopieur ouvert sur cette résolution
+/// aurait rendu.
+///
+/// Le moteur peut en changer entre deux images. Sans ce refait, le facteur
+/// d'agrandissement et les marges resteraient ceux de l'ancienne résolution :
+/// l'image nouvelle s'afficherait tronquée ou décentrée, et rien ne le dirait.
+#[test]
+fn changer_la_resolution_interne_refait_la_disposition() {
+    let (w, h) = (3, 2);
+    let (tw, th) = (13, 9);
+
+    let mut scaler = Scaler::new(Scale::Integer, 6, 4);
+    scaler.resize(tw as u32, th as u32);
+    scaler.set_source(w as u32, h as u32);
+    assert_eq!(scaler.source(), (w as u32, h as u32));
+
+    let mut out = vec![0xDEAD_BEEF; tw * th];
+    scaler.blit(&image(w, h), &mut out);
+
+    let (_, attendu) = render(Scale::Integer, w, h, tw, th);
+    assert_eq!(out, attendu, "la disposition n'est pas celle d'un neuf");
+}
+
 /// Le centrage : une fenêtre de 10×6 pour une image de 3×2 en facteur 3
 /// laisse une demi-bande de chaque côté.
 #[test]

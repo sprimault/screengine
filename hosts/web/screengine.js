@@ -82,6 +82,7 @@ export const EXPORTS = [
   "scg_texture_destroy",
   "scg_submit_textured",
   "scg_submit_lit",
+  "scg_set_resolution",
   "scg_set_filter",
   "scg_set_overbright",
   "scg_set_fog",

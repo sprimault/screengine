@@ -468,6 +468,13 @@ public final class Test {
         check(messageOk(Screengine.lastError(ctx), false), "message vide après un succès");
         check(messageOk(Screengine.lastError(0), false), "message sans contexte vidé par un appel réussi");
 
+        check(Screengine.setResolution(ctx, WIDTH, HEIGHT) == Screengine.OK, "la résolution du maximum est acceptée");
+        check(Screengine.setResolution(ctx, WIDTH + 1, HEIGHT) == Screengine.ERR_INVALID_ARGUMENT, "largeur au-delà du maximum refusée");
+        check(Screengine.setResolution(ctx, WIDTH, HEIGHT + 1) == Screengine.ERR_INVALID_ARGUMENT, "hauteur au-delà du maximum refusée");
+        check(Screengine.setResolution(ctx, 0, HEIGHT) == Screengine.ERR_INVALID_ARGUMENT, "largeur nulle refusée");
+        check(messageOk(Screengine.lastError(ctx), true), "message du contexte après une résolution refusée");
+        check(Screengine.setResolution(0, WIDTH, HEIGHT) == Screengine.ERR_NULL, "contexte nul refusé par setResolution");
+
         ByteBuffer small = ByteBuffer.allocateDirect(4 * 4);
         check(Screengine.frameEnd(ctx, null, 0, WIDTH) == Screengine.ERR_NULL, "tampon nul refusé");
         check(Screengine.frameEnd(ctx, small, 0, WIDTH - 1) == Screengine.ERR_INVALID_ARGUMENT, "stride inférieur à la largeur refusé");
@@ -570,6 +577,46 @@ public final class Test {
     }
 
     /**
+     * La résolution interne change sans recréer le contexte, et l'image ne
+     * dépend pas de celle qu'il avait à l'ouverture.
+     *
+     * Le contexte s'ouvre en 1×1 sous un maximum de WIDTH×HEIGHT, puis passe à
+     * la résolution de la scène : son empreinte doit être celle qu'un contexte
+     * ouvert directement dessus a rendue. Ouvrir en 1×1 plutôt qu'à la
+     * résolution finale est ce qui rend une projection laissée périmée visible
+     * ici.
+     *
+     * @param expected l'empreinte du contexte neuf
+     */
+    private static void checkResize(String expected) {
+        int body = STRIDE * HEIGHT * Screengine.BYTES_PER_PIXEL;
+        ByteBuffer block = ByteBuffer.allocateDirect(body);
+
+        int[] config = sceneConfig();
+        config[2] = 1;
+        config[3] = 1;
+
+        long[] out = {0};
+        if (Screengine.create(config, out) != Screengine.OK) {
+            check(false, "création du contexte redimensionnable");
+            return;
+        }
+
+        check(Screengine.setResolution(out[0], WIDTH, HEIGHT) == Screengine.OK, "la résolution passe de 1×1 au maximum");
+        check(submitScene(out[0]) == Screengine.OK, "scène soumise après redimensionnement");
+        check(Screengine.frameEnd(out[0], block, 0, STRIDE) == Screengine.OK, "image rendue après redimensionnement");
+        check(fingerprint(block, 0, STRIDE).equals(expected),
+                "un contexte redimensionné rend l'empreinte d'un contexte neuf");
+
+        // Après une soumission, la résolution est figée pour l'image en cours,
+        // comme la caméra : la projection a déjà eu lieu.
+        check(submitScene(out[0]) == Screengine.OK, "seconde scène soumise");
+        check(Screengine.setResolution(out[0], 1, 1) == Screengine.ERR_INVALID_STATE, "résolution refusée après une soumission");
+
+        Screengine.destroy(out[0]);
+    }
+
+    /**
      * Toutes les vérifications, puis l'empreinte sur la sortie standard.
      *
      * @param args le répertoire des bibliothèques
@@ -585,6 +632,9 @@ public final class Test {
         checkRefusals();
         checkBuffers();
         String hash = render();
+        if (hash != null) {
+            checkResize(hash);
+        }
         String textured = renderTextured(Screengine.FILTER_DITHER);
         String bilinear = renderTextured(Screengine.FILTER_BILINEAR);
         String lit = renderLit();

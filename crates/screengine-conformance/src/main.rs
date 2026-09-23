@@ -46,16 +46,25 @@ enum Pass {
     Shuffled,
     /// Tuiles de 32, une bande de tuiles par thread.
     Threads,
+    /// Tuiles de 64, dans un contexte ouvert au maximum puis redimensionné à
+    /// la résolution de la vue.
+    ///
+    /// Les autres passes ouvrent leur contexte à la résolution de la vue, qui
+    /// est aussi son maximum : le cas « sous le maximum » n'y est jamais joué,
+    /// et un changement de résolution encore moins. Celle-ci rend la même
+    /// image par un contexte dont l'histoire diffère.
+    Resized,
 }
 
 impl Pass {
     /// Toutes les passes, dans l'ordre où la suite les rejoue.
-    const ALL: [Self; 5] = [
+    const ALL: [Self; 6] = [
         Self::Tiles32,
         Self::Tiles64,
         Self::Whole,
         Self::Shuffled,
         Self::Threads,
+        Self::Resized,
     ];
 
     /// Le nom de la passe, dans un message de divergence.
@@ -66,15 +75,51 @@ impl Pass {
             Self::Whole => "image entière",
             Self::Shuffled => "ordre mélangé",
             Self::Threads => "threads",
+            Self::Resized => "redimensionné",
         }
     }
 
     /// Le côté de tuile du contexte.
     fn tile_size(self) -> u32 {
         match self {
-            Self::Tiles64 | Self::Whole => 64,
+            Self::Tiles64 | Self::Whole | Self::Resized => 64,
             Self::Tiles32 | Self::Shuffled | Self::Threads => 32,
         }
+    }
+
+    /// Ouvre le contexte d'une vue, réglages de scène exclus.
+    ///
+    /// Toutes les passes ouvrent à la résolution de la vue, qui leur sert
+    /// aussi de maximum. [`Pass::Resized`] prend pour maximum celui de la
+    /// suite et **ouvre en 1×1**, puis redimensionne.
+    ///
+    /// Ouvrir ailleurs que sur la vue n'est pas un détail : c'est ce qui rend
+    /// la passe capable d'attraper une projection laissée périmée. Ouvrir
+    /// dessus ferait coïncider la projection d'ouverture et celle qu'on
+    /// attend, et le défaut ne se verrait que sur les vues d'une autre
+    /// résolution — c'est-à-dire sur la seule scène qui en a plusieurs. 1×1
+    /// ne ressemble à aucune vue, et éprouve au passage la plus petite
+    /// résolution que l'ABI accepte.
+    fn open(self, view: View) -> Result<Context, screengine::Error> {
+        let (width, height) = (view.width, view.height);
+        let resized = self == Self::Resized;
+        let (max_width, max_height) = if resized {
+            Scene::RESOLUTION
+        } else {
+            (width, height)
+        };
+        let mut context = Context::new(Config {
+            max_width,
+            max_height,
+            width: if resized { 1 } else { max_width },
+            height: if resized { 1 } else { max_height },
+            tile_size: self.tile_size(),
+            max_triangles: 0,
+        })?;
+        if resized {
+            context.set_resolution(width, height)?;
+        }
+        Ok(context)
     }
 
     /// Rend une image déjà commencée dans `pixels`, rangé par lignes de `width`.
@@ -86,7 +131,9 @@ impl Pass {
         height: u32,
     ) -> screengine::Result<()> {
         match self {
-            Self::Tiles32 | Self::Tiles64 => frame.end(&mut Rows::new(pixels, width)),
+            Self::Tiles32 | Self::Tiles64 | Self::Resized => {
+                frame.end(&mut Rows::new(pixels, width))
+            }
             Self::Whole => {
                 let mut color = vec![0u32; width as usize * height as usize];
                 let mut depth = color.clone();
@@ -888,14 +935,7 @@ impl Scene {
     /// chemin que les tests vérifient qu'il y a quelque chose à hacher.
     fn render_pixels(self, pass: Pass, view: View) -> Result<Vec<u8>, screengine::Error> {
         let (width, height) = (view.width, view.height);
-        let mut context = Context::new(Config {
-            max_width: width,
-            max_height: height,
-            width,
-            height,
-            tile_size: pass.tile_size(),
-            max_triangles: 0,
-        })?;
+        let mut context = pass.open(view)?;
         context.set_filter(self.filter())?;
         context.set_overbright(self.overbright())?;
         if let Some((color, start, end)) = self.fog() {

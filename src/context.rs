@@ -480,6 +480,10 @@ impl Context {
     }
 
     /// La configuration reçue à la création.
+    ///
+    /// Ses champs `width` et `height` restent ceux de la création : c'est
+    /// [`Context::resolution`] qui suit les changements, et confondre les deux
+    /// ferait dimensionner un tampon d'hôte sur une valeur périmée.
     pub fn config(&self) -> Config {
         self.config
     }
@@ -487,6 +491,42 @@ impl Context {
     /// La résolution interne courante, en pixels.
     pub fn resolution(&self) -> (u32, u32) {
         (self.width, self.height)
+    }
+
+    /// Change la résolution interne, sous le maximum fixé à la création.
+    ///
+    /// Aucune allocation : tout ce que l'image consomme est dimensionné sur la
+    /// résolution maximale, et la grille se reconstruit au début de chaque
+    /// image. Au-delà du maximum, ou sur une dimension nulle, rend
+    /// [`Error::InvalidArgument`] et le contexte garde la résolution qu'il
+    /// avait.
+    ///
+    /// Refusée pendant le rendu et après une soumission, pour la raison qui
+    /// vaut pour la caméra : la projection s'applique au moment de la
+    /// soumission, et deux résolutions dans la même image ne décriraient rien.
+    ///
+    /// Le tampon de l'hôte ne suit pas tout seul. Après une hausse, un tampon
+    /// laissé à sa taille d'avant est trop court d'autant, et c'est à
+    /// l'appelant de le redimensionner.
+    pub fn set_resolution(&mut self, width: u32, height: u32) -> Result<()> {
+        if *self.state.get_mut() != RECORDING {
+            return Err(Error::InvalidState);
+        }
+        self.require_empty_frame()?;
+        let bounded = |v: u32, max: u32| v >= 1 && v <= max;
+        if !bounded(width, self.config.max_width) || !bounded(height, self.config.max_height) {
+            return Err(Error::InvalidArgument(Argument::Resolution));
+        }
+        // La projection est le seul état dérivé de la résolution qu'aucune
+        // image ne rafraîchit : la grille se refait à chaque début, les
+        // tampons sont dimensionnés au maximum. L'oublier rendrait une image
+        // cohérente avec elle-même, à la mauvaise échelle et décentrée — et la
+        // bande de garde découperait autour de l'ancien centre, ce qu'aucune
+        // borne du rasteriseur ne signalerait.
+        self.projection = Projection::new(width, height, self.camera.fov_y, self.camera.near)?;
+        self.width = width;
+        self.height = height;
+        Ok(())
     }
 
     /// Commence une image : scelle la scène, la répartit par tuile, et rend le

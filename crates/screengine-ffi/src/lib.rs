@@ -120,9 +120,15 @@ pub unsafe extern "C" fn scg_destroy(ctx: *mut ScgContext) {
 /// Sets the camera the next frames will render from.
 ///
 /// Rejected with `SCG_ERR_INVALID_STATE` between `scg_frame_begin` and
-/// `scg_frame_end`: the camera holds for a whole frame. The field of view must
-/// be within ]0, pi[ radians and the near plane positive, otherwise
-/// `SCG_ERR_INVALID_ARGUMENT`. The quaternion is normalised by the engine.
+/// `scg_frame_end`, and **as soon as a triangle of the current frame is kept**:
+/// the camera holds for a whole frame, and every submission projects
+/// immediately, so a camera changed midway would leave two screen spaces in the
+/// same image, each one correct and the whole wrong. Set it before submitting,
+/// or after `scg_frame_end`.
+///
+/// The field of view must be within ]0, pi[ radians and the near plane
+/// positive, otherwise `SCG_ERR_INVALID_ARGUMENT`. The quaternion is normalised
+/// by the engine.
 ///
 /// # Safety
 ///
@@ -135,6 +141,39 @@ pub unsafe extern "C" fn scg_set_camera(ctx: *mut ScgContext, camera: *const Scg
         // structure lisible, que rien d'autre ne modifie pendant l'appel.
         let camera = unsafe { camera.as_ref() }.ok_or(AbiError::NULL)?;
         core.exclusive()?.set_camera(camera.to_core()?)?;
+        Ok(())
+    };
+
+    // SAFETY: précondition de la fonction — `ctx` est nul ou un handle vivant.
+    unsafe { entry::with_context(ctx, set) }
+}
+
+/// Sets the internal resolution, from the next frames on.
+///
+/// Both sides must be at least 1 and within the `max_width` and `max_height`
+/// given to `scg_create`, otherwise `SCG_ERR_INVALID_ARGUMENT` and the context
+/// keeps the resolution it had. Nothing is allocated: every buffer a frame
+/// needs was sized for the maximum, which is why that maximum is fixed once
+/// and cannot be raised.
+///
+/// Rejected with `SCG_ERR_INVALID_STATE` between `scg_frame_begin` and
+/// `scg_frame_end`, and as soon as a triangle of the current frame is kept —
+/// the same rule as `scg_set_camera`, and for the same reason: projection
+/// happens at submission time.
+///
+/// **The output buffer does not follow on its own.** After a raise, a buffer
+/// left at its former size is too short, and the engine cannot detect it — it
+/// never receives the length. Resize it, and pass the new `stride`. The tile
+/// count changes too: call `scg_frame_begin` again rather than reusing the
+/// count from the previous frame.
+///
+/// # Safety
+///
+/// `ctx` is a live handle used by no other thread during the call.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn scg_set_resolution(ctx: *mut ScgContext, width: u32, height: u32) -> i32 {
+    let set = |mut core: entry::Core<'_>| {
+        core.exclusive()?.set_resolution(width, height)?;
         Ok(())
     };
 

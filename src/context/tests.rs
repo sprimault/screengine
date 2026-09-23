@@ -315,6 +315,142 @@ fn la_scene_ne_se_change_pas_pendant_le_rendu() {
     );
     assert_eq!(ctx.set_camera(Camera::DEFAULT), Err(Error::InvalidState));
     assert_eq!(ctx.set_filter(Filter::Bilinear), Err(Error::InvalidState));
+    assert_eq!(ctx.set_resolution(32, 32), Err(Error::InvalidState));
+}
+
+/// Un contexte dont le maximum dépasse la résolution d'ouverture : c'est la
+/// seule forme qui laisse éprouver le changement dans les deux sens.
+fn resizable() -> Context {
+    Context::new(Config {
+        max_width: 64,
+        max_height: 64,
+        width: 32,
+        height: 32,
+        tile_size: 32,
+        max_triangles: 0,
+    })
+    .expect("configuration saine")
+}
+
+/// La résolution se change entre deux images, dans les deux sens, tant qu'elle
+/// reste sous le maximum fixé à la création.
+#[test]
+fn la_resolution_se_change_sous_le_maximum() {
+    let mut ctx = resizable();
+    assert_eq!(ctx.resolution(), (32, 32));
+
+    ctx.set_resolution(64, 64).expect("le maximum lui-même");
+    assert_eq!(ctx.resolution(), (64, 64));
+
+    ctx.set_resolution(48, 17).expect("sous le maximum");
+    assert_eq!(ctx.resolution(), (48, 17));
+}
+
+/// Au-delà du maximum, ou sur une dimension nulle, la résolution est refusée et
+/// le contexte garde la sienne.
+///
+/// Le maximum est ce sur quoi tous les tampons ont été dimensionnés : le
+/// dépasser demanderait une réallocation, c'est-à-dire exactement ce que
+/// « zéro allocation par image » interdit.
+#[test]
+fn refuse_une_resolution_hors_du_maximum() {
+    let mut ctx = resizable();
+    let refus = Err(Error::InvalidArgument(Argument::Resolution));
+
+    assert_eq!(ctx.set_resolution(65, 64), refus, "largeur au-delà");
+    assert_eq!(ctx.set_resolution(64, 65), refus, "hauteur au-delà");
+    assert_eq!(ctx.set_resolution(0, 32), refus, "largeur nulle");
+    assert_eq!(ctx.set_resolution(32, 0), refus, "hauteur nulle");
+    assert_eq!(ctx.resolution(), (32, 32), "le refus ne change rien");
+}
+
+/// La résolution suit la caméra : la projection s'applique à la soumission, et
+/// deux résolutions dans la même image ne décriraient rien.
+#[test]
+fn la_resolution_ne_se_change_pas_apres_une_soumission() {
+    let mut ctx = resizable();
+    ctx.submit(Affine3::IDENTITY, &ahead(), &one())
+        .expect("capacité");
+    assert_eq!(ctx.set_resolution(64, 64), Err(Error::InvalidState));
+    assert_eq!(ctx.resolution(), (32, 32), "le refus ne change rien");
+}
+
+/// Rend la scène d'un contexte dans un tampon à sa résolution courante.
+fn rendered(ctx: &mut Context) -> alloc::vec::Vec<u8> {
+    let (width, height) = ctx.resolution();
+    let mut pixels = vec![0u8; width as usize * height as usize * BYTES_PER_PIXEL];
+    ctx.frame_end(&mut pixels, width).expect("image rendue");
+    pixels
+}
+
+/// Un contexte redimensionné rend, au bit près, ce qu'un contexte neuf rend à
+/// la même résolution — et y revenir rend de nouveau la même image.
+///
+/// C'est le seul contrôle qui attrape une projection laissée périmée, et il
+/// doit passer par la soumission pour cela : la grille, elle, se refait à
+/// chaque image, si bien qu'un redimensionnement qui aurait oublié de
+/// recalculer l'échelle et le centre rendrait une image parfaitement cohérente
+/// avec elle-même, simplement à la mauvaise échelle et décentrée. Les tests du
+/// rasteriseur ne peuvent pas l'attraper : leurs scènes poussent des sommets
+/// déjà en coordonnées écran.
+#[test]
+fn un_contexte_redimensionne_rend_l_image_d_un_contexte_neuf() {
+    let (width, height) = (48, 17);
+
+    let mut neuf = Context::new(Config {
+        max_width: 64,
+        max_height: 64,
+        width,
+        height,
+        tile_size: 32,
+        max_triangles: 0,
+    })
+    .expect("configuration saine");
+    neuf.submit(Affine3::IDENTITY, &ahead(), &one())
+        .expect("capacité");
+    let attendu = rendered(&mut neuf);
+
+    let mut resized = resizable();
+    resized
+        .set_resolution(width, height)
+        .expect("sous le maximum");
+    resized
+        .submit(Affine3::IDENTITY, &ahead(), &one())
+        .expect("capacité");
+    assert!(rendered(&mut resized) == attendu, "redimensionné");
+    assert!(
+        attendu
+            .chunks_exact(BYTES_PER_PIXEL)
+            .any(|p| p[..3] != [0, 0, 0]),
+        "l'image est vide, le cas ne prouve rien"
+    );
+
+    // L'aller-retour, par le maximum : un état dérivé qui ne se referait
+    // qu'une fois rendrait la première image juste et la troisième fausse.
+    resized.set_resolution(64, 64).expect("le maximum");
+    resized
+        .submit(Affine3::IDENTITY, &ahead(), &one())
+        .expect("capacité");
+    rendered(&mut resized);
+
+    resized.set_resolution(width, height).expect("retour");
+    resized
+        .submit(Affine3::IDENTITY, &ahead(), &one())
+        .expect("capacité");
+    assert!(rendered(&mut resized) == attendu, "retour");
+}
+
+/// `config()` rend ce que la création a reçu, `resolution()` ce que le contexte
+/// rend aujourd'hui. Les confondre ferait dimensionner un tampon d'hôte sur une
+/// valeur périmée, et l'écart ne se verrait qu'au premier pixel hors bornes.
+#[test]
+fn la_configuration_garde_la_resolution_de_creation() {
+    let mut ctx = resizable();
+    ctx.set_resolution(64, 64).expect("sous le maximum");
+
+    assert_eq!(ctx.config().width, 32);
+    assert_eq!(ctx.config().height, 32);
+    assert_eq!(ctx.resolution(), (64, 64));
 }
 
 /// Une caméra ailleurs que la neutre, pour que le refus se voie.

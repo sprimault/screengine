@@ -30,6 +30,9 @@ public final class Screengine {
     /** Argument hors de ce que le moteur accepte. */
     public static final int ERR_INVALID_ARGUMENT = -2;
 
+    /** Appel hors séquence : pendant une image, ou après une soumission. */
+    public static final int ERR_INVALID_STATE = -4;
+
     /** Le moteur a paniqué ; l'objet est défaillant. */
     public static final int ERR_PANIC = -5;
 
@@ -204,6 +207,21 @@ public final class Screengine {
      * @return le code de retour
      */
     static native int setFilter(long ctx, int filter);
+
+    /**
+     * {@code scg_set_resolution}.
+     *
+     * Les deux côtés doivent tenir sous le maximum passé à la création : au
+     * delà, la bibliothèque refuse et le contexte garde sa résolution. Le
+     * tampon de l'hôte ne suit pas tout seul — après une hausse, il faut le
+     * réallouer et passer le nouveau {@code stride}.
+     *
+     * @param ctx handle, ou 0
+     * @param width la largeur interne, en pixels
+     * @param height la hauteur interne, en pixels
+     * @return le code de retour
+     */
+    static native int setResolution(long ctx, int width, int height);
 
     /**
      * {@code scg_submit_lit}.

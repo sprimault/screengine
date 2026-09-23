@@ -91,8 +91,14 @@ where
     let graphics = softbuffer::Context::new(event_loop.owned_display_handle())?;
 
     let (width, height) = context.resolution();
+    // Le tampon est dimensionné sur le plafond, pas sur la résolution
+    // d'ouverture : le jeu peut remonter entre deux images, et une
+    // réallocation en cours de partie est précisément ce que le contexte
+    // s'interdit de son côté.
+    let config = context.config();
+    let ceiling = config.max_width as usize * config.max_height as usize * BYTES_PER_PIXEL;
     let mut runner = Runner {
-        pixels: vec![0; width as usize * height as usize * BYTES_PER_PIXEL],
+        pixels: vec![0; ceiling],
         scaler: Scaler::new(play.scale, width, height),
         clock: Clock::new(play.rate),
         play,
@@ -203,7 +209,13 @@ where
     /// Fait rendre le moteur, puis recopie son image dans la fenêtre.
     fn redraw(&mut self, display: &mut Display) -> Result<(), Error> {
         (self.render)(&mut self.state, &mut self.context);
-        let (width, _) = self.context.resolution();
+        // Le jeu a pu changer la résolution interne dans `render` : toute la
+        // disposition de la fenêtre en dépend, et la laisser derrière
+        // afficherait l'image nouvelle à la géométrie de l'ancienne.
+        let (width, height) = self.context.resolution();
+        if self.scaler.source() != (width, height) {
+            self.scaler.set_source(width, height);
+        }
         self.context.frame_end(&mut self.pixels, width)?;
 
         let mut buffer = display.surface.buffer_mut()?;

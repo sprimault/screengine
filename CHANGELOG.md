@@ -89,6 +89,15 @@ publié, et explique les conventions du dépôt à qui y contribue.
   contrat, et éteindre un brouillard qui n'existe pas n'est pas une erreur.
   `SCG_ABI_VERSION` reste à **1**. Les quatre hôtes de référence rendent la
   scène embrumée au bit près.
+- La résolution interne se change sans recréer le contexte, par
+  `Context::set_resolution` et `scg_set_resolution`, sous le maximum reçu à la
+  création — et **rien ne s'alloue**, tout ce qu'une image consomme ayant été
+  dimensionné sur ce maximum. C'est aussi pourquoi ce maximum ne se relève
+  pas. Deux choses ne suivent pas toutes seules : le tampon de l'hôte, trop
+  court après une hausse et dont le moteur ne reçoit pas la longueur, et le
+  nombre de tuiles, qu'il faut redemander à `scg_frame_begin`.
+  `SCG_ABI_VERSION` reste à **1**. L'étage d'accueil ouvre le plafond par
+  `Play::max_resolution`, et sa fenêtre suit d'elle-même.
 
 ### Modifié
 
@@ -153,6 +162,15 @@ publié, et explique les conventions du dépôt à qui y contribue.
   takes three channels there, the output buffer being opaque by contract, and
   turning off fog that was never on is not an error. `SCG_ABI_VERSION` stays at
   **1**. All four reference hosts render the fogged scene bit for bit.
+- The internal resolution changes without recreating the context, through
+  `Context::set_resolution` and `scg_set_resolution`, within the maximum given
+  at creation — and **nothing is allocated**, every buffer a frame needs having
+  been sized for that maximum. That is also why the maximum cannot be raised.
+  Two things do not follow on their own: the host buffer, too short after a
+  raise and whose length the engine never receives, and the tile count, which
+  must be asked of `scg_frame_begin` again. `SCG_ABI_VERSION` stays at **1**.
+  The Rust host stage opens the ceiling through `Play::max_resolution`, and its
+  window follows by itself.
 
 ### Changed
 

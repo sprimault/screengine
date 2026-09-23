@@ -226,6 +226,52 @@ fn aucune_image_n_alloue() {
     assert_eq!(seen, 0, "{seen} allocation(s) pendant trois images");
 }
 
+/// Changer de résolution sous le maximum n'alloue pas, aller comme retour.
+///
+/// C'est la clause que l'ABI promet et que seul ce test peut prouver : tout ce
+/// que l'image consomme est dimensionné sur la résolution maximale, et la
+/// grille se reconstruit dans de la capacité déjà réservée. Une seule de ces
+/// deux réserves prise sur la résolution **courante** ferait réallouer au
+/// premier agrandissement, chez un hôte qui ajuste sa résolution en cours de
+/// partie — donc image après image.
+///
+/// Le tampon est alloué une fois pour le maximum et réutilisé : le
+/// redimensionner dans la mesure ferait compter l'allocation du test.
+#[test]
+fn aucun_changement_de_resolution_n_alloue() {
+    let (max_width, max_height) = (640u32, 360u32);
+    let mut context = Context::new(Config {
+        max_width,
+        max_height,
+        width: 320,
+        height: 180,
+        tile_size: 64,
+        max_triangles: 0,
+    })
+    .expect("configuration valide");
+    let mut pixels = vec![0u8; max_width as usize * max_height as usize * BYTES_PER_PIXEL];
+
+    // Hors mesure : la première image de ce contexte, pour que rien de
+    // paresseux ne vienne s'imputer au redimensionnement.
+    context
+        .submit(Affine3::IDENTITY, &VERTICES, &TRIANGLES)
+        .expect("scène soumise");
+    context.frame_end(&mut pixels, 320).expect("image rendue");
+
+    let seen = allocations(|| {
+        for (width, height) in [(640, 360), (320, 180), (480, 270), (640, 360)] {
+            context
+                .set_resolution(width, height)
+                .expect("sous le maximum");
+            context
+                .submit(Affine3::IDENTITY, &VERTICES, &TRIANGLES)
+                .expect("scène soumise");
+            context.frame_end(&mut pixels, width).expect("image rendue");
+        }
+    });
+    assert_eq!(seen, 0, "{seen} allocation(s) en changeant de résolution");
+}
+
 /// Des tuiles rendues sur d'autres threads n'allouent pas davantage : chaque
 /// thread arme sa propre mesure autour de ses tuiles, puisque la création
 /// des threads, elle, alloue.

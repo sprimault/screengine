@@ -328,6 +328,13 @@ static void check_refusals(void)
     check(message_ok(scg_last_error(ctx), 0), "message vide après un succès");
     check(message_ok(scg_last_error(NULL), 0), "message sans contexte vidé par un appel réussi");
 
+    check(scg_set_resolution(ctx, WIDTH, HEIGHT) == SCG_OK, "la résolution du maximum est acceptée");
+    check(scg_set_resolution(ctx, WIDTH + 1, HEIGHT) == SCG_ERR_INVALID_ARGUMENT, "largeur au-delà du maximum refusée");
+    check(scg_set_resolution(ctx, WIDTH, HEIGHT + 1) == SCG_ERR_INVALID_ARGUMENT, "hauteur au-delà du maximum refusée");
+    check(scg_set_resolution(ctx, 0, HEIGHT) == SCG_ERR_INVALID_ARGUMENT, "largeur nulle refusée");
+    check(message_ok(scg_last_error(ctx), 1), "message du contexte après une résolution refusée");
+    check(scg_set_resolution(NULL, WIDTH, HEIGHT) == SCG_ERR_NULL, "contexte nul refusé par scg_set_resolution");
+
     uint8_t small[4 * 4];
     check(scg_frame_end(ctx, NULL, WIDTH) == SCG_ERR_NULL, "tampon nul refusé");
     check(scg_frame_end(ctx, small, WIDTH - 1) == SCG_ERR_INVALID_ARGUMENT, "stride inférieur à la largeur refusé");
@@ -336,6 +343,44 @@ static void check_refusals(void)
 
     scg_destroy(ctx);
     scg_destroy(NULL);
+}
+
+/* La résolution interne change sans recréer le contexte, et l'image ne dépend
+ * pas de celle qu'il avait à l'ouverture.
+ *
+ * Le contexte s'ouvre en 1×1 sous un maximum de WIDTH×HEIGHT, puis passe à la
+ * résolution de la scène : son empreinte doit être celle que `render` a
+ * obtenue d'un contexte ouvert directement dessus. Ouvrir en 1×1 et non à la
+ * résolution finale n'est pas un détail — c'est ce qui fait qu'une projection
+ * laissée périmée se voit ici. */
+static void check_resize(uint64_t expected)
+{
+    ScgContextConfig config = scene_config();
+    ScgContext *ctx = NULL;
+    size_t body = (size_t)STRIDE * HEIGHT * 4;
+    uint8_t *pixels = malloc(body);
+
+    config.width = 1;
+    config.height = 1;
+    if (pixels == NULL || scg_create(&config, &ctx) != SCG_OK) {
+        check(0, "création du contexte redimensionnable");
+        free(pixels);
+        return;
+    }
+
+    check(scg_set_resolution(ctx, WIDTH, HEIGHT) == SCG_OK, "la résolution passe de 1×1 au maximum");
+    check(submit_scene(ctx), "scène soumise après redimensionnement");
+    check(scg_frame_end(ctx, pixels, STRIDE) == SCG_OK, "image rendue après redimensionnement");
+    check(fingerprint(pixels, WIDTH, HEIGHT, STRIDE) == expected,
+          "un contexte redimensionné rend l'empreinte d'un contexte neuf");
+
+    /* Après une soumission, la résolution est figée pour l'image en cours,
+     * comme la caméra : la projection a déjà eu lieu. */
+    check(submit_scene(ctx), "seconde scène soumise");
+    check(scg_set_resolution(ctx, 1, 1) == SCG_ERR_INVALID_STATE, "résolution refusée après une soumission");
+
+    scg_destroy(ctx);
+    free(pixels);
 }
 
 /* L'allocation pour le compte de l'hôte : alignement de l'ABI, longueur écrite
@@ -791,6 +836,7 @@ int main(void)
 #endif
     if (ok) {
         check_tiles(hash);
+        check_resize(hash);
     }
 
     int textured_ok = 0;

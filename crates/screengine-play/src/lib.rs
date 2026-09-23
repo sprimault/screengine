@@ -69,6 +69,8 @@ const DEFAULT_WINDOW_FACTOR: u32 = 2;
 pub struct Play {
     title: String,
     resolution: (u32, u32),
+    /// Le plafond des changements de résolution, ou la résolution d'ouverture.
+    max_resolution: Option<(u32, u32)>,
     tile_size: u32,
     scale: Scale,
     rate: u32,
@@ -87,6 +89,7 @@ impl Play {
         Self {
             title: String::from("Screengine"),
             resolution: DEFAULT_RESOLUTION,
+            max_resolution: None,
             tile_size: 64,
             scale: Scale::Integer,
             rate: 60,
@@ -104,6 +107,20 @@ impl Play {
     /// celle de la fenêtre.
     pub fn resolution(mut self, width: u32, height: u32) -> Self {
         self.resolution = (width, height);
+        self
+    }
+
+    /// Le plafond que [`Context::set_resolution`] pourra atteindre en cours de
+    /// partie. Sans lui, c'est la résolution d'ouverture.
+    ///
+    /// Le moteur dimensionne à la création tout ce qu'une image consomme, sur
+    /// ce plafond : le relever coûte de la mémoire une fois, et c'est ce qui
+    /// permet ensuite de baisser puis de remonter sans jamais allouer. Un jeu
+    /// qui n'en veut pas ne perd rien — il peut toujours descendre.
+    ///
+    /// [`Context::set_resolution`]: screengine::Context::set_resolution
+    pub fn max_resolution(mut self, width: u32, height: u32) -> Self {
+        self.max_resolution = Some((width, height));
         self
     }
 
@@ -153,9 +170,10 @@ impl Play {
         }
 
         let (width, height) = self.resolution;
+        let (max_width, max_height) = self.max_resolution.unwrap_or(self.resolution);
         let context = Context::new(Config {
-            max_width: width,
-            max_height: height,
+            max_width,
+            max_height,
             width,
             height,
             tile_size: self.tile_size,
