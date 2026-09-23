@@ -11,6 +11,10 @@
 
 mod affine;
 mod angle;
+// Rien ne l'appelle encore : c'est la table de post-traitement qui le
+// consommera, et le lot qui l'écrit retire cette autorisation.
+#[cfg_attr(not(test), allow(dead_code))]
+pub mod exp2;
 pub mod fixed;
 pub mod projection;
 mod quat;
