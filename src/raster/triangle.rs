@@ -9,6 +9,7 @@
 //! comme un scintillement de la couture, et découvert trop tard il est déjà sous
 //! tout le reste du moteur.
 
+use crate::light;
 use crate::math::fixed::{PIXEL_CENTER, SUBPIXEL_SCALE, UV_BITS};
 
 use super::plane::{GRADIENT_BITS, Plane};
@@ -25,6 +26,25 @@ pub struct Sampling<'a> {
     pub texture: &'a Texture,
     /// Le mode d'échantillonnage du contexte.
     pub filter: Filter,
+}
+
+/// L'éclairage d'un triangle : sa lightmap, ses plans, et le réglage du
+/// contexte.
+///
+/// **Pas de mode de filtrage ici** : une lightmap se lit toujours en
+/// bilinéaire. Elle est presque toujours agrandie — un de ses texels couvre
+/// une poignée de pixels —, et le plus proche voisin y dessinerait des blocs
+/// que le tramage ne masque pas : celui-ci ne déplace la coordonnée que d'un
+/// demi-texel, ce qui ne fait rien contre une marche de plusieurs pixels de
+/// large.
+#[derive(Debug, Clone, Copy)]
+pub struct Lit<'a> {
+    /// La lightmap du triangle.
+    pub lightmap: &'a Texture,
+    /// Les plans de ses coordonnées, pris dans le tableau annexe de l'image.
+    pub planes: &'a Lighting,
+    /// Le décalage de sur-éclairement du contexte.
+    pub overbright: u32,
 }
 
 /// Une position projetée, en sous-pixels.
@@ -121,11 +141,17 @@ pub struct Lighting {
     /// Les coordonnées de lightmap multipliées par la profondeur, `s·d` puis
     /// `t·d`, affines en espace écran par la même raison que celles de texture.
     st: [Plane; 2],
+    /// L'index de la lightmap dans la table de l'image.
+    ///
+    /// Ici plutôt que dans [`Prepared`] : un triangle éclairé porte déjà la
+    /// place de ses plans, et un second index l'aurait fait déborder de ses
+    /// deux lignes de cache. Celui-ci voyage avec ce qu'il désigne.
+    lightmap: u16,
 }
 
 impl Lighting {
     /// Les plans des coordonnées de lightmap, sur la base du triangle.
-    fn new(basis: &Basis, vertices: &[Vertex; 3]) -> Self {
+    fn new(basis: &Basis, vertices: &[Vertex; 3], lightmap: u16) -> Self {
         let plane = |value: fn(&Vertex) -> i32| {
             Plane::new(
                 basis.v,
@@ -140,15 +166,18 @@ impl Lighting {
         };
         Self {
             st: [plane(|v| v.s2), plane(|v| v.t2)],
+            lightmap,
         }
     }
 
     /// Ses deux plans, dans l'ordre `s` puis `t`.
-    // Seuls les tests les lisent : le remplissage éclairé vient au lot suivant,
-    // et c'est lui qui retire cette autorisation.
-    #[cfg_attr(not(test), allow(dead_code))]
     pub fn planes(&self) -> &[Plane; 2] {
         &self.st
+    }
+
+    /// L'index de sa lightmap dans la table de l'image.
+    pub fn lightmap(&self) -> u16 {
+        self.lightmap
     }
 }
 
@@ -166,8 +195,6 @@ impl Prepared {
 
     /// La place de ses plans d'éclairage dans le tableau annexe de l'image, ou
     /// [`NO_LIGHTING`].
-    // Voir [`Lighting::planes`] : sans lecteur jusqu'au remplissage éclairé.
-    #[cfg_attr(not(test), allow(dead_code))]
     pub fn lighting(&self) -> u16 {
         self.lighting
     }
@@ -341,12 +368,13 @@ pub fn prepare_lit(
     vertices: [Vertex; 3],
     color: u32,
     texture: u16,
+    lightmap: u16,
     slot: u16,
 ) -> Option<(Prepared, Lighting)> {
     debug_assert!(slot != NO_LIGHTING);
     let basis = Basis::new(&vertices)?;
     let prepared = assemble(&basis, &vertices, color, texture, slot)?;
-    Some((prepared, Lighting::new(&basis, &vertices)))
+    Some((prepared, Lighting::new(&basis, &vertices, lightmap)))
 }
 
 /// Ce que tous les plans d'un triangle partagent : ses positions, son aire
@@ -441,6 +469,7 @@ pub fn fill<T: Target>(
     window: Rect,
     triangle: &Prepared,
     sampling: Option<Sampling<'_>>,
+    lit: Option<Lit<'_>>,
 ) {
     let color = triangle.color;
 
@@ -489,35 +518,39 @@ pub fn fill<T: Target>(
             // donnent les mêmes bits que l'évaluation directe en chaque pixel.
             let ey = (py_of(y) - triangle.ref_y) as i64;
             let ex = |x: i32| (x * SUBPIXEL_SCALE + PIXEL_CENTER - triangle.ref_x) as i64;
-            match sampling {
-                None => {
-                    let mut depth = plane.at(ex(lo), ey);
-                    for x in lo..=hi {
-                        // En un pixel couvert, la valeur tient dans [0, 2³²) :
-                        // les sommets sont bornés par `to_depth` avec une marge
-                        // qui couvre l'arrondi des gradients.
-                        let z = (depth >> GRADIENT_BITS) as u32;
-                        if target.test(x, y, z) {
-                            target.write(x, y, z, color);
-                        }
-                        depth = depth.wrapping_add(depth_x);
+            // **Le seul chemin qui se passe de segments est la couleur unie
+            // sans éclairage.** Dès qu'un attribut se lit dans une image — le
+            // texel, l'éclairage, ou les deux —, il faut la division de
+            // perspective, donc le découpage en segments de seize pixels. Un
+            // triangle uni éclairé passe donc par le même chemin qu'un triangle
+            // texturé : ses coordonnées de lightmap sont interpolées de la même
+            // façon, et rien ne justifierait une seconde boucle pour cela.
+            if sampling.is_none() && lit.is_none() {
+                let mut depth = plane.at(ex(lo), ey);
+                for x in lo..=hi {
+                    // En un pixel couvert, la valeur tient dans [0, 2³²) : les
+                    // sommets sont bornés par `to_depth` avec une marge qui
+                    // couvre l'arrondi des gradients.
+                    let z = (depth >> GRADIENT_BITS) as u32;
+                    if target.test(x, y, z) {
+                        target.write(x, y, z, color);
                     }
+                    depth = depth.wrapping_add(depth_x);
                 }
-                Some(sampling) => {
-                    let mut x = lo;
-                    while x <= hi {
-                        // Le segment court d'un multiple de seize de l'image au
-                        // suivant, **rabattu sur le span global** : au-delà, la
-                        // profondeur prolongée hors du triangle peut s'annuler,
-                        // et il n'y aurait aucun quotient à prendre. Ses bornes
-                        // ne dépendent donc que du triangle et de la grille de
-                        // l'image, jamais de la fenêtre où l'on parcourt.
-                        let base = x - x.rem_euclid(SEGMENT);
-                        let segment = (base.max(gl), (base + SEGMENT - 1).min(gr));
-                        let last = segment.1.min(hi);
-                        fill_segment(target, triangle, sampling, y, segment, gr, (x, last));
-                        x = last + 1;
-                    }
+            } else {
+                let mut x = lo;
+                while x <= hi {
+                    // Le segment court d'un multiple de seize de l'image au
+                    // suivant, **rabattu sur le span global** : au-delà, la
+                    // profondeur prolongée hors du triangle peut s'annuler,
+                    // et il n'y aurait aucun quotient à prendre. Ses bornes
+                    // ne dépendent donc que du triangle et de la grille de
+                    // l'image, jamais de la fenêtre où l'on parcourt.
+                    let base = x - x.rem_euclid(SEGMENT);
+                    let segment = (base.max(gl), (base + SEGMENT - 1).min(gr));
+                    let last = segment.1.min(hi);
+                    fill_segment(target, triangle, sampling, lit, y, segment, gr, (x, last));
+                    x = last + 1;
                 }
             }
         }
@@ -597,91 +630,190 @@ fn segment_slope_ends(from: i32, to: i32, span_end: i32) -> (i32, i64) {
 /// texture indépendante du découpage : tout part de la forme close, rien ne
 /// s'accumule d'une tuile à l'autre. `span_end` est la dernière abscisse
 /// couverte sur cette ligne, et vient du span pour la même raison.
+#[allow(clippy::too_many_arguments)]
 fn fill_segment<T: Target>(
     target: &mut T,
     triangle: &Prepared,
-    sampling: Sampling<'_>,
+    sampling: Option<Sampling<'_>>,
+    lit: Option<Lit<'_>>,
     y: i32,
     segment: (i32, i32),
     span_end: i32,
     draw: (i32, i32),
 ) {
-    let texture = sampling.texture;
     // Les écarts se recalculent ici plutôt que de traverser la signature :
     // deux soustractions par segment, contre deux paramètres de plus dans une
-    // liste qui en compte déjà sept.
+    // liste qui en compte déjà huit.
     let ey = (py_of(y) - triangle.ref_y) as i64;
     let ex = |x: i32| (x * SUBPIXEL_SCALE + PIXEL_CENTER - triangle.ref_x) as i64;
     let depth_at = |x: i32| triangle.depth.at(ex(x), ey);
-    let uv_at = |x: i32| {
-        let w = reciprocal((depth_at(x) >> GRADIENT_BITS) as u32);
-        let read = |plane: &Plane| i64::from(texel_coord(plane.at(ex(x), ey) >> GRADIENT_BITS, w));
-        [read(&triangle.uv[0]), read(&triangle.uv[1])]
-    };
 
     let (from, to) = segment;
-    let first = uv_at(from);
-    // **Le niveau se prend au maximum des deux extrémités**, et non au seul
-    // point de division gauche : quand la densité double sur seize pixels, un
-    // niveau pris à gauche sous-sélectionne toute la moitié droite du segment.
-    // La réciproque de droite est calculée de toute façon pour la pente, donc
-    // ce maximum coûte quatre multiplications et aucune division.
-    let level = {
-        let at = |x: i32, uv: [i64; 2]| {
-            mip_level(
-                triangle,
-                uv[0] as i32,
-                uv[1] as i32,
-                reciprocal((depth_at(x) >> GRADIENT_BITS) as u32),
-            )
-        };
-        at(from, first).max(at(to, uv_at(to)))
-    };
     let (anchor, steps) = segment_slope_ends(from, to, span_end);
-    let after = uv_at(anchor);
-    // `div_euclid` : la pente s'arrondit vers le bas des deux côtés de zéro, là
-    // où `/` ferait un pas double autour de l'origine de la texture.
-    let slope = [
-        (after[0] - first[0]).div_euclid(steps),
-        (after[1] - first[1]).div_euclid(steps),
-    ];
+    // **Les réciproques se calculent une fois pour les deux jeux de
+    // coordonnées.** Elles ne dépendent que de la profondeur, et c'est la
+    // seule division du remplissage : recalculées par jeu, un triangle à la
+    // fois texturé et éclairé en paierait le double pour des valeurs
+    // identiques.
+    let ends = Ends {
+        from: Reciprocal::new(from, depth_at(from)),
+        to: Reciprocal::new(to, depth_at(to)),
+        anchor: Reciprocal::new(anchor, depth_at(anchor)),
+        steps,
+        start: draw.0,
+    };
+
+    let mut texels = sampling.map(|s| (s, Crawl::new(triangle, &triangle.uv, ey, &ends)));
+    let mut lights = lit.map(|l| (l, Crawl::new(triangle, l.planes.planes(), ey, &ends)));
 
     let mut depth = depth_at(draw.0);
     let depth_x = triangle.depth.step_x(SUBPIXEL_SCALE);
-    let skipped = (draw.0 - from) as i64;
-    let mut uv = [first[0] + slope[0] * skipped, first[1] + slope[1] * skipped];
     for x in draw.0..=draw.1 {
         let z = (depth >> GRADIENT_BITS) as u32;
         if target.test(x, y, z) {
-            // Le décalage de niveau porte sur la coordonnée **interpolée**, et
-            // non sur les extrémités du segment : appliqué à celles-ci, il
-            // quantifierait la pente par 2ⁿ, soit cinq bits perdus au niveau 5.
-            let scaled = [uv[0] >> level, uv[1] >> level];
-            let texel = match sampling.filter {
-                // Le tramage s'ajoute **après** le décalage de niveau : ajouté
-                // avant, il serait divisé par 2ⁿ et s'éteindrait dès le
-                // niveau 2.
-                Filter::Dither => {
-                    let dither = dither_offsets(x, y);
-                    let coord = |c: i64, shift: i32| ((c + i64::from(shift)) >> UV_BITS) as i32;
-                    texture.texel(
-                        level as usize,
-                        coord(scaled[0], dither[0]),
-                        coord(scaled[1], dither[1]),
-                    )
-                }
-                // Les bits fractionnaires servent de poids au lieu d'être
-                // jetés : c'est la seule différence entre les deux modes, et
-                // c'est pourquoi le tramage n'a plus rien à masquer ici.
-                Filter::Bilinear => {
-                    texture.bilinear(level as usize, scaled[0] as i32, scaled[1] as i32)
-                }
+            let base = match &texels {
+                Some((sampling, crawl)) => crawl.sample(sampling.texture, sampling.filter, x, y),
+                None => triangle.color,
             };
-            target.write(x, y, z, texel);
+            let pixel = match &lights {
+                // La lightmap se lit toujours en bilinéaire : voir [`Lit`].
+                Some((lit, crawl)) => {
+                    let light = crawl.sample(lit.lightmap, Filter::Bilinear, x, y);
+                    light::modulate(base, light, lit.overbright)
+                }
+                None => base,
+            };
+            target.write(x, y, z, pixel);
         }
         depth = depth.wrapping_add(depth_x);
-        uv[0] += slope[0];
-        uv[1] += slope[1];
+        if let Some((_, crawl)) = &mut texels {
+            crawl.step();
+        }
+        if let Some((_, crawl)) = &mut lights {
+            crawl.step();
+        }
+    }
+}
+
+/// Une profondeur de segment et sa réciproque, gardées ensemble.
+///
+/// La réciproque sert aux coordonnées, l'abscisse au choix du niveau : les
+/// séparer ferait repasser l'une ou l'autre dans une signature déjà longue.
+#[derive(Clone, Copy)]
+struct Reciprocal {
+    x: i32,
+    w: u64,
+}
+
+impl Reciprocal {
+    /// La réciproque de la profondeur en `x`, telle que le plan la rend.
+    fn new(x: i32, depth: i64) -> Self {
+        Self {
+            x,
+            w: reciprocal((depth >> GRADIENT_BITS) as u32),
+        }
+    }
+}
+
+/// Ce qu'un segment a de commun à tous ses attributs.
+struct Ends {
+    from: Reciprocal,
+    to: Reciprocal,
+    anchor: Reciprocal,
+    steps: i64,
+    /// La première abscisse réellement peinte, que la fenêtre décide.
+    start: i32,
+}
+
+/// Un attribut à deux composantes qui avance le long d'un segment.
+///
+/// Les coordonnées de texture et celles de lightmap suivent exactement la même
+/// marche : division aux extrémités du segment, interpolation affine entre
+/// elles, niveau de mipmap pris au plus fin des deux bouts. Une seule
+/// implémentation, donc, et la lightmap ne peut pas dériver de la texture au fil
+/// des lots.
+struct Crawl {
+    value: [i64; 2],
+    slope: [i64; 2],
+    level: u32,
+}
+
+impl Crawl {
+    /// La marche d'`planes` sur le segment que `ends` décrit.
+    fn new(triangle: &Prepared, planes: &[Plane; 2], ey: i64, ends: &Ends) -> Self {
+        let ex = |x: i32| (x * SUBPIXEL_SCALE + PIXEL_CENTER - triangle.ref_x) as i64;
+        let at = |end: &Reciprocal| {
+            let read = |plane: &Plane| {
+                i64::from(texel_coord(plane.at(ex(end.x), ey) >> GRADIENT_BITS, end.w))
+            };
+            [read(&planes[0]), read(&planes[1])]
+        };
+
+        let first = at(&ends.from);
+        let last = at(&ends.to);
+        // **Le niveau se prend au maximum des deux extrémités**, et non au seul
+        // point de division gauche : quand la densité double sur seize pixels,
+        // un niveau pris à gauche sous-sélectionne toute la moitié droite du
+        // segment. Les deux réciproques étant déjà là, ce maximum coûte
+        // quelques multiplications et aucune division.
+        let level = {
+            let of = |end: &Reciprocal, uv: [i64; 2]| {
+                mip_level(triangle, planes, uv[0] as i32, uv[1] as i32, end.w)
+            };
+            of(&ends.from, first).max(of(&ends.to, last))
+        };
+
+        let after = if ends.anchor.x == ends.to.x {
+            last
+        } else {
+            at(&ends.anchor)
+        };
+        // `div_euclid` : la pente s'arrondit vers le bas des deux côtés de
+        // zéro, là où `/` ferait un pas double autour de l'origine.
+        let slope = [
+            (after[0] - first[0]).div_euclid(ends.steps),
+            (after[1] - first[1]).div_euclid(ends.steps),
+        ];
+
+        let skipped = (ends.start - ends.from.x) as i64;
+        Self {
+            value: [first[0] + slope[0] * skipped, first[1] + slope[1] * skipped],
+            slope,
+            level,
+        }
+    }
+
+    /// Le texel sous le pixel `(x, y)`, lu dans `texture` selon `filter`.
+    fn sample(&self, texture: &Texture, filter: Filter, x: i32, y: i32) -> u32 {
+        // Le décalage de niveau porte sur la coordonnée **interpolée**, et non
+        // sur les extrémités du segment : appliqué à celles-ci, il quantifierait
+        // la pente par 2ⁿ, soit cinq bits perdus au niveau 5.
+        let scaled = [self.value[0] >> self.level, self.value[1] >> self.level];
+        match filter {
+            // Le tramage s'ajoute **après** le décalage de niveau : ajouté
+            // avant, il serait divisé par 2ⁿ et s'éteindrait dès le niveau 2.
+            Filter::Dither => {
+                let dither = dither_offsets(x, y);
+                let coord = |c: i64, shift: i32| ((c + i64::from(shift)) >> UV_BITS) as i32;
+                texture.texel(
+                    self.level as usize,
+                    coord(scaled[0], dither[0]),
+                    coord(scaled[1], dither[1]),
+                )
+            }
+            // Les bits fractionnaires servent de poids au lieu d'être jetés :
+            // c'est la seule différence entre les deux modes, et c'est pourquoi
+            // le tramage n'a plus rien à masquer ici.
+            Filter::Bilinear => {
+                texture.bilinear(self.level as usize, scaled[0] as i32, scaled[1] as i32)
+            }
+        }
+    }
+
+    /// Avance d'un pixel vers la droite.
+    fn step(&mut self) {
+        self.value[0] += self.slope[0];
+        self.value[1] += self.slope[1];
     }
 }
 
@@ -764,7 +896,7 @@ fn dither_offsets(x: i32, y: i32) -> [i32; 2] {
 /// pixel plus bas — donc hors du triangle dès la dernière ligne, où la
 /// profondeur prolongée peut s'annuler. Le quotient y enveloppe en silence, et
 /// le scintillement reviendrait précisément à l'horizon.
-fn mip_level(triangle: &Prepared, u: i32, v: i32, reciprocal: u64) -> u32 {
+fn mip_level(triangle: &Prepared, planes: &[Plane; 2], u: i32, v: i32, reciprocal: u64) -> u32 {
     let pixel = SUBPIXEL_SCALE;
     let (dx, dy) = (
         triangle.depth.step_x(pixel) >> GRADIENT_BITS,
@@ -779,14 +911,14 @@ fn mip_level(triangle: &Prepared, u: i32, v: i32, reciprocal: u64) -> u32 {
         slope - ((i64::from(coord).saturating_mul(depth_step)) >> UV_SHIFT)
     };
     let worst = [
-        numerator(&triangle.uv[0], u, dx),
-        numerator(&triangle.uv[1], v, dx),
+        numerator(&planes[0], u, dx),
+        numerator(&planes[1], v, dx),
         {
-            let slope = triangle.uv[0].step_y(pixel) << (UV_BITS - GRADIENT_BITS);
+            let slope = planes[0].step_y(pixel) << (UV_BITS - GRADIENT_BITS);
             slope - ((i64::from(u).saturating_mul(dy)) >> UV_SHIFT)
         },
         {
-            let slope = triangle.uv[1].step_y(pixel) << (UV_BITS - GRADIENT_BITS);
+            let slope = planes[1].step_y(pixel) << (UV_BITS - GRADIENT_BITS);
             slope - ((i64::from(v).saturating_mul(dy)) >> UV_SHIFT)
         },
     ]

@@ -11,6 +11,7 @@ use core::sync::atomic::{AtomicBool, AtomicU8, AtomicU32, Ordering};
 
 use crate::buffer::reserved;
 use crate::error::{Argument, Error, Result};
+use crate::light::MAX_OVERBRIGHT;
 use crate::math::fixed::MAX_TEXEL_COORD;
 use crate::math::projection::ClipVertex;
 use crate::math::{Affine3, Projection, Vec3};
@@ -152,6 +153,8 @@ pub struct Context {
     camera: Camera,
     /// Le mode d'échantillonnage, qu'une image conserve aussi.
     filter: Filter,
+    /// Le décalage de sur-éclairement, de même.
+    overbright: u32,
     /// Le monde vers l'espace de vue, recalculé avec la caméra.
     ///
     /// Gardée plutôt que recomposée à chaque soumission : la composer est une
@@ -260,6 +263,7 @@ impl Context {
             grid: Grid::new(config.width, config.height, config.tile_size),
             camera,
             filter: Filter::default(),
+            overbright: 0,
             view: camera.view(),
             projection: Projection::new(config.width, config.height, camera.fov_y, camera.near)?,
             state: AtomicU8::new(RECORDING),
@@ -310,6 +314,34 @@ impl Context {
             return Err(Error::InvalidState);
         }
         self.filter = filter;
+        Ok(())
+    }
+
+    /// Le décalage de sur-éclairement courant, de zéro à [`MAX_OVERBRIGHT`].
+    pub fn overbright(&self) -> u32 {
+        self.overbright
+    }
+
+    /// Change le décalage de sur-éclairement.
+    ///
+    /// Zéro par défaut : la combinaison rend alors le texel intact sous pleine
+    /// lumière, et jamais plus clair. **C'est le réglage juste et une scène
+    /// terne** — une lightmap réelle n'atteint le blanc nulle part, si bien que
+    /// toute surface est plus sombre que sa texture. Un décalage de un ou deux
+    /// rend la dynamique d'une scène éclairée, au prix d'une saturation là où
+    /// la lumière est forte.
+    ///
+    /// Refusé pendant le rendu, pour la même raison que le filtre : une image
+    /// dont les tuiles n'auraient pas toutes le même réglage n'est décrite par
+    /// rien.
+    pub fn set_overbright(&mut self, overbright: u32) -> Result<()> {
+        if *self.state.get_mut() != RECORDING {
+            return Err(Error::InvalidState);
+        }
+        if overbright > MAX_OVERBRIGHT {
+            return Err(Error::InvalidArgument(Argument::Overbright));
+        }
+        self.overbright = overbright;
         Ok(())
     }
 
@@ -460,12 +492,16 @@ impl Context {
         })
     }
 
-    /// Soumet un lot dont les sommets portent un second jeu de coordonnées.
+    /// Soumet un lot éclairé par une lightmap, dont les sommets portent un
+    /// second jeu de coordonnées.
     ///
-    /// Même contrat que [`Context::submit_each_uv`] pour le reste. Les plans du
-    /// second jeu vont dans le tableau annexe de l'image, et rien ne les lit
-    /// encore : un lot soumis par ici rend exactement ce qu'il rendrait par
-    /// [`Context::submit_each_uv`].
+    /// Même contrat que [`Context::submit_each_uv`] pour le reste. La lightmap
+    /// vaut pour le lot entier, comme la texture, et **c'est sa présence qui
+    /// décide de l'éclairage** : un lot passe par ici parce qu'il en a une, et
+    /// il n'existe aucun autre moyen d'en porter une.
+    ///
+    /// La texture, elle, reste facultative : un mur uni éclairé est le cas le
+    /// plus courant d'un décor, et il rend alors `couleur × lightmap`.
     ///
     /// Le nombre de triangles **éclairés** d'une image est plafonné par la
     /// sentinelle du tableau annexe, plus bas que la capacité quand celle-ci
@@ -475,12 +511,35 @@ impl Context {
         model: Affine3,
         count: usize,
         texture: Option<&Arc<Texture>>,
+        lightmap: &Arc<Texture>,
         read: F,
     ) -> Result<()>
     where
         F: Fn(usize) -> Result<([VertexUv2; 3], Color)>,
     {
-        self.submit_lot(model, count, texture, true, read)
+        self.submit_lot(model, count, texture, Some(lightmap), read)
+    }
+
+    /// Soumet un lot éclairé par indices, la façade de
+    /// [`Context::submit_each_lit`] sur deux tranches.
+    pub fn submit_lit(
+        &mut self,
+        model: Affine3,
+        vertices: &[VertexUv2],
+        triangles: &[Triangle],
+        texture: Option<&Arc<Texture>>,
+        lightmap: &Arc<Texture>,
+    ) -> Result<()> {
+        self.submit_each_lit(model, triangles.len(), texture, lightmap, |i| {
+            let triangle = triangles[i];
+            let mut corners = [VertexUv2::unlit(VertexUv::untextured(Vec3::ZERO)); 3];
+            for (corner, &index) in corners.iter_mut().zip(&triangle.indices) {
+                *corner = *vertices
+                    .get(index as usize)
+                    .ok_or(Error::InvalidArgument(Argument::VertexIndex))?;
+            }
+            Ok((corners, triangle.color))
+        })
     }
 
     /// Soumet un lot de triangles habillés d'une texture.
@@ -550,21 +609,21 @@ impl Context {
     where
         F: Fn(usize) -> Result<([VertexUv; 3], Color)>,
     {
-        self.submit_lot(model, count, texture, false, |i| {
+        self.submit_lot(model, count, texture, None, |i| {
             let (corners, color) = read(i)?;
             Ok((corners.map(VertexUv2::unlit), color))
         })
     }
 
     /// Le corps commun des deux soumissions par fonction d'accès : le second
-    /// jeu de coordonnées est toujours là, `lit` dit seulement si ses plans se
-    /// construisent.
+    /// jeu de coordonnées est toujours là, la lightmap dit seulement si ses
+    /// plans se construisent.
     fn submit_lot<F>(
         &mut self,
         model: Affine3,
         count: usize,
         texture: Option<&Arc<Texture>>,
-        lit: bool,
+        lightmap: Option<&Arc<Texture>>,
         read: F,
     ) -> Result<()>
     where
@@ -578,7 +637,18 @@ impl Context {
         let lights = self.lighting.len();
         let result = self
             .record_texture(texture)
-            .and_then(|index| self.submit_batch(model, count, index, lit, read));
+            .and_then(|index| {
+                // La lightmap est une entrée de la même table : le rasteriseur
+                // ne lit qu'un seul genre de ressource, et un décor qui
+                // partage une lightmap entre plusieurs murs n'en garde qu'une
+                // copie par la même déduplication.
+                let lit = match lightmap {
+                    Some(lightmap) => Some(self.record_texture(Some(lightmap))?),
+                    None => None,
+                };
+                Ok((index, lit))
+            })
+            .and_then(|(index, lit)| self.submit_batch(model, count, index, lit, read));
         // Un lot refusé, mais aussi un lot accepté dont pas un triangle n'a
         // survécu à la projection : dans les deux cas la table garderait une
         // texture que plus rien ne référence, et le plafond ne se déduirait
@@ -623,7 +693,7 @@ impl Context {
         model: Affine3,
         count: usize,
         texture: u16,
-        lit: bool,
+        lit: Option<u16>,
         read: F,
     ) -> Result<()>
     where
@@ -678,14 +748,14 @@ impl Context {
     /// qu'il retient. Le rangement se fait après les deux refus : un triangle
     /// qu'on n'ajoute pas ne doit rien laisser derrière lui, et le tableau
     /// annexe n'a aucun moyen de désigner ses trous.
-    fn push(&mut self, v: [Vertex; 3], color: u32, texture: u16, lit: bool) -> Result<()> {
+    fn push(&mut self, v: [Vertex; 3], color: u32, texture: u16, lit: Option<u16>) -> Result<()> {
         let slot = self.lighting.len();
-        let prepared = if lit {
+        let prepared = if let Some(lightmap) = lit {
             if slot >= lighting_capacity(self.config.capacity()) {
                 return Err(Error::InvalidArgument(Argument::TriangleCapacity));
             }
             // `slot` est sous la sentinelle, donc sous `u16::MAX`.
-            prepare_lit(v, color, texture, slot as u16).map(|(p, l)| (p, Some(l)))
+            prepare_lit(v, color, texture, lightmap, slot as u16).map(|(p, l)| (p, Some(l)))
         } else {
             prepare(v, color, texture).map(|p| (p, None))
         };
@@ -718,7 +788,7 @@ impl Context {
         view: [ClipSource; 3],
         color: Color,
         texture: u16,
-        lit: bool,
+        lit: Option<u16>,
     ) -> Result<()> {
         let mut homogeneous = [ClipVertex::ZERO; 3];
         for (slot, source) in homogeneous.iter_mut().zip(view) {

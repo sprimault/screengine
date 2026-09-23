@@ -25,8 +25,8 @@ use std::{fs, io};
 use std::sync::Arc;
 
 use screengine::{
-    Affine3, Angle, BYTES_PER_PIXEL, Color, Config, Context, Filter, Frame, Quat, Rect, Rows,
-    Texture, Triangle, Vec3, VertexUv,
+    Affine3, Angle, BYTES_PER_PIXEL, Color, Config, Context, Filter, Frame, MAX_OVERBRIGHT, Quat,
+    Rect, Rows, Texture, Triangle, Vec3, VertexUv, VertexUv2,
 };
 
 /// Une façon de rendre une scène qui ne doit pas changer l'image.
@@ -241,6 +241,25 @@ enum Scene {
     /// les deux empreintes comparables, et une divergence attribuable au seul
     /// filtrage.
     TexturedBilinear,
+    /// Un sol texturé et un mur uni, tous deux éclairés par une lightmap.
+    ///
+    /// Les **deux chemins éclairés** dans la même image : `texel × lightmap`
+    /// au sol, `couleur × lightmap` au mur. Le second est le cas qu'on oublie,
+    /// parce qu'un décor de démonstration est toujours texturé alors qu'un
+    /// décor réel ne l'est pas partout.
+    ///
+    /// La lightmap est un dégradé **asymétrique en ses deux axes**, et elle
+    /// s'étire une fois sur chaque surface là où la texture s'y répète : c'est
+    /// la seule disposition où un axe échangé entre les deux jeux de
+    /// coordonnées, ou un jeu recopié à la place de l'autre, change l'image.
+    Lit,
+    /// La même, avec le sur-éclairement au maximum.
+    ///
+    /// Une scène et non une passe, pour la raison qui sépare déjà les deux
+    /// scènes texturées : le réglage rend délibérément une autre image, donc
+    /// il lui faut sa propre référence. C'est aussi le seul endroit où la
+    /// saturation de la combinaison s'exerce sur une image entière.
+    LitOverbright,
 }
 
 /// Un damier de `side` texels de côté, ses cases de `cell`.
@@ -298,6 +317,68 @@ fn textured_quad(
         },
     ];
     context.submit_textured(Affine3::IDENTITY, &vertices, &triangles, texture)
+}
+
+/// Un quadrilatère éclairé par une lightmap, texturé ou uni selon `texture`.
+///
+/// **La lightmap s'étire une fois sur le quadrilatère**, là où la texture s'y
+/// répète : c'est le cas d'usage qui justifie un second jeu de coordonnées, et
+/// le seul qui rende visible une confusion entre les deux. Les coordonnées
+/// vont d'un demi-texel à un demi-texel du bord opposé, pour que le bilinéaire
+/// n'aille jamais chercher son voisin par le repli — une lightmap ne se pave
+/// pas, contrairement à une texture.
+fn lit_quad(
+    context: &mut Context,
+    corners: [Vec3; 4],
+    density: f32,
+    texture: Option<&Arc<Texture>>,
+    lightmap: &Arc<Texture>,
+    color: Color,
+) -> screengine::Result<()> {
+    let (lo, hi) = (0.5, lightmap.width() as f32 - 0.5);
+    let lightmap_uv = [(lo, lo), (hi, lo), (hi, hi), (lo, hi)];
+    let vertices: Vec<VertexUv2> = corners
+        .iter()
+        .zip(lightmap_uv)
+        .map(|(&position, (u2, v2))| VertexUv2 {
+            position,
+            u: position.x * density,
+            v: position.y * density,
+            u2,
+            v2,
+        })
+        .collect();
+    let triangles = [
+        Triangle {
+            indices: [0, 1, 2],
+            color,
+        },
+        Triangle {
+            indices: [0, 2, 3],
+            color,
+        },
+    ];
+    context.submit_lit(Affine3::IDENTITY, &vertices, &triangles, texture, lightmap)
+}
+
+/// Une lightmap en dégradé, `side` texels de côté.
+///
+/// **Les deux axes n'y font pas la même chose**, et c'est tout l'objet : le
+/// rouge croît avec `u`, le bleu avec `v`, le vert avec leur somme. Un dégradé
+/// symétrique — ou pire, un aplat — laisserait passer un axe échangé, une
+/// transposition, ou les coordonnées de texture lues à la place des siennes.
+///
+/// Elle ne descend pas jusqu'au noir : une zone éteinte ne dirait rien de la
+/// combinaison, qui y rend zéro quelle que soit sa forme.
+fn gradient(side: u32) -> Arc<Texture> {
+    let mut bytes = Vec::with_capacity((side * side) as usize * 4);
+    let scale = |c: u32| (32 + c * 223 / (side - 1).max(1)) as u8;
+    for v in 0..side {
+        for u in 0..side {
+            bytes.extend_from_slice(&[scale(u), scale((u + v) / 2), scale(v), 0xFF]);
+        }
+    }
+    Arc::new(Texture::load(side, side, &bytes).expect("lightmap valide"))
 }
 
 /// Le quadrilatère à arêtes partagées, en coordonnées de monde.
@@ -405,7 +486,7 @@ impl View {
 
 impl Scene {
     /// Toutes les scènes, dans l'ordre où `--check` les rejoue.
-    const ALL: [Self; 8] = [
+    const ALL: [Self; 10] = [
         Self::Edge,
         Self::Guard,
         Self::Lateral,
@@ -414,6 +495,8 @@ impl Scene {
         Self::Rotation,
         Self::Textured,
         Self::TexturedBilinear,
+        Self::Lit,
+        Self::LitOverbright,
     ];
 
     /// La passe que `--print` utilise, celle des hôtes.
@@ -447,6 +530,20 @@ impl Scene {
             Self::Rotation => "rotation",
             Self::Textured => "texture",
             Self::TexturedBilinear => "texture-bilineaire",
+            Self::Lit => "lumiere",
+            Self::LitOverbright => "lumiere-surbrillance",
+        }
+    }
+
+    /// Le sur-éclairement que la scène demande au contexte.
+    ///
+    /// Zéro partout ailleurs : c'est le défaut du moteur, et une scène qui n'a
+    /// rien à dire du réglage doit rendre ce que rend un contexte qu'on ne
+    /// configure pas.
+    fn overbright(self) -> u32 {
+        match self {
+            Self::LitOverbright => MAX_OVERBRIGHT,
+            _ => 0,
         }
     }
 
@@ -592,6 +689,39 @@ impl Scene {
                 8.0,
                 &checker(64, 8),
             ),
+            // Un sol texturé qui fuit, et un mur uni au fond : les deux
+            // chemins éclairés dans la même image. Le mur est en retrait du
+            // bout du sol pour qu'on voie les deux se rejoindre, et sa couleur
+            // est franche pour que la lightmap se lise dessus.
+            Self::Lit | Self::LitOverbright => {
+                let lightmap = gradient(16);
+                lit_quad(
+                    context,
+                    [
+                        Vec3::new(2.0, -16.0, -1.2),
+                        Vec3::new(40.0, -16.0, -1.2),
+                        Vec3::new(40.0, 16.0, -1.2),
+                        Vec3::new(2.0, 16.0, -1.2),
+                    ],
+                    8.0,
+                    Some(&checker(64, 8)),
+                    &lightmap,
+                    Color::new(0xFF, 0xFF, 0xFF, 0xFF),
+                )?;
+                lit_quad(
+                    context,
+                    [
+                        Vec3::new(40.0, -16.0, -1.2),
+                        Vec3::new(40.0, -16.0, 10.0),
+                        Vec3::new(40.0, 16.0, 10.0),
+                        Vec3::new(40.0, 16.0, -1.2),
+                    ],
+                    0.0,
+                    None,
+                    &lightmap,
+                    Color::new(0xC0, 0xB0, 0x90, 0xFF),
+                )
+            }
             Self::Near => quad(
                 context,
                 [
@@ -635,6 +765,7 @@ impl Scene {
             max_triangles: 0,
         })?;
         context.set_filter(self.filter())?;
+        context.set_overbright(self.overbright())?;
         self.submit(&mut context, view)?;
         let mut pixels = vec![0u8; width as usize * height as usize * BYTES_PER_PIXEL];
         pass.render(context.frame_begin()?, &mut pixels, width, height)?;

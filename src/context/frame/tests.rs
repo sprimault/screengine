@@ -102,10 +102,10 @@ fn scene(context: &mut Context, seed: u64) {
         // Les deux orientations, pour que la moitié des tirages ne soit pas
         // éliminée comme dos de face.
         context
-            .push([a, b, c], color, texture, false)
+            .push([a, b, c], color, texture, None)
             .expect("capacité");
         context
-            .push([a, c, b], color, texture, false)
+            .push([a, c, b], color, texture, None)
             .expect("capacité");
     }
 
@@ -583,7 +583,7 @@ fn deux_triangles_inclines_s_interpenetrent() {
         context.triangles.clear();
         for (triangle, color) in order {
             context
-                .push(triangle, color, NO_TEXTURE, false)
+                .push(triangle, color, NO_TEXTURE, None)
                 .expect("capacité");
         }
         let image = reference(&mut context);
@@ -603,10 +603,10 @@ fn a_egalite_le_premier_soumis_reste() {
         let mut context = context(64);
         context.triangles.clear();
         context
-            .push(triangle, first, NO_TEXTURE, false)
+            .push(triangle, first, NO_TEXTURE, None)
             .expect("capacité");
         context
-            .push(triangle, second, NO_TEXTURE, false)
+            .push(triangle, second, NO_TEXTURE, None)
             .expect("capacité");
         assert_eq!(color_at(&reference(&mut context), 30, 30), first);
     }
@@ -633,7 +633,7 @@ fn l_ordre_de_soumission_ne_compte_pas_a_profondeurs_distinctes() {
             list.reverse();
         }
         for (v, color) in list {
-            context.push(v, color, NO_TEXTURE, false).expect("capacité");
+            context.push(v, color, NO_TEXTURE, None).expect("capacité");
         }
         reference(&mut context)
     };
@@ -649,11 +649,11 @@ fn la_capacite_de_triangles_est_une_limite() {
     let v = [at(0, 0, 1 << 31), at(0, 10, 1 << 31), at(10, 0, 1 << 31)];
     for _ in 0..TRIANGLE_CAPACITY {
         context
-            .push(v, 0, NO_TEXTURE, false)
+            .push(v, 0, NO_TEXTURE, None)
             .expect("sous la capacité");
     }
     assert_eq!(
-        context.push(v, 0, NO_TEXTURE, false),
+        context.push(v, 0, NO_TEXTURE, None),
         Err(Error::InvalidArgument(Argument::TriangleCapacity))
     );
     assert_eq!(context.triangles.len(), TRIANGLE_CAPACITY);

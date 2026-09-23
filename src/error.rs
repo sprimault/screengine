@@ -105,6 +105,10 @@ pub enum Argument {
     /// Un bloc de pixels dont la longueur n'est pas exactement
     /// `largeur × hauteur × 4` octets.
     TextureLength,
+    /// Un décalage de sur-éclairement au-delà de [`MAX_OVERBRIGHT`].
+    ///
+    /// [`MAX_OVERBRIGHT`]: crate::MAX_OVERBRIGHT
+    Overbright,
 }
 
 /// Le résultat d'un appel du noyau.

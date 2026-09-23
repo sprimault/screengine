@@ -51,8 +51,21 @@ publié, et explique les conventions du dépôt à qui y contribue.
 - L'API Rust accepte des sommets portant un second jeu de coordonnées, celui
   des lightmaps : `VertexUv2` et `Context::submit_each_lit`. Les coordonnées
   traversent la projection et le découpage, et leurs équations de plan se
-  rangent dans un tableau annexe du contexte. **Rien ne les lit encore** : une
-  scène soumise par ce chemin rend exactement l'image qu'elle rendrait sans lui.
+  rangent dans un tableau annexe du contexte.
+- Les lightmaps rendent. Une lightmap se charge comme une texture, se lit
+  toujours en bilinéaire et par sa propre chaîne de mipmaps, et se combine au
+  texel par `t·(l + 1) >> 8` — la forme qui rend le texel intact sous pleine
+  lumière. Un triangle non texturé s'éclaire aussi, sa couleur tenant lieu de
+  texel. Le sur-éclairement se règle par `Context::set_overbright`, de zéro à
+  deux, et vaut zéro par défaut.
+
+### Modifié
+
+- `docs/abi.md` annonçait qu'une lightmap n'aurait pas de mipmaps, au motif
+  qu'elle n'est jamais réduite. C'est vrai en intérieur et faux dès qu'une
+  surface s'éloigne au-delà de quelques dizaines de mètres, ce qu'un décor à
+  ciel ouvert fait par construction. La clause est amendée, et la chaîne est
+  engendrée comme pour une texture.
 
 ***
 
@@ -61,8 +74,21 @@ publié, et explique les conventions du dépôt à qui y contribue.
 - The Rust API accepts vertices carrying a second set of coordinates, the one
   used by lightmaps: `VertexUv2` and `Context::submit_each_lit`. Those
   coordinates travel through projection and clipping, and their plane equations
-  are stored in a side table of the context. **Nothing reads them yet**: a scene
-  submitted through this path renders exactly the image it would without it.
+  are stored in a side table of the context.
+- Lightmaps now render. A lightmap loads like a texture, is always read
+  bilinearly and through its own mipmap chain, and combines with the texel as
+  `t·(l + 1) >> 8` — the form that leaves the texel untouched under full light.
+  An untextured triangle is lit as well, its colour standing in for the texel.
+  Overbright is set through `Context::set_overbright`, from zero to two, and
+  defaults to zero.
+
+### Changed
+
+- `docs/abi.md` stated that a lightmap would have no mipmaps, on the grounds
+  that it is never minified. That holds indoors and stops holding as soon as a
+  surface moves a few dozen metres away, which an open-sky set does by
+  construction. The clause is amended, and the chain is generated as for a
+  texture.
 
 ## [0.2.1] — 2026-09-23
 

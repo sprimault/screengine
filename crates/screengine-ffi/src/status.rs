@@ -106,6 +106,9 @@ pub(crate) fn message_of(error: Error) -> &'static str {
         Error::InvalidArgument(Argument::TextureSize) => {
             "invalid texture size: each side must be a power of two between 1 and 2048"
         }
+        Error::InvalidArgument(Argument::Overbright) => {
+            "invalid overbright shift: must be 0, 1 or 2"
+        }
         Error::InvalidArgument(Argument::TextureLength) => {
             "pixel block of the wrong length: needs width x height x 4 bytes"
         }
