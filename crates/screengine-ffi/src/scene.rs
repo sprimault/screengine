@@ -11,7 +11,7 @@
 //! nouvelle et une fonction nouvelle, ce que la règle d'extension prévoit — un
 //! champ qui dort en attendant ce jour-là serait un pari sur sa forme.
 
-use screengine::{Affine3, Camera, Color, Filter, Quat, Vec3, VertexUv};
+use screengine::{Affine3, Camera, Color, Filter, Quat, Vec3, VertexUv, VertexUv2};
 
 use crate::entry::AbiError;
 
@@ -215,12 +215,69 @@ impl ScgVertexUv {
     }
 }
 
+/// A vertex carrying a second set of coordinates, the one a lightmap is read
+/// with.
+///
+/// Twenty-eight bytes, offsets 0 to 24 on every target, with no padding.
+///
+/// **A separate type rather than two more fields on `ScgVertexUv`**, which is
+/// published and never widens: a host that lights nothing keeps writing five
+/// floats per vertex.
+///
+/// The two sets are independent, and that is the whole point: a wall repeats
+/// its texture several times over and stretches its lightmap once across its
+/// whole extent. Both are in texels of their own image, and both are bounded
+/// the same way.
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct ScgVertexUv2 {
+    /// X coordinate, in object space.
+    pub x: f32,
+    /// Y coordinate.
+    pub y: f32,
+    /// Z coordinate.
+    pub z: f32,
+    /// Texture abscissa, in texels.
+    pub u: f32,
+    /// Texture ordinate, in texels.
+    pub v: f32,
+    /// Lightmap abscissa, in texels of the lightmap.
+    pub u2: f32,
+    /// Lightmap ordinate, in texels of the lightmap.
+    pub v2: f32,
+}
+
+impl ScgVertexUv2 {
+    /// Le sommet du noyau.
+    pub(crate) fn to_core(self) -> VertexUv2 {
+        VertexUv2 {
+            position: Vec3::new(self.x, self.y, self.z),
+            u: self.u,
+            v: self.v,
+            u2: self.u2,
+            v2: self.v2,
+        }
+    }
+}
+
 /// Refuse un lot dont un sommet texturé n'est pas fini.
 ///
 /// Même raison que pour les sommets sans texture : le noyau n'a pas de mot
 /// pour une coordonnée que l'hôte lui a donnée non finie, et la traiterait
 /// comme une donnée.
 pub(crate) fn check_finite_uv(vertices: &[ScgVertexUv]) -> Result<(), AbiError> {
+    let finite = vertices
+        .iter()
+        .all(|v| v.x.is_finite() && v.y.is_finite() && v.z.is_finite());
+    if finite {
+        Ok(())
+    } else {
+        Err(AbiError::VERTEX_NOT_FINITE)
+    }
+}
+
+/// La même, pour les sommets éclairés.
+pub(crate) fn check_finite_uv2(vertices: &[ScgVertexUv2]) -> Result<(), AbiError> {
     let finite = vertices
         .iter()
         .all(|v| v.x.is_finite() && v.y.is_finite() && v.z.is_finite());

@@ -252,6 +252,36 @@ typedef struct ScgVertexUv {
   float v;
 } ScgVertexUv;
 
+// A vertex carrying a second set of coordinates, the one a lightmap is read
+// with.
+//
+// Twenty-eight bytes, offsets 0 to 24 on every target, with no padding.
+//
+// **A separate type rather than two more fields on `ScgVertexUv`**, which is
+// published and never widens: a host that lights nothing keeps writing five
+// floats per vertex.
+//
+// The two sets are independent, and that is the whole point: a wall repeats
+// its texture several times over and stretches its lightmap once across its
+// whole extent. Both are in texels of their own image, and both are bounded
+// the same way.
+typedef struct ScgVertexUv2 {
+  // X coordinate, in object space.
+  float x;
+  // Y coordinate.
+  float y;
+  // Z coordinate.
+  float z;
+  // Texture abscissa, in texels.
+  float u;
+  // Texture ordinate, in texels.
+  float v;
+  // Lightmap abscissa, in texels of the lightmap.
+  float u2;
+  // Lightmap ordinate, in texels of the lightmap.
+  float v2;
+} ScgVertexUv2;
+
 #ifdef __cplusplus
 extern "C" {
 #endif // __cplusplus
@@ -317,6 +347,26 @@ int32_t scg_set_camera(struct ScgContext *ctx, const struct ScgCamera *camera);
 //
 // `ctx` is a live handle used by no other thread during the call.
 int32_t scg_set_filter(struct ScgContext *ctx, uint32_t filter);
+
+// Sets how much lit surfaces are brightened, from the next frames on.
+//
+// `shift` is `0`, `1` or `2`; anything else is `SCG_ERR_INVALID_ARGUMENT`,
+// and the context keeps the value it had.
+//
+// **Zero is the default, and it is the faithful setting**: under full light a
+// texel comes out untouched, and never brighter. It is also a dull scene —
+// a real lightmap reaches white nowhere, so every surface ends up darker than
+// its texture. One or two double or quadruple the combined value, saturating
+// where light is strong, and that is what gives a lit scene its range.
+//
+// Rejected with `SCG_ERR_INVALID_STATE` between `scg_frame_begin` and
+// `scg_frame_end`, for the same reason as `scg_set_filter`: a frame whose
+// tiles did not all share one setting is described by nothing.
+//
+// # Safety
+//
+// `ctx` is a live handle used by no other thread during the call.
+int32_t scg_set_overbright(struct ScgContext *ctx, uint32_t shift);
 
 // Submits a batch of triangles to the frame being recorded.
 //
@@ -517,6 +567,41 @@ int32_t scg_submit_textured(struct ScgContext *ctx,
                             uint32_t triangle_count,
                             const struct ScgTexture *texture);
 
+// Submits a batch of triangles lit by a lightmap.
+//
+// Same contract as `scg_submit_textured`, with two differences: the vertices
+// carry a second set of coordinates, and the batch carries a lightmap on top
+// of its texture. Both apply to the whole batch.
+//
+// **`texture` may be null, and `lightmap` may not.** That asymmetry is
+// deliberate and is the one thing to get right here: a plain wall lit by a
+// lightmap is the commonest surface of a set, and it renders `colour x
+// lightmap`, each triangle's own colour standing in for the texel. A null
+// `lightmap`, on the other hand, is `SCG_ERR_NULL` — a batch without one has
+// no business on this path, and `scg_submit` or `scg_submit_textured` renders
+// it.
+//
+// Where `texture` is given, each triangle's colour is ignored exactly as on
+// `scg_submit_textured`.
+//
+// The lightmap is read bilinearly whatever `scg_set_filter` says, and through
+// its own mipmap chain. The engine keeps its own strong reference to both
+// images until the end of the frame: a host may destroy them on return.
+//
+// # Safety
+//
+// Same preconditions as `scg_submit`, `vertices` pointing to `vertex_count`
+// readable `ScgVertexUv2`; `lightmap` must be a live handle from
+// `scg_texture_load`, and `texture` must be null or such a handle.
+int32_t scg_submit_lit(struct ScgContext *ctx,
+                       const struct ScgMat4 *model,
+                       const struct ScgVertexUv2 *vertices,
+                       uint32_t vertex_count,
+                       const struct ScgTriangle *triangles,
+                       uint32_t triangle_count,
+                       const struct ScgTexture *texture,
+                       const struct ScgTexture *lightmap);
+
 #ifdef __cplusplus
 }  // extern "C"
 #endif  // __cplusplus
@@ -551,6 +636,12 @@ SCREENGINE_LAYOUT_ASSERT(sizeof(ScgVertexUv) == 20, "ScgVertexUv changed size");
 SCREENGINE_LAYOUT_ASSERT(offsetof(ScgVertexUv, z) == 8, "ScgVertexUv.z moved");
 SCREENGINE_LAYOUT_ASSERT(offsetof(ScgVertexUv, u) == 12, "ScgVertexUv.u moved");
 SCREENGINE_LAYOUT_ASSERT(offsetof(ScgVertexUv, v) == 16, "ScgVertexUv.v moved");
+SCREENGINE_LAYOUT_ASSERT(sizeof(ScgVertexUv2) == 28, "ScgVertexUv2 changed size");
+SCREENGINE_LAYOUT_ASSERT(offsetof(ScgVertexUv2, z) == 8, "ScgVertexUv2.z moved");
+SCREENGINE_LAYOUT_ASSERT(offsetof(ScgVertexUv2, u) == 12, "ScgVertexUv2.u moved");
+SCREENGINE_LAYOUT_ASSERT(offsetof(ScgVertexUv2, v) == 16, "ScgVertexUv2.v moved");
+SCREENGINE_LAYOUT_ASSERT(offsetof(ScgVertexUv2, u2) == 20, "ScgVertexUv2.u2 moved");
+SCREENGINE_LAYOUT_ASSERT(offsetof(ScgVertexUv2, v2) == 24, "ScgVertexUv2.v2 moved");
 SCREENGINE_LAYOUT_ASSERT(sizeof(ScgTextureDesc) == 24, "ScgTextureDesc changed size");
 SCREENGINE_LAYOUT_ASSERT(offsetof(ScgTextureDesc, height) == 4, "ScgTextureDesc.height moved");
 SCREENGINE_LAYOUT_ASSERT(offsetof(ScgTextureDesc, format) == 8, "ScgTextureDesc.format moved");

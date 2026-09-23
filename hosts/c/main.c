@@ -204,6 +204,55 @@ static const ScgTriangle FLOOR_TRIANGLES[2] = {
     { 0, 2, 3, 0xFF, 0xFF, 0xFF, 0xFF },
 };
 
+/* La scène `lumiere` : un sol texturé qui fuit et un mur uni au fond, tous
+ * deux éclairés par la même lightmap. Les deux chemins éclairés dans une seule
+ * image — `texel x lightmap` au sol, `couleur x lightmap` au mur —, et c'est
+ * le second que cet hôte serait seul à ne pas emprunter si on l'omettait. */
+enum { LIGHT_SIDE = 16 };
+
+/* Les coordonnées de lightmap vont d'un demi-texel à un demi-texel du bord
+ * opposé : une lightmap ne se pave pas, et le bilinéaire irait chercher son
+ * voisin par le repli. */
+static const ScgVertexUv2 LIT_FLOOR[4] = {
+    {  2.0f, -16.0f, -1.2f,   2.0f * 8.0f, -16.0f * 8.0f,  0.5f,  0.5f },
+    { 40.0f, -16.0f, -1.2f,  40.0f * 8.0f, -16.0f * 8.0f, 15.5f,  0.5f },
+    { 40.0f,  16.0f, -1.2f,  40.0f * 8.0f,  16.0f * 8.0f, 15.5f, 15.5f },
+    {  2.0f,  16.0f, -1.2f,   2.0f * 8.0f,  16.0f * 8.0f,  0.5f, 15.5f },
+};
+
+/* Le mur, sans texture : sa densité est nulle, donc ses coordonnées de texture
+ * aussi, et c'est la couleur du triangle qui tient lieu de texel. */
+static const ScgVertexUv2 LIT_WALL[4] = {
+    { 40.0f, -16.0f, -1.2f, 0.0f, 0.0f,  0.5f,  0.5f },
+    { 40.0f, -16.0f, 10.0f, 0.0f, 0.0f, 15.5f,  0.5f },
+    { 40.0f,  16.0f, 10.0f, 0.0f, 0.0f, 15.5f, 15.5f },
+    { 40.0f,  16.0f, -1.2f, 0.0f, 0.0f,  0.5f, 15.5f },
+};
+
+static const ScgTriangle WALL_TRIANGLES[2] = {
+    { 0, 1, 2, 0xC0, 0xB0, 0x90, 0xFF },
+    { 0, 2, 3, 0xC0, 0xB0, 0x90, 0xFF },
+};
+
+/* Écrit le dégradé de lightmap dans `pixels`, qui couvre `LIGHT_SIDE` au carré
+ * texels de quatre octets.
+ *
+ * Les deux axes n'y font pas la même chose, et c'est voulu : un dégradé
+ * symétrique laisserait passer un axe échangé entre les deux jeux de
+ * coordonnées. Recopié de la suite de conformance, teinte pour teinte. */
+static void make_gradient(uint8_t *pixels)
+{
+    for (uint32_t v = 0; v < LIGHT_SIDE; v++) {
+        for (uint32_t u = 0; u < LIGHT_SIDE; u++) {
+            uint8_t *texel = pixels + ((size_t)v * LIGHT_SIDE + u) * 4;
+            texel[0] = (uint8_t)(32 + u * 223 / (LIGHT_SIDE - 1));
+            texel[1] = (uint8_t)(32 + ((u + v) / 2) * 223 / (LIGHT_SIDE - 1));
+            texel[2] = (uint8_t)(32 + v * 223 / (LIGHT_SIDE - 1));
+            texel[3] = 0xFF;
+        }
+    }
+}
+
 /* Écrit le damier procédural dans `pixels`, qui couvre `FLOOR_SIDE` au carré
  * texels de quatre octets.
  *
@@ -490,6 +539,86 @@ static uint64_t render_textured(int *ok, uint32_t filter)
     return hash;
 }
 
+/* Rend la scène éclairée et en donne l'empreinte.
+ *
+ * Deux lots : le sol, texturé et éclairé, puis le mur, éclairé seul. Le second
+ * passe une texture nulle, ce que ce point d'entrée accepte là où
+ * `scg_submit_textured` le refuse — c'est l'asymétrie que le header signale,
+ * et cet hôte l'exerce pour de bon. */
+static uint64_t render_lit(int *ok)
+{
+    ScgContextConfig config = scene_config();
+    ScgContext *ctx = NULL;
+    ScgTexture *texture = NULL;
+    ScgTexture *lightmap = NULL;
+    uint8_t *pixels = malloc((size_t)STRIDE * HEIGHT * 4);
+    uint8_t *texels = malloc((size_t)FLOOR_SIDE * FLOOR_SIDE * 4);
+    uint8_t *luxels = malloc((size_t)LIGHT_SIDE * LIGHT_SIDE * 4);
+    uint64_t hash = 0;
+
+    *ok = 0;
+    if (pixels == NULL || texels == NULL || luxels == NULL) {
+        check(0, "allocation des tampons de la scène éclairée");
+        free(pixels);
+        free(texels);
+        free(luxels);
+        return 0;
+    }
+    make_checker(texels);
+    make_gradient(luxels);
+
+    ScgTextureDesc desc;
+    memset(&desc, 0, sizeof desc);
+    desc.width = FLOOR_SIDE;
+    desc.height = FLOOR_SIDE;
+    desc.format = SCG_TEXTURE_FORMAT_RGBA8;
+    int loaded = scg_texture_load(&desc, texels, (size_t)FLOOR_SIDE * FLOOR_SIDE * 4, &texture);
+    check(loaded == SCG_OK, "la texture du sol se charge");
+
+    desc.width = LIGHT_SIDE;
+    desc.height = LIGHT_SIDE;
+    int lit = scg_texture_load(&desc, luxels, (size_t)LIGHT_SIDE * LIGHT_SIDE * 4, &lightmap);
+    check(lit == SCG_OK, "la lightmap se charge par le meme chemin");
+
+    check(scg_create(&config, &ctx) == SCG_OK, "création du contexte éclairé");
+
+    if (loaded == SCG_OK && lit == SCG_OK && ctx != NULL) {
+        /* Une lightmap nulle est refusée, elle : sans elle, ce lot n'a rien à
+         * faire sur ce chemin. */
+        int32_t refused = scg_submit_lit(ctx, &IDENTITY, LIT_FLOOR, 4,
+                                         FLOOR_TRIANGLES, 2, texture, NULL);
+        check(refused == SCG_ERR_NULL, "une lightmap nulle est refusée");
+
+        int32_t code = scg_submit_lit(ctx, &IDENTITY, LIT_FLOOR, 4,
+                                      FLOOR_TRIANGLES, 2, texture, lightmap);
+        check(code == SCG_OK, "le sol texturé et éclairé est accepté");
+
+        code = scg_submit_lit(ctx, &IDENTITY, LIT_WALL, 4,
+                              WALL_TRIANGLES, 2, NULL, lightmap);
+        check(code == SCG_OK, "le mur uni et éclairé est accepté");
+
+        /* Détruites avant le rendu, comme la texture de la scène précédente :
+         * le moteur garde ses propres références jusqu'à la fin de l'image. */
+        scg_texture_destroy(texture);
+        scg_texture_destroy(lightmap);
+        texture = NULL;
+        lightmap = NULL;
+
+        code = scg_frame_end(ctx, pixels, STRIDE);
+        check(code == SCG_OK, "l'image éclairée se rend");
+        *ok = code == SCG_OK;
+        hash = fingerprint(pixels, WIDTH, HEIGHT, STRIDE);
+    }
+
+    scg_texture_destroy(texture);
+    scg_texture_destroy(lightmap);
+    scg_destroy(ctx);
+    free(pixels);
+    free(texels);
+    free(luxels);
+    return hash;
+}
+
 /* Toutes les vérifications, puis les empreintes sur la sortie standard, une
  * par ligne et dans l'ordre que le Makefile attend. */
 int main(void)
@@ -517,12 +646,16 @@ int main(void)
     int bilinear_ok = 0;
     uint64_t bilinear = render_textured(&bilinear_ok, SCG_FILTER_BILINEAR);
 
-    if (failures > 0 || !ok || !textured_ok || !bilinear_ok) {
+    int lit_ok = 0;
+    uint64_t lit = render_lit(&lit_ok);
+
+    if (failures > 0 || !ok || !textured_ok || !bilinear_ok || !lit_ok) {
         fprintf(stderr, "%d vérification(s) en échec\n", failures);
         return 1;
     }
     printf("%016llx\n", (unsigned long long)hash);
     printf("%016llx\n", (unsigned long long)textured);
     printf("%016llx\n", (unsigned long long)bilinear);
+    printf("%016llx\n", (unsigned long long)lit);
     return 0;
 }

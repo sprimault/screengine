@@ -190,6 +190,102 @@ public final class Test {
         return code == Screengine.OK ? hash : null;
     }
 
+    /** Côté de la lightmap de la scène {@code lumiere}, en texels. */
+    private static final int LIGHT_SIDE = 16;
+
+    /**
+     * Le dégradé de lightmap, recopié de la suite de conformance.
+     *
+     * <p>Les deux axes n'y font pas la même chose : un dégradé symétrique
+     * laisserait passer un axe échangé entre les deux jeux de coordonnées.
+     *
+     * @return {@code LIGHT_SIDE} au carré texels de quatre octets
+     */
+    private static byte[] makeGradient() {
+        byte[] luxels = new byte[LIGHT_SIDE * LIGHT_SIDE * 4];
+        for (int v = 0; v < LIGHT_SIDE; v++) {
+            for (int u = 0; u < LIGHT_SIDE; u++) {
+                int base = (v * LIGHT_SIDE + u) * 4;
+                luxels[base] = (byte) (32 + u * 223 / (LIGHT_SIDE - 1));
+                luxels[base + 1] = (byte) (32 + (u + v) / 2 * 223 / (LIGHT_SIDE - 1));
+                luxels[base + 2] = (byte) (32 + v * 223 / (LIGHT_SIDE - 1));
+                luxels[base + 3] = (byte) 0xFF;
+            }
+        }
+        return luxels;
+    }
+
+    /**
+     * Rend la scène éclairée, ou {@code null} si le rendu a échoué.
+     *
+     * <p>Deux lots : le sol, texturé et éclairé, puis le mur, éclairé seul. Le
+     * second passe une texture nulle, ce que ce point d'entrée accepte là où
+     * {@code submitTextured} la refuse — l'asymétrie que le header signale, et
+     * que cet hôte exerce pour de bon.
+     *
+     * @return l'empreinte
+     */
+    private static String renderLit() {
+        long texture = Screengine.textureLoad(FLOOR_SIDE, FLOOR_SIDE, makeChecker());
+        check(texture != 0, "la texture du sol se charge");
+        long lightmap = Screengine.textureLoad(LIGHT_SIDE, LIGHT_SIDE, makeGradient());
+        check(lightmap != 0, "la lightmap se charge par le meme chemin");
+
+        long[] out = {0};
+        if (texture == 0 || lightmap == 0
+                || Screengine.create(sceneConfig(), out) != Screengine.OK) {
+            check(false, "création du contexte éclairé");
+            return null;
+        }
+
+        float[] model = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
+        // Sept flottants par sommet : la position, u et v en texels, puis u2
+        // et v2 en texels de la lightmap. Celles-ci vont d'un demi-texel à un
+        // demi-texel du bord opposé : une lightmap ne se pave pas, et le
+        // bilinéaire irait autrement chercher son voisin par le repli.
+        float[] floor = {
+            2.0f, -16.0f, -1.2f, 2.0f * 8.0f, -16.0f * 8.0f, 0.5f, 0.5f,
+            40.0f, -16.0f, -1.2f, 40.0f * 8.0f, -16.0f * 8.0f, 15.5f, 0.5f,
+            40.0f, 16.0f, -1.2f, 40.0f * 8.0f, 16.0f * 8.0f, 15.5f, 15.5f,
+            2.0f, 16.0f, -1.2f, 2.0f * 8.0f, 16.0f * 8.0f, 0.5f, 15.5f,
+        };
+        float[] wall = {
+            40.0f, -16.0f, -1.2f, 0.0f, 0.0f, 0.5f, 0.5f,
+            40.0f, -16.0f, 10.0f, 0.0f, 0.0f, 15.5f, 0.5f,
+            40.0f, 16.0f, 10.0f, 0.0f, 0.0f, 15.5f, 15.5f,
+            40.0f, 16.0f, -1.2f, 0.0f, 0.0f, 0.5f, 15.5f,
+        };
+        int[] indices = {0, 1, 2, 0, 2, 3};
+        byte[] white = {
+            (byte) 0xFF, (byte) 0xFF, (byte) 0xFF, (byte) 0xFF,
+            (byte) 0xFF, (byte) 0xFF, (byte) 0xFF, (byte) 0xFF,
+        };
+        byte[] stone = {
+            (byte) 0xC0, (byte) 0xB0, (byte) 0x90, (byte) 0xFF,
+            (byte) 0xC0, (byte) 0xB0, (byte) 0x90, (byte) 0xFF,
+        };
+
+        // Une lightmap nulle est refusée, elle : sans elle, ce lot n'a rien à
+        // faire sur ce chemin.
+        check(Screengine.submitLit(out[0], model, floor, indices, white, texture, 0)
+                == Screengine.ERR_NULL, "une lightmap nulle est refusée");
+        check(Screengine.submitLit(out[0], model, floor, indices, white, texture, lightmap)
+                == Screengine.OK, "le sol texturé et éclairé est accepté");
+        check(Screengine.submitLit(out[0], model, wall, indices, stone, 0, lightmap)
+                == Screengine.OK, "le mur uni et éclairé est accepté");
+        Screengine.textureDestroy(texture);
+        Screengine.textureDestroy(lightmap);
+
+        int body = STRIDE * HEIGHT * Screengine.BYTES_PER_PIXEL;
+        ByteBuffer block = ByteBuffer.allocateDirect(body);
+        int code = Screengine.frameEnd(out[0], block, 0, STRIDE);
+        check(code == Screengine.OK, "l'image éclairée se rend");
+
+        String hash = fingerprint(block, 0, STRIDE);
+        Screengine.destroy(out[0]);
+        return code == Screengine.OK ? hash : null;
+    }
+
     /**
      * Vrai si le message est non vide quand on l'attend, et sans caractère de
      * contrôle venu d'un tampon non initialisé.
@@ -352,14 +448,16 @@ public final class Test {
         String hash = render();
         String textured = renderTextured(Screengine.FILTER_DITHER);
         String bilinear = renderTextured(Screengine.FILTER_BILINEAR);
+        String lit = renderLit();
 
-        if (failures > 0 || hash == null || textured == null || bilinear == null) {
+        if (failures > 0 || hash == null || textured == null || bilinear == null || lit == null) {
             System.err.println(failures + " vérification(s) en échec");
             System.exit(1);
         }
         System.out.println(hash);
         System.out.println(textured);
         System.out.println(bilinear);
+        System.out.println(lit);
         System.exit(0);
     }
 }

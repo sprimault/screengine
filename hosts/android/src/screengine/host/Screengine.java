@@ -204,4 +204,40 @@ public final class Screengine {
      * @return le code de retour
      */
     static native int setFilter(long ctx, int filter);
+
+    /**
+     * {@code scg_submit_lit}.
+     *
+     * Mêmes tableaux que {@link #submitTextured}, les sommets portant sept
+     * flottants au lieu de cinq : les cinq précédents, puis {@code u2} et
+     * {@code v2} en texels de la lightmap.
+     *
+     * {@code texture} vaut 0 pour un lot uni, que ce chemin accepte — c'est
+     * ainsi qu'un mur sans texture rend {@code couleur x lightmap}. Une
+     * {@code lightmap} à 0, en revanche, est refusée : un lot qui n'en a pas
+     * n'a rien à faire ici.
+     *
+     * @param ctx handle, ou 0
+     * @param model seize coefficients, par colonnes
+     * @param vertices sept flottants par sommet
+     * @param indices trois indices par triangle
+     * @param colors quatre octets R, G, B, A par triangle
+     * @param texture handle de la texture du lot, ou 0
+     * @param lightmap handle de sa lightmap
+     * @return le code de retour
+     */
+    static native int submitLit(long ctx, float[] model, float[] vertices, int[] indices,
+            byte[] colors, long texture, long lightmap);
+
+    /**
+     * {@code scg_set_overbright}.
+     *
+     * Le décalage vaut 0, 1 ou 2 ; une autre valeur traverse la couche JNI
+     * pour se faire refuser par la bibliothèque, qui seule fait foi.
+     *
+     * @param ctx handle, ou 0
+     * @param shift le décalage de sur-éclairement
+     * @return le code de retour
+     */
+    static native int setOverbright(long ctx, int shift);
 }

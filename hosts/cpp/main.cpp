@@ -181,6 +181,118 @@ std::vector<uint8_t> make_checker()
     return texels;
 }
 
+/// Le côté de la lightmap de la scène `lumiere`, en texels.
+constexpr uint32_t LIGHT_SIDE = 16;
+
+/// Le sol de `lumiere`, texturé comme le précédent et éclairé par-dessus.
+///
+/// Les coordonnées de lightmap vont d'un demi-texel à un demi-texel du bord
+/// opposé : une lightmap ne se pave pas, et le bilinéaire irait autrement
+/// chercher son voisin par le repli.
+constexpr ScgVertexUv2 LIT_FLOOR[4] = {
+    {  2.0f, -16.0f, -1.2f,   2.0f * 8.0f, -16.0f * 8.0f,  0.5f,  0.5f },
+    { 40.0f, -16.0f, -1.2f,  40.0f * 8.0f, -16.0f * 8.0f, 15.5f,  0.5f },
+    { 40.0f,  16.0f, -1.2f,  40.0f * 8.0f,  16.0f * 8.0f, 15.5f, 15.5f },
+    {  2.0f,  16.0f, -1.2f,   2.0f * 8.0f,  16.0f * 8.0f,  0.5f, 15.5f },
+};
+
+/// Le mur du fond, sans texture : c'est la couleur du triangle qui tient lieu
+/// de texel, et ses coordonnées de texture sont donc nulles.
+constexpr ScgVertexUv2 LIT_WALL[4] = {
+    { 40.0f, -16.0f, -1.2f, 0.0f, 0.0f,  0.5f,  0.5f },
+    { 40.0f, -16.0f, 10.0f, 0.0f, 0.0f, 15.5f,  0.5f },
+    { 40.0f,  16.0f, 10.0f, 0.0f, 0.0f, 15.5f, 15.5f },
+    { 40.0f,  16.0f, -1.2f, 0.0f, 0.0f,  0.5f, 15.5f },
+};
+
+/// Ses deux triangles, dont la couleur est celle du mur.
+constexpr ScgTriangle WALL_TRIANGLES[2] = {
+    { 0, 1, 2, 0xC0, 0xB0, 0x90, 0xFF },
+    { 0, 2, 3, 0xC0, 0xB0, 0x90, 0xFF },
+};
+
+/// Le dégradé de lightmap, recopié de la suite de conformance.
+///
+/// Les deux axes n'y font pas la même chose : un dégradé symétrique laisserait
+/// passer un axe échangé entre les deux jeux de coordonnées.
+std::vector<uint8_t> make_gradient()
+{
+    std::vector<uint8_t> luxels(static_cast<size_t>(LIGHT_SIDE) * LIGHT_SIDE * 4);
+    for (uint32_t v = 0; v < LIGHT_SIDE; v++) {
+        for (uint32_t u = 0; u < LIGHT_SIDE; u++) {
+            uint8_t *texel = luxels.data() + (static_cast<size_t>(v) * LIGHT_SIDE + u) * 4;
+            const auto scale = [](uint32_t c) {
+                return static_cast<uint8_t>(32 + c * 223 / (LIGHT_SIDE - 1));
+            };
+            texel[0] = scale(u);
+            texel[1] = scale((u + v) / 2);
+            texel[2] = scale(v);
+            texel[3] = 0xFF;
+        }
+    }
+    return luxels;
+}
+
+/// Rend la scène éclairée et hache son image.
+///
+/// Deux lots : le sol, texturé et éclairé, puis le mur, éclairé seul. Le
+/// second passe une texture nulle, ce que ce point d'entrée accepte là où
+/// `scg_submit_textured` la refuse — l'asymétrie que le header signale, et que
+/// cet hôte exerce pour de bon.
+uint64_t render_lit(bool &ok)
+{
+    ok = false;
+    ScgContextConfig config = scene_config();
+    ScgContext *ctx = nullptr;
+    ScgTexture *texture = nullptr;
+    ScgTexture *lightmap = nullptr;
+    const std::vector<uint8_t> texels = make_checker();
+    const std::vector<uint8_t> luxels = make_gradient();
+
+    ScgTextureDesc desc{};
+    desc.width = FLOOR_SIDE;
+    desc.height = FLOOR_SIDE;
+    desc.format = SCG_TEXTURE_FORMAT_RGBA8;
+    check(scg_texture_load(&desc, texels.data(), texels.size(), &texture) == SCG_OK,
+          "la texture du sol se charge");
+
+    desc.width = LIGHT_SIDE;
+    desc.height = LIGHT_SIDE;
+    check(scg_texture_load(&desc, luxels.data(), luxels.size(), &lightmap) == SCG_OK,
+          "la lightmap se charge par le meme chemin");
+
+    check(scg_create(&config, &ctx) == SCG_OK, "création du contexte éclairé");
+    if (texture == nullptr || lightmap == nullptr || ctx == nullptr) {
+        scg_texture_destroy(texture);
+        scg_texture_destroy(lightmap);
+        scg_destroy(ctx);
+        return 0;
+    }
+
+    // Une lightmap nulle est refusée, elle : sans elle, ce lot n'a rien à faire
+    // sur ce chemin.
+    check(scg_submit_lit(ctx, &IDENTITY, LIT_FLOOR, 4, FLOOR_TRIANGLES, 2, texture, nullptr)
+              == SCG_ERR_NULL,
+          "une lightmap nulle est refusée");
+    check(scg_submit_lit(ctx, &IDENTITY, LIT_FLOOR, 4, FLOOR_TRIANGLES, 2, texture, lightmap)
+              == SCG_OK,
+          "le sol texturé et éclairé est accepté");
+    check(scg_submit_lit(ctx, &IDENTITY, LIT_WALL, 4, WALL_TRIANGLES, 2, nullptr, lightmap)
+              == SCG_OK,
+          "le mur uni et éclairé est accepté");
+    scg_texture_destroy(texture);
+    scg_texture_destroy(lightmap);
+
+    std::vector<uint8_t> pixels(static_cast<size_t>(STRIDE) * HEIGHT * 4);
+    const int32_t code = scg_frame_end(ctx, pixels.data(), STRIDE);
+    check(code == SCG_OK, "l'image éclairée se rend");
+    ok = code == SCG_OK;
+
+    const uint64_t hash = fingerprint(pixels.data(), WIDTH, HEIGHT, STRIDE);
+    scg_destroy(ctx);
+    return hash;
+}
+
 /// Rend la scène texturée sous le filtrage demandé et hache son image.
 ///
 /// La texture est détruite avant le rendu, à dessein : le moteur en garde sa
@@ -467,12 +579,16 @@ int main()
     bool bilinear_ok = false;
     const uint64_t bilinear = render_textured(bilinear_ok, SCG_FILTER_BILINEAR);
 
-    if (failures > 0 || !ok || !textured_ok || !bilinear_ok) {
+    bool lit_ok = false;
+    const uint64_t lit = render_lit(lit_ok);
+
+    if (failures > 0 || !ok || !textured_ok || !bilinear_ok || !lit_ok) {
         std::fprintf(stderr, "%d vérification(s) en échec\n", failures);
         return 1;
     }
     std::printf("%016llx\n", static_cast<unsigned long long>(hash));
     std::printf("%016llx\n", static_cast<unsigned long long>(textured));
     std::printf("%016llx\n", static_cast<unsigned long long>(bilinear));
+    std::printf("%016llx\n", static_cast<unsigned long long>(lit));
     return 0;
 }
