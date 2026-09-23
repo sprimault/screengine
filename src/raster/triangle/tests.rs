@@ -1119,3 +1119,120 @@ fn le_tramage_ne_depend_pas_du_decoupage() {
         "le motif de tramage a suivi la fenêtre"
     );
 }
+
+/// Un segment qui ne touche pas le bout du span prend son appui au pixel
+/// suivant, et compte un pas par pixel du segment.
+///
+/// C'est le cas courant, celui des quinze seizièmes d'une ligne longue : la
+/// pente obtenue est celle d'un pas de pixel, et non celle d'un pas de segment.
+#[test]
+fn un_segment_courant_prend_appui_sur_le_pixel_suivant() {
+    assert_eq!(segment_slope_ends(32, 47, 200), (48, 16));
+    assert_eq!(segment_slope_ends(0, 15, 16), (16, 16));
+}
+
+/// Un segment qui finit sur le bout du span prend son appui sur ce bout, et
+/// perd le pas qui lui correspond.
+///
+/// Les deux vont ensemble : garder seize pas pour quinze intervalles
+/// sous-estimerait la pente d'un seizième sur le dernier segment de chaque
+/// ligne — le défaut que ce couple corrige. Et prendre appui un pixel plus loin
+/// évaluerait `near/w` hors du triangle, où il n'a plus de sens.
+#[test]
+fn un_segment_qui_finit_au_span_recule_son_appui_et_son_diviseur() {
+    assert_eq!(segment_slope_ends(32, 47, 47), (47, 15));
+    assert_eq!(segment_slope_ends(0, 9, 9), (9, 9));
+}
+
+/// La borne est celle du span, jamais celle de la boîte englobante.
+///
+/// Sur toute ligne d'un triangle non rectangle, le span s'arrête avant la
+/// boîte : c'est là que la distinction se joue, et une borne prise sur la boîte
+/// ferait retomber ce cas dans le précédent.
+#[test]
+fn la_borne_est_le_span_et_non_la_boite() {
+    let (sur_le_span, pas_du_span) = segment_slope_ends(32, 47, 47);
+    let (au_dela, pas_au_dela) = segment_slope_ends(32, 47, 385);
+
+    assert_eq!((sur_le_span, pas_du_span), (47, 15));
+    assert_eq!((au_dela, pas_au_dela), (48, 16));
+}
+
+/// Un segment d'un seul pixel au bout du span n'a aucun pas, et rend une pente
+/// nulle plutôt qu'une division par zéro.
+#[test]
+fn un_segment_d_un_seul_pixel_au_bout_du_span_ne_divise_pas_par_zero() {
+    let (appui, pas) = segment_slope_ends(47, 47, 47);
+
+    assert_eq!(appui, 47);
+    assert_eq!(pas, 1, "le diviseur ne descend jamais à zéro");
+}
+
+/// Un triangle texturé **entièrement contenu dans la fenêtre**, pointe à
+/// droite.
+///
+/// La géométrie compte : il faut que le sommet le plus à droite soit visible,
+/// donc qu'au moins une ligne porte son span jusqu'à la boîte, et que les
+/// autres s'arrêtent avant. Un sol qui déborde l'écran n'irait jamais jusqu'au
+/// bout d'une ligne et laisserait le cas intéressant hors du parcours.
+fn triangle_pointe_a_droite() -> Prepared {
+    use crate::math::{Projection, Vec3};
+
+    let p = Projection::new(W as u32, H as u32, 1.0, 0.1).unwrap_or_else(|_| unreachable!());
+    let at = |cote: f32, haut: f32, avant: f32| {
+        p.to_clip(Vec3::new(cote, haut, avant), avant * 32.0, cote * 32.0)
+            .expect("sommet projetable")
+    };
+    // Les deux sommets de droite partagent le même rapport `x/z`, donc la même
+    // abscisse à l'écran : le bord droit est vertical, et **chaque** ligne
+    // termine son span sur la boîte.
+    let corners = [
+        at(-1.0, 0.10, 2.0),
+        at(0.80, 0.90, 2.0),
+        at(0.40, 0.05, 1.0),
+    ];
+    let vertices = corners.map(|c| {
+        let v = p.to_vertex(c);
+        Vertex {
+            position: Point { x: v.x, y: v.y },
+            z: v.z,
+            s: v.s,
+            t: v.t,
+        }
+    });
+    prepare(vertices, 0, 0).expect("triangle visible")
+}
+
+/// L'image ne dépend pas de la boîte englobante du triangle, tant qu'elle
+/// majore le span.
+///
+/// C'est le contrôle du **câblage**, celui que les cas ci-dessus ne peuvent pas
+/// faire : ils donnent eux-mêmes la borne à la fonction, et resteraient verts
+/// si le remplissage lui passait la boîte au lieu du span. Ici, élargir la
+/// boîte sans toucher à un seul pixel couvert doit rendre exactement la même
+/// image — ce qui est faux dès que la borne vient de la boîte, puisque la pente
+/// du dernier segment de chaque ligne en dépend alors.
+///
+/// Élargir `x1` est licite et ne change rien d'autre : le span se résout par
+/// les fonctions de bord et reste borné par les arêtes, la boîte ne servant
+/// qu'à ouvrir le parcours.
+#[test]
+fn la_boite_englobante_ne_change_pas_la_texture() {
+    let texture = addressed(64);
+
+    let serre = triangle_pointe_a_droite();
+    let mut etroite = Paint::new();
+    fill(&mut etroite, CLIP, &serre, dithered(&texture));
+
+    let mut large = triangle_pointe_a_droite();
+    large.x1 = serre.x1 + 64;
+    let mut desserree = Paint::new();
+    fill(&mut desserree, CLIP, &large, dithered(&texture));
+
+    let peints = etroite.color.iter().filter(|c| **c != 0).count();
+    assert!(peints > 200, "{peints} pixels, le cas ne couvre rien");
+    assert!(
+        etroite.color == desserree.color,
+        "la boîte englobante a changé la texture"
+    );
+}

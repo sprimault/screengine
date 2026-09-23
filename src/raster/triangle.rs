@@ -399,7 +399,7 @@ pub fn fill<T: Target>(
                         let base = x - x.rem_euclid(SEGMENT);
                         let segment = (base.max(gl), (base + SEGMENT - 1).min(gr));
                         let last = segment.1.min(hi);
-                        fill_segment(target, triangle, sampling, y, segment, (x, last));
+                        fill_segment(target, triangle, sampling, y, segment, gr, (x, last));
                         x = last + 1;
                     }
                 }
@@ -440,6 +440,34 @@ const SEGMENT: i32 = 16;
 /// bornée à 2¹⁴ texels.
 const UV_SHIFT: u32 = 20;
 
+/// Le pixel d'appui de la pente d'un segment, et le nombre de pas qui l'en
+/// sépare du premier.
+///
+/// La pente d'un segment se prend entre son premier pixel et un point d'appui,
+/// divisée par le nombre de pas entre les deux. L'appui est normalement le
+/// pixel **suivant** le segment, pour que la pente soit celle d'un pas de pixel
+/// et non d'un pas de segment.
+///
+/// **Sauf au bout du span**, où ce pixel n'est plus couvert : `near/w` y est
+/// prolongé hors du triangle, où il peut s'annuler ou changer de signe, et il
+/// n'existe alors aucun quotient à prendre. La borne est donc `span_end`, la
+/// dernière abscisse couverte sur la ligne, et jamais celle de la boîte
+/// englobante — qui déborde le span sur toute ligne d'un triangle non
+/// rectangle.
+///
+/// **Le nombre de pas suit l'appui, et c'est ce qui garde la pente exacte** :
+/// les deux sont les moitiés d'une même division. Reculer l'appui sans reculer
+/// le diviseur sous-estimerait la pente d'un seizième sur le dernier segment de
+/// chaque ligne. Un segment d'un seul pixel n'a aucun pas, d'où le plancher à
+/// un, qui rend une pente nulle plutôt qu'une division par zéro.
+fn segment_slope_ends(from: i32, to: i32, span_end: i32) -> (i32, i64) {
+    if to < span_end {
+        (to + 1, i64::from(to - from + 1))
+    } else {
+        (to, i64::from((to - from).max(1)))
+    }
+}
+
 /// Remplit la part de `draw` qui tombe dans le segment `segment`, bornes
 /// comprises.
 ///
@@ -451,19 +479,21 @@ const UV_SHIFT: u32 = 20;
 /// `segment` ne dépend que du triangle et de la grille de l'image ; `draw` en
 /// est la part que la fenêtre laisse voir. Les séparer est ce qui rend la
 /// texture indépendante du découpage : tout part de la forme close, rien ne
-/// s'accumule d'une tuile à l'autre.
+/// s'accumule d'une tuile à l'autre. `span_end` est la dernière abscisse
+/// couverte sur cette ligne, et vient du span pour la même raison.
 fn fill_segment<T: Target>(
     target: &mut T,
     triangle: &Prepared,
     sampling: Sampling<'_>,
     y: i32,
     segment: (i32, i32),
+    span_end: i32,
     draw: (i32, i32),
 ) {
     let texture = sampling.texture;
     // Les écarts se recalculent ici plutôt que de traverser la signature :
     // deux soustractions par segment, contre deux paramètres de plus dans une
-    // liste qui en compte déjà six.
+    // liste qui en compte déjà sept.
     let ey = (py_of(y) - triangle.ref_y) as i64;
     let ex = |x: i32| (x * SUBPIXEL_SCALE + PIXEL_CENTER - triangle.ref_x) as i64;
     let depth_at = |x: i32| triangle.depth.at(ex(x), ey);
@@ -474,7 +504,6 @@ fn fill_segment<T: Target>(
     };
 
     let (from, to) = segment;
-    let steps = (to - from + 1) as i64;
     let first = uv_at(from);
     // **Le niveau se prend au maximum des deux extrémités**, et non au seul
     // point de division gauche : quand la densité double sur seize pixels, un
@@ -492,11 +521,8 @@ fn fill_segment<T: Target>(
         };
         at(from, first).max(at(to, uv_at(to)))
     };
-    // La valeur de fin se prend au pixel **suivant** le segment, pour que la
-    // pente soit celle d'un pas de pixel et non d'un pas de segment. Ce point
-    // est dans le span tant que le segment s'y termine ; à la fin du span, il
-    // vaut le dernier pixel couvert, faute de profondeur au-delà.
-    let after = uv_at(if to < triangle.x1 { to + 1 } else { to });
+    let (anchor, steps) = segment_slope_ends(from, to, span_end);
+    let after = uv_at(anchor);
     // `div_euclid` : la pente s'arrondit vers le bas des deux côtés de zéro, là
     // où `/` ferait un pas double autour de l'origine de la texture.
     let slope = [
