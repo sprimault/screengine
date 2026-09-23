@@ -36,17 +36,31 @@
 //!
 //! Noté le 2026-09-23, avant le premier lot de l'étape 3.
 //!
-//! # La référence, prise le 2026-09-23
+//! # La référence, reprise le 2026-09-23 après les lightmaps
 //!
 //! ```text
 //! plein cadre, tramage       0.69 ms    3.0 ns/pixel
-//! plein cadre, bilineaire    1.49 ms    6.5 ns/pixel
-//! scene, 600 triangles       7.11 ms   30.9 ns/pixel
+//! plein cadre, bilineaire    1.79 ms    7.8 ns/pixel
+//! scene, 600 triangles       7.08 ms   30.7 ns/pixel
 //! ```
 //!
-//! Poste de développement, 640×360, tuiles de 64, un seul thread. **Ces
-//! chiffres ne valent que comparés à eux-mêmes**, sur la même machine : une
-//! autre les déplacera tous, sans que rien n'ait changé dans le moteur.
+//! 640×360, tuiles de 64, un seul thread, sur une machine dédiée au repos —
+//! charge inférieure à 0,25 sur trente-deux cœurs. **Ces chiffres ne valent que
+//! comparés à eux-mêmes**, sur la même machine : une autre les déplacera tous,
+//! sans que rien n'ait changé dans le moteur.
+//!
+//! **Le relevé de charge et l'alternance des versions comparées ne sont pas du
+//! zèle.** Un poste de travail ordinaire rend cinq pour cent d'écart d'une
+//! exécution à l'autre, ce qui suffit à inventer une régression ou à en cacher
+//! une : les chiffres ci-dessus ont été établis en alternant deux tours, et les
+//! deux tours concordent à moins d'un pour cent.
+//!
+//! L'éclairage a coûté au passage, puis rendu : le second jeu de coordonnées a
+//! d'abord porté le plein cadre tramé de 3,1 à 3,9 ns/pixel, **y compris sur
+//! une scène sans lightmap**. Porter l'ombrage et le filtrage dans des types
+//! distincts, au lieu de les examiner à chaque pixel, l'a ramené sous sa valeur
+//! d'avant. Le bilinéaire, lui, garde une dizaine de pour cent : le test qu'on
+//! y a supprimé pesait peu devant quatre lectures de texel et leur mélange.
 //!
 //! Le rapport de 2,2 entre les deux filtrages est ce qu'on attend — quatre
 //! texels lus au lieu d'un, et leur mélange. La scène chargée est un **pire cas

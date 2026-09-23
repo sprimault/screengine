@@ -48,6 +48,16 @@ raisons étrangères au code, et son seuil finirait relevé jusqu'à ne plus rie
 mesurer. Les chiffres se comparent à la main, contre ceux que le fichier porte
 en commentaire.
 
+**Une mesure qu'on garde dit la charge de la machine au moment où elle a été
+prise, et alterne les versions comparées.** Sans la charge, un chiffre n'est pas
+une référence : on ne sait plus s'il vaut pour la machine au repos ou pour la
+machine qui compilait à côté. Sans l'alternance, la dérive thermique et ce qui
+démarre entre deux mesures s'imputent au code. Un poste de travail ordinaire
+rend des écarts de quelques pour cent d'une exécution à l'autre, ce qui suffit à
+masquer une régression réelle **ou** à en inventer une : une machine dédiée,
+mesurée au repos et en alternance, donne des tours reproductibles à moins d'un
+pour cent.
+
 Une seule chose y échoue, et elle ne mesure rien : **le contrôle de couverture**.
 Une scène mal cadrée ou prise de dos se chronomètre très bien et ne dit rien —
 c'est arrivé à l'écriture même de ce fichier, où les deux cas rendaient zéro

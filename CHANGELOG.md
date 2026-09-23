@@ -67,6 +67,10 @@ publié, et explique les conventions du dépôt à qui y contribue.
 
 ### Modifié
 
+- Le remplissage choisit son ombrage et son filtrage **une fois par segment**,
+  là où il les examinait à chaque pixel. Sur une scène sans lightmap, le
+  surcoût que l'éclairage avait introduit disparaît : le plein cadre tramé
+  revient sous sa valeur d'avant les lightmaps. L'image ne change pas d'un bit.
 - `docs/abi.md` annonçait qu'une lightmap n'aurait pas de mipmaps, au motif
   qu'elle n'est jamais réduite. C'est vrai en intérieur et faux dès qu'une
   surface s'éloigne au-delà de quelques dizaines de mètres, ce qu'un décor à
@@ -95,6 +99,10 @@ publié, et explique les conventions du dépôt à qui y contribue.
 
 ### Changed
 
+- Fill now picks its shading and its filtering **once per segment**, where it
+  used to test both at every pixel. On a scene without a lightmap, the overhead
+  lighting had introduced is gone: full-frame dithered fill comes back below
+  its pre-lightmap figure. The image does not change by a single bit.
 - `docs/abi.md` stated that a lightmap would have no mipmaps, on the grounds
   that it is never minified. That holds indoors and stops holding as soon as a
   surface moves a few dozen metres away, which an open-sky set does by
