@@ -280,6 +280,30 @@ function checkConstants(header) {
 }
 
 /**
+ * La liste des exports attendus est exactement celle des fonctions du header.
+ *
+ * Elle était recopiée à la main, alors que les constantes, elles, sont
+ * dérivées : une fonction ajoutée à l'ABI n'entrait dans cette liste que si
+ * quelqu'un y pensait, et son absence ne se voyait nulle part — le contrôle des
+ * exports du module ne vérifie que ce que la liste nomme.
+ *
+ * @param {string} header texte de `include/screengine.h`
+ */
+function checkExportList(header) {
+  const declared = new Set(
+    [...header.matchAll(/^[a-z].*?\b(scg_\w+)\(/gm)].map(([, name]) => name),
+  );
+  check(declared.size > 10, `le header déclare ${declared.size} fonctions scg_`);
+
+  for (const name of declared) {
+    check(scg.EXPORTS.includes(name), `${name} est dans la liste des exports`);
+  }
+  for (const name of scg.EXPORTS) {
+    check(declared.has(name), `${name} est déclarée par le header`);
+  }
+}
+
+/**
  * Les tailles de structures écrites dans `screengine.js` sont celles que le
  * header affirme.
  *
@@ -527,6 +551,7 @@ async function main() {
   const header = await readFile(headerPath, "utf8");
   checkConstants(header);
   checkLayout(header);
+  checkExportList(header);
   checkRefusals(engine);
   checkBuffers(engine);
   const hash = render(engine);

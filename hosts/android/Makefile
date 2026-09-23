@@ -25,6 +25,9 @@ OUT     ?= ../../.tmp/host-android
 TARGET  := $(or $(CARGO_TARGET_DIR),../../target)
 INCLUDE := ../../include
 
+# Le Makefile racine l'exporte : cette valeur ne sert qu'à un appel direct de
+# ce Makefile, et les deux ne doivent pas diverger — d'où le contrôle du
+# manifeste, plus bas, qui refuse de construire si elles le font.
 ANDROID_API  ?= 21
 NDK_VERSION  ?= 29.0.14206865
 BUILD_TOOLS  ?= 36.0.0
@@ -75,7 +78,7 @@ CFLAGS := -std=c11 -Wall -Wextra -Werror -O2 -I$(INCLUDE)
 
 JAVA_SOURCES := $(wildcard src/screengine/host/*.java)
 
-.PHONY: all run why-not apk emulator native dex
+.PHONY: all run why-not apk emulator native dex manifeste-verif
 
 # print-<VARIABLE> écrit une valeur et rien d'autre : l'intégration continue lit
 # les versions ici plutôt que de les recopier.
@@ -122,6 +125,18 @@ native: $(foreach abi,$(ABIS),$(OUT)/$(abi)/screengine-abi-static $(OUT)/$(abi)/
 
 # --release 8 : le bytecode que d8 accepte pour toute API minimale. L'encodage
 # est écrit : sans locale, javac lit les sources en US-ASCII.
+# Le manifeste porte son propre `minSdkVersion`, qu'aapt2 ne dérive pas de
+# `--min-sdk-version` : les deux valeurs coexistent, et rien ne les rapproche.
+# Une divergence produirait un APK dont le manifeste annonce un niveau que la
+# bibliothèque n'a pas, ce qui ne se voit qu'à l'installation sur un appareil
+# ancien — le seul endroit où personne ne regarde.
+manifeste-verif:
+	@declare=$$(sed -n 's/.*android:minSdkVersion="\([0-9]*\)".*/\1/p' AndroidManifest.xml); \
+	if [ "$$declare" != "$(ANDROID_API)" ]; then \
+	  echo "AndroidManifest.xml annonce minSdkVersion=$$declare, ANDROID_API vaut $(ANDROID_API)"; \
+	  exit 1; \
+	fi
+
 dex: $(JAVA_SOURCES)
 	@rm -rf $(OUT)/classes && mkdir -p $(OUT)/classes $(OUT)/dex
 	javac --release 8 -encoding UTF-8 -Xlint:-options -classpath $(ANDROID_JAR) -d $(OUT)/classes $(JAVA_SOURCES)
@@ -130,7 +145,7 @@ dex: $(JAVA_SOURCES)
 # L'APK n'est pas lancé par le test, mais construit par lui : une application qui
 # ne se construit plus se découvre ici plutôt que le jour où on la réclame.
 # Alignement sur des pages de 16 Ko, signature par une clé de débogage.
-apk: native dex
+apk: native dex manifeste-verif
 	@rm -rf $(OUT)/apk && mkdir -p $(OUT)/apk/lib
 	$(TOOLS)/aapt2 link --manifest AndroidManifest.xml -I $(ANDROID_JAR) \
 	  --min-sdk-version $(ANDROID_API) -o $(OUT)/apk/base.apk
