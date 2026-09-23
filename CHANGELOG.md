@@ -60,6 +60,13 @@ non opaque voyait ce canal ressortir, et un navigateur l'y composait ; il
 obtient maintenant une image opaque.
 
 ### Corrigé
+- API Rust : une fin d'image refusée — tampon trop court, `stride` faux —
+  refermait quand même l'image. `Frame::end` consomme la `Frame`, et son `Drop`
+  remettait le contexte en enregistrement alors que le noyau venait de laisser
+  l'image ouverte pour permettre une reprise ; l'appelant perdait sa scène, là
+  où un hôte C rappelle simplement `scg_frame_end`. Le `Drop` distingue
+  désormais une `Frame` abandonnée, qu'il referme, d'une fin tentée et refusée,
+  qui se reprend par `Context::end`.
 - `scg_frame_end` pouvait rendre `SCG_OK` alors qu'une tuile avait paniqué et
   que son rectangle n'était pas dessiné. Le contrat annonce `SCG_ERR_FAULTED`
   dans ce cas, et c'est désormais vrai quel que soit l'entrelacement : le
@@ -107,6 +114,12 @@ that channel come out, and a browser composited it; it now gets an opaque
 image.
 
 ### Fixed
+- Rust API: a refused frame end — buffer too short, wrong `stride` — closed the
+  frame anyway. `Frame::end` consumes the `Frame`, and its `Drop` put the
+  context back into recording although the engine had just left the frame open
+  so it could be retried; the caller lost its scene, where a C host simply
+  calls `scg_frame_end` again. `Drop` now tells an abandoned `Frame`, which it
+  closes, from an attempted and refused end, which `Context::end` retries.
 - `scg_frame_end` could return `SCG_OK` although a tile had panicked and its
   rectangle was never drawn. The contract states `SCG_ERR_FAULTED` in that
   case, and it now holds whatever the interleaving: the in-flight tile count

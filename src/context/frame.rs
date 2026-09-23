@@ -243,7 +243,9 @@ impl Context {
     /// Refuse par [`Error::InvalidState`] une image qui n'est pas commencée, ou
     /// dont une tuile se rend encore sur un autre thread ; l'image reste alors
     /// ouverte. Une sortie refusée la laisse ouverte aussi, pour que l'appelant
-    /// corrige son tampon et recommence.
+    /// corrige son tampon et recommence — **en rappelant cette fonction**, qui
+    /// ne prend qu'un `&self` et reste donc disponible quoi qu'il arrive à la
+    /// [`Frame`] qui l'avait appelée la première fois.
     pub fn end<O: Output>(&self, out: &mut O) -> Result<()> {
         if self
             .state
@@ -358,12 +360,23 @@ impl Context {
 #[derive(Debug)]
 pub struct Frame<'a> {
     context: &'a Context,
+    /// Vrai quand une fin d'image a été tentée et refusée.
+    ///
+    /// Le `Drop` referme l'image d'une `Frame` simplement abandonnée — sans
+    /// quoi le contexte resterait en rendu pour toujours. Mais une fin refusée
+    /// n'est pas un abandon : le noyau laisse alors l'image ouverte exprès,
+    /// pour que l'appelant corrige sa sortie et rappelle [`Context::end`]. La
+    /// refermer ici lui retirerait cette reprise, et sa scène avec.
+    attempted: bool,
 }
 
 impl<'a> Frame<'a> {
     /// Ouvre le rendu d'une image déjà répartie.
     pub(super) fn new(context: &'a Context) -> Self {
-        Self { context }
+        Self {
+            context,
+            attempted: false,
+        }
     }
 
     /// Le nombre de tuiles de l'image, numérotées ligne par ligne.
@@ -380,7 +393,22 @@ impl<'a> Frame<'a> {
     ///
     /// Appelée seule, elle rend l'image entière : c'est ce qui garde valide un
     /// hôte qui n'appelle jamais [`Frame::tile`].
-    pub fn end<O: Output>(self, out: &mut O) -> Result<()> {
+    ///
+    /// **Elle consomme la `Frame`, y compris quand elle échoue** — une sortie
+    /// trop courte, un `stride` faux. L'image, elle, reste alors ouverte, et se
+    /// termine en rappelant [`Context::end`] avec la sortie corrigée : cette
+    /// dernière ne prend qu'un `&self`, donc elle reste disponible une fois la
+    /// `Frame` partie. C'est le pendant exact d'un hôte C qui rappelle
+    /// `scg_frame_end` après un refus.
+    ///
+    /// Écarté : rendre la `Frame` à côté de l'erreur. Ça alourdirait la
+    /// signature de tout le monde, et casserait `?`, pour un cas qui a une
+    /// issue. Écarté aussi, prendre `&self` ici : la consommation est ce qui
+    /// garantit qu'une image close ne resserve pas.
+    pub fn end<O: Output>(mut self, out: &mut O) -> Result<()> {
+        // Noté avant l'appel, et non après : le `Drop` qui suit doit voir la
+        // tentative même si celle-ci panique.
+        self.attempted = true;
         self.context.end(out)
     }
 
@@ -431,6 +459,17 @@ impl<'a> Frame<'a> {
 /// contexte.
 impl Drop for Frame<'_> {
     fn drop(&mut self) {
+        // Une fin tentée décide elle-même de l'état : réussie, elle a déjà
+        // refermé ; refusée, elle a laissé l'image ouverte **exprès**, pour que
+        // l'appelant corrige sa sortie et rappelle [`Context::end`]. Refermer
+        // ici lui retirerait cette reprise et périmerait sa scène — et le
+        // chemin Rust ne vaudrait plus le chemin C, où un hôte rappelle
+        // simplement `scg_frame_end`.
+        if self.attempted {
+            return;
+        }
+        // Une `Frame` abandonnée, elle, doit refermer : sans quoi le contexte
+        // resterait en rendu pour toujours, sans personne pour l'en sortir.
         self.context.stale.store(true, Ordering::SeqCst);
         self.context.state.store(RECORDING, Ordering::SeqCst);
     }
