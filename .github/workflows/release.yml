@@ -152,6 +152,8 @@ jobs:
             "ndk;$(version NDK_VERSION)" "build-tools;$(version BUILD_TOOLS)" \
             "platforms;$(version PLATFORM)" > /dev/null
           echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/$(version NDK_VERSION)" >> "$GITHUB_ENV"
+          # Le niveau seul, dérivé de la plateforme : voir ci.yml.
+          echo "API_LEVEL=$(version PLATFORM | sed 's/^android-//')" >> "$GITHUB_ENV"
 
       # ci.yml n'écoute que les branches et les PR : sans ce garde-fou, un tag
       # posé sur un commit rouge publierait quand même. La conformance en fait
@@ -165,7 +167,7 @@ jobs:
         if: matrix.cible == 'android'
         uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
         with:
-          api-level: 36
+          api-level: ${{ env.API_LEVEL }}
           target: default
           arch: x86_64
           emulator-options: -no-window -no-audio -no-boot-anim -no-snapshot -gpu swiftshader_indirect
@@ -216,6 +218,39 @@ jobs:
       # contenu du paquet, doivent rendre l'empreinte de référence. C'est la
       # seule preuve qu'un intégrateur qui ouvre l'archive obtient une
       # bibliothèque qui se lie, se charge sous son nom, et rend la même image.
+      # Le module publié passe par le profil `release-wasm`, le seul à porter
+      # `strip = true` ; `make test-wasm` instancie `wasm-test`. Sans cette
+      # étape, le fichier distribué n'est chargé par personne avant de partir —
+      # et un `strip` qui emporterait un export ne se verrait que chez un
+      # intégrateur, dans un langage sans pile Rust à afficher.
+      - name: Éprouver l'archive wasm
+        if: matrix.cible == 'wasm32'
+        run: |
+          node hosts/web/test.js "$PAQUET/lib/screengine.wasm" "$PAQUET/include/screengine.h"
+
+      # Pas l'émulateur une seconde fois : ce que l'archive peut cacher et que
+      # les tests ne voient pas, c'est un `.so` d'une autre architecture rangé
+      # sous la mauvaise ABI, ou un alignement de pages qui refuse l'appareil.
+      # Les deux se lisent dans l'en-tête ELF, sans rien exécuter.
+      - name: Éprouver l'archive Android
+        if: matrix.cible == 'android'
+        run: |
+          declare -A machine=( [arm64-v8a]=AArch64 [armeabi-v7a]=ARM [x86_64]=Advanced )
+          for abi in "${!machine[@]}"; do
+            so="$PAQUET/lib/$abi/libscreengine.so"
+            readelf -h "$so" | grep -q "${machine[$abi]}" \
+              || { echo "$abi : mauvaise architecture" >&2; exit 1; }
+            readelf -d "$so" | grep -q 'SONAME.*\[libscreengine.so\]' \
+              || { echo "$abi : SONAME absent" >&2; exit 1; }
+            # 16 Ko sur les ABI 64 bits, que le NDK r29 aligne sans option ;
+            # armv7 reste à 4 Ko, et c'est attendu — les pages de 16 Ko
+            # n'existent que sur les appareils 64 bits.
+            attendu=$([ "$abi" = armeabi-v7a ] && echo 0x1000 || echo 0x4000)
+            readelf -l "$so" | grep -q "$attendu" \
+              || { echo "$abi : alignement autre que $attendu" >&2; exit 1; }
+            echo "archive Android, $abi : architecture, SONAME et alignement"
+          done
+
       - name: Éprouver l'archive
         if: matrix.cible == 'windows_x64' || matrix.cible == 'linux_x64'
         run: |
@@ -234,10 +269,18 @@ jobs:
             hosts/cpp/build.cmd "$(w essai/cpp.exe)" "$(w essai)" "$(w "$PAQUET/lib/screengine.dll.lib")" "$(w "$PAQUET/include")" hosts/cpp/main.cpp
             cp "$PAQUET/lib/screengine.dll" essai/
           else
-            cc -std=c11 -O2 -I"$PAQUET/include" hosts/c/main.c "$PAQUET/lib/libscreengine.a" \
-              -lgcc_s -lutil -lrt -lpthread -lm -ldl -lc -o essai/c.exe
-            c++ -std=c++17 -O2 -I"$PAQUET/include" hosts/cpp/main.cpp -L"$PAQUET/lib" \
-              -Wl,-rpath,"$PWD/$PAQUET/lib" -lscreengine -ldl -o essai/cpp.exe
+            # Les Makefile des hôtes, pointés sur le contenu du paquet : leur
+            # `TARGET/PROFILE` désigne le répertoire de la bibliothèque, et
+            # `lib/` en tient lieu ici. Recopier leurs lignes de liaison — la
+            # liste des bibliothèques système, le rpath — les ferait diverger
+            # sans que rien ne le voie, puisque cette étape ne tourne qu'au tag.
+            for hote in c cpp; do
+              make -C "hosts/$hote" \
+                TARGET="$PWD/$PAQUET" PROFILE=lib \
+                INCLUDE="$PWD/$PAQUET/include" OUT="$PWD/essai/$hote" all
+            done
+            cp essai/c/screengine-abi essai/c.exe
+            cp essai/cpp/screengine-cpp essai/cpp.exe
             readelf -d "$PAQUET/lib/libscreengine.so" | grep -q 'SONAME.*\[libscreengine.so\]'
             readelf -d essai/cpp.exe | grep -q 'NEEDED.*\[libscreengine.so\]'
           fi
