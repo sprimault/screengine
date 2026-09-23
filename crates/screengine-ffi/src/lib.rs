@@ -34,7 +34,7 @@ use output::HostRows;
 
 pub use context::{ScgContext, ScgContextConfig};
 pub use scene::{
-    SCG_FILTER_BILINEAR, SCG_FILTER_DITHER, SCG_TEXTURE_FORMAT_RGBA8, ScgCamera, ScgMat4,
+    SCG_FILTER_BILINEAR, SCG_FILTER_DITHER, SCG_TEXTURE_FORMAT_RGBA8, ScgCamera, ScgLight, ScgMat4,
     ScgTextureDesc, ScgTriangle, ScgVertex, ScgVertexUv, ScgVertexUv2,
 };
 pub use status::{
@@ -264,6 +264,64 @@ pub unsafe extern "C" fn scg_clear_fog(ctx: *mut ScgContext) -> i32 {
 
     // SAFETY: précondition de la fonction — `ctx` est nul ou un handle vivant.
     unsafe { entry::with_context(ctx, clear) }
+}
+
+/// Replaces the dynamic lights of the frames to come.
+///
+/// At most eight; beyond that the whole call is rejected rather than
+/// truncated, since a half-lit scene looks exactly like one whose radii are
+/// wrong. A count of zero turns lighting off.
+///
+/// **Falloff is computed per vertex, when a batch is submitted**: lights set
+/// after a batch do not reach it. That is what lets a torch carried by the
+/// player light a set without the set being submitted again — provided it is
+/// set first.
+///
+/// **Once a light is set, it holds for the whole scene.** A surface out of
+/// range goes dark rather than keeping its colour: the boundary between a
+/// surface a light reaches and one it does not would otherwise be a hard step
+/// in the middle of continuous geometry.
+///
+/// A light whose position is not finite, or whose radius is not finite and
+/// strictly positive, is rejected: it would light nothing and divide by zero.
+///
+/// Rejected with `SCG_ERR_INVALID_STATE` during a frame, like every other
+/// frame setting.
+///
+/// # Safety
+///
+/// `ctx` is a live handle used by no other thread during the call, and
+/// `lights` points to `count` readable `ScgLight`. A count of zero allows a
+/// null pointer.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn scg_set_lights(
+    ctx: *mut ScgContext,
+    lights: *const ScgLight,
+    count: u32,
+) -> i32 {
+    let set = |mut core: entry::Core<'_>| {
+        // SAFETY: précondition de la fonction — le pointeur couvre son nombre
+        // d'éléments, et un nombre nul autorise un pointeur nul.
+        let lights = unsafe { slice_of(lights, count) };
+        let mut core_lights = [screengine::Light {
+            position: Vec3::ZERO,
+            radius: 1.0,
+            color: screengine::Color::new(0, 0, 0, 0xFF),
+        }; screengine::MAX_LIGHTS];
+        if lights.len() > core_lights.len() {
+            return Err(AbiError::from(CoreError::InvalidArgument(
+                Argument::LightCapacity,
+            )));
+        }
+        for (slot, light) in core_lights.iter_mut().zip(lights) {
+            *slot = light.to_core()?;
+        }
+        core.exclusive()?.set_lights(&core_lights[..lights.len()])?;
+        Ok(())
+    };
+
+    // SAFETY: précondition de la fonction — `ctx` est nul ou un handle vivant.
+    unsafe { entry::with_context(ctx, set) }
 }
 
 /// Submits a batch of triangles to the frame being recorded.

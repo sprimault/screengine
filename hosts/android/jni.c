@@ -406,6 +406,56 @@ static jint clear_fog(JNIEnv *env, jclass cls, jlong ctx)
     return scg_clear_fog((ScgContext *)(intptr_t)ctx);
 }
 
+/*
+ * scg_set_lights : les lumières arrivent en deux tableaux parallèles — quatre
+ * flottants de pose par lumière, trois octets de couleur —, parce que Java n'a
+ * pas de structure à disposition mémoire garantie. Le pont reconstitue les
+ * `ScgLight`, champ réservé compris.
+ */
+static jint set_lights(JNIEnv *env, jclass cls, jlong ctx, jfloatArray poses,
+                       jbyteArray colors)
+{
+    (void)cls;
+    if (poses == NULL || colors == NULL) {
+        return SCG_ERR_NULL;
+    }
+
+    jsize floats = (*env)->GetArrayLength(env, poses);
+    jsize channels = (*env)->GetArrayLength(env, colors);
+    if (floats % 4 != 0 || channels != floats / 4 * 3) {
+        return SCG_ERR_INVALID_ARGUMENT;
+    }
+
+    uint32_t count = (uint32_t)(floats / 4);
+    ScgLight *lights = calloc(count ? count : 1, sizeof *lights);
+    jfloat *raw_poses = calloc(floats ? (size_t)floats : 1, sizeof *raw_poses);
+    jbyte *raw_colors = calloc(channels ? (size_t)channels : 1, sizeof *raw_colors);
+    int32_t code = SCG_ERR_OUT_OF_MEMORY;
+
+    if (lights != NULL && raw_poses != NULL && raw_colors != NULL) {
+        (*env)->GetFloatArrayRegion(env, poses, 0, floats, raw_poses);
+        (*env)->GetByteArrayRegion(env, colors, 0, channels, raw_colors);
+        for (uint32_t i = 0; i < count; i++) {
+            lights[i].x = raw_poses[i * 4];
+            lights[i].y = raw_poses[i * 4 + 1];
+            lights[i].z = raw_poses[i * 4 + 2];
+            lights[i].radius = raw_poses[i * 4 + 3];
+            lights[i].r = (uint8_t)raw_colors[i * 3];
+            lights[i].g = (uint8_t)raw_colors[i * 3 + 1];
+            lights[i].b = (uint8_t)raw_colors[i * 3 + 2];
+            /* `calloc` l'a déjà mis à zéro ; écrit quand même, pour que le
+             * jour où ce tableau viendrait d'ailleurs, la clause tienne. */
+            lights[i]._reserved = 0;
+        }
+        code = scg_set_lights((ScgContext *)(intptr_t)ctx, lights, count);
+    }
+
+    free(lights);
+    free(raw_poses);
+    free(raw_colors);
+    return code;
+}
+
 /* Les méthodes `native` de la classe, avec leur signature JNI. */
 static const JNINativeMethod METHODS[] = {
     {"abiVersion", "()I", (void *)abi_version},
@@ -425,6 +475,7 @@ static const JNINativeMethod METHODS[] = {
     {"setOverbright", "(JI)I", (void *)set_overbright},
     {"setFog", "(JIIIFF)I", (void *)set_fog},
     {"clearFog", "(J)I", (void *)clear_fog},
+    {"setLights", "(J[F[B)I", (void *)set_lights},
 };
 
 /* Enregistre les méthodes ; un échec empêche le chargement de la bibliothèque. */

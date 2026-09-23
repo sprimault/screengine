@@ -156,6 +156,47 @@ typedef struct ScgCamera {
   float near_plane;
 } ScgCamera;
 
+// A point light that adds to the lighting of a surface.
+//
+// Twenty bytes, offsets 0 to 19 on every target, with no padding.
+//
+// **Its falloff is computed per vertex, not per pixel.** There is no distance
+// on the integer side of the pipeline, which begins at projection. A wall of
+// two triangles therefore renders a gradient between its corners rather than
+// a halo: split it into panels for a source that moves across it.
+//
+// **Once a light is set, it holds for the whole scene.** A surface out of
+// range goes dark rather than keeping its colour — otherwise the boundary
+// between a surface a light reaches and one it does not would be a hard step
+// in the middle of continuous geometry.
+typedef struct ScgLight {
+  // X coordinate of its position, in world space.
+  float x;
+  // Y coordinate.
+  float y;
+  // Z coordinate.
+  float z;
+  // Its radius, beyond which it lights nothing.
+  //
+  // Finite and strictly positive. Falloff reaches zero at the radius **with
+  // a zero derivative**, so no ring marks the edge — which a falloff linear
+  // in squared distance would draw.
+  float radius;
+  // Red, in the memory order of the output pixels.
+  uint8_t r;
+  // Green.
+  uint8_t g;
+  // Blue.
+  uint8_t b;
+  // Reserved, must be zero.
+  //
+  // **Not an alpha**: a light adds, it does not blend, so a fourth channel
+  // would be a value the engine ignores. The byte exists to keep the
+  // structure free of implicit padding, and a later version may give it a
+  // meaning — which is why zero is required rather than merely advised.
+  uint8_t _reserved;
+} ScgLight;
+
 // A 4x4 model matrix, column-major: `m[column * 4 + row]`.
 //
 // The last row — `m[3]`, `m[7]`, `m[11]`, `m[15]` — must be exactly
@@ -412,6 +453,35 @@ int32_t scg_set_fog(struct ScgContext *ctx,
 //
 // `ctx` is a live handle used by no other thread during the call.
 int32_t scg_clear_fog(struct ScgContext *ctx);
+
+// Replaces the dynamic lights of the frames to come.
+//
+// At most eight; beyond that the whole call is rejected rather than
+// truncated, since a half-lit scene looks exactly like one whose radii are
+// wrong. A count of zero turns lighting off.
+//
+// **Falloff is computed per vertex, when a batch is submitted**: lights set
+// after a batch do not reach it. That is what lets a torch carried by the
+// player light a set without the set being submitted again — provided it is
+// set first.
+//
+// **Once a light is set, it holds for the whole scene.** A surface out of
+// range goes dark rather than keeping its colour: the boundary between a
+// surface a light reaches and one it does not would otherwise be a hard step
+// in the middle of continuous geometry.
+//
+// A light whose position is not finite, or whose radius is not finite and
+// strictly positive, is rejected: it would light nothing and divide by zero.
+//
+// Rejected with `SCG_ERR_INVALID_STATE` during a frame, like every other
+// frame setting.
+//
+// # Safety
+//
+// `ctx` is a live handle used by no other thread during the call, and
+// `lights` points to `count` readable `ScgLight`. A count of zero allows a
+// null pointer.
+int32_t scg_set_lights(struct ScgContext *ctx, const struct ScgLight *lights, uint32_t count);
 
 // Submits a batch of triangles to the frame being recorded.
 //
@@ -687,6 +757,11 @@ SCREENGINE_LAYOUT_ASSERT(offsetof(ScgVertexUv2, u) == 12, "ScgVertexUv2.u moved"
 SCREENGINE_LAYOUT_ASSERT(offsetof(ScgVertexUv2, v) == 16, "ScgVertexUv2.v moved");
 SCREENGINE_LAYOUT_ASSERT(offsetof(ScgVertexUv2, u2) == 20, "ScgVertexUv2.u2 moved");
 SCREENGINE_LAYOUT_ASSERT(offsetof(ScgVertexUv2, v2) == 24, "ScgVertexUv2.v2 moved");
+SCREENGINE_LAYOUT_ASSERT(sizeof(ScgLight) == 20, "ScgLight changed size");
+SCREENGINE_LAYOUT_ASSERT(offsetof(ScgLight, z) == 8, "ScgLight.z moved");
+SCREENGINE_LAYOUT_ASSERT(offsetof(ScgLight, radius) == 12, "ScgLight.radius moved");
+SCREENGINE_LAYOUT_ASSERT(offsetof(ScgLight, r) == 16, "ScgLight.r moved");
+SCREENGINE_LAYOUT_ASSERT(offsetof(ScgLight, _reserved) == 19, "ScgLight._reserved moved");
 SCREENGINE_LAYOUT_ASSERT(sizeof(ScgTextureDesc) == 24, "ScgTextureDesc changed size");
 SCREENGINE_LAYOUT_ASSERT(offsetof(ScgTextureDesc, height) == 4, "ScgTextureDesc.height moved");
 SCREENGINE_LAYOUT_ASSERT(offsetof(ScgTextureDesc, format) == 8, "ScgTextureDesc.format moved");

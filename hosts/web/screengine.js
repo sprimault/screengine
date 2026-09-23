@@ -86,6 +86,7 @@ export const EXPORTS = [
   "scg_set_overbright",
   "scg_set_fog",
   "scg_clear_fog",
+  "scg_set_lights",
 ];
 
 /** Taille de `ScgContextConfig`, celle qu'affirme le header. */
@@ -99,6 +100,9 @@ export const VERTEX_UV_SIZE = 20;
 
 /** Taille de `ScgVertexUv2` : la précédente, plus `u2` et `v2`. */
 export const VERTEX_UV2_SIZE = 28;
+
+/** Taille de `ScgLight` : quatre `float`, puis trois canaux et un réservé. */
+export const LIGHT_SIZE = 20;
 
 /** Taille de `ScgTextureDesc` : six `uint32_t`. */
 export const TEXTURE_DESC_SIZE = 24;
@@ -291,6 +295,28 @@ export class Screengine {
     const view = new DataView(this.memory.buffer, ptr, vertices.length * VERTEX_UV2_SIZE);
     vertices.forEach((vertex, i) => {
       vertex.forEach((value, k) => view.setFloat32(i * VERTEX_UV2_SIZE + k * 4, value, true));
+    });
+  }
+
+  /**
+   * Écrit un tableau de lumières : quatre `float`, puis trois canaux de
+   * couleur et l'octet réservé, mis à zéro.
+   *
+   * L'octet réservé est écrit explicitement plutôt que laissé tel quel : la
+   * mémoire linéaire n'est pas remise à zéro entre deux allocations, et un
+   * reste d'écriture précédente ferait refuser le lot.
+   *
+   * @param {number} ptr adresse d'au moins `lights.length * LIGHT_SIZE` octets
+   * @param {{position: number[], radius: number, color: number[]}[]} lights
+   */
+  writeLights(ptr, lights) {
+    const view = new DataView(this.memory.buffer, ptr, lights.length * LIGHT_SIZE);
+    lights.forEach((light, i) => {
+      const base = i * LIGHT_SIZE;
+      light.position.forEach((value, k) => view.setFloat32(base + k * 4, value, true));
+      view.setFloat32(base + 12, light.radius, true);
+      light.color.forEach((channel, k) => view.setUint8(base + 16 + k, channel));
+      view.setUint8(base + 19, 0);
     });
   }
 

@@ -78,6 +78,12 @@ publié, et explique les conventions du dépôt à qui y contribue.
   un halo — il faut le découper en panneaux pour une source qui s'y déplace —,
   et **dès qu'une lumière est réglée, elle vaut pour toute la scène** : une
   surface hors de portée s'éteint au lieu de garder sa couleur.
+- La frontière C expose les lumières dynamiques : `ScgLight` et
+  `scg_set_lights`. La couleur y tient en trois octets suivis d'un champ
+  réservé, **qui n'est pas un alpha** — une lumière s'ajoute, elle ne se
+  mélange pas — et qui doit être nul comme tous les champs réservés de l'ABI.
+  `SCG_ABI_VERSION` reste à **1**. Les quatre hôtes de référence rendent la
+  scène éclairée au bit près.
 - La frontière C expose le brouillard : `scg_set_fog` et `scg_clear_fog`. La
   couleur y tient en trois canaux, le tampon de sortie étant opaque par
   contrat, et éteindre un brouillard qui n'existe pas n'est pas une erreur.
@@ -127,6 +133,11 @@ publié, et explique les conventions du dépôt à qui y contribue.
   between its corners rather than a halo — split it into panels for a source
   that moves across it — and **once a light is set, it holds for the whole
   scene**: a surface out of range goes dark instead of keeping its colour.
+- The C boundary exposes dynamic lights: `ScgLight` and `scg_set_lights`. The
+  colour takes three bytes followed by a reserved field, **which is not an
+  alpha** — a light adds, it does not blend — and which must be zero like every
+  reserved field of the ABI. `SCG_ABI_VERSION` stays at **1**. All four
+  reference hosts render the lit scene bit for bit.
 - The C boundary exposes fog: `scg_set_fog` and `scg_clear_fog`. Its colour
   takes three channels there, the output buffer being opaque by contract, and
   turning off fog that was never on is not an error. `SCG_ABI_VERSION` stays at

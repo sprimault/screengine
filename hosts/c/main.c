@@ -548,6 +548,87 @@ static const ScgVertexUv FOG_FLOOR[4] = {
     {  1.0f,  20.0f, -1.2f,   1.0f * 8.0f,  20.0f * 8.0f },
 };
 
+/* Les trois lumières de la scène `lumieres`, aux mêmes valeurs que la scène de
+ * conformance. Le champ réservé est nul, comme l'ABI l'exige. */
+static const ScgLight SCENE_LIGHTS[3] = {
+    {  8.0f, -3.0f, 1.5f, 12.0f, 0xFF, 0x30, 0x20, 0 },
+    { 16.0f,  3.0f, 1.5f, 12.0f, 0x20, 0xFF, 0x40, 0 },
+    { 24.0f, -2.0f, 2.5f, 14.0f, 0x30, 0x50, 0xFF, 0 },
+};
+
+/* Rend la scène éclairée par des lumières et en donne l'empreinte.
+ *
+ * Le sol et le mur sont découpés en panneaux : l'atténuation étant par sommet,
+ * une surface d'un seul quadrilatère ne rendrait qu'un dégradé entre ses
+ * quatre coins. Le sol va au-delà de la portée des trois lumières, si bien que
+ * ses derniers panneaux s'éteignent — et doivent le faire en continuité. */
+static uint64_t render_lights(int *ok)
+{
+    enum { PANELS = 16 };
+    const float near_edge = 2.0f, far_edge = 50.0f;
+    const float step = (far_edge - near_edge) / (float)PANELS;
+
+    ScgContextConfig config = scene_config();
+    ScgContext *ctx = NULL;
+    uint8_t *pixels = malloc((size_t)STRIDE * HEIGHT * 4);
+    uint64_t hash = 0;
+
+    *ok = 0;
+    if (pixels == NULL) {
+        check(0, "allocation du tampon de la scène éclairée");
+        return 0;
+    }
+    check(scg_create(&config, &ctx) == SCG_OK, "création du contexte éclairé");
+
+    if (ctx != NULL) {
+        /* Un champ réservé non nul est refusé : c'est le mécanisme d'extension
+         * de l'ABI, et il ne vaut que si personne n'y écrit. */
+        ScgLight dirty = SCENE_LIGHTS[0];
+        dirty._reserved = 1;
+        check(scg_set_lights(ctx, &dirty, 1) == SCG_ERR_INVALID_ARGUMENT,
+              "un champ réservé non nul est refusé");
+
+        check(scg_set_lights(ctx, SCENE_LIGHTS, 3) == SCG_OK, "les lumières se règlent");
+
+        int32_t code = SCG_OK;
+        for (int i = 0; i < PANELS && code == SCG_OK; i++) {
+            float a = near_edge + (float)i * step;
+            float b = near_edge + (float)(i + 1) * step;
+            const ScgVertex floor_v[4] = {
+                { a, -7.0f, -1.2f }, { b, -7.0f, -1.2f },
+                { b,  7.0f, -1.2f }, { a,  7.0f, -1.2f },
+            };
+            const ScgTriangle floor_t[2] = {
+                { 0, 1, 2, 0xB0, 0xB0, 0xB0, 0xFF },
+                { 0, 2, 3, 0xB0, 0xB0, 0xB0, 0xFF },
+            };
+            code = scg_submit(ctx, &IDENTITY, floor_v, 4, floor_t, 2);
+
+            const ScgVertex wall_v[4] = {
+                { a, -7.0f,  4.0f }, { b, -7.0f,  4.0f },
+                { b, -7.0f, -1.2f }, { a, -7.0f, -1.2f },
+            };
+            const ScgTriangle wall_t[2] = {
+                { 0, 1, 2, 0x90, 0x90, 0x98, 0xFF },
+                { 0, 2, 3, 0x90, 0x90, 0x98, 0xFF },
+            };
+            if (code == SCG_OK) {
+                code = scg_submit(ctx, &IDENTITY, wall_v, 4, wall_t, 2);
+            }
+        }
+        check(code == SCG_OK, "les panneaux éclairés sont acceptés");
+
+        code = scg_frame_end(ctx, pixels, STRIDE);
+        check(code == SCG_OK, "l'image éclairée se rend");
+        *ok = code == SCG_OK;
+        hash = fingerprint(pixels, WIDTH, HEIGHT, STRIDE);
+    }
+
+    scg_destroy(ctx);
+    free(pixels);
+    return hash;
+}
+
 /* Rend la scène embrumée et en donne l'empreinte.
  *
  * Le fond n'est effacé de rien : c'est le moteur qui lui donne la couleur du
@@ -724,7 +805,11 @@ int main(void)
     int fog_ok = 0;
     uint64_t fog = render_fog(&fog_ok);
 
-    if (failures > 0 || !ok || !textured_ok || !bilinear_ok || !lit_ok || !fog_ok) {
+    int lights_ok = 0;
+    uint64_t lights = render_lights(&lights_ok);
+
+    if (failures > 0 || !ok || !textured_ok || !bilinear_ok || !lit_ok || !fog_ok
+        || !lights_ok) {
         fprintf(stderr, "%d vérification(s) en échec\n", failures);
         return 1;
     }
@@ -733,5 +818,6 @@ int main(void)
     printf("%016llx\n", (unsigned long long)bilinear);
     printf("%016llx\n", (unsigned long long)lit);
     printf("%016llx\n", (unsigned long long)fog);
+    printf("%016llx\n", (unsigned long long)lights);
     return 0;
 }

@@ -270,4 +270,26 @@ public final class Screengine {
      * @return le code de retour
      */
     static native int clearFog(long ctx);
+
+    /**
+     * {@code scg_set_lights}.
+     *
+     * <p>Les lumières arrivent en <b>deux tableaux parallèles</b> : quatre
+     * flottants de pose par lumière — position puis rayon — et trois octets de
+     * couleur. Java n'a pas de structure à disposition mémoire garantie, et le
+     * pont reconstitue les {@code ScgLight}, champ réservé compris.
+     *
+     * <p>Huit lumières au plus. Au-delà, l'appel entier est refusé plutôt que
+     * tronqué : une scène à demi éclairée ne se distingue pas d'une scène dont
+     * les rayons sont mal réglés.
+     *
+     * <p>L'atténuation se calcule <b>par sommet, à la soumission</b> : des
+     * lumières réglées après un lot ne l'éclairent pas.
+     *
+     * @param ctx handle, ou 0
+     * @param poses quatre flottants par lumière : x, y, z, rayon
+     * @param colors trois octets par lumière : R, G, B
+     * @return le code de retour
+     */
+    static native int setLights(long ctx, float[] poses, byte[] colors);
 }

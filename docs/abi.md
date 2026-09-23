@@ -718,13 +718,23 @@ int32_t scg_set_overbright(ScgContext *ctx, uint32_t shift);
 int32_t scg_set_fog(ScgContext *ctx, uint8_t r, uint8_t g, uint8_t b,
                     float start, float end);
 int32_t scg_clear_fog(ScgContext *ctx);
+int32_t scg_set_lights(ScgContext *ctx, const ScgLight *lights, uint32_t count);
+```
+
+```c
+typedef struct ScgLight {
+    float   x, y, z;
+    float   radius;
+    uint8_t r, g, b;
+    uint8_t _reserved;
+} ScgLight;
 ```
 
 ```c
 typedef struct ScgVertexUv2 { float x, y, z, u, v, u2, v2; } ScgVertexUv2;
 ```
 
-Quatre fonctions ajoutées, une structure nouvelle, aucune constante :
+Cinq fonctions ajoutées, deux structures nouvelles, aucune constante :
 `SCG_ABI_VERSION` reste à **1**.
 
 - **Une structure de sommet nouvelle, et non deux champs de plus sur
@@ -760,7 +770,24 @@ Quatre fonctions ajoutées, une structure nouvelle, aucune constante :
   moteur ignore, et un hôte se demanderait légitimement ce qu'elle fait.
 - **`scg_clear_fog` sur un contexte sans brouillard n'est pas une erreur.** Un
   hôte qui l'éteint en fin de niveau n'a pas à se souvenir s'il l'avait allumé.
-- **Aucun code d'erreur nouveau**, deux messages de plus.
+- **La couleur d'une lumière tient en trois octets plus un champ réservé**, et
+  non en trois flottants. Trois `float` normalisés auraient donné vingt-huit
+  octets sans un seul bourrage, mais c'aurait été le seul endroit de l'ABI où
+  une couleur n'est pas en octets : un hôte qui a `0xC0B090` sous la main
+  devrait diviser par 255. Le quatrième octet n'est pas un alpha — une lumière
+  s'ajoute, elle ne se mélange pas — mais un champ réservé au sens de la
+  clause d'extensibilité, donc **nul obligatoire**.
+- **L'atténuation se calcule par sommet, à la soumission.** Des lumières
+  réglées après un lot ne l'éclairent pas, ce qui permet à une torche portée
+  par le joueur d'éclairer un décor sans que le décor soit resoumis — à
+  condition de la régler avant lui. La conséquence à connaître : un mur de
+  deux triangles rend un dégradé entre ses coins et non un halo, et une source
+  qui s'y déplace demande un mur découpé en panneaux.
+- **Dès qu'une lumière est réglée, elle vaut pour toute la scène.** Une surface
+  hors de portée s'éteint au lieu de garder sa couleur : sinon la frontière
+  entre une surface qu'une lumière atteint et une qu'elle n'atteint pas serait
+  une marche franche au milieu d'une géométrie continue.
+- **Aucun code d'erreur nouveau**, quatre messages de plus.
 
 ### Étapes suivantes
 
@@ -771,7 +798,7 @@ noms ne le sont pas.
 |---|---|
 | 1 | ✓ début d'image et rendu d'une tuile (voir « Rendu par tuiles »), caméra et projection, soumission de triangles avec une matrice |
 | 2 | ✓ chargement d'une texture, mipmaps engendrés au chargement, niveau de qualité du filtrage par `scg_set_filter` |
-| 3 | ✓ soumission d'un lot éclairé, réglage du sur-éclairement et du brouillard ; reste : changement de résolution interne, lumières dynamiques, post-traitement |
+| 3 | ✓ soumission d'un lot éclairé, réglage du sur-éclairement, du brouillard et des lumières dynamiques ; reste : changement de résolution interne, post-traitement |
 | 4 | chargement d'un maillage et d'une carte depuis un bloc d'octets, libération |
 | 5 | rendu du monde depuis la caméra, calcul des lightmaps d'une cellule et reprise d'un cache |
 | 6 | interpolation entre trames, sprites orientés caméra |
