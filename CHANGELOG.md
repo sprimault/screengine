@@ -46,6 +46,35 @@ publié, et explique les conventions du dépôt à qui y contribue.
 
 ## [Non publié]
 
+**Ce que cette version rend autrement.** Sur une scène inchangée, un sol
+échantillonné en bilinéaire change de onze pixels sur 230 400, d'une unité sur
+un canal : la pente des coordonnées de texture était sous-estimée d'un seizième
+sur le dernier segment de chaque ligne. Le filtrage par défaut rend exactement
+la même image, l'écart tombant sous le texel qu'il tramait déjà. Aucune
+signature ne change et `SCG_ABI_VERSION` reste à **1**.
+
+### Corrigé
+- Le remplissage prenait l'appui de sa pente au pixel qui suit le segment même
+  lorsque ce pixel n'était plus couvert : la borne testée était la boîte
+  englobante du triangle, qui déborde le span sur toute ligne d'un triangle non
+  rectangle. La profondeur y est prolongée hors de la surface, où elle n'a plus
+  de sens.
+
+***
+
+**What this version renders differently.** On an unchanged scene, a
+bilinearly sampled floor changes by eleven pixels out of 230,400, by one unit
+on one channel: the texture coordinate slope was falling short by one sixteenth
+on each row's last segment. Default filtering renders exactly the same image,
+the gap staying below the texel it was already dithering. No signature changes
+and `SCG_ABI_VERSION` stays at **1**.
+
+### Fixed
+- The fill took its slope anchor at the pixel following the segment even when
+  that pixel was no longer covered: the bound being tested was the triangle's
+  bounding box, which overshoots the span on every row of a non-right triangle.
+  Depth is extended past the surface there, where it no longer means anything.
+
 ## [0.2.0] — 2026-09-22 — Textures
 
 **Ce qu'un hôte de la 0.1.0 doit reprendre.** Une coordonnée de sommet non
