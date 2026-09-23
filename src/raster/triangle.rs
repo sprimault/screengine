@@ -52,6 +52,13 @@ pub struct Vertex {
     pub s: i32,
     /// L'ordonnée de texture multipliée par la profondeur, en 14.12.
     pub t: i32,
+    /// L'abscisse de lightmap multipliée par la profondeur, en 14.12.
+    ///
+    /// Nulle sur un lot qui n'en porte pas : les plans correspondants ne sont
+    /// alors pas construits, et rien ne la lit.
+    pub s2: i32,
+    /// L'ordonnée de lightmap multipliée par la profondeur, en 14.12.
+    pub t2: i32,
 }
 
 /// Un triangle prêt à être parcouru dans n'importe quelle fenêtre.
@@ -83,6 +90,9 @@ pub struct Prepared {
     color: u32,
     /// L'index de la texture dans la table du contexte, ou [`NO_TEXTURE`].
     texture: u16,
+    /// La place de ses plans d'éclairage dans le tableau annexe de l'image, ou
+    /// [`NO_LIGHTING`].
+    lighting: u16,
 }
 
 /// Cent vingt-huit octets, deux lignes de cache pleines. La répartition par
@@ -96,6 +106,52 @@ const _: () = assert!(size_of::<Prepared>() == 128);
 /// boucle de pixels.
 pub const NO_TEXTURE: u16 = u16::MAX;
 
+/// La place que porte un triangle sans éclairage.
+pub const NO_LIGHTING: u16 = u16::MAX;
+
+/// Ce qu'un triangle éclairé porte en plus, rangé à part.
+///
+/// **Ce n'est pas un choix d'esthétique mais de taille** : [`Prepared`] tient
+/// en deux lignes de cache, que la répartition par tuile parcourt deux fois
+/// par image. Deux plans de plus l'étendraient à trois lignes pour tous les
+/// triangles, éclairés ou non, alors qu'un index de deux octets suffit — et
+/// ces deux octets étaient déjà là, en bourrage.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Lighting {
+    /// Les coordonnées de lightmap multipliées par la profondeur, `s·d` puis
+    /// `t·d`, affines en espace écran par la même raison que celles de texture.
+    st: [Plane; 2],
+}
+
+impl Lighting {
+    /// Les plans des coordonnées de lightmap, sur la base du triangle.
+    fn new(basis: &Basis, vertices: &[Vertex; 3]) -> Self {
+        let plane = |value: fn(&Vertex) -> i32| {
+            Plane::new(
+                basis.v,
+                [
+                    i64::from(value(&vertices[0])),
+                    i64::from(value(&vertices[1])),
+                    i64::from(value(&vertices[2])),
+                ],
+                basis.area,
+                basis.reference,
+            )
+        };
+        Self {
+            st: [plane(|v| v.s2), plane(|v| v.t2)],
+        }
+    }
+
+    /// Ses deux plans, dans l'ordre `s` puis `t`.
+    // Seuls les tests les lisent : le remplissage éclairé vient au lot suivant,
+    // et c'est lui qui retire cette autorisation.
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub fn planes(&self) -> &[Plane; 2] {
+        &self.st
+    }
+}
+
 impl Prepared {
     /// Les pixels extrêmes que le triangle peut couvrir : `(x0, y0, x1, y1)`,
     /// bornes comprises.
@@ -106,6 +162,14 @@ impl Prepared {
     /// L'index de sa texture dans la table de l'image, ou [`NO_TEXTURE`].
     pub fn texture(&self) -> u16 {
         self.texture
+    }
+
+    /// La place de ses plans d'éclairage dans le tableau annexe de l'image, ou
+    /// [`NO_LIGHTING`].
+    // Voir [`Lighting::planes`] : sans lecteur jusqu'au remplissage éclairé.
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub fn lighting(&self) -> u16 {
+        self.lighting
     }
 }
 
@@ -263,25 +327,76 @@ fn last_pixel(subpixel: i32) -> i32 {
 ///
 /// Rend `None` pour un triangle qui ne peut couvrir aucun centre de pixel.
 pub fn prepare(vertices: [Vertex; 3], color: u32, texture: u16) -> Option<Prepared> {
-    let v = vertices.map(|vertex| vertex.position);
-    let area = edge(v[0].x, v[0].y, v[1].x, v[1].y, v[2].x, v[2].y);
-    // Un seul test pour le dos et pour le dégénéré. Obligatoire et non
-    // défensif : les équations de plan des attributs diviseront par cette aire,
-    // et un triangle plat verrait ses trois fonctions de bord s'annuler le long
-    // d'un segment, que les biais pourraient toutes satisfaire.
-    if area >= 0 {
-        return None;
+    let basis = Basis::new(&vertices)?;
+    assemble(&basis, &vertices, color, texture, NO_LIGHTING)
+}
+
+/// Prépare un triangle éclairé, `slot` étant la place que ses plans
+/// d'éclairage occuperont dans le tableau annexe de l'image.
+///
+/// L'appelant range le [`Lighting`] rendu à cette place exacte : c'est lui qui
+/// tient le tableau, et le décalage d'un cran ferait lire les coordonnées du
+/// voisin sans que rien n'échoue.
+pub fn prepare_lit(
+    vertices: [Vertex; 3],
+    color: u32,
+    texture: u16,
+    slot: u16,
+) -> Option<(Prepared, Lighting)> {
+    debug_assert!(slot != NO_LIGHTING);
+    let basis = Basis::new(&vertices)?;
+    let prepared = assemble(&basis, &vertices, color, texture, slot)?;
+    Some((prepared, Lighting::new(&basis, &vertices)))
+}
+
+/// Ce que tous les plans d'un triangle partagent : ses positions, son aire
+/// signée et le sommet d'où partent les évaluations.
+///
+/// Calculé une fois pour les deux familles de plans. Recalculé de part et
+/// d'autre, un sommet de référence choisi différemment ferait diverger
+/// l'arrondi des coordonnées de lightmap de celui des coordonnées de texture,
+/// sur le même triangle.
+struct Basis {
+    v: [Point; 3],
+    area: i64,
+    reference: usize,
+}
+
+impl Basis {
+    /// Rend `None` pour un triangle vu de dos ou d'aire nulle.
+    fn new(vertices: &[Vertex; 3]) -> Option<Self> {
+        let v = vertices.map(|vertex| vertex.position);
+        let area = edge(v[0].x, v[0].y, v[1].x, v[1].y, v[2].x, v[2].y);
+        // Un seul test pour le dos et pour le dégénéré. Obligatoire et non
+        // défensif : les équations de plan des attributs diviseront par cette
+        // aire, et un triangle plat verrait ses trois fonctions de bord
+        // s'annuler le long d'un segment, que les biais pourraient toutes
+        // satisfaire.
+        if area >= 0 {
+            return None;
+        }
+        // Le plus petit sommet dans l'ordre (y, x), partagé par les plans :
+        // pris sur `v[0]`, une permutation circulaire changerait l'arrondi en
+        // chaque pixel sans changer le triangle.
+        let reference = (0..3).min_by_key(|&i| (v[i].y, v[i].x)).unwrap_or(0);
+        Some(Self { v, area, reference })
     }
+}
+
+/// Assemble le triangle préparé, bornes comprises.
+fn assemble(
+    basis: &Basis,
+    vertices: &[Vertex; 3],
+    color: u32,
+    texture: u16,
+    lighting: u16,
+) -> Option<Prepared> {
+    let (v, area, reference) = (basis.v, basis.area, basis.reference);
 
     let min_x = v[0].x.min(v[1].x).min(v[2].x);
     let max_x = v[0].x.max(v[1].x).max(v[2].x);
     let min_y = v[0].y.min(v[1].y).min(v[2].y);
     let max_y = v[0].y.max(v[1].y).max(v[2].y);
-
-    // Le plus petit sommet dans l'ordre (y, x), partagé par les trois plans :
-    // pris sur `v[0]`, une permutation circulaire changerait l'arrondi en
-    // chaque pixel sans changer le triangle.
-    let reference = (0..3).min_by_key(|&i| (v[i].y, v[i].x)).unwrap_or(0);
 
     let prepared = Prepared {
         v,
@@ -313,6 +428,7 @@ pub fn prepare(vertices: [Vertex; 3], color: u32, texture: u16) -> Option<Prepar
         ],
         color,
         texture,
+        lighting,
     };
     (prepared.x0 <= prepared.x1 && prepared.y0 <= prepared.y1).then_some(prepared)
 }

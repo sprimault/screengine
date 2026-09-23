@@ -46,6 +46,24 @@ publié, et explique les conventions du dépôt à qui y contribue.
 
 ## [Non publié]
 
+### Ajouté
+
+- L'API Rust accepte des sommets portant un second jeu de coordonnées, celui
+  des lightmaps : `VertexUv2` et `Context::submit_each_lit`. Les coordonnées
+  traversent la projection et le découpage, et leurs équations de plan se
+  rangent dans un tableau annexe du contexte. **Rien ne les lit encore** : une
+  scène soumise par ce chemin rend exactement l'image qu'elle rendrait sans lui.
+
+***
+
+### Added
+
+- The Rust API accepts vertices carrying a second set of coordinates, the one
+  used by lightmaps: `VertexUv2` and `Context::submit_each_lit`. Those
+  coordinates travel through projection and clipping, and their plane equations
+  are stored in a side table of the context. **Nothing reads them yet**: a scene
+  submitted through this path renders exactly the image it would without it.
+
 ## [0.2.1] — 2026-09-23
 
 **Ce que cette version rend autrement.** Sur une scène inchangée, un sol

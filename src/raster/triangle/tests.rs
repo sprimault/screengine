@@ -49,6 +49,8 @@ fn fill_triangle<T: Target>(target: &mut T, window: Rect, v: [Point; 3], color: 
         z: 1 << 31,
         s: 0,
         t: 0,
+        s2: 0,
+        t2: 0,
     });
     if let Some(triangle) = prepare(vertices, color, NO_TEXTURE) {
         fill(target, window, &triangle, None);
@@ -479,6 +481,8 @@ fn le_span_coincide_avec_le_test_par_pixel() {
             z: 1 << 31,
             s: 0,
             t: 0,
+            s2: 0,
+            t2: 0,
         });
         let Some(triangle) = prepare(vertices, 0, NO_TEXTURE) else {
             continue;
@@ -552,8 +556,14 @@ fn l_erreur_des_attributs_reste_sous_un_texel() {
     // texturé à soixante-quatre texels par unité : un carrelage serré, qui rend
     // l'erreur lisible.
     let sol = |devant: f32, cote: f32| {
-        p.to_clip(Vec3::new(cote, 1.7, devant), devant * 64.0, cote * 64.0)
-            .expect("sommet projetable")
+        p.to_clip(
+            Vec3::new(cote, 1.7, devant),
+            devant * 64.0,
+            cote * 64.0,
+            0.0,
+            0.0,
+        )
+        .expect("sommet projetable")
     };
     // L'ordre donne la face avant : au sol, vue d'en haut, c'est le sens
     // horaire à l'écran une fois l'axe Y retourné.
@@ -564,6 +574,8 @@ fn l_erreur_des_attributs_reste_sous_un_texel() {
         z: v.z,
         s: v.s,
         t: v.t,
+        s2: v.s2,
+        t2: v.t2,
     });
     let triangle = prepare(vertices, 0, NO_TEXTURE).expect("sol visible");
 
@@ -666,6 +678,8 @@ fn les_permutations_circulaires_rendent_la_meme_image() {
                 z: z[k(i)],
                 s: s[k(i)],
                 t: -s[k(i)],
+                s2: 0,
+                t2: 0,
             });
             let mut sink = Depths { seen: Vec::new() };
             if let Some(triangle) = prepare(vertices, 1, NO_TEXTURE) {
@@ -703,6 +717,8 @@ fn un_triangle_prepare_porte_son_index_de_texture() {
             z: 1 << 31,
             s: 0,
             t: 0,
+            s2: 0,
+            t2: 0,
         });
         let triangle = prepare(vertices, 0, index).expect("triangle visible");
         assert_eq!(triangle.texture, index);
@@ -769,12 +785,16 @@ fn un_pixel_occulte_est_teste_mais_pas_ecrit() {
         z: 3 << 30,
         s: 0,
         t: 0,
+        s2: 0,
+        t2: 0,
     });
     let loin = devant.map(|position| Vertex {
         position,
         z: 1 << 30,
         s: 0,
         t: 0,
+        s2: 0,
+        t2: 0,
     });
     for vertices in [proche, loin] {
         let triangle = prepare(vertices, 1, NO_TEXTURE).expect("triangle visible");
@@ -848,8 +868,14 @@ fn sol_texture_fuyant(devant: f32, densite: f32) -> (Prepared, [Vertex; 3]) {
 
     let p = Projection::new(W as u32, H as u32, 1.0, 0.1).unwrap_or_else(|_| unreachable!());
     let sol = |avant: f32, cote: f32| {
-        p.to_clip(Vec3::new(cote, 1.2, avant), avant * densite, cote * densite)
-            .expect("sommet projetable")
+        p.to_clip(
+            Vec3::new(cote, 1.2, avant),
+            avant * densite,
+            cote * densite,
+            0.0,
+            0.0,
+        )
+        .expect("sommet projetable")
     };
     let large = devant / 3.0;
     let corners = [sol(1.5, -2.0), sol(devant, large), sol(devant, -large)];
@@ -860,6 +886,8 @@ fn sol_texture_fuyant(devant: f32, densite: f32) -> (Prepared, [Vertex; 3]) {
             z: v.z,
             s: v.s,
             t: v.t,
+            s2: v.s2,
+            t2: v.t2,
         }
     });
     (prepare(vertices, 0, 0).expect("sol visible"), vertices)
@@ -1180,8 +1208,14 @@ fn triangle_pointe_a_droite() -> Prepared {
 
     let p = Projection::new(W as u32, H as u32, 1.0, 0.1).unwrap_or_else(|_| unreachable!());
     let at = |cote: f32, haut: f32, avant: f32| {
-        p.to_clip(Vec3::new(cote, haut, avant), avant * 32.0, cote * 32.0)
-            .expect("sommet projetable")
+        p.to_clip(
+            Vec3::new(cote, haut, avant),
+            avant * 32.0,
+            cote * 32.0,
+            0.0,
+            0.0,
+        )
+        .expect("sommet projetable")
     };
     // Les deux sommets de droite partagent le même rapport `x/z`, donc la même
     // abscisse à l'écran : le bord droit est vertical, et **chaque** ligne
@@ -1198,6 +1232,8 @@ fn triangle_pointe_a_droite() -> Prepared {
             z: v.z,
             s: v.s,
             t: v.t,
+            s2: v.s2,
+            t2: v.t2,
         }
     });
     prepare(vertices, 0, 0).expect("triangle visible")
@@ -1334,4 +1370,82 @@ fn la_boite_englobante_ne_change_pas_la_texture() {
         etroite.color == desserree.color,
         "la boîte englobante a changé la texture"
     );
+}
+
+/// Le second jeu de coordonnées suit exactement le chemin du premier.
+///
+/// Le même triangle est préparé deux fois : une fois avec ses coordonnées de
+/// lightmap à leur place, une fois avec ces valeurs recopiées à la place des
+/// coordonnées de texture. Les plans du tableau annexe doivent alors être ceux
+/// de la texture, bit pour bit.
+///
+/// **C'est plus fort qu'une valeur attendue écrite à la main** : ce qui compte
+/// n'est pas que les plans soient justes dans l'absolu, mais qu'ils partagent
+/// l'aire, le sommet de référence et l'arrondi du premier jeu. Un sommet de
+/// référence choisi séparément donnerait des plans presque identiques, et
+/// l'écart n'apparaîtrait que sur quelques pixels d'une scène entière.
+#[test]
+fn les_plans_du_second_jeu_valent_ceux_du_premier_sur_les_memes_valeurs() {
+    let v = [p(3, 2), p(5, 35), p(44, 9)];
+    let (s2, t2) = ([1200, -700, 9000], [-40, 6100, 250]);
+
+    let lit = [0, 1, 2].map(|i| Vertex {
+        position: v[i],
+        z: 1 << 31,
+        s: 17,
+        t: -17,
+        s2: s2[i],
+        t2: t2[i],
+    });
+    let temoin = [0, 1, 2].map(|i| Vertex {
+        position: v[i],
+        z: 1 << 31,
+        s: s2[i],
+        t: t2[i],
+        s2: 0,
+        t2: 0,
+    });
+
+    let (triangle, lighting) = prepare_lit(lit, 0, NO_TEXTURE, 7).expect("triangle visible");
+    let temoin = prepare(temoin, 0, NO_TEXTURE).expect("triangle visible");
+
+    assert_eq!(lighting.planes(), &temoin.uv);
+    assert_eq!(triangle.lighting(), 7);
+    // Le premier jeu n'a pas bougé pour autant : les deux familles de plans
+    // sont indépendantes.
+    assert_ne!(triangle.uv, temoin.uv);
+}
+
+/// Un triangle préparé sans éclairage ne désigne aucune place dans le tableau
+/// annexe, et c'est la sentinelle qui le dit.
+#[test]
+fn un_triangle_sans_eclairage_porte_la_sentinelle() {
+    let v = [p(2, 2), p(2, 30), p(40, 2)];
+    let vertices = v.map(|position| Vertex {
+        position,
+        z: 1 << 31,
+        s: 0,
+        t: 0,
+        s2: 500,
+        t2: -500,
+    });
+    let triangle = prepare(vertices, 0, NO_TEXTURE).expect("triangle visible");
+    assert_eq!(triangle.lighting(), NO_LIGHTING);
+}
+
+/// Un triangle vu de dos est refusé par les deux chemins de préparation, et
+/// celui qui éclaire ne laisse donc rien à ranger.
+#[test]
+fn un_triangle_de_dos_ne_reserve_aucune_place() {
+    let v = [p(2, 2), p(40, 2), p(2, 30)];
+    let vertices = v.map(|position| Vertex {
+        position,
+        z: 1 << 31,
+        s: 0,
+        t: 0,
+        s2: 0,
+        t2: 0,
+    });
+    assert!(prepare(vertices, 0, NO_TEXTURE).is_none());
+    assert!(prepare_lit(vertices, 0, NO_TEXTURE, 0).is_none());
 }

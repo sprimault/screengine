@@ -90,6 +90,10 @@ fn scene(context: &mut Context, seed: u64) {
                 } else {
                     0
                 },
+                // Aucune lightmap tant que le remplissage ne la lit pas : ces
+                // deux-là se rempliront avec le lot qui les fait rendre.
+                s2: 0,
+                t2: 0,
             }
         };
         let (a, b, c) = (vertex(), vertex(), vertex());
@@ -97,8 +101,12 @@ fn scene(context: &mut Context, seed: u64) {
         let texture = if textured { 0 } else { NO_TEXTURE };
         // Les deux orientations, pour que la moitié des tirages ne soit pas
         // éliminée comme dos de face.
-        context.push([a, b, c], color, texture).expect("capacité");
-        context.push([a, c, b], color, texture).expect("capacité");
+        context
+            .push([a, b, c], color, texture, false)
+            .expect("capacité");
+        context
+            .push([a, c, b], color, texture, false)
+            .expect("capacité");
     }
 
     // Sans quoi la scène pourrait n'avoir aucun triangle texturé et toutes les
@@ -549,6 +557,8 @@ fn at(x: i32, y: i32, z: u32) -> Vertex {
         z,
         s: 0,
         t: 0,
+        s2: 0,
+        t2: 0,
     }
 }
 
@@ -572,7 +582,9 @@ fn deux_triangles_inclines_s_interpenetrent() {
         let mut context = context(32);
         context.triangles.clear();
         for (triangle, color) in order {
-            context.push(triangle, color, NO_TEXTURE).expect("capacité");
+            context
+                .push(triangle, color, NO_TEXTURE, false)
+                .expect("capacité");
         }
         let image = reference(&mut context);
         assert_eq!(color_at(&image, 20, 30), blue, "bleu devant à gauche");
@@ -590,9 +602,11 @@ fn a_egalite_le_premier_soumis_reste() {
     for (first, second) in [(red, blue), (blue, red)] {
         let mut context = context(64);
         context.triangles.clear();
-        context.push(triangle, first, NO_TEXTURE).expect("capacité");
         context
-            .push(triangle, second, NO_TEXTURE)
+            .push(triangle, first, NO_TEXTURE, false)
+            .expect("capacité");
+        context
+            .push(triangle, second, NO_TEXTURE, false)
             .expect("capacité");
         assert_eq!(color_at(&reference(&mut context), 30, 30), first);
     }
@@ -619,7 +633,7 @@ fn l_ordre_de_soumission_ne_compte_pas_a_profondeurs_distinctes() {
             list.reverse();
         }
         for (v, color) in list {
-            context.push(v, color, NO_TEXTURE).expect("capacité");
+            context.push(v, color, NO_TEXTURE, false).expect("capacité");
         }
         reference(&mut context)
     };
@@ -634,10 +648,12 @@ fn la_capacite_de_triangles_est_une_limite() {
     context.triangles.clear();
     let v = [at(0, 0, 1 << 31), at(0, 10, 1 << 31), at(10, 0, 1 << 31)];
     for _ in 0..TRIANGLE_CAPACITY {
-        context.push(v, 0, NO_TEXTURE).expect("sous la capacité");
+        context
+            .push(v, 0, NO_TEXTURE, false)
+            .expect("sous la capacité");
     }
     assert_eq!(
-        context.push(v, 0, NO_TEXTURE),
+        context.push(v, 0, NO_TEXTURE, false),
         Err(Error::InvalidArgument(Argument::TriangleCapacity))
     );
     assert_eq!(context.triangles.len(), TRIANGLE_CAPACITY);

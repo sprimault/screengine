@@ -42,13 +42,7 @@ pub struct Polygon {
 impl Polygon {
     /// Le polygone vide, qui sert aussi de valeur initiale aux deux tampons.
     const EMPTY: Self = Self {
-        v: [ClipVertex {
-            x: 0.0,
-            y: 0.0,
-            w: 0.0,
-            u: 0.0,
-            v: 0.0,
-        }; MAX_CLIP_VERTICES],
+        v: [ClipVertex::ZERO; MAX_CLIP_VERTICES],
         len: 0,
     };
 

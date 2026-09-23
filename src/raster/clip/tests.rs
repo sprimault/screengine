@@ -23,8 +23,7 @@ fn v(x: f32, y: f32, w: f32) -> ClipVertex {
         x,
         y,
         w,
-        u: 0.0,
-        v: 0.0,
+        ..ClipVertex::ZERO
     }
 }
 
@@ -37,6 +36,8 @@ fn un_triangle_entierement_dedans_passe_inchange() {
     for (i, vertex) in t.iter_mut().enumerate() {
         vertex.u = 3.5 + i as f32;
         vertex.v = -7.25 * i as f32;
+        vertex.u2 = 0.125 * i as f32;
+        vertex.v2 = 11.0 - i as f32;
     }
     let poly = clip(t, p.frustum());
     assert_eq!(poly.triangle_count(), 1);
@@ -47,31 +48,41 @@ fn un_triangle_entierement_dedans_passe_inchange() {
         assert_eq!(sortie[i].w.to_bits(), t[i].w.to_bits());
         assert_eq!(sortie[i].u.to_bits(), t[i].u.to_bits());
         assert_eq!(sortie[i].v.to_bits(), t[i].v.to_bits());
+        assert_eq!(sortie[i].u2.to_bits(), t[i].u2.to_bits());
+        assert_eq!(sortie[i].v2.to_bits(), t[i].v2.to_bits());
     }
 }
 
-/// Un triangle dont les trois sommets portent le même `uv` ressort avec ce
-/// `uv` exact sur tous les sommets engendrés, plans traversés compris.
+/// Un triangle dont les trois sommets portent les mêmes attributs ressort avec
+/// ces valeurs exactes sur tous les sommets engendrés, plans traversés compris.
 ///
 /// C'est le test qui attrape une asymétrie ou un mélange d'axes du premier
 /// coup : toute combinaison convexe de trois valeurs égales vaut cette valeur,
 /// et rien dans le découpage ne peut la déplacer sans être faux.
+///
+/// Les quatre valeurs sont distinctes entre elles, sans quoi un jeu recopié à
+/// la place de l'autre passerait au travers.
 #[test]
-fn un_uv_constant_traverse_le_decoupage_intact() {
+fn des_attributs_constants_traversent_le_decoupage_intacts() {
     let p = projection();
     // Deux sommets derrière le plan proche : le découpage engendre des sommets
     // plutôt que de recopier le triangle.
     let mut t = [v(0.0, 0.0, 2.0), v(50.0, 0.0, -1.0), v(0.0, 50.0, -1.0)];
+    let attendu = [12.75f32, -3.5, 0.625, 40.0];
     for vertex in &mut t {
-        vertex.u = 12.75;
-        vertex.v = -3.5;
+        vertex.u = attendu[0];
+        vertex.v = attendu[1];
+        vertex.u2 = attendu[2];
+        vertex.v2 = attendu[3];
     }
     let poly = clip(t, p.frustum());
     assert!(poly.triangle_count() >= 1, "le découpage n'a rien rendu");
     for i in 0..poly.triangle_count() {
         for vertex in poly.triangle(i) {
-            assert_eq!(vertex.u.to_bits(), 12.75f32.to_bits());
-            assert_eq!(vertex.v.to_bits(), (-3.5f32).to_bits());
+            let rendu = [vertex.u, vertex.v, vertex.u2, vertex.v2];
+            for (rendu, attendu) in rendu.iter().zip(&attendu) {
+                assert_eq!(rendu.to_bits(), attendu.to_bits());
+            }
         }
     }
 }
