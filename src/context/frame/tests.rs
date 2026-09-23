@@ -457,6 +457,40 @@ fn une_sortie_refusee_ne_prend_pas_la_tuile() {
     assert_eq!(frame.tile(0, &mut Rows::new(&mut out, W)), Ok(()));
 }
 
+/// Une fin d'image refusée laisse l'image ouverte, et le contexte la termine.
+///
+/// **La `Frame` est consommée même quand la fin échoue**, tampon trop court
+/// compris. L'image, elle, reste ouverte — et ce test parcourt l'issue au lieu
+/// de la supposer : sans elle, un appelant Rust qui se trompe de tampon
+/// perdrait son image sans pouvoir la finir, là où un hôte C rappellerait
+/// simplement `scg_frame_end`. Les deux chemins ne se vaudraient plus, ce que
+/// la règle du projet interdit.
+///
+/// L'image obtenue après reprise doit être celle de référence : une fin
+/// refusée ne doit pas avoir consommé la moitié des tuiles en chemin.
+#[test]
+fn une_fin_refusee_se_reprend_par_le_contexte() {
+    let mut context = context(64);
+    scene(&mut context, 5);
+    let expected = reference(&mut context);
+
+    let frame = open(&mut context);
+    let mut court = [0u8; 16];
+    assert_eq!(
+        frame.end(&mut Rows::new(&mut court, W)),
+        Err(Error::InvalidArgument(Argument::BufferLength)),
+    );
+
+    // La `Frame` a disparu avec l'appel qui a échoué ; le contexte, lui, est
+    // toujours là, et son `end` ne prend qu'un `&self`.
+    let mut out = pixels();
+    assert_eq!(context.end(&mut Rows::new(&mut out, W)), Ok(()));
+    assert!(out == expected, "l'image reprise n'est pas la référence");
+
+    // Et l'image est bien close : le contexte accepte de nouveau la scène.
+    assert!(!context.is_rendering());
+}
+
 /// Une bande qui ne contient pas les lignes de la tuile est refusée, au lieu
 /// d'écrire la tuile ailleurs.
 #[test]
