@@ -57,7 +57,7 @@ android_build = for cible in $(CIBLES_ANDROID); do \
 -include makefile.local
 
 .PHONY: build lib lib-wasm lib-android run example web test native-libs fmt fmt-fix lint lint-doc-tests \
-        lint-android-versions nostd msrv \
+        lint-android-versions nostd msrv bench \
         conform conform-update conform-images header header-verif audit deny doc hosts host-c host-cpp host-web \
         host-android clean tools
 
@@ -275,6 +275,16 @@ nostd:
 # La version se lit dans le `Cargo.toml` au moment de l'appel, plutôt que
 # d'être recopiée ici : c'est lui qui fait foi pour Cargo, et une copie de plus
 # se serait mise à mentir comme celles que ce dépôt vient de supprimer.
+# La référence de performance, prise avant que l'étape 3 touche au remplissage.
+#
+# **Hors de la liste fixe, délibérément.** Une durée dépend de la charge de la
+# machine : en faire un contrôle le rendrait rouge pour des raisons étrangères
+# au code, et on finirait par relever son seuil jusqu'à ce qu'il ne mesure plus
+# rien. Rien n'échoue ici — on lit les chiffres et on les compare à ceux que le
+# fichier de mesure porte en commentaire.
+bench:
+	cargo bench -p screengine
+
 msrv:
 	@version=$$(grep '^rust-version = ' Cargo.toml | cut -d'"' -f2); \
 	echo "version minimale declaree : $$version"; \

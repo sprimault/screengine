@@ -32,10 +32,26 @@ crates/
   screengine-conformance/   src/, references/, tests/
 ```
 
-Les trois répertoires du noyau n'existent pas encore : `tests/` et `examples/`
-naîtront avec leur premier fichier, et `benches/` avec la première mesure —
-celle que l'étape 3 réclame, puisqu'elle ajoute une lecture de texture par
-pixel et qu'une régression ne s'attribue pas sans référence prise avant.
+`tests/` et `examples/` du noyau n'existent pas encore : ils naîtront avec leur
+premier fichier.
+
+**`benches/` porte la référence de performance**, prise avant que l'étape 3
+touche au remplissage — une régression ne s'attribue pas sans mesure d'avant.
+Deux cas seulement : un quadrilatère texturé plein cadre, qui isole la boucle de
+pixels, et une scène chargée, qui donne le coût réel avec la répartition et la
+recopie. Harnais maison, `#[bench]` n'existant qu'en nightly et le noyau
+n'admettant aucune dépendance.
+
+**`make bench` est hors de la liste fixe, et rien n'y échoue.** Une durée dépend
+de la charge de la machine : en faire un contrôle le rendrait rouge pour des
+raisons étrangères au code, et son seuil finirait relevé jusqu'à ne plus rien
+mesurer. Les chiffres se comparent à la main, contre ceux que le fichier porte
+en commentaire.
+
+Une seule chose y échoue, et elle ne mesure rien : **le contrôle de couverture**.
+Une scène mal cadrée ou prise de dos se chronomètre très bien et ne dit rien —
+c'est arrivé à l'écriture même de ce fichier, où les deux cas rendaient zéro
+pixel peint pour des chiffres flatteurs.
 
 **Le noyau est le paquet racine**, avec la disposition standard de Cargo ; les
 quatre autres crates la reprennent chacun dans `crates/`. Un répertoire naît avec
