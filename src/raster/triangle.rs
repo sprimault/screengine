@@ -39,8 +39,13 @@ pub struct Sampling<'a> {
 /// large.
 #[derive(Debug, Clone, Copy)]
 pub struct Lit<'a> {
-    /// La lightmap du triangle.
-    pub lightmap: &'a Texture,
+    /// La lightmap du triangle, **absente quand seules des lumières
+    /// dynamiques l'éclairent**.
+    ///
+    /// Les deux sources sont indépendantes : un décor n'aura de lightmaps
+    /// qu'à l'étape 5, et une torche doit pouvoir éclairer un mur uni d'ici
+    /// là.
+    pub lightmap: Option<&'a Texture>,
     /// Les plans de ses coordonnées, pris dans le tableau annexe de l'image.
     pub planes: &'a Lighting,
     /// Le décalage de sur-éclairement du contexte.
@@ -79,6 +84,15 @@ pub struct Vertex {
     pub s2: i32,
     /// L'ordonnée de lightmap multipliée par la profondeur, en 14.12.
     pub t2: i32,
+    /// Ce que les lumières dynamiques ajoutent ici, par canal, en 16.16.
+    ///
+    /// **Non multiplié par la profondeur**, contrairement aux coordonnées :
+    /// une couleur s'interpole affinement en espace écran, comme la
+    /// profondeur, et c'est ce que faisaient les moteurs de cette famille. La
+    /// correction de perspective coûterait une seconde marche par segment pour
+    /// un écart que personne ne voit sur un dégradé qui varie lentement — et
+    /// une lumière ponctuelle en produit un par construction.
+    pub light: [i32; 3],
 }
 
 /// Un triangle prêt à être parcouru dans n'importe quelle fenêtre.
@@ -146,12 +160,31 @@ pub struct Lighting {
     /// Ici plutôt que dans [`Prepared`] : un triangle éclairé porte déjà la
     /// place de ses plans, et un second index l'aurait fait déborder de ses
     /// deux lignes de cache. Celui-ci voyage avec ce qu'il désigne.
+    ///
+    /// Vaut [`NO_TEXTURE`] quand seules des lumières dynamiques éclairent le
+    /// triangle : les deux sources sont indépendantes, et les lightmaps ne
+    /// viendront des cartes qu'à l'étape 5.
     lightmap: u16,
+    /// Ce que les lumières dynamiques ajoutent, un plan par canal, en 16.16.
+    ///
+    /// **Interpolés affinement, sans division** : voir [`Vertex::light`].
+    dynamic: [Plane; 3],
+    /// Faux quand aucune lumière n'éclaire ce triangle.
+    ///
+    /// Les plans sont alors nuls et leur évaluation rendrait zéro, mais la
+    /// faire coûterait trois évaluations par pixel pour un résultat connu
+    /// d'avance : ce drapeau choisit un chemin de remplissage, il ne se teste
+    /// pas dans la boucle.
+    lit: bool,
 }
 
 impl Lighting {
-    /// Les plans des coordonnées de lightmap, sur la base du triangle.
-    fn new(basis: &Basis, vertices: &[Vertex; 3], lightmap: u16) -> Self {
+    /// Les plans d'éclairage du triangle, sur sa base.
+    ///
+    /// `lit` dit si les lumières dynamiques ont éclairé au moins un de ses
+    /// sommets. Faux, les trois plans restent nuls et le remplissage prendra
+    /// un chemin qui ne les lit pas.
+    fn new(basis: &Basis, vertices: &[Vertex; 3], lightmap: u16, lit: bool) -> Self {
         let plane = |value: fn(&Vertex) -> i32| {
             Plane::new(
                 basis.v,
@@ -164,20 +197,44 @@ impl Lighting {
                 basis.reference,
             )
         };
+        let channel = |index: usize| {
+            Plane::new(
+                basis.v,
+                [
+                    i64::from(vertices[0].light[index]),
+                    i64::from(vertices[1].light[index]),
+                    i64::from(vertices[2].light[index]),
+                ],
+                basis.area,
+                basis.reference,
+            )
+        };
         Self {
             st: [plane(|v| v.s2), plane(|v| v.t2)],
             lightmap,
+            dynamic: [channel(0), channel(1), channel(2)],
+            lit,
         }
     }
 
-    /// Ses deux plans, dans l'ordre `s` puis `t`.
+    /// Ses deux plans de lightmap, dans l'ordre `s` puis `t`.
     pub fn planes(&self) -> &[Plane; 2] {
         &self.st
     }
 
-    /// L'index de sa lightmap dans la table de l'image.
+    /// L'index de sa lightmap dans la table de l'image, ou [`NO_TEXTURE`].
     pub fn lightmap(&self) -> u16 {
         self.lightmap
+    }
+
+    /// Ses trois plans de lumière dynamique.
+    pub fn dynamic(&self) -> &[Plane; 3] {
+        &self.dynamic
+    }
+
+    /// Vrai si une lumière dynamique éclaire ce triangle.
+    pub fn is_lit(&self) -> bool {
+        self.lit
     }
 }
 
@@ -369,12 +426,13 @@ pub fn prepare_lit(
     color: u32,
     texture: u16,
     lightmap: u16,
+    lit: bool,
     slot: u16,
 ) -> Option<(Prepared, Lighting)> {
     debug_assert!(slot != NO_LIGHTING);
     let basis = Basis::new(&vertices)?;
     let prepared = assemble(&basis, &vertices, color, texture, slot)?;
-    Some((prepared, Lighting::new(&basis, &vertices, lightmap)))
+    Some((prepared, Lighting::new(&basis, &vertices, lightmap, lit)))
 }
 
 /// Ce que tous les plans d'un triangle partagent : ses positions, son aire
@@ -669,7 +727,6 @@ fn fill_segment<T: Target>(
     // Écrits dans la boucle — deux `Option` examinées par pixel —, ils
     // coûtaient un dixième du remplissage **à toute scène**, éclairée ou non.
     let texels = sampling.map(|s| (s, Crawl::new(triangle, &triangle.uv, ey, &ends)));
-    let lights = lit.map(|l| (l, Crawl::new(triangle, l.planes.planes(), ey, &ends)));
     let walk = Walk {
         target,
         triangle,
@@ -678,40 +735,127 @@ fn fill_segment<T: Target>(
     };
     match texels {
         Some((sampling, texel)) => match sampling.filter {
-            Filter::Dither => textured::<T, false>(walk, sampling.texture, texel, lights),
-            Filter::Bilinear => textured::<T, true>(walk, sampling.texture, texel, lights),
+            Filter::Dither => textured::<T, false>(walk, sampling.texture, texel, lit, ey, &ends),
+            Filter::Bilinear => textured::<T, true>(walk, sampling.texture, texel, lit, ey, &ends),
         },
-        None => match lights {
-            Some((lit, light)) => walk.run(Light {
-                color: triangle.color,
-                light,
-                lit,
-            }),
+        None => match lit {
+            Some(lit) => plain(walk, lit, ey, &ends),
             None => walk.run(Flat(triangle.color)),
         },
     }
 }
 
+/// Construit l'éclairage d'un segment, les deux sources portées par le type.
+///
+/// Les trois bras couvrent les trois combinaisons possibles : la quatrième —
+/// aucune source — n'existe pas, un triangle sans lightmap ni lumière ne
+/// portant pas de plans d'éclairage.
+macro_rules! with_glow {
+    ($walk:expr, $triangle:expr, $start:expr, $lit:expr, $ey:expr, $ends:expr, $build:expr) => {{
+        let lit = $lit;
+        let planes = lit.planes;
+        // Les deux marches se construisent dans le bras qui les lit, jamais
+        // avant : bâtir celle d'une source absente coûterait un choix de
+        // niveau de mipmap ou trois évaluations de plan pour rien.
+        match (lit.lightmap.is_some(), planes.is_lit()) {
+            (true, true) => $build(
+                $walk,
+                Glow::<true, true> {
+                    map: Crawl::new($triangle, planes.planes(), $ey, $ends),
+                    lightmap: lit.lightmap,
+                    dynamic: Ramp::new($triangle, planes.dynamic(), $start, $ey),
+                },
+                lit.overbright,
+            ),
+            (true, false) => $build(
+                $walk,
+                Glow::<true, false> {
+                    map: Crawl::new($triangle, planes.planes(), $ey, $ends),
+                    lightmap: lit.lightmap,
+                    dynamic: Ramp::EMPTY,
+                },
+                lit.overbright,
+            ),
+            (false, true) => $build(
+                $walk,
+                Glow::<false, true> {
+                    map: Crawl::EMPTY,
+                    lightmap: None,
+                    dynamic: Ramp::new($triangle, planes.dynamic(), $start, $ey),
+                },
+                lit.overbright,
+            ),
+            // **Ni lightmap, ni lumière qui l'atteigne** : le triangle est
+            // dans une scène éclairée mais hors de portée. Il s'éteint, comme
+            // ses voisins là où la lumière ne porte pas — et sans qu'on
+            // évalue trois plans par pixel pour arriver à zéro.
+            (false, false) => $build(
+                $walk,
+                Glow::<false, false> {
+                    map: Crawl::EMPTY,
+                    lightmap: None,
+                    dynamic: Ramp::EMPTY,
+                },
+                lit.overbright,
+            ),
+        }
+    }};
+}
+
 /// Parcourt un segment texturé, éclairé ou non.
 ///
-/// Séparée pour que le filtrage se choisisse une fois et que l'éclairage se
-/// choisisse ensuite : écrits ensemble, les deux donneraient quatre bras au
-/// lieu de deux plus deux, pour les mêmes instances.
+/// Séparée pour que le filtrage se choisisse une fois et l'éclairage ensuite :
+/// écrits ensemble, les deux donneraient huit bras au lieu de deux plus trois,
+/// pour les mêmes instances.
 fn textured<T: Target, const BILINEAR: bool>(
     walk: Walk<'_, T>,
     texture: &Texture,
     texel: Crawl,
-    lights: Option<(Lit<'_>, Crawl)>,
+    lit: Option<Lit<'_>>,
+    ey: i64,
+    ends: &Ends,
 ) {
-    match lights {
-        Some((lit, light)) => walk.run(TexelLight::<BILINEAR> {
-            texel,
-            texture,
-            light,
-            lit,
-        }),
+    let (triangle, start) = (walk.triangle, walk.draw.0);
+    match lit {
         None => walk.run(Texel::<BILINEAR> { texel, texture }),
+        Some(lit) => with_glow!(
+            walk,
+            triangle,
+            start,
+            lit,
+            ey,
+            ends,
+            |walk: Walk<'_, T>, glow, overbright| {
+                walk.run(TexelLight::<BILINEAR, _, _> {
+                    texel,
+                    texture,
+                    glow,
+                    overbright,
+                })
+            }
+        ),
     }
+}
+
+/// Parcourt un segment uni qu'un éclairage couvre.
+fn plain<T: Target>(walk: Walk<'_, T>, lit: Lit<'_>, ey: i64, ends: &Ends) {
+    let (triangle, start) = (walk.triangle, walk.draw.0);
+    let color = triangle.color;
+    with_glow!(
+        walk,
+        triangle,
+        start,
+        lit,
+        ey,
+        ends,
+        |walk: Walk<'_, T>, glow, overbright| {
+            walk.run(Light {
+                color,
+                glow,
+                overbright,
+            })
+        }
+    )
 }
 
 /// Ce que le parcours d'un segment a de commun à tous ses ombrages.
@@ -796,48 +940,158 @@ impl<const BILINEAR: bool> Shade for Texel<'_, BILINEAR> {
     }
 }
 
-/// Une surface unie qu'une lightmap éclaire : la couleur du triangle y tient
-/// lieu de texel.
-struct Light<'a> {
-    color: u32,
-    light: Crawl,
-    lit: Lit<'a>,
+/// L'éclairage d'un pixel : ce qu'une lightmap y pose, ce que les lumières y
+/// ajoutent, ou les deux.
+///
+/// `MAPPED` et `DYNAMIC` disent lesquelles des deux sources existent. Portés
+/// par le type, comme le filtrage : une source absente ne se teste pas à
+/// chaque pixel, elle n'est simplement pas compilée. Les deux faux n'arrive
+/// jamais — un triangle sans aucune source ne porte pas de plans d'éclairage.
+struct Glow<'a, const MAPPED: bool, const DYNAMIC: bool> {
+    /// Les coordonnées de lightmap, inutilisées quand `MAPPED` est faux.
+    map: Crawl,
+    /// La lightmap elle-même, absente pour la même raison.
+    lightmap: Option<&'a Texture>,
+    /// Ce que les lumières ajoutent, en 16.16, inutilisé quand `DYNAMIC` est
+    /// faux.
+    dynamic: Ramp,
 }
 
-impl Shade for Light<'_> {
+impl<const MAPPED: bool, const DYNAMIC: bool> Glow<'_, MAPPED, DYNAMIC> {
+    /// L'éclairage au pixel `(x, y)`, trois canaux de huit bits saturés.
+    ///
+    /// **La somme sature après l'addition**, comme celle des lumières entre
+    /// elles : une lightmap presque pleine ne doit pas éteindre la torche qui
+    /// passe, elle doit porter le total au blanc.
+    #[inline]
+    fn at(&self, x: i32, y: i32) -> u32 {
+        // La lightmap se lit toujours en bilinéaire : voir [`Lit`].
+        let mapped = match (MAPPED, self.lightmap) {
+            (true, Some(texture)) => self.map.sample::<true>(texture, x, y),
+            _ => 0,
+        };
+        if !DYNAMIC {
+            return mapped;
+        }
+        let added = self.dynamic.channels();
+        let channel = |index: u32| {
+            let base = (mapped >> index) & 0xFF;
+            (base + added[(index / 8) as usize]).min(0xFF) << index
+        };
+        channel(0) | channel(8) | channel(16)
+    }
+
+    /// Avance d'un pixel vers la droite.
+    #[inline]
+    fn step(&mut self) {
+        if MAPPED {
+            self.map.step();
+        }
+        if DYNAMIC {
+            self.dynamic.step();
+        }
+    }
+}
+
+/// Une surface unie qu'un éclairage couvre : la couleur du triangle y tient
+/// lieu de texel.
+struct Light<'a, const MAPPED: bool, const DYNAMIC: bool> {
+    color: u32,
+    glow: Glow<'a, MAPPED, DYNAMIC>,
+    overbright: u32,
+}
+
+impl<const MAPPED: bool, const DYNAMIC: bool> Shade for Light<'_, MAPPED, DYNAMIC> {
     #[inline]
     fn pixel(&self, x: i32, y: i32) -> u32 {
-        // La lightmap se lit toujours en bilinéaire : voir [`Lit`].
-        let light = self.light.sample::<true>(self.lit.lightmap, x, y);
-        light::modulate(self.color, light, self.lit.overbright)
+        light::modulate(self.color, self.glow.at(x, y), self.overbright)
     }
 
     #[inline]
     fn step(&mut self) {
-        self.light.step();
+        self.glow.step();
     }
 }
 
-/// Une surface texturée qu'une lightmap éclaire.
-struct TexelLight<'a, const BILINEAR: bool> {
+/// Une surface texturée qu'un éclairage couvre.
+struct TexelLight<'a, const BILINEAR: bool, const MAPPED: bool, const DYNAMIC: bool> {
     texel: Crawl,
     texture: &'a Texture,
-    light: Crawl,
-    lit: Lit<'a>,
+    glow: Glow<'a, MAPPED, DYNAMIC>,
+    overbright: u32,
 }
 
-impl<const BILINEAR: bool> Shade for TexelLight<'_, BILINEAR> {
+impl<const BILINEAR: bool, const MAPPED: bool, const DYNAMIC: bool> Shade
+    for TexelLight<'_, BILINEAR, MAPPED, DYNAMIC>
+{
     #[inline]
     fn pixel(&self, x: i32, y: i32) -> u32 {
         let texel = self.texel.sample::<BILINEAR>(self.texture, x, y);
-        let light = self.light.sample::<true>(self.lit.lightmap, x, y);
-        light::modulate(texel, light, self.lit.overbright)
+        light::modulate(texel, self.glow.at(x, y), self.overbright)
     }
 
     #[inline]
     fn step(&mut self) {
         self.texel.step();
-        self.light.step();
+        self.glow.step();
+    }
+}
+
+/// Un attribut à trois canaux qui avance affinement le long d'une ligne.
+///
+/// Comme la profondeur, et non comme les coordonnées de texture : aucune
+/// division, aucun segment. Une couleur qui varie lentement n'a pas besoin de
+/// correction de perspective, et une lumière ponctuelle n'en produit pas
+/// d'autre.
+struct Ramp {
+    value: [i64; 3],
+    step: [i64; 3],
+}
+
+impl Ramp {
+    /// La marche d'un triangle qu'aucune lumière n'éclaire.
+    ///
+    /// Elle n'est jamais lue — le type qui la porte a `DYNAMIC` à faux —, mais
+    /// il faut bien remplir le champ. Nommée plutôt que réécrite à chaque
+    /// usage, pour qu'un lecteur voie que c'est un remplissage et non une
+    /// valeur qui compte.
+    const EMPTY: Self = Self {
+        value: [0; 3],
+        step: [0; 3],
+    };
+
+    /// La marche des trois plans depuis le pixel `start`.
+    fn new(triangle: &Prepared, planes: &[Plane; 3], start: i32, ey: i64) -> Self {
+        let ex = (start * SUBPIXEL_SCALE + PIXEL_CENTER - triangle.ref_x) as i64;
+        let mut value = [0i64; 3];
+        let mut step = [0i64; 3];
+        for i in 0..3 {
+            value[i] = planes[i].at(ex, ey);
+            step[i] = planes[i].step_x(SUBPIXEL_SCALE);
+        }
+        Self { value, step }
+    }
+
+    /// Les trois canaux, ramenés de 16.16 à huit bits et bornés.
+    ///
+    /// Le bornage est là parce que l'évaluation d'un plan déborde de quelques
+    /// unités sur les bords d'un triangle — c'est l'arrondi des gradients, que
+    /// la marge de profondeur absorbe ailleurs et qu'une couleur n'a pas.
+    #[inline]
+    fn channels(&self) -> [u32; 3] {
+        let read = |index: usize| {
+            let raw = self.value[index] >> (GRADIENT_BITS + 8);
+            raw.clamp(0, 0xFF) as u32
+        };
+        [read(0), read(1), read(2)]
+    }
+
+    /// Avance d'un pixel vers la droite.
+    #[inline]
+    fn step(&mut self) {
+        for i in 0..3 {
+            self.value[i] = self.value[i].wrapping_add(self.step[i]);
+        }
     }
 }
 
@@ -885,6 +1139,16 @@ struct Crawl {
 }
 
 impl Crawl {
+    /// La marche d'un triangle qui ne lit aucune image.
+    ///
+    /// Jamais lue — le type qui la porte a sa source à faux —, mais il faut
+    /// remplir le champ. Voir [`Ramp::EMPTY`].
+    const EMPTY: Self = Self {
+        value: [0; 2],
+        slope: [0; 2],
+        level: 0,
+    };
+
     /// La marche d'`planes` sur le segment que `ends` décrit.
     fn new(triangle: &Prepared, planes: &[Plane; 2], ey: i64, ends: &Ends) -> Self {
         let ex = |x: i32| (x * SUBPIXEL_SCALE + PIXEL_CENTER - triangle.ref_x) as i64;

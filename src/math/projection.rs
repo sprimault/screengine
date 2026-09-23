@@ -78,6 +78,12 @@ pub struct ClipVertex {
     pub u2: f32,
     /// L'ordonnée dans la lightmap, en texels, telle que soumise.
     pub v2: f32,
+    /// Ce que les lumières dynamiques ajoutent ici, par canal, de zéro à un.
+    ///
+    /// Affine en espace monde comme les coordonnées, donc interpolable par la
+    /// même expression : c'est ce qui permet à un triangle découpé de garder
+    /// son éclairage sans qu'on le recalcule sur les sommets engendrés.
+    pub light: [f32; 3],
 }
 
 impl ClipVertex {
@@ -95,6 +101,7 @@ impl ClipVertex {
         v: 0.0,
         u2: 0.0,
         v2: 0.0,
+        light: [0.0; 3],
     };
 }
 
@@ -178,6 +185,14 @@ impl Frustum {
             // rapport à l'autre le long d'une arête découpée.
             u2: (da * b.u2 - db * a.u2) * inverse,
             v2: (da * b.v2 - db * a.v2) * inverse,
+            // Les trois canaux suivent la même expression : ils sont affines
+            // dans le même paramètre, et rien ne les distingue d'une
+            // coordonnée pour le découpage.
+            light: [
+                (da * b.light[0] - db * a.light[0]) * inverse,
+                (da * b.light[1] - db * a.light[1]) * inverse,
+                (da * b.light[2] - db * a.light[2]) * inverse,
+            ],
         }
     }
 
@@ -284,7 +299,18 @@ impl Projection {
     /// `u2` et `v2` sont les coordonnées de lightmap, nulles sur un sommet qui
     /// n'en porte pas : le second jeu traverse toute la chaîne, et seuls ses
     /// plans se construisent à la demande.
-    pub fn to_clip(self, view: Vec3, u: f32, v: f32, u2: f32, v2: f32) -> Option<ClipVertex> {
+    ///
+    /// `light` est ce que les lumières dynamiques ajoutent, déjà calculé : le
+    /// module de projection ne les connaît pas, il les transporte.
+    pub fn to_clip(
+        self,
+        view: Vec3,
+        u: f32,
+        v: f32,
+        u2: f32,
+        v2: f32,
+        light: [f32; 3],
+    ) -> Option<ClipVertex> {
         let over = |v: f32| v.is_nan() || v.abs() > COORDINATE_LIMIT;
         // Après la multiplication, jamais avant : c'est la coordonnée de clip
         // qui entre dans le découpage. Les facteurs d'échelle étant finis et
@@ -306,6 +332,7 @@ impl Projection {
             v,
             u2,
             v2,
+            light,
         })
     }
 
@@ -341,6 +368,23 @@ impl Projection {
             // l'autre au pixel, alors qu'ils désignent la même surface.
             s2: to_texel(v.u2 * depth),
             t2: to_texel(v.v2 * depth),
+            // **Pas de multiplication par la profondeur ici** : une couleur
+            // s'interpole affinement en espace écran, et la diviser reviendrait
+            // à payer une correction de perspective dont un dégradé de lumière
+            // n'a pas besoin. Le facteur porte la valeur de [0, 1] en 16.16.
+            // Bornage écrit, jamais `clamp` : le noyau s'interdit `min`, `max`
+            // et leurs dérivés, qui ne traitent pas `NaN` pareil selon le jeu
+            // d'instructions. L'ordre des tests écarte `NaN` par le second.
+            light: v.light.map(|c| {
+                let bounded = if c > 1.0 {
+                    1.0
+                } else if c > 0.0 {
+                    c
+                } else {
+                    0.0
+                };
+                (bounded * 65536.0) as i32
+            }),
         }
     }
 }
@@ -373,6 +417,11 @@ pub struct ProjectedVertex {
     pub s2: i32,
     /// L'ordonnée de lightmap multipliée par la profondeur, en 14.12.
     pub t2: i32,
+    /// Ce que les lumières dynamiques ajoutent, par canal, en 16.16.
+    ///
+    /// Non multiplié par la profondeur, contrairement aux deux placages : une
+    /// couleur s'interpole affinement en espace écran.
+    pub light: [i32; 3],
 }
 
 #[cfg(test)]

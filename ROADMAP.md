@@ -204,6 +204,18 @@ cellules superposées, des cellules non convexes et des portails obliques.
 Interpolation entre trames, sprites orientés caméra, ordre géré par le z-buffer
 plutôt que par un tri.
 
+**Les sprites apportent deux façons d'écrire un pixel que le moteur n'a pas
+encore** : le texel transparent, qu'on n'écrit pas, et la surface **modulée**,
+qui multiplie ce qui est déjà dans le tampon au lieu de l'écraser. La première
+est ce qu'un sprite réclame par définition ; la seconde vient avec, parce
+qu'elle ne coûte qu'un mode de plus au même endroit du remplissage.
+
+**Le cas d'usage à ne pas perdre de vue est l'ombre d'un objet mobile** : une
+tache sombre posée au sol sous un ennemi, modulée avec le décor. Ce n'est pas
+une ombre portée au sens du hors périmètre — rien n'est calculé par test de
+visibilité, et c'est le jeu qui décide où la tache va. Le moteur ne fournit
+que la primitive : un polygone qui assombrit au lieu de recouvrir.
+
 ## 7 — Collision
 
 Balayage de boîte englobante contre les cellules. Module séparé, propres entrées
@@ -244,6 +256,11 @@ et non dans l'arithmétique ordinaire, que le déterminisme se perd.
 
 - Éclairage dynamique par pixel, ombres portées : les lightmaps et quelques
   lumières dynamiques suffisent à la classe visée, et tiennent sur téléphone.
+  **« Ombre portée » désigne ici une ombre calculée par test de visibilité à
+  chaque image**, pas une tache posée au sol sous un objet mobile — celle-là
+  est une surface modulée que le jeu place, et l'étape 6 en donne la
+  primitive. Le moteur calcule bien des ombres, mais à l'étape 5 et une fois
+  pour toutes : ce sont les lightmaps du décor.
 - Post-traitement plein écran : FXAA, bloom, tout ce qui lit les pixels voisins.
 - Modèles animés par squelette : les trames interpolées suffisent à la classe
   visée.

@@ -70,6 +70,14 @@ publié, et explique les conventions du dépôt à qui y contribue.
   main, si bien que **le fond de l'image en prend la couleur sans que l'hôte
   ait à l'effacer** : la géométrie lointaine rejoint l'horizon sans ligne de
   démarcation.
+- Les lumières dynamiques : `Context::set_lights` accepte jusqu'à huit lumières
+  ponctuelles colorées, dont l'atténuation `(1 − d²/r²)²` se calcule **par
+  sommet**. Elles éclairent une surface qui n'a pas de lightmap, ce qui les
+  rend utilisables avant que les cartes en apportent. Deux conséquences à
+  connaître : un mur de deux triangles rend un dégradé entre ses coins et non
+  un halo — il faut le découper en panneaux pour une source qui s'y déplace —,
+  et **dès qu'une lumière est réglée, elle vaut pour toute la scène** : une
+  surface hors de portée s'éteint au lieu de garder sa couleur.
 - La frontière C expose le brouillard : `scg_set_fog` et `scg_clear_fog`. La
   couleur y tient en trois canaux, le tampon de sortie étant opaque par
   contrat, et éteindre un brouillard qui n'existe pas n'est pas une erreur.
@@ -112,6 +120,13 @@ publié, et explique les conventions du dépôt à qui y contribue.
   while a tile is copied out, where depth is already at hand, so **the image's
   background takes its colour without the host having to clear with it**:
   distant geometry meets the horizon with no dividing line.
+- Dynamic lights: `Context::set_lights` takes up to eight coloured point
+  lights, whose `(1 − d²/r²)²` falloff is computed **per vertex**. They light a
+  surface that has no lightmap, which makes them usable before maps bring any.
+  Two consequences worth knowing: a wall of two triangles renders a gradient
+  between its corners rather than a halo — split it into panels for a source
+  that moves across it — and **once a light is set, it holds for the whole
+  scene**: a surface out of range goes dark instead of keeping its colour.
 - The C boundary exposes fog: `scg_set_fog` and `scg_clear_fog`. Its colour
   takes three channels there, the output buffer being opaque by contract, and
   turning off fog that was never on is not an error. `SCG_ABI_VERSION` stays at

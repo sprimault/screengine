@@ -22,6 +22,7 @@ fn triangle(x0: i32, y0: i32, x1: i32, y1: i32) -> Prepared {
         t: 0,
         s2: 0,
         t2: 0,
+        light: [0; 3],
     };
     prepare([p(x0, y0), p(x0, y1), p(x1, y0)], 0, NO_TEXTURE).expect("triangle visible")
 }

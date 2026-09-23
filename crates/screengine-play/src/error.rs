@@ -89,6 +89,12 @@ impl fmt::Display for Error {
                 Argument::Fog => {
                     f.write_str("fog range must be finite, not negative, and end beyond start")
                 }
+                Argument::LightCapacity => {
+                    f.write_str("more dynamic lights in one frame than the engine holds")
+                }
+                Argument::Light => f.write_str(
+                    "a light has a non-finite position, or a radius that is not positive",
+                ),
             },
             Self::Engine(screengine::Error::OutOfMemory) => {
                 f.write_str("the engine could not allocate its buffers")

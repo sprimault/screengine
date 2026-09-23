@@ -116,6 +116,18 @@ pub enum Argument {
     /// commence partout : c'est une division par zéro, et l'appelant voulait
     /// vraisemblablement l'éteindre.
     Fog,
+    /// Plus de lumières dynamiques que l'image n'en porte.
+    ///
+    /// Le lot est refusé en entier plutôt que tronqué : une scène à demi
+    /// éclairée ne se distingue pas d'une scène dont les rayons sont mal
+    /// réglés, et l'hôte chercherait longtemps.
+    LightCapacity,
+    /// Une lumière de position non finie, ou de rayon nul, négatif ou non
+    /// fini.
+    ///
+    /// Un rayon nul n'éclaire rien et ferait diviser par zéro ; une position
+    /// non finie empoisonnerait chaque sommet du lot.
+    Light,
 }
 
 /// Le résultat d'un appel du noyau.

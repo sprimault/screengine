@@ -25,8 +25,8 @@ use std::{fs, io};
 use std::sync::Arc;
 
 use screengine::{
-    Affine3, Angle, BYTES_PER_PIXEL, Color, Config, Context, Filter, Frame, MAX_OVERBRIGHT, Quat,
-    Rect, Rows, Texture, Triangle, Vec3, VertexUv, VertexUv2,
+    Affine3, Angle, BYTES_PER_PIXEL, Color, Config, Context, Filter, Frame, Light, MAX_OVERBRIGHT,
+    Quat, Rect, Rows, Texture, Triangle, Vec3, VertexUv, VertexUv2,
 };
 
 /// Une façon de rendre une scène qui ne doit pas changer l'image.
@@ -265,6 +265,19 @@ enum Scene {
     /// lointaine soit pleinement embrumée et la moitié proche à peine : les
     /// deux bouts du mélange sont alors dans la même image.
     Fog,
+    /// Un sol uni et un mur, éclairés par trois lumières de couleurs
+    /// différentes.
+    ///
+    /// **Sans lightmap**, et c'est le point : les lumières doivent éclairer
+    /// une surface qui n'en a pas, faute de quoi elles resteraient
+    /// inutilisables jusqu'à ce que les cartes en apportent.
+    ///
+    /// Le sol est découpé en panneaux, parce que l'atténuation se calcule par
+    /// sommet : un sol d'un seul quadrilatère ne montrerait qu'un dégradé
+    /// entre ses quatre coins, et cette scène doit rendre visible ce que le
+    /// découpage change. Trois teintes qui se recouvrent, pour que le mélange
+    /// des couleurs soit dans l'image et pas seulement leur somme.
+    Lights,
     /// La même, avec le sur-éclairement au maximum.
     ///
     /// Une scène et non une passe, pour la raison qui sépare déjà les deux
@@ -498,7 +511,7 @@ impl View {
 
 impl Scene {
     /// Toutes les scènes, dans l'ordre où `--check` les rejoue.
-    const ALL: [Self; 11] = [
+    const ALL: [Self; 12] = [
         Self::Edge,
         Self::Guard,
         Self::Lateral,
@@ -510,6 +523,7 @@ impl Scene {
         Self::Lit,
         Self::LitOverbright,
         Self::Fog,
+        Self::Lights,
     ];
 
     /// La passe que `--print` utilise, celle des hôtes.
@@ -546,6 +560,36 @@ impl Scene {
             Self::Lit => "lumiere",
             Self::LitOverbright => "lumiere-surbrillance",
             Self::Fog => "brouillard",
+            Self::Lights => "lumieres",
+        }
+    }
+
+    /// Les lumières dynamiques que la scène règle, ou aucune.
+    ///
+    /// Vide partout ailleurs, et c'est ce qui garde les autres empreintes
+    /// inchangées : un contexte qu'on ne configure pas n'éclaire rien.
+    fn lights(self) -> Vec<Light> {
+        match self {
+            Self::Lights => vec![
+                // Trois teintes primaires, espacées le long du couloir et
+                // assez larges pour se recouvrir deux à deux.
+                Light {
+                    position: Vec3::new(8.0, -3.0, 1.5),
+                    radius: 12.0,
+                    color: Color::new(0xFF, 0x30, 0x20, 0xFF),
+                },
+                Light {
+                    position: Vec3::new(16.0, 3.0, 1.5),
+                    radius: 12.0,
+                    color: Color::new(0x20, 0xFF, 0x40, 0xFF),
+                },
+                Light {
+                    position: Vec3::new(24.0, -2.0, 2.5),
+                    radius: 14.0,
+                    color: Color::new(0x30, 0x50, 0xFF, 0xFF),
+                },
+            ],
+            _ => Vec::new(),
         }
     }
 
@@ -715,6 +759,53 @@ impl Scene {
                 8.0,
                 &checker(64, 8),
             ),
+            // Un sol et un mur découpés en panneaux, éclairés par trois
+            // lumières et **sans aucune lightmap**. Le découpage est le sujet
+            // autant que les lumières : l'atténuation étant par sommet, un sol
+            // d'un seul quadrilatère ne rendrait qu'un dégradé entre ses
+            // quatre coins, et les trois halos seraient invisibles.
+            Self::Lights => {
+                // Le sol va **au-delà de la portée des trois lumières** : ses
+                // derniers panneaux ne sont atteints par aucune, et doivent
+                // s'éteindre en continuité avec leurs voisins. Une transition
+                // franche y trahirait un triangle traité autrement que les
+                // autres, ce qui est exactement le défaut à prévenir.
+                let panels = 16;
+                let (near, far) = (2.0f32, 50.0f32);
+                let step = (far - near) / panels as f32;
+                for i in 0..panels {
+                    let (a, b) = (near + i as f32 * step, near + (i + 1) as f32 * step);
+                    quad(
+                        context,
+                        [
+                            Vec3::new(a, -7.0, -1.2),
+                            Vec3::new(b, -7.0, -1.2),
+                            Vec3::new(b, 7.0, -1.2),
+                            Vec3::new(a, 7.0, -1.2),
+                        ],
+                        [
+                            Color::new(0xB0, 0xB0, 0xB0, 0xFF),
+                            Color::new(0xB0, 0xB0, 0xB0, 0xFF),
+                        ],
+                    )?;
+                    // Le mur de gauche, pour que les lumières éclairent une
+                    // surface qui n'est pas parallèle au sol.
+                    quad(
+                        context,
+                        [
+                            Vec3::new(a, -7.0, 4.0),
+                            Vec3::new(b, -7.0, 4.0),
+                            Vec3::new(b, -7.0, -1.2),
+                            Vec3::new(a, -7.0, -1.2),
+                        ],
+                        [
+                            Color::new(0x90, 0x90, 0x98, 0xFF),
+                            Color::new(0x90, 0x90, 0x98, 0xFF),
+                        ],
+                    )?;
+                }
+                Ok(())
+            }
             // Un sol qui fuit bien au-delà de la fin de la rampe : sa moitié
             // lointaine se confond avec le fond, sa moitié proche garde son
             // damier. Texturé, pour que le brouillard ait un motif à effacer —
@@ -809,6 +900,10 @@ impl Scene {
         context.set_overbright(self.overbright())?;
         if let Some((color, start, end)) = self.fog() {
             context.set_fog(color, start, end)?;
+        }
+        let lights = self.lights();
+        if !lights.is_empty() {
+            context.set_lights(&lights)?;
         }
         self.submit(&mut context, view)?;
         let mut pixels = vec![0u8; width as usize * height as usize * BYTES_PER_PIXEL];

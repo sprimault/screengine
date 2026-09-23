@@ -31,7 +31,8 @@ pub use context::{
 };
 pub use error::{Argument, Error, Result};
 pub use light::MAX_OVERBRIGHT;
+pub use light::dynamic::MAX_LIGHTS;
 pub use math::{Affine3, Angle, MAX_TEXEL_COORD, Quat, Vec3};
 pub use raster::Rect;
-pub use scene::{Camera, Color, Triangle, VertexUv, VertexUv2};
+pub use scene::{Camera, Color, Light, Triangle, VertexUv, VertexUv2};
 pub use texture::{Filter, MAX_TEXTURE_SIZE, Texture};

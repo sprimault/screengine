@@ -12,6 +12,7 @@ use core::sync::atomic::{AtomicBool, AtomicU8, AtomicU32, Ordering};
 use crate::buffer::reserved;
 use crate::error::{Argument, Error, Result};
 use crate::light::MAX_OVERBRIGHT;
+use crate::light::dynamic::{self, MAX_LIGHTS};
 use crate::light::fog::Fog;
 use crate::math::fixed::MAX_TEXEL_COORD;
 use crate::math::projection::ClipVertex;
@@ -20,7 +21,7 @@ use crate::raster::{
     Bins, Grid, Lighting, MAX_CLIP_TRIANGLES, NO_LIGHTING, NO_TEXTURE, Point, Prepared, Vertex,
     clip, prepare, prepare_lit,
 };
-use crate::scene::{Camera, Color, Triangle, VertexUv, VertexUv2};
+use crate::scene::{Camera, Color, Light, Triangle, VertexUv, VertexUv2};
 use crate::texture::{Filter, Texture};
 
 pub use frame::{Frame, Output, Rows};
@@ -156,6 +157,14 @@ pub struct Context {
     filter: Filter,
     /// Le décalage de sur-éclairement, de même.
     overbright: u32,
+    /// Les lumières dynamiques de l'image, telles que l'hôte les a données.
+    lights: Vec<Light>,
+    /// Les mêmes, portées en espace de vue.
+    ///
+    /// Refaites à chaque lot plutôt qu'à chaque sommet : la vue ne change pas
+    /// pendant une image, mais le tableau doit exister quelque part, et le
+    /// contexte est le seul endroit qui n'alloue pas par image.
+    placed: Vec<dynamic::Placed>,
     /// Le brouillard, éteint par défaut.
     ///
     /// Sa table dépend du plan proche de la caméra, qui convertit une
@@ -201,6 +210,11 @@ struct ClipSource {
     u2: f32,
     /// L'ordonnée de lightmap, nulle sur un lot qui n'en porte pas.
     v2: f32,
+    /// Ce que les lumières dynamiques ajoutent à ce sommet, par canal.
+    ///
+    /// Calculé ici, en espace de vue, une fois par sommet soumis : le
+    /// découpage l'interpole ensuite comme une coordonnée.
+    light: [f32; 3],
 }
 
 /// Le contexte accepte la scène : aucune image n'est commencée.
@@ -273,6 +287,8 @@ impl Context {
             camera,
             filter: Filter::default(),
             overbright: 0,
+            lights: reserved(MAX_LIGHTS)?,
+            placed: reserved(MAX_LIGHTS)?,
             fog: Fog::new()?,
             fog_range: (0.0, 0.0),
             view: camera.view(),
@@ -400,6 +416,62 @@ impl Context {
     /// Vrai si le brouillard est réglé.
     pub fn has_fog(&self) -> bool {
         self.fog.is_set()
+    }
+
+    /// Remplace les lumières dynamiques de l'image.
+    ///
+    /// Au plus [`MAX_LIGHTS`] ; au-delà, le lot entier est refusé plutôt que
+    /// tronqué — une scène à demi éclairée ne se distingue pas d'une scène
+    /// dont on a mal réglé les rayons.
+    ///
+    /// **L'atténuation se calcule par sommet**, à la soumission : les lumières
+    /// réglées après un lot ne l'éclairent pas. C'est ce qui permet à une
+    /// torche portée par le joueur d'éclairer le décor sans que le décor soit
+    /// resoumis, à condition de la régler avant lui.
+    ///
+    /// Une lumière de rayon nul, négatif ou non fini est refusée : elle
+    /// n'éclaire rien et ferait diviser par zéro.
+    ///
+    /// Refusé pendant le rendu, comme les autres réglages d'image.
+    pub fn set_lights(&mut self, lights: &[Light]) -> Result<()> {
+        if *self.state.get_mut() != RECORDING {
+            return Err(Error::InvalidState);
+        }
+        if lights.len() > MAX_LIGHTS {
+            return Err(Error::InvalidArgument(Argument::LightCapacity));
+        }
+        for light in lights {
+            let finite = light.position.x.is_finite()
+                && light.position.y.is_finite()
+                && light.position.z.is_finite();
+            // `is_finite` avant la comparaison : il écarte `NaN`, que celle-ci
+            // laisserait passer puisqu'elle est fausse dans les deux sens.
+            if !finite || !light.radius.is_finite() || light.radius <= 0.0 {
+                return Err(Error::InvalidArgument(Argument::Light));
+            }
+        }
+        self.lights.clear();
+        self.lights.extend_from_slice(lights);
+        Ok(())
+    }
+
+    /// Les lumières dynamiques courantes.
+    pub fn lights(&self) -> &[Light] {
+        &self.lights
+    }
+
+    /// Porte les lumières en espace de vue, pour le lot qui commence.
+    ///
+    /// Une fois par lot et non par sommet : la vue ne change pas pendant une
+    /// image, et huit transformations ne se mesurent pas.
+    fn place_lights(&mut self) {
+        self.placed.clear();
+        for light in &self.lights {
+            let view = self.view.transform_point(light.position);
+            if let Some(placed) = dynamic::Placed::new(light, view) {
+                self.placed.push(placed);
+            }
+        }
     }
 
     /// La configuration reçue à la création.
@@ -757,6 +829,10 @@ impl Context {
         F: Fn(usize) -> Result<([VertexUv2; 3], Color)>,
     {
         let transform = self.view.product(model);
+        // Une fois par lot : la vue ne change pas pendant une image, et huit
+        // transformations rigides ne se mesurent pas devant le nombre de
+        // sommets qu'elles vont éclairer.
+        self.place_lights();
         for i in 0..count {
             let (corners, color) = read(i)?;
             // Avant la transformation : c'est la valeur écrite par l'hôte qu'on
@@ -781,12 +857,20 @@ impl Context {
                 return Err(Error::InvalidArgument(Argument::TextureCoordinate));
             }
             self.submit_view(
-                corners.map(|c| ClipSource {
-                    view: transform.transform_point(c.position),
-                    u: c.u,
-                    v: c.v,
-                    u2: c.u2,
-                    v2: c.v2,
+                corners.map(|c| {
+                    let view = transform.transform_point(c.position);
+                    ClipSource {
+                        view,
+                        u: c.u,
+                        v: c.v,
+                        u2: c.u2,
+                        v2: c.v2,
+                        // **Les lumières sont déjà en espace de vue** : la
+                        // transformation a eu lieu une fois pour le lot, et la
+                        // distance y est la même qu'en monde puisque la vue
+                        // est rigide.
+                        light: dynamic::sum(&self.placed, view),
+                    }
                 }),
                 color,
                 texture,
@@ -807,12 +891,23 @@ impl Context {
     /// annexe n'a aucun moyen de désigner ses trous.
     fn push(&mut self, v: [Vertex; 3], color: u32, texture: u16, lit: Option<u16>) -> Result<()> {
         let slot = self.lighting.len();
-        let prepared = if let Some(lightmap) = lit {
+        // **Dès qu'une lumière est réglée, elle vaut pour toute la scène**, y
+        // compris pour les triangles hors de sa portée. Sans cela, un triangle
+        // qu'aucune lumière n'atteint garderait sa couleur pleine pendant que
+        // son voisin à demi éclairé s'assombrit là où la lumière ne porte
+        // pas : la transition entre les deux serait une marche franche, au
+        // milieu d'une surface continue.
+        let shaded = !self.placed.is_empty();
+        // Le drapeau des plans, lui, reste par triangle : celui qu'aucune
+        // lumière n'atteint garde des plans nuls, et le remplissage le sait.
+        let glowing = v.iter().any(|vertex| vertex.light != [0; 3]);
+        let prepared = if let Some(lightmap) = lit.or(shaded.then_some(NO_TEXTURE)) {
             if slot >= lighting_capacity(self.config.capacity()) {
                 return Err(Error::InvalidArgument(Argument::TriangleCapacity));
             }
             // `slot` est sous la sentinelle, donc sous `u16::MAX`.
-            prepare_lit(v, color, texture, lightmap, slot as u16).map(|(p, l)| (p, Some(l)))
+            prepare_lit(v, color, texture, lightmap, glowing, slot as u16)
+                .map(|(p, l)| (p, Some(l)))
         } else {
             prepare(v, color, texture).map(|p| (p, None))
         };
@@ -849,10 +944,14 @@ impl Context {
     ) -> Result<()> {
         let mut homogeneous = [ClipVertex::ZERO; 3];
         for (slot, source) in homogeneous.iter_mut().zip(view) {
-            match self
-                .projection
-                .to_clip(source.view, source.u, source.v, source.u2, source.v2)
-            {
+            match self.projection.to_clip(
+                source.view,
+                source.u,
+                source.v,
+                source.u2,
+                source.v2,
+                source.light,
+            ) {
                 Some(vertex) => *slot = vertex,
                 None => return Ok(()),
             }
@@ -876,6 +975,7 @@ impl Context {
                     t: projected.t,
                     s2: projected.s2,
                     t2: projected.t2,
+                    light: projected.light,
                 }
             });
             self.push(vertices, color.packed(), texture, lit)?;

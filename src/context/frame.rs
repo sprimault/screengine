@@ -334,14 +334,15 @@ impl Context {
             // tableau annexe, puis la lightmap que ces plans désignent.
             let lit = match triangle.lighting() {
                 NO_LIGHTING => None,
-                slot => self.lighting.get(slot as usize).and_then(|planes| {
-                    self.textures
+                // La lightmap peut manquer : un triangle que seules des
+                // lumières dynamiques éclairent porte quand même ses plans.
+                slot => self.lighting.get(slot as usize).map(|planes| Lit {
+                    lightmap: self
+                        .textures
                         .get(planes.lightmap() as usize)
-                        .map(|lightmap| Lit {
-                            lightmap: lightmap.as_ref(),
-                            planes,
-                            overbright: self.overbright,
-                        })
+                        .map(|texture| texture.as_ref()),
+                    planes,
+                    overbright: self.overbright,
                 }),
             };
             fill(&mut scratch, rect, triangle, sampling, lit);

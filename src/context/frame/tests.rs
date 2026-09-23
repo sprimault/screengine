@@ -94,6 +94,7 @@ fn scene(context: &mut Context, seed: u64) {
                 // deux-là se rempliront avec le lot qui les fait rendre.
                 s2: 0,
                 t2: 0,
+                light: [0; 3],
             }
         };
         let (a, b, c) = (vertex(), vertex(), vertex());
@@ -559,6 +560,7 @@ fn at(x: i32, y: i32, z: u32) -> Vertex {
         t: 0,
         s2: 0,
         t2: 0,
+        light: [0; 3],
     }
 }
 

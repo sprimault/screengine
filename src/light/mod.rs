@@ -7,6 +7,7 @@
 //! l'accompagne, et le brouillard par la distance. Le post-traitement de tuile
 //! viendra ici.
 
+pub mod dynamic;
 pub mod fog;
 
 /// Le décalage le plus fort qu'un contexte accepte.

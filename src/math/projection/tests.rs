@@ -19,7 +19,7 @@ fn projection() -> Projection {
 /// Le passage en espace de clip d'un sommet sans texture, pour les cas où les
 /// coordonnées de texture ne sont pas le sujet.
 fn to_clip(p: Projection, view: Vec3) -> Option<ClipVertex> {
-    Projection::to_clip(p, view, 0.0, 0.0, 0.0, 0.0)
+    Projection::to_clip(p, view, 0.0, 0.0, 0.0, 0.0, [0.0; 3])
 }
 
 /// Un sommet de clip sans placage, écrit par ses trois coordonnées.
@@ -139,7 +139,7 @@ fn la_coordonnee_de_texture_se_forme_sur_la_profondeur_rendue() {
         // Le second jeu passe par le même chemin, sur des valeurs sans rapport
         // avec le premier : un axe échangé entre les deux jeux se verrait ici.
         let (u2, v2) = (u * 0.125, 3.0 - u);
-        let clip = Projection::to_clip(p, Vec3::new(0.5, -0.25, w), u, -u, u2, v2)
+        let clip = Projection::to_clip(p, Vec3::new(0.5, -0.25, w), u, -u, u2, v2, [0.0; 3])
             .expect("sommet projetable");
         let v = p.to_vertex(clip);
 
@@ -228,8 +228,13 @@ fn aucune_intersection_ne_deborde_dans_le_domaine_admis() {
 /// Deux triangles qui partagent une arête la parcourent en sens opposés. Si le
 /// point d'intersection différait d'un seul bit entre les deux sens, une
 /// fissure s'ouvrirait le long de l'arête, invisible à l'arrêt et visible en
-/// mouvement. La comparaison est sur `to_bits`, jamais sur l'égalité flottante,
-/// qui confondrait `+0` et `−0`.
+/// mouvement. La comparaison est donc sur les bits, jamais sur une tolérance.
+///
+/// **Le zéro signé est le seul écart admis**, et il n'ouvre aucune fissure :
+/// tout ce qui lit ces valeurs en aval les convertit en entier ou les compare
+/// numériquement, et `+0` comme `−0` y donnent zéro. Il apparaît dès qu'un
+/// attribut vaut exactement zéro aux deux extrémités — la forme rend alors
+/// `(−0) − (+0)` dans un sens et `(+0) − (−0)` dans l'autre.
 #[test]
 fn l_intersection_est_symetrique_au_bit_pres() {
     let p = projection();
@@ -251,6 +256,8 @@ fn l_intersection_est_symetrique_au_bit_pres() {
             // toucherait qu'elle ne se verrait nulle part ailleurs.
             u2: rng.unit_f32() * 512.0 - 256.0,
             v2: rng.unit_f32() * 512.0 - 256.0,
+            // Et les trois canaux de lumière, pour la même raison.
+            light: [rng.unit_f32(), rng.unit_f32(), rng.unit_f32()],
         };
         let (a, b) = (point(&mut rng), point(&mut rng));
         for plane in 0..PLANE_COUNT {
@@ -261,31 +268,24 @@ fn l_intersection_est_symetrique_au_bit_pres() {
             croisements += 1;
             let ab = Frustum::intersect(a, b, da, db);
             let ba = Frustum::intersect(b, a, db, da);
-            assert_eq!(
-                ab.x.to_bits(),
-                ba.x.to_bits(),
-                "graine 0xC11B, plan {plane}"
-            );
-            assert_eq!(
-                ab.y.to_bits(),
-                ba.y.to_bits(),
-                "graine 0xC11B, plan {plane}"
-            );
-            assert_eq!(
-                ab.w.to_bits(),
-                ba.w.to_bits(),
-                "graine 0xC11B, plan {plane}"
-            );
-            assert_eq!(
-                ab.u.to_bits(),
-                ba.u.to_bits(),
-                "graine 0xC11B, plan {plane}"
-            );
-            assert_eq!(
-                ab.v.to_bits(),
-                ba.v.to_bits(),
-                "graine 0xC11B, plan {plane}"
-            );
+            let same = |left: f32, right: f32, what: &str| {
+                // Les bits, sauf pour le zéro signé : voir l'en-tête.
+                let identical = left.to_bits() == right.to_bits();
+                assert!(
+                    identical || (left == 0.0 && right == 0.0),
+                    "graine 0xC11B, plan {plane}, {what} : {left:?} et {right:?}"
+                );
+            };
+            same(ab.x, ba.x, "x");
+            same(ab.y, ba.y, "y");
+            same(ab.w, ba.w, "w");
+            same(ab.u, ba.u, "u");
+            same(ab.v, ba.v, "v");
+            same(ab.u2, ba.u2, "u2");
+            same(ab.v2, ba.v2, "v2");
+            for (index, (left, right)) in ab.light.iter().zip(&ba.light).enumerate() {
+                same(*left, *right, &alloc::format!("lumière {index}"));
+            }
             // La symétrie survit à l'infini, pas la valeur : deux sens qui
             // débordent rendent le même NaN, et la comparaison ci-dessus
             // resterait verte pendant que le sommet est du bruit.
