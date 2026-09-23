@@ -15,6 +15,7 @@ use alloc::vec;
 use alloc::vec::Vec;
 
 use super::*;
+use crate::light::MAX_OVERBRIGHT;
 use crate::math::fixed::DEPTH_MARGIN;
 use crate::testing::Rng;
 
@@ -53,7 +54,7 @@ fn fill_triangle<T: Target>(target: &mut T, window: Rect, v: [Point; 3], color: 
         t2: 0,
     });
     if let Some(triangle) = prepare(vertices, color, NO_TEXTURE) {
-        fill(target, window, &triangle, None);
+        fill(target, window, &triangle, None, None);
     }
 }
 
@@ -683,7 +684,7 @@ fn les_permutations_circulaires_rendent_la_meme_image() {
             });
             let mut sink = Depths { seen: Vec::new() };
             if let Some(triangle) = prepare(vertices, 1, NO_TEXTURE) {
-                fill(&mut sink, CLIP, &triangle, None);
+                fill(&mut sink, CLIP, &triangle, None, None);
             }
             sink.seen
         };
@@ -798,7 +799,7 @@ fn un_pixel_occulte_est_teste_mais_pas_ecrit() {
     });
     for vertices in [proche, loin] {
         let triangle = prepare(vertices, 1, NO_TEXTURE).expect("triangle visible");
-        fill(&mut sink, CLIP, &triangle, None);
+        fill(&mut sink, CLIP, &triangle, None, None);
     }
 
     let couverts = sink.writes;
@@ -932,6 +933,7 @@ fn le_bilineaire_interpole_la_ou_le_tramage_choisit() {
                 texture: &texture,
                 filter,
             }),
+            None,
         );
         paint
     };
@@ -976,7 +978,7 @@ fn les_segments_s_alignent_sur_la_grille_de_l_image() {
     let texture = addressed(64);
 
     let mut entier = Paint::new();
-    fill(&mut entier, CLIP, &triangle, dithered(&texture));
+    fill(&mut entier, CLIP, &triangle, dithered(&texture), None);
 
     let mut morceaux = Paint::new();
     for (x, y, width, height) in [
@@ -991,7 +993,7 @@ fn les_segments_s_alignent_sur_la_grille_de_l_image() {
             width,
             height,
         };
-        fill(&mut morceaux, window, &triangle, dithered(&texture));
+        fill(&mut morceaux, window, &triangle, dithered(&texture), None);
     }
 
     let peints = entier.color.iter().filter(|c| **c != 0).count();
@@ -1016,7 +1018,7 @@ fn l_interpolation_par_segments_reste_sous_le_texel() {
     let texture = addressed(side);
 
     let mut paint = Paint::new();
-    fill(&mut paint, CLIP, &triangle, dithered(&texture));
+    fill(&mut paint, CLIP, &triangle, dithered(&texture), None);
 
     let (mut pire, mut mesures) = (0i128, 0u32);
     // Le quart bas de l'image seulement : c'est le premier plan, où le sol est
@@ -1122,7 +1124,7 @@ fn le_tramage_ne_depend_pas_du_decoupage() {
     let texture = addressed(64);
 
     let mut entier = Paint::new();
-    fill(&mut entier, CLIP, &triangle, dithered(&texture));
+    fill(&mut entier, CLIP, &triangle, dithered(&texture), None);
 
     let mut morceaux = Paint::new();
     for (x, y, width, height) in [
@@ -1137,7 +1139,7 @@ fn le_tramage_ne_depend_pas_du_decoupage() {
             width,
             height,
         };
-        fill(&mut morceaux, window, &triangle, dithered(&texture));
+        fill(&mut morceaux, window, &triangle, dithered(&texture), None);
     }
 
     let peints = entier.color.iter().filter(|c| **c != 0).count();
@@ -1265,6 +1267,7 @@ fn le_niveau_de_mipmap_monte_avec_la_distance() {
         let read = |plane: &Plane| texel_coord(plane.at(ex, ey) >> GRADIENT_BITS, w);
         niveaux.push(mip_level(
             &triangle,
+            &triangle.uv,
             read(&triangle.uv[0]),
             read(&triangle.uv[1]),
             w,
@@ -1321,8 +1324,8 @@ fn le_niveau_de_mipmap_tient_compte_de_la_derivee_verticale() {
         let read = |plane: &Plane| texel_coord(plane.at(ex, ey) >> GRADIENT_BITS, w);
         let (u, v) = (read(&triangle.uv[0]), read(&triangle.uv[1]));
 
-        let avec = mip_level(&triangle, u, v, w);
-        let sans = mip_level(&plat, u, v, w);
+        let avec = mip_level(&triangle, &triangle.uv, u, v, w);
+        let sans = mip_level(&plat, &plat.uv, u, v, w);
         assert!(avec >= sans, "en y={y}, {avec} avec et {sans} sans");
         mesures += 1;
         distincts += u32::from(avec > sans);
@@ -1357,12 +1360,12 @@ fn la_boite_englobante_ne_change_pas_la_texture() {
 
     let serre = triangle_pointe_a_droite();
     let mut etroite = Paint::new();
-    fill(&mut etroite, CLIP, &serre, dithered(&texture));
+    fill(&mut etroite, CLIP, &serre, dithered(&texture), None);
 
     let mut large = triangle_pointe_a_droite();
     large.x1 = serre.x1 + 64;
     let mut desserree = Paint::new();
-    fill(&mut desserree, CLIP, &large, dithered(&texture));
+    fill(&mut desserree, CLIP, &large, dithered(&texture), None);
 
     let peints = etroite.color.iter().filter(|c| **c != 0).count();
     assert!(peints > 200, "{peints} pixels, le cas ne couvre rien");
@@ -1406,10 +1409,11 @@ fn les_plans_du_second_jeu_valent_ceux_du_premier_sur_les_memes_valeurs() {
         t2: 0,
     });
 
-    let (triangle, lighting) = prepare_lit(lit, 0, NO_TEXTURE, 7).expect("triangle visible");
+    let (triangle, lighting) = prepare_lit(lit, 0, NO_TEXTURE, 3, 7).expect("triangle visible");
     let temoin = prepare(temoin, 0, NO_TEXTURE).expect("triangle visible");
 
     assert_eq!(lighting.planes(), &temoin.uv);
+    assert_eq!(lighting.lightmap(), 3);
     assert_eq!(triangle.lighting(), 7);
     // Le premier jeu n'a pas bougé pour autant : les deux familles de plans
     // sont indépendantes.
@@ -1447,5 +1451,269 @@ fn un_triangle_de_dos_ne_reserve_aucune_place() {
         t2: 0,
     });
     assert!(prepare(vertices, 0, NO_TEXTURE).is_none());
-    assert!(prepare_lit(vertices, 0, NO_TEXTURE, 0).is_none());
+    assert!(prepare_lit(vertices, 0, NO_TEXTURE, 0, 0).is_none());
+}
+
+/// Un sol éclairé, préparé par la chaîne complète : la texture à `densite`
+/// texels par unité, la lightmap à `densite_lightmap`.
+///
+/// Les deux densités se règlent séparément, et c'est le point : une lightmap
+/// est étirée là où une texture se répète, donc les deux jeux n'atteignent
+/// jamais le même niveau de mipmap sur la même surface.
+fn sol_eclaire(devant: f32, densite: f32, densite_lightmap: f32) -> (Prepared, Lighting) {
+    use crate::math::{Projection, Vec3};
+
+    let p = Projection::new(W as u32, H as u32, 1.0, 0.1).unwrap_or_else(|_| unreachable!());
+    let sol = |avant: f32, cote: f32| {
+        p.to_clip(
+            Vec3::new(cote, 1.2, avant),
+            avant * densite,
+            cote * densite,
+            avant * densite_lightmap,
+            cote * densite_lightmap,
+        )
+        .expect("sommet projetable")
+    };
+    let large = devant / 3.0;
+    let corners = [sol(1.5, -2.0), sol(devant, large), sol(devant, -large)];
+    let vertices = corners.map(|c| {
+        let v = p.to_vertex(c);
+        Vertex {
+            position: Point { x: v.x, y: v.y },
+            z: v.z,
+            s: v.s,
+            t: v.t,
+            s2: v.s2,
+            t2: v.t2,
+        }
+    });
+    prepare_lit(vertices, 0xFFFF_FFFF, 0, 0, 0).expect("sol visible")
+}
+
+/// Une lightmap unie, dont tous les texels valent `value` sur les trois canaux.
+fn uniforme(side: u32, value: u8) -> Texture {
+    let bytes: Vec<u8> = (0..side * side)
+        .flat_map(|_| [value, value, value, 0xFF])
+        .collect();
+    Texture::load(side, side, &bytes).expect("lightmap valide")
+}
+
+/// L'éclairage d'un triangle, pour les cas où seuls la lightmap et le réglage
+/// varient.
+fn lighting<'a>(lightmap: &'a Texture, planes: &'a Lighting, overbright: u32) -> Option<Lit<'a>> {
+    Some(Lit {
+        lightmap,
+        planes,
+        overbright,
+    })
+}
+
+/// **Un triangle non texturé mais éclairé prend le chemin des segments.**
+///
+/// C'est le chemin qu'on oublie : la couleur unie se peignait sans division de
+/// perspective, et l'éclairage en a besoin. Un mur uni éclairé est pourtant le
+/// cas le plus courant d'un décor, et sans ce chemin il ressortirait de sa
+/// couleur brute — ce que personne ne prendrait pour un défaut, puisque c'est
+/// exactement l'image d'avant la lumière.
+#[test]
+fn un_triangle_uni_eclaire_passe_par_les_segments() {
+    let (triangle, planes) = sol_eclaire(30.0, 0.0, 1.0);
+    let lightmap = addressed(64);
+
+    let mut peint = Paint::new();
+    fill(
+        &mut peint,
+        CLIP,
+        &triangle,
+        None,
+        lighting(&lightmap, &planes, 0),
+    );
+
+    let mut brut = Paint::new();
+    fill(&mut brut, CLIP, &triangle, None, None);
+
+    let couverts = peint.color.iter().filter(|c| **c != 0).count();
+    assert!(couverts > 200, "{couverts} pixels, le cas ne couvre rien");
+    assert!(
+        peint.color != brut.color,
+        "la lightmap n'a rien changé à un triangle uni"
+    );
+    // Et l'éclairage varie d'un pixel à l'autre : une lightmap lue en un seul
+    // point rendrait un aplat, ce que la comparaison ci-dessus ne verrait pas.
+    let teintes = {
+        let mut v: Vec<u32> = peint.color.iter().copied().filter(|c| *c != 0).collect();
+        v.sort_unstable();
+        v.dedup();
+        v.len()
+    };
+    assert!(
+        teintes > 20,
+        "{teintes} teintes, la lightmap ne dégrade pas"
+    );
+}
+
+/// Une lightmap blanche est transparente **au niveau du remplissage aussi**,
+/// texture comprise.
+///
+/// Le même contrôle qu'au contexte, mais sur le seul chemin texturé : ici, un
+/// écart ne peut venir que de la combinaison, là-bas il pourrait venir de la
+/// soumission.
+#[test]
+fn une_lightmap_blanche_ne_change_pas_le_texel() {
+    let (triangle, planes) = sol_eclaire(30.0, 24.0, 1.0);
+    let texture = addressed(64);
+    let blanche = uniforme(4, 0xFF);
+
+    let mut avec = Paint::new();
+    fill(
+        &mut avec,
+        CLIP,
+        &triangle,
+        dithered(&texture),
+        lighting(&blanche, &planes, 0),
+    );
+    let mut sans = Paint::new();
+    fill(&mut sans, CLIP, &triangle, dithered(&texture), None);
+
+    let couverts = avec.color.iter().filter(|c| **c != 0).count();
+    assert!(couverts > 200, "{couverts} pixels, le cas ne couvre rien");
+    assert!(avec.color == sans.color, "la lightmap blanche a teinté");
+}
+
+/// **Une lightmap minifiée passe par ses mipmaps**, comme une texture.
+///
+/// C'est l'arbitrage du lot : une lightmap est presque toujours agrandie, mais
+/// « presque » n'est pas « toujours » — un mur lointain ou vu très en biais la
+/// minifie, et un niveau zéro forcé y scintillerait exactement comme une
+/// texture sans chaîne. Le cas construit ici est ce mur : la lightmap y est si
+/// dense que chaque pixel en couvre plusieurs texels.
+///
+/// **Le compte de teintes ne dirait rien** — un damier n'en produit que deux
+/// quel que soit le niveau —, c'est leur **valeur** qui sépare les deux cas.
+#[test]
+fn une_lightmap_minifiee_passe_par_ses_mipmaps() {
+    // Des cases de huit texels, et non d'un seul : la lightmap se lit en
+    // bilinéaire, qui moyennerait un damier d'un texel avant même qu'un niveau
+    // soit choisi. Il faut des plages franches pour que le contraste survive
+    // au niveau zéro — sans quoi le test passerait quel que soit le niveau.
+    let damier = {
+        let (side, cell) = (64u32, 8u32);
+        let mut bytes = Vec::new();
+        for v in 0..side {
+            for u in 0..side {
+                let value = if ((u / cell) + (v / cell)) % 2 == 0 {
+                    0x20
+                } else {
+                    0xE0
+                };
+                bytes.extend_from_slice(&[value, value, value, 0xFF]);
+            }
+        }
+        Texture::load(side, side, &bytes).expect("lightmap valide")
+    };
+
+    // Texture absente et couleur blanche : la combinaison rend alors le texel
+    // de lightmap presque tel quel, si bien qu'un canal de pixel se lit comme
+    // une valeur de lightmap — 32 et 224 si les texels sont lus un à un, 128
+    // s'ils ont été moyennés.
+    let (triangle, planes) = sol_eclaire(30.0, 0.0, 512.0);
+    let mut peint = Paint::new();
+    fill(
+        &mut peint,
+        CLIP,
+        &triangle,
+        None,
+        lighting(&damier, &planes, 0),
+    );
+
+    let canaux: Vec<u32> = peint
+        .color
+        .iter()
+        .filter(|c| **c != 0)
+        .map(|c| c & 0xFF)
+        .collect();
+    assert!(
+        canaux.len() > 200,
+        "{} pixels, le cas ne couvre rien",
+        canaux.len()
+    );
+    let extremes = canaux.iter().filter(|c| **c < 64 || **c > 192).count();
+    assert_eq!(
+        extremes, 0,
+        "{extremes} pixels aux teintes brutes du damier : le niveau n'a pas été pris"
+    );
+}
+
+/// Le sur-éclairement traverse jusqu'au pixel, et il éclaircit.
+#[test]
+fn le_sur_eclairement_arrive_jusqu_au_pixel() {
+    let (triangle, planes) = sol_eclaire(30.0, 0.0, 1.0);
+    let demi = uniforme(4, 0x60);
+
+    let peint = |overbright| {
+        let mut paint = Paint::new();
+        fill(
+            &mut paint,
+            CLIP,
+            &triangle,
+            None,
+            lighting(&demi, &planes, overbright),
+        );
+        paint.color
+    };
+
+    let (sans, avec) = (peint(0), peint(MAX_OVERBRIGHT));
+    let couverts = sans.iter().filter(|c| **c != 0).count();
+    assert!(couverts > 200, "{couverts} pixels, le cas ne couvre rien");
+    for (a, b) in sans.iter().zip(&avec) {
+        for index in [0u32, 8, 16] {
+            let (sombre, clair) = ((a >> index) & 0xFF, (b >> index) & 0xFF);
+            assert!(clair >= sombre, "le sur-éclairement a assombri un canal");
+        }
+    }
+    assert!(sans != avec, "le sur-éclairement n'a rien changé");
+}
+
+/// **La lightmap se lit toujours en bilinéaire**, quel que soit le filtre du
+/// contexte.
+///
+/// Une lightmap de quatre texels étirée sur toute la surface : en bilinéaire
+/// elle rend un dégradé continu, au plus proche voisin quatre aplats séparés
+/// par des marches franches. Le tramage ne rattrape pas ce cas — il déplace la
+/// coordonnée d'un demi-texel, ce qui ne fait rien contre une marche large de
+/// plusieurs dizaines de pixels.
+#[test]
+fn la_lightmap_se_lit_en_bilineaire_meme_en_tramage() {
+    let quatre = Texture::load(
+        2,
+        2,
+        &[
+            0x20, 0x20, 0x20, 0xFF, 0xE0, 0x40, 0x40, 0xFF, //
+            0x40, 0xE0, 0x40, 0xFF, 0xE0, 0xE0, 0x20, 0xFF,
+        ],
+    )
+    .expect("lightmap valide");
+
+    // Une densité qui étire les deux texels sur toute la fuite du sol : c'est
+    // le régime d'agrandissement où une lightmap vit toujours.
+    let (triangle, planes) = sol_eclaire(30.0, 0.0, 0.03);
+    let mut peint = Paint::new();
+    fill(
+        &mut peint,
+        CLIP,
+        &triangle,
+        None,
+        lighting(&quatre, &planes, 0),
+    );
+
+    let mut teintes: Vec<u32> = peint.color.iter().copied().filter(|c| *c != 0).collect();
+    let couverts = teintes.len();
+    assert!(couverts > 200, "{couverts} pixels, le cas ne couvre rien");
+    teintes.sort_unstable();
+    teintes.dedup();
+    assert!(
+        teintes.len() > 50,
+        "{} teintes : la lightmap a été lue au plus proche voisin",
+        teintes.len()
+    );
 }

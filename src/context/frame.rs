@@ -13,7 +13,7 @@ use crate::context::{
     BYTES_PER_PIXEL, CLEAR_COLOR, CLOSING, Context, OPAQUE, RECORDING, RENDERING,
 };
 use crate::error::{Argument, Error, Result};
-use crate::raster::{NO_TEXTURE, Rect, Sampling, Target, fill};
+use crate::raster::{Lit, NO_LIGHTING, NO_TEXTURE, Rect, Sampling, Target, fill};
 
 /// Le plus grand côté de tuile, qui dimensionne le tampon de travail posé sur
 /// la pile.
@@ -329,7 +329,21 @@ impl Context {
                     filter: self.filter,
                 }),
             };
-            fill(&mut scratch, rect, triangle, sampling);
+            // Deux index à résoudre, et non un : la place des plans dans le
+            // tableau annexe, puis la lightmap que ces plans désignent.
+            let lit = match triangle.lighting() {
+                NO_LIGHTING => None,
+                slot => self.lighting.get(slot as usize).and_then(|planes| {
+                    self.textures
+                        .get(planes.lightmap() as usize)
+                        .map(|lightmap| Lit {
+                            lightmap: lightmap.as_ref(),
+                            planes,
+                            overbright: self.overbright,
+                        })
+                }),
+            };
+            fill(&mut scratch, rect, triangle, sampling, lit);
         }
 
         let width = rect.width as usize;

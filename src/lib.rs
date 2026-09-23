@@ -17,6 +17,7 @@ extern crate alloc;
 mod buffer;
 mod context;
 mod error;
+mod light;
 mod math;
 mod raster;
 mod scene;
@@ -29,6 +30,7 @@ pub use context::{
     TRIANGLE_CAPACITY,
 };
 pub use error::{Argument, Error, Result};
+pub use light::MAX_OVERBRIGHT;
 pub use math::{Affine3, Angle, MAX_TEXEL_COORD, Quat, Vec3};
 pub use raster::Rect;
 pub use scene::{Camera, Color, Triangle, VertexUv, VertexUv2};

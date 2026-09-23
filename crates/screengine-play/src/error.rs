@@ -85,6 +85,7 @@ impl fmt::Display for Error {
                 Argument::TextureLength => {
                     f.write_str("pixel block is not exactly width x height x 4 bytes")
                 }
+                Argument::Overbright => f.write_str("overbright shift must be 0, 1 or 2"),
             },
             Self::Engine(screengine::Error::OutOfMemory) => {
                 f.write_str("the engine could not allocate its buffers")

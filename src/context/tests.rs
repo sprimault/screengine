@@ -608,9 +608,18 @@ fn ahead_uv2(u: f32, v: f32, u2: f32, v2: f32) -> [VertexUv2; 3] {
     })
 }
 
+/// Une lightmap unie et claire, pour les cas où seul le chemin compte.
+///
+/// Pas tout à fait blanche : à 255 la combinaison rend le texel intact et une
+/// lightmap oubliée ne se verrait pas.
+fn lightmap() -> Arc<Texture> {
+    Arc::new(Texture::load(2, 2, &[0xC0; 16]).expect("lightmap valide"))
+}
+
 /// Soumet un lot éclairé d'un seul triangle, par la forme à fonction d'accès.
-fn submit_lit(ctx: &mut Context, vertices: [VertexUv2; 3]) -> Result<()> {
-    ctx.submit_each_lit(Affine3::IDENTITY, 1, None, |_| {
+fn lit(ctx: &mut Context, vertices: [VertexUv2; 3]) -> Result<()> {
+    let lightmap = lightmap();
+    ctx.submit_each_lit(Affine3::IDENTITY, 1, None, &lightmap, |_| {
         Ok((vertices, one()[0].color))
     })
 }
@@ -638,7 +647,7 @@ fn un_lot_eclaire_range_ses_plans_dans_l_ordre() {
         u2: i as f32,
         v2: -(i as f32),
     });
-    submit_lit(&mut ctx, vertices).expect("capacité");
+    lit(&mut ctx, vertices).expect("capacité");
 
     assert!(ctx.triangles.len() > 1, "le cas n'a pas été découpé");
     assert_eq!(ctx.lighting.len(), ctx.triangles.len());
@@ -673,7 +682,7 @@ fn un_lot_ordinaire_ne_remplit_pas_le_tableau_annexe() {
 #[test]
 fn un_lot_eclaire_refuse_ne_laisse_aucune_place() {
     let mut ctx = small();
-    submit_lit(&mut ctx, ahead_uv2(0.0, 0.0, 1.0, 2.0)).expect("capacité");
+    lit(&mut ctx, ahead_uv2(0.0, 0.0, 1.0, 2.0)).expect("capacité");
     let pose = ctx.lighting.len();
     assert_eq!(pose, 1);
 
@@ -682,7 +691,7 @@ fn un_lot_eclaire_refuse_ne_laisse_aucune_place() {
     let vertices = ahead_uv2(0.0, 0.0, 1.0, 2.0);
     let mauvais = ahead_uv2(0.0, 0.0, MAX_TEXEL_COORD * 1.5, 0.0);
     assert_eq!(
-        ctx.submit_each_lit(Affine3::IDENTITY, 2, None, |i| {
+        ctx.submit_each_lit(Affine3::IDENTITY, 2, None, &lightmap(), |i| {
             Ok((if i == 0 { vertices } else { mauvais }, one()[0].color))
         }),
         Err(Error::InvalidArgument(Argument::TextureCoordinate))
@@ -697,31 +706,40 @@ fn une_coordonnee_de_lightmap_hors_borne_refuse_le_lot() {
     for bad in [f32::NAN, f32::INFINITY, MAX_TEXEL_COORD * 1.5] {
         let mut ctx = small();
         assert_eq!(
-            submit_lit(&mut ctx, ahead_uv2(0.0, 0.0, bad, 0.0)),
+            lit(&mut ctx, ahead_uv2(0.0, 0.0, bad, 0.0)),
             Err(Error::InvalidArgument(Argument::TextureCoordinate)),
             "{bad}"
         );
         assert_eq!(
-            submit_lit(&mut ctx, ahead_uv2(0.0, 0.0, 0.0, bad)),
+            lit(&mut ctx, ahead_uv2(0.0, 0.0, 0.0, bad)),
             Err(Error::InvalidArgument(Argument::TextureCoordinate)),
             "{bad}"
         );
     }
 }
 
-/// **Le critère du lot** : un lot éclairé rend exactement l'image qu'il
-/// rendrait sans l'être.
+/// Une lightmap blanche est **transparente** : le lot éclairé rend alors
+/// exactement l'image du lot ordinaire, octet pour octet.
 ///
-/// Le second jeu de coordonnées traverse toute la chaîne — soumission,
-/// projection, découpage, préparation — et rien ne le lit encore. Un seul
-/// pixel de différence voudrait dire qu'il a débordé sur le premier jeu quelque
-/// part, et c'est le genre d'écart qu'on ne retrouve plus une fois le
-/// remplissage éclairé écrit par-dessus.
+/// C'est ce qui sépare un éclairage d'un assombrissement général. La forme
+/// `(t·l + 128) >> 8` rendrait ici 254 partout où le texel vaut 255, et ce
+/// test est le seul du moteur à le voir : sur une image, un canal perdu sur
+/// deux cent cinquante-six ne se distingue de rien.
+///
+/// Il éprouve aussi le chemin entier sur des coordonnées de lightmap qui n'ont
+/// aucun rapport avec celles de texture — un axe échangé entre les deux jeux
+/// changerait l'endroit lu, mais pas la couleur d'une lightmap unie, d'où la
+/// scène de conformance qui prend le relais là-dessus.
 #[test]
-fn un_lot_eclaire_rend_la_meme_image_qu_un_lot_ordinaire() {
+fn une_lightmap_blanche_rend_l_image_du_lot_ordinaire() {
     let mut eclaire = small();
     let mut ordinaire = small();
-    submit_lit(&mut eclaire, ahead_uv2(4.0, 8.0, 0.25, -0.75)).expect("capacité");
+    let blanche = Arc::new(Texture::load(2, 2, &[0xFF; 16]).expect("lightmap valide"));
+    eclaire
+        .submit_each_lit(Affine3::IDENTITY, 1, None, &blanche, |_| {
+            Ok((ahead_uv2(4.0, 8.0, 0.25, -0.75), one()[0].color))
+        })
+        .expect("capacité");
     ordinaire
         .submit_uv(Affine3::IDENTITY, &ahead_uv(4.0, 8.0), &one())
         .expect("capacité");
@@ -736,7 +754,51 @@ fn un_lot_eclaire_rend_la_meme_image_qu_un_lot_ordinaire() {
         a.chunks_exact(BYTES_PER_PIXEL).any(|p| p[0] == 0xFF),
         "le cas ne peint rien"
     );
-    assert!(a == b, "le second jeu de coordonnées a changé l'image");
+    assert!(a == b, "une lightmap blanche a changé l'image");
+}
+
+/// Une lightmap sombre assombrit, et c'est le contrôle qui rend le précédent
+/// honnête : sans lui, une lightmap simplement ignorée passerait les deux.
+#[test]
+fn une_lightmap_sombre_assombrit_le_lot() {
+    let mut ctx = small();
+    let sombre = Arc::new(Texture::load(2, 2, &[0x40; 16]).expect("lightmap valide"));
+    ctx.submit_each_lit(Affine3::IDENTITY, 1, None, &sombre, |_| {
+        Ok((ahead_uv2(0.0, 0.0, 0.0, 0.0), one()[0].color))
+    })
+    .expect("capacité");
+
+    let mut pixels = vec![0u8; 64 * 64 * BYTES_PER_PIXEL];
+    ctx.frame_end(&mut pixels, 64).expect("image rendue");
+    // La couleur soumise est blanche : à un quart d'éclairage, elle ressort à
+    // `255 · 65 >> 8`, soit 64.
+    let peints = pixels
+        .chunks_exact(BYTES_PER_PIXEL)
+        .filter(|p| p[0] == 64 && p[1] == 64 && p[2] == 64)
+        .count();
+    assert!(
+        peints > 100,
+        "{peints} pixels assombris, le cas ne rend rien"
+    );
+}
+
+/// Le sur-éclairement se refuse au-delà de son maximum, et tient d'une image à
+/// l'autre.
+#[test]
+fn le_sur_eclairement_se_regle_et_se_borne() {
+    let mut ctx = small();
+    assert_eq!(ctx.overbright(), 0);
+    assert_eq!(ctx.set_overbright(MAX_OVERBRIGHT), Ok(()));
+    assert_eq!(ctx.overbright(), MAX_OVERBRIGHT);
+    assert_eq!(
+        ctx.set_overbright(MAX_OVERBRIGHT + 1),
+        Err(Error::InvalidArgument(Argument::Overbright))
+    );
+    assert_eq!(
+        ctx.overbright(),
+        MAX_OVERBRIGHT,
+        "un refus a changé le réglage"
+    );
 }
 
 /// La fin d'image vide le tableau annexe comme elle vide les triangles : gardé,
@@ -744,11 +806,11 @@ fn un_lot_eclaire_rend_la_meme_image_qu_un_lot_ordinaire() {
 #[test]
 fn la_fin_d_image_vide_le_tableau_annexe() {
     let mut ctx = small();
-    submit_lit(&mut ctx, ahead_uv2(0.0, 0.0, 1.0, 2.0)).expect("capacité");
+    lit(&mut ctx, ahead_uv2(0.0, 0.0, 1.0, 2.0)).expect("capacité");
     let mut pixels = vec![0u8; 64 * 64 * BYTES_PER_PIXEL];
     ctx.frame_end(&mut pixels, 64).expect("image rendue");
 
-    submit_lit(&mut ctx, ahead_uv2(0.0, 0.0, 1.0, 2.0)).expect("capacité");
+    lit(&mut ctx, ahead_uv2(0.0, 0.0, 1.0, 2.0)).expect("capacité");
     assert_eq!(ctx.lighting.len(), 1);
     assert_eq!(ctx.triangles[0].lighting(), 0);
 }

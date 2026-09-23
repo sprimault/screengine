@@ -160,6 +160,20 @@ jamais avant d'en avoir perdu une série.
 Identifiants stables pour cellules, portails, surfaces et entités. Jamais d'index
 de tableau comme référence persistante.
 
+**Un hôte de démonstration par langage, avec fenêtre, entrées et boucle.** Les
+hôtes existants vérifient une empreinte : ils rendent trois scènes et comparent
+un nombre, sans jamais ouvrir de fenêtre. C'est ce qu'il faut pour la
+conformance, et c'est inutilisable comme point de départ — quelqu'un qui veut
+parcourir un décor depuis un autre langage n'a rien à copier, alors que l'étage
+d'accueil Rust lui offre un couloir qu'on traverse.
+
+C'est ici et pas plus tôt parce que c'est ici qu'un hôte a quelque chose à
+charger : avant le format de carte, un exemple ne peut qu'écrire sa géométrie en
+dur, et il en existe déjà un. Ces hôtes restent des exemples, jamais des
+composants du moteur : la bibliothèque continue de n'avoir ni fenêtre, ni
+entrées, ni fichiers, et c'est ce qui la rend intégrable dans une application
+qui a déjà les siennes.
+
 ## 5 — Le monde
 
 Cellules 3D fermées, portails polygonaux plans et convexes, traversée avec

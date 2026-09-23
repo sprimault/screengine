@@ -330,9 +330,11 @@ dans la mémoire linéaire après le trap, sans rappeler le module.
   pas décidée ; la recommandation reste la copie, pour la même raison.
 - **Ressources** (textures, maillages, mondes). Elles sont indépendantes de tout
   contexte, ce qu'impose la collision sans rendu de l'étape 7. Leur mémoire est
-  allouée à leur chargement, mipmaps compris ; celle des lightmaps, à l'appel
-  qui les calcule. Détruire une ressource encore référencée par un appel de
-  dessin est une précondition, pas un cas d'erreur.
+  allouée à leur chargement, mipmaps compris. **Une lightmap fournie par l'hôte
+  est une ressource comme les autres**, et suit donc cette règle ; celle que le
+  noyau calculera à l'étape 5 alloue à l'appel qui la calcule. Détruire une
+  ressource encore référencée par un appel de dessin est une précondition, pas
+  un cas d'erreur.
 
 ## Concurrence
 
@@ -474,9 +476,17 @@ int32_t scg_frame_end(ScgContext *ctx, uint8_t *pixels, uint32_t stride);
   facteur seize à soixante-quatre par construction, et sans filtrage chaque
   luxel deviendrait un pavé franc de seize pixels de côté. Le tramage n'y
   aiderait pas — il ne toucherait que la frontière entre deux luxels, et y
-  remplacerait un escalier par du bruit régulier. Elle n'a pas non plus de
-  mipmaps : elle n'est jamais réduite, et son contenu ne porte aucun détail
-  au-dessus de sa propre finesse.
+  remplacerait un escalier par du bruit régulier.
+
+  **Elle porte en revanche une chaîne de mipmaps, et son niveau se choisit
+  comme celui d'une texture.** Cette clause disait l'inverse jusqu'à l'étape 3,
+  au motif qu'une lightmap n'est jamais réduite ; c'est vrai en intérieur, où
+  un mur de quatre mètres portant seize luxels reste agrandi jusqu'à
+  quatre-vingts mètres environ. Ce ne l'est plus dès qu'une surface s'éloigne
+  au-delà, ce qu'un décor à ciel ouvert fait par construction — et un niveau
+  zéro forcé y scintillerait exactement comme une texture sans chaîne. Le coût
+  est un tiers de mémoire sur une ressource qui en occupe peu, et un choix de
+  niveau par segment de seize pixels.
 - **Le post-traitement** — gamma, tonemapping, étalonnage — s'applique pendant
   l'écriture de chaque tuile dans le tampon de l'hôte. Il n'y a pas de passe plein
   écran, et donc rien qui lise les pixels voisins.
