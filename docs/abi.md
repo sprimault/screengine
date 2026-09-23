@@ -394,6 +394,14 @@ int32_t scg_frame_end(ScgContext *ctx, uint8_t *pixels, uint32_t stride);
   `tile_size`. Une tuile vide se rend aussi : fond, alpha et post-traitement
   s'écrivent partout. Aucune fonction ne rend le rectangle d'une tuile ; elle
   pourra s'ajouter sans changer la version d'ABI.
+- **Un tampon refusé par `scg_frame_end` ne laisse pas l'image ouverte.** Quand
+  elle fait le début elle-même, elle vérifie la sortie **avant** : un `stride`
+  plus court que la largeur, ou un tampon trop court côté Rust, rend
+  `SCG_ERR_INVALID_ARGUMENT` et le contexte reste en enregistrement. Sans cette
+  clause, un hôte qui se trompe de tampon se retrouvait en rendu et voyait tout
+  appel exclusif suivant rendre `SCG_ERR_INVALID_STATE`, sans rien pour en
+  comprendre la cause. Après un début que l'hôte a demandé, en revanche, une
+  fin refusée laisse l'image ouverte et il la retente : elle existe, elle.
 - **`scg_frame_end` garde sa signature et son sens de l'étape 0.** Elle rend les
   tuiles que l'hôte n'a pas rendues, puis clôt l'image ; appelée sans début, elle
   fait le début elle-même. Un hôte qui n'appelle qu'elle obtient donc toujours

@@ -739,6 +739,35 @@ fn refuse_de_changer_le_filtre_pendant_une_image() {
     unsafe { scg_destroy(ctx) };
 }
 
+/// Une fin d'image refusée sur sa sortie laisse le contexte utilisable.
+///
+/// `scg_frame_end` ouvre l'image elle-même quand personne ne l'a fait. Si elle
+/// l'ouvrait avant de regarder la sortie, un `stride` fautif laisserait
+/// derrière lui un contexte en rendu, et tout appel exclusif rendrait ensuite
+/// `SCG_ERR_INVALID_STATE` — un hôte qui s'est trompé de tampon perdrait sa
+/// session sans rien pour comprendre pourquoi.
+#[test]
+fn une_sortie_refusee_laisse_le_contexte_utilisable() {
+    let ctx = create(&sane());
+    let mut pixels = vec![0u8; 64 * 32 * 4];
+
+    // SAFETY: `ctx` est vivant, et le tampon couvre bien 64×32 pixels — c'est
+    // le `stride` qui est fautif, pas la longueur.
+    let court = unsafe { scg_frame_end(ctx, pixels.as_mut_ptr(), 63) };
+    assert_eq!(court, SCG_ERR_INVALID_ARGUMENT);
+
+    // SAFETY: mêmes préconditions. C'est la preuve utile : le contexte répond
+    // encore, donc l'image refusée ne s'est jamais ouverte.
+    assert_eq!(unsafe { scg_set_resolution(ctx, 32, 16) }, SCG_OK);
+
+    // SAFETY: le tampon reste assez long pour la résolution réduite.
+    let rendu = unsafe { scg_frame_end(ctx, pixels.as_mut_ptr(), 32) };
+    assert_eq!(rendu, SCG_OK);
+
+    // SAFETY: le handle est vivant et détruit une seule fois.
+    unsafe { scg_destroy(ctx) };
+}
+
 /// La résolution se pose sous le maximum de la création, et rien d'autre.
 ///
 /// Le maximum est ce sur quoi tous les tampons ont été dimensionnés : au-delà,

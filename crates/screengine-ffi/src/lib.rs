@@ -565,12 +565,17 @@ pub unsafe extern "C" fn scg_frame_end(ctx: *mut ScgContext, pixels: *mut u8, st
         if pixels.is_null() {
             return Err(AbiError::NULL);
         }
-        if !core.shared().is_rendering() {
-            core.exclusive()?.begin()?;
-        }
         // SAFETY: précondition de la fonction — le tampon couvre l'image. Une
         // tuile qui tournerait encore fait refuser la fin avant toute écriture.
         let mut out = unsafe { HostRows::new(pixels, stride) };
+        if !core.shared().is_rendering() {
+            // La sortie se vérifie avant d'ouvrir l'image : sans cela, un
+            // `stride` refusé laisserait le contexte en rendu, et l'hôte qui
+            // s'est seulement trompé de tampon verrait tous ses appels
+            // suivants rendre `SCG_ERR_INVALID_STATE`.
+            core.shared().check_output(&out)?;
+            core.exclusive()?.begin()?;
+        }
         core.shared().end(&mut out)?;
         Ok(())
     };
