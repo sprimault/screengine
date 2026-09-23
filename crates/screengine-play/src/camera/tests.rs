@@ -8,6 +8,7 @@
 //! la composition des deux angles et la borne du tangage.
 
 use super::*;
+use crate::Input;
 
 /// L'écart admis après deux rotations par les tables trigonométriques.
 const TOLERANCE: f32 = 1e-5;
@@ -70,18 +71,74 @@ fn tourner_puis_lever_les_yeux_ne_penche_pas_l_horizon() {
     );
 }
 
-/// Le tangage est borné au quart de tour, jamais replié.
+/// Un pas de mise à jour d'une seconde, avec le déplacement de souris donné et
+/// le curseur capturé.
+///
+/// Les entrées se remplissent par les fonctions que la boucle appelle : c'est
+/// le seul moyen d'atteindre `FreeCamera::update`, où vivent le signe du delta,
+/// la sensibilité et la borne du tangage. Un test qui refait ces calculs dans
+/// son propre corps ne vérifierait que lui-même.
+fn step(camera: &mut FreeCamera, dx: f64, dy: f64) {
+    let mut input = Input::default();
+    input.motion(dx, dy);
+    camera.update(&Tick::for_test(&input, 1.0, true));
+}
+
+/// Le tangage est borné au quart de tour par la mise à jour elle-même, jamais
+/// replié.
 ///
 /// Sans la borne, regarder trop haut retourne l'image, et on croit à un défaut
 /// du moteur plutôt qu'à une caméra passée par-dessus la verticale.
 #[test]
 fn le_tangage_est_borne_au_quart_de_tour() {
-    let mut camera = FreeCamera::new(Vec3::ZERO);
     for excess in [3.0f32, -3.0] {
-        camera.pitch = excess;
-        camera.pitch = camera.pitch.clamp(-MAX_PITCH, MAX_PITCH);
+        let mut camera = FreeCamera::new(Vec3::ZERO);
+        // Assez de déplacement pour dépasser largement la verticale, dans le
+        // sens voulu : le delta vertical est retranché, d'où le signe inverse.
+        let dy = f64::from(-excess) / f64::from(camera.sensitivity);
+        step(&mut camera, 0.0, dy);
+
         assert_eq!(camera.pitch.abs(), MAX_PITCH);
         // Le regard reste du côté où l'on visait, jamais retourné.
         assert!(gaze(&camera).z.signum() == excess.signum());
     }
+}
+
+/// Le déplacement de la souris tourne la caméra dans le sens que l'usage
+/// impose, et à la sensibilité déclarée.
+///
+/// Les deux signes comptent autant que l'amplitude : inversés, la caméra suit
+/// la souris à l'envers, ce qui se voit tout de suite à l'écran mais qu'aucun
+/// test ne disait. Souris vers la droite fait tourner vers la droite, donc le
+/// lacet — positif vers le nord — diminue ; souris vers le bas fait regarder
+/// vers le bas, donc le tangage diminue aussi.
+#[test]
+fn la_souris_tourne_la_camera_dans_le_bon_sens() {
+    let mut camera = FreeCamera::new(Vec3::ZERO);
+    let sensitivity = camera.sensitivity;
+    step(&mut camera, 100.0, 50.0);
+
+    assert!(
+        (camera.yaw + 100.0 * sensitivity).abs() < TOLERANCE,
+        "lacet"
+    );
+    assert!(
+        (camera.pitch + 50.0 * sensitivity).abs() < TOLERANCE,
+        "tangage"
+    );
+}
+
+/// Sans capture du curseur, le déplacement de la souris ne tourne rien.
+///
+/// C'est ce qui sépare une fenêtre dans laquelle on joue d'une fenêtre qu'on
+/// est en train de déplacer : sans cette garde, la caméra pivoterait pendant
+/// qu'on vise la barre de titre.
+#[test]
+fn sans_capture_la_souris_ne_tourne_pas_la_camera() {
+    let mut camera = FreeCamera::new(Vec3::ZERO);
+    let mut input = Input::default();
+    input.motion(100.0, 50.0);
+    camera.update(&Tick::for_test(&input, 1.0, false));
+
+    assert_eq!((camera.yaw, camera.pitch), (0.0, 0.0));
 }

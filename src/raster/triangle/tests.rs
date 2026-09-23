@@ -1203,6 +1203,105 @@ fn triangle_pointe_a_droite() -> Prepared {
     prepare(vertices, 0, 0).expect("triangle visible")
 }
 
+/// Le niveau de mipmap monte avec la distance le long d'une colonne.
+///
+/// La propriété que tout le filtrage par défaut repose dessus : plus loin, un
+/// pixel couvre plus de texels, donc un niveau plus réduit. Elle ne tenait
+/// jusqu'ici qu'à une empreinte de conformance, qui change aussi bien pour un
+/// rendu faux.
+#[test]
+fn le_niveau_de_mipmap_monte_avec_la_distance() {
+    let (triangle, _) = sol_texture_fuyant(60.0, 96.0);
+    let (_, y0, _, y1) = triangle.bounds();
+
+    // Une colonne au milieu du sol, du plus proche au plus lointain : à
+    // l'écran, plus loin veut dire plus haut, donc `y` décroissant.
+    let x = (triangle.x0 + triangle.x1) / 2;
+    let mut niveaux = Vec::new();
+    for y in (y0.max(0)..=y1.min(H - 1)).rev() {
+        let ey = (py_of(y) - triangle.ref_y) as i64;
+        let ex = (x * SUBPIXEL_SCALE + PIXEL_CENTER - triangle.ref_x) as i64;
+        let depth = triangle.depth.at(ex, ey) >> GRADIENT_BITS;
+        if depth <= 0 {
+            continue;
+        }
+        let w = reciprocal(depth as u32);
+        let read = |plane: &Plane| texel_coord(plane.at(ex, ey) >> GRADIENT_BITS, w);
+        niveaux.push(mip_level(
+            &triangle,
+            read(&triangle.uv[0]),
+            read(&triangle.uv[1]),
+            w,
+        ));
+    }
+
+    assert!(niveaux.len() > 8, "{} lignes, trop peu", niveaux.len());
+    assert!(
+        niveaux.windows(2).all(|w| w[1] >= w[0]),
+        "le niveau redescend en s'éloignant : {niveaux:?}"
+    );
+    assert!(
+        niveaux.last() > niveaux.first(),
+        "le niveau ne monte pas du tout : {niveaux:?}"
+    );
+}
+
+/// Le niveau tient compte de la dérivée **verticale**, et pas seulement de
+/// l'horizontale.
+///
+/// C'est le critère de franchissement de l'étape 2, et il se manque exactement
+/// là : sur un sol, `∂u/∂x` reste modérée le long d'une ligne alors que
+/// `∂u/∂y` explose vers l'horizon. Un niveau choisi sur la seule horizontale
+/// sous-sélectionne, et le sol scintille en mouvement — ce qu'aucune image fixe
+/// ne montre.
+///
+/// La comparaison se fait contre un triangle dont les plans de texture n'ont
+/// **aucune pente verticale**, la même géométrie par ailleurs : si le niveau ne
+/// changeait pas, c'est que la dérivée verticale n'entre pas dans le calcul.
+#[test]
+fn le_niveau_de_mipmap_tient_compte_de_la_derivee_verticale() {
+    let (triangle, _) = sol_texture_fuyant(60.0, 96.0);
+    // Le même triangle, dont plus rien ne varie verticalement. La profondeur
+    // s'aplatit avec les coordonnées : les deux termes verticaux du critère
+    // sont `∂S/∂y − u·∂D/∂y`, et n'annuler que le premier en laisserait la
+    // moitié debout — ce qui ne serait plus « sans dérivée verticale ».
+    let mut plat = sol_texture_fuyant(60.0, 96.0).0;
+    plat.depth.flatten_y();
+    for plane in &mut plat.uv {
+        plane.flatten_y();
+    }
+
+    let (_, y0, _, y1) = triangle.bounds();
+    let x = (triangle.x0 + triangle.x1) / 2;
+    let (mut mesures, mut distincts) = (0, 0);
+    for y in y0.max(0)..=y1.min(H - 1) {
+        let ey = (py_of(y) - triangle.ref_y) as i64;
+        let ex = (x * SUBPIXEL_SCALE + PIXEL_CENTER - triangle.ref_x) as i64;
+        let depth = triangle.depth.at(ex, ey) >> GRADIENT_BITS;
+        if depth <= 0 {
+            continue;
+        }
+        let w = reciprocal(depth as u32);
+        let read = |plane: &Plane| texel_coord(plane.at(ex, ey) >> GRADIENT_BITS, w);
+        let (u, v) = (read(&triangle.uv[0]), read(&triangle.uv[1]));
+
+        let avec = mip_level(&triangle, u, v, w);
+        let sans = mip_level(&plat, u, v, w);
+        assert!(avec >= sans, "en y={y}, {avec} avec et {sans} sans");
+        mesures += 1;
+        distincts += u32::from(avec > sans);
+    }
+
+    assert!(mesures > 8, "{mesures} lignes, trop peu");
+    // Elle ne décide pas partout — près de la caméra, l'horizontale domine —,
+    // mais là où elle décide, l'ignorer sous-sélectionne d'un niveau ou plus.
+    // C'est exactement le sol qui scintille vers l'horizon.
+    assert!(
+        distincts > 0,
+        "la dérivée verticale ne décide nulle part sur {mesures} lignes"
+    );
+}
+
 /// L'image ne dépend pas de la boîte englobante du triangle, tant qu'elle
 /// majore le span.
 ///

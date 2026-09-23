@@ -17,8 +17,12 @@
 
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::cell::Cell;
+use std::sync::Arc;
 
-use screengine::{Affine3, BYTES_PER_PIXEL, Color, Config, Context, Rows, Texture, Triangle, Vec3};
+use screengine::{
+    Affine3, BYTES_PER_PIXEL, Color, Config, Context, Filter, Rows, Texture, Triangle, Vec3,
+    VertexUv,
+};
 
 /// Le quadrilatère de la scène de référence, resoumis à chaque image.
 ///
@@ -139,6 +143,60 @@ fn une_texture_se_charge_en_une_seule_allocation() {
     let texture = texture.expect("texture valide");
     assert_eq!(texture.level_count(), 7, "chaîne incomplète");
     assert_eq!(seen, 1, "{seen} allocation(s) pour une texture");
+}
+
+/// Aucune image texturée n'alloue non plus, dans les deux filtrages.
+///
+/// Le chemin sans texture ne suffit pas : `submit_textured` passe par la table
+/// de textures du contexte, que `submit` ne touche jamais. Une table qui
+/// grandirait au premier lot serait une allocation par image, et la mesure
+/// voisine ne la verrait pas — alors que c'est le chemin que tout décor
+/// emprunte depuis l'étape 2, et celui par lequel l'étape 3 fera entrer les
+/// lightmaps.
+///
+/// Les deux filtrages sont mesurés parce qu'ils ne lisent pas la texture de la
+/// même façon : le bilinéaire prend quatre texels au lieu d'un, et rien ne dit
+/// a priori qu'aucun des deux n'a besoin d'un tampon.
+#[test]
+fn aucune_image_texturee_n_alloue() {
+    let (width, height) = (640, 360);
+    let mut context = Context::new(Config {
+        max_width: width,
+        max_height: height,
+        width,
+        height,
+        tile_size: 64,
+        max_triangles: 0,
+    })
+    .expect("configuration valide");
+    let mut pixels = vec![0u8; width as usize * height as usize * BYTES_PER_PIXEL];
+
+    // Hors mesure : charger une ressource est un appel nommé, qui alloue.
+    let texture = Arc::new(
+        Texture::load(64, 64, &vec![0x80u8; 64 * 64 * BYTES_PER_PIXEL]).expect("texture valide"),
+    );
+    let vertices: Vec<VertexUv> = VERTICES
+        .iter()
+        .enumerate()
+        .map(|(i, position)| VertexUv {
+            position: *position,
+            u: ((i & 1) * 64) as f32,
+            v: ((i >> 1) * 64) as f32,
+        })
+        .collect();
+
+    for filter in [Filter::Dither, Filter::Bilinear] {
+        context.set_filter(filter).expect("hors image");
+        let seen = allocations(|| {
+            for _ in 0..3 {
+                context
+                    .submit_textured(Affine3::IDENTITY, &vertices, &TRIANGLES, &texture)
+                    .expect("scène soumise");
+                context.frame_end(&mut pixels, width).expect("image rendue");
+            }
+        });
+        assert_eq!(seen, 0, "{seen} allocation(s) en {filter:?}");
+    }
 }
 
 /// Aucune image n'alloue, la première comprise, une fois le contexte créé et le
