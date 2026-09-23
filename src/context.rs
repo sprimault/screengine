@@ -46,7 +46,13 @@ pub const BYTES_PER_PIXEL: usize = 4;
 pub const TRIANGLE_CAPACITY: usize = 16_384;
 
 /// Le noir opaque dont chaque image part.
-const CLEAR_COLOR: u32 = 0xFF00_0000;
+const CLEAR_COLOR: u32 = OPAQUE;
+
+/// Le canal alpha à fond, dans l'ordre mémoire des pixels de sortie.
+///
+/// Le contrat d'ABI promet l'alpha écrit à 255 partout, et la sortie l'y force
+/// plutôt que de le faire promettre à chaque appelant.
+const OPAQUE: u32 = 0xFF00_0000;
 
 /// Ce que reçoit la création d'un contexte.
 ///
@@ -498,7 +504,12 @@ impl Context {
         let result = self
             .record_texture(texture)
             .and_then(|index| self.submit_batch(model, count, index, read));
-        if result.is_err() {
+        // Un lot refusé, mais aussi un lot accepté dont pas un triangle n'a
+        // survécu à la projection : dans les deux cas la table garderait une
+        // texture que plus rien ne référence, et le plafond ne se déduirait
+        // plus du nombre de triangles préparés — il suffirait de soumettre des
+        // lots invisibles pour le remplir.
+        if result.is_err() || self.triangles.len() == mark {
             self.triangles.truncate(mark);
             // La texture n'est retirée que si ce lot l'a ajoutée : déjà
             // présente, la table n'a pas grandi et la troncature ne fait rien.
