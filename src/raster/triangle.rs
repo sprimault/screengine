@@ -663,35 +663,181 @@ fn fill_segment<T: Target>(
         start: draw.0,
     };
 
-    let mut texels = sampling.map(|s| (s, Crawl::new(triangle, &triangle.uv, ey, &ends)));
-    let mut lights = lit.map(|l| (l, Crawl::new(triangle, l.planes.planes(), ey, &ends)));
+    // **L'ombrage se choisit ici, une fois, et non à chaque pixel.** Chacun de
+    // ces quatre appels instancie la boucle sur un type concret, si bien que
+    // les tests qui distinguent les chemins disparaissent à la compilation.
+    // Écrits dans la boucle — deux `Option` examinées par pixel —, ils
+    // coûtaient un dixième du remplissage **à toute scène**, éclairée ou non.
+    let texels = sampling.map(|s| (s, Crawl::new(triangle, &triangle.uv, ey, &ends)));
+    let lights = lit.map(|l| (l, Crawl::new(triangle, l.planes.planes(), ey, &ends)));
+    let walk = Walk {
+        target,
+        triangle,
+        y,
+        draw,
+    };
+    match texels {
+        Some((sampling, texel)) => match sampling.filter {
+            Filter::Dither => textured::<T, false>(walk, sampling.texture, texel, lights),
+            Filter::Bilinear => textured::<T, true>(walk, sampling.texture, texel, lights),
+        },
+        None => match lights {
+            Some((lit, light)) => walk.run(Light {
+                color: triangle.color,
+                light,
+                lit,
+            }),
+            None => walk.run(Flat(triangle.color)),
+        },
+    }
+}
 
-    let mut depth = depth_at(draw.0);
-    let depth_x = triangle.depth.step_x(SUBPIXEL_SCALE);
-    for x in draw.0..=draw.1 {
-        let z = (depth >> GRADIENT_BITS) as u32;
-        if target.test(x, y, z) {
-            let base = match &texels {
-                Some((sampling, crawl)) => crawl.sample(sampling.texture, sampling.filter, x, y),
-                None => triangle.color,
-            };
-            let pixel = match &lights {
-                // La lightmap se lit toujours en bilinéaire : voir [`Lit`].
-                Some((lit, crawl)) => {
-                    let light = crawl.sample(lit.lightmap, Filter::Bilinear, x, y);
-                    light::modulate(base, light, lit.overbright)
-                }
-                None => base,
-            };
-            target.write(x, y, z, pixel);
+/// Parcourt un segment texturé, éclairé ou non.
+///
+/// Séparée pour que le filtrage se choisisse une fois et que l'éclairage se
+/// choisisse ensuite : écrits ensemble, les deux donneraient quatre bras au
+/// lieu de deux plus deux, pour les mêmes instances.
+fn textured<T: Target, const BILINEAR: bool>(
+    walk: Walk<'_, T>,
+    texture: &Texture,
+    texel: Crawl,
+    lights: Option<(Lit<'_>, Crawl)>,
+) {
+    match lights {
+        Some((lit, light)) => walk.run(TexelLight::<BILINEAR> {
+            texel,
+            texture,
+            light,
+            lit,
+        }),
+        None => walk.run(Texel::<BILINEAR> { texel, texture }),
+    }
+}
+
+/// Ce que le parcours d'un segment a de commun à tous ses ombrages.
+struct Walk<'a, T: Target> {
+    target: &'a mut T,
+    triangle: &'a Prepared,
+    y: i32,
+    draw: (i32, i32),
+}
+
+impl<T: Target> Walk<'_, T> {
+    /// Parcourt le segment, en laissant `shade` décider de chaque pixel.
+    ///
+    /// La profondeur, son test et son écriture sont ici : ils ne dépendent
+    /// d'aucun ombrage, et les recopier dans chacun aurait rendu quatre fois
+    /// le contrat du tampon de profondeur.
+    fn run<S: Shade>(self, mut shade: S) {
+        let ey = (py_of(self.y) - self.triangle.ref_y) as i64;
+        let ex = |x: i32| (x * SUBPIXEL_SCALE + PIXEL_CENTER - self.triangle.ref_x) as i64;
+        let mut depth = self.triangle.depth.at(ex(self.draw.0), ey);
+        let depth_x = self.triangle.depth.step_x(SUBPIXEL_SCALE);
+
+        for x in self.draw.0..=self.draw.1 {
+            let z = (depth >> GRADIENT_BITS) as u32;
+            if self.target.test(x, self.y, z) {
+                self.target.write(x, self.y, z, shade.pixel(x, self.y));
+            }
+            depth = depth.wrapping_add(depth_x);
+            shade.step();
         }
-        depth = depth.wrapping_add(depth_x);
-        if let Some((_, crawl)) = &mut texels {
-            crawl.step();
-        }
-        if let Some((_, crawl)) = &mut lights {
-            crawl.step();
-        }
+    }
+}
+
+/// Ce qui décide de la couleur d'un pixel, une fois sa profondeur acceptée.
+///
+/// Un trait plutôt qu'un test par pixel : chaque implémentation instancie la
+/// boucle de parcours sur elle-même, et ce qui distingue les chemins est résolu
+/// à la compilation. Un drapeau examiné à chaque pixel coûtait dix pour cent du
+/// remplissage — y compris à une scène qui n'a ni texture ni lightmap, donc
+/// pour un choix toujours identique.
+trait Shade {
+    /// La couleur du pixel `(x, y)`.
+    fn pixel(&self, x: i32, y: i32) -> u32;
+    /// Avance d'un pixel vers la droite.
+    fn step(&mut self);
+}
+
+/// Une surface unie.
+///
+/// Elle ne passe pas par ici en pratique — `fill` peint une couleur unie sans
+/// découper en segments —, mais l'écrire ferme la combinaison au lieu de
+/// laisser un cas que rien ne traite.
+struct Flat(u32);
+
+impl Shade for Flat {
+    fn pixel(&self, _x: i32, _y: i32) -> u32 {
+        self.0
+    }
+
+    fn step(&mut self) {}
+}
+
+/// Une surface texturée, sans éclairage.
+///
+/// `BILINEAR` porte le filtrage dans le type : il vaut pour l'image entière, et
+/// le choisir une fois par segment plutôt qu'à chaque pixel est ce qui permet
+/// aux deux lectures d'être compilées séparément.
+struct Texel<'a, const BILINEAR: bool> {
+    texel: Crawl,
+    texture: &'a Texture,
+}
+
+impl<const BILINEAR: bool> Shade for Texel<'_, BILINEAR> {
+    #[inline]
+    fn pixel(&self, x: i32, y: i32) -> u32 {
+        self.texel.sample::<BILINEAR>(self.texture, x, y)
+    }
+
+    #[inline]
+    fn step(&mut self) {
+        self.texel.step();
+    }
+}
+
+/// Une surface unie qu'une lightmap éclaire : la couleur du triangle y tient
+/// lieu de texel.
+struct Light<'a> {
+    color: u32,
+    light: Crawl,
+    lit: Lit<'a>,
+}
+
+impl Shade for Light<'_> {
+    #[inline]
+    fn pixel(&self, x: i32, y: i32) -> u32 {
+        // La lightmap se lit toujours en bilinéaire : voir [`Lit`].
+        let light = self.light.sample::<true>(self.lit.lightmap, x, y);
+        light::modulate(self.color, light, self.lit.overbright)
+    }
+
+    #[inline]
+    fn step(&mut self) {
+        self.light.step();
+    }
+}
+
+/// Une surface texturée qu'une lightmap éclaire.
+struct TexelLight<'a, const BILINEAR: bool> {
+    texel: Crawl,
+    texture: &'a Texture,
+    light: Crawl,
+    lit: Lit<'a>,
+}
+
+impl<const BILINEAR: bool> Shade for TexelLight<'_, BILINEAR> {
+    #[inline]
+    fn pixel(&self, x: i32, y: i32) -> u32 {
+        let texel = self.texel.sample::<BILINEAR>(self.texture, x, y);
+        let light = self.light.sample::<true>(self.lit.lightmap, x, y);
+        light::modulate(texel, light, self.lit.overbright)
+    }
+
+    #[inline]
+    fn step(&mut self) {
+        self.texel.step();
+        self.light.step();
     }
 }
 
@@ -783,34 +929,37 @@ impl Crawl {
         }
     }
 
-    /// Le texel sous le pixel `(x, y)`, lu dans `texture` selon `filter`.
-    fn sample(&self, texture: &Texture, filter: Filter, x: i32, y: i32) -> u32 {
+    /// Le texel sous le pixel `(x, y)`, lu dans `texture`.
+    ///
+    /// **Le filtrage est un paramètre de compilation et non une valeur** : il
+    /// vaut pour l'image entière, et l'examiner à chaque pixel coûtait plus
+    /// cher que les deux lectures qu'il départage.
+    #[inline]
+    fn sample<const BILINEAR: bool>(&self, texture: &Texture, x: i32, y: i32) -> u32 {
         // Le décalage de niveau porte sur la coordonnée **interpolée**, et non
         // sur les extrémités du segment : appliqué à celles-ci, il quantifierait
         // la pente par 2ⁿ, soit cinq bits perdus au niveau 5.
         let scaled = [self.value[0] >> self.level, self.value[1] >> self.level];
-        match filter {
-            // Le tramage s'ajoute **après** le décalage de niveau : ajouté
-            // avant, il serait divisé par 2ⁿ et s'éteindrait dès le niveau 2.
-            Filter::Dither => {
-                let dither = dither_offsets(x, y);
-                let coord = |c: i64, shift: i32| ((c + i64::from(shift)) >> UV_BITS) as i32;
-                texture.texel(
-                    self.level as usize,
-                    coord(scaled[0], dither[0]),
-                    coord(scaled[1], dither[1]),
-                )
-            }
+        if BILINEAR {
             // Les bits fractionnaires servent de poids au lieu d'être jetés :
             // c'est la seule différence entre les deux modes, et c'est pourquoi
             // le tramage n'a plus rien à masquer ici.
-            Filter::Bilinear => {
-                texture.bilinear(self.level as usize, scaled[0] as i32, scaled[1] as i32)
-            }
+            texture.bilinear(self.level as usize, scaled[0] as i32, scaled[1] as i32)
+        } else {
+            // Le tramage s'ajoute **après** le décalage de niveau : ajouté
+            // avant, il serait divisé par 2ⁿ et s'éteindrait dès le niveau 2.
+            let dither = dither_offsets(x, y);
+            let coord = |c: i64, shift: i32| ((c + i64::from(shift)) >> UV_BITS) as i32;
+            texture.texel(
+                self.level as usize,
+                coord(scaled[0], dither[0]),
+                coord(scaled[1], dither[1]),
+            )
         }
     }
 
     /// Avance d'un pixel vers la droite.
+    #[inline]
     fn step(&mut self) {
         self.value[0] += self.slope[0];
         self.value[1] += self.slope[1];
