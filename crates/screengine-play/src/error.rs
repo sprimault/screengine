@@ -92,6 +92,9 @@ impl fmt::Display for Error {
             Self::Engine(screengine::Error::InvalidState) => {
                 f.write_str("a tile was rendered twice in the same frame")
             }
+            Self::Engine(screengine::Error::Faulted) => {
+                f.write_str("a tile did not return from rendering; this frame is incomplete")
+            }
             Self::Setting(what) => f.write_str(what),
             Self::ScaleTooLarge {
                 factor,

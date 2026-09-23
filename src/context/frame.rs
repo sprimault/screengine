@@ -7,7 +7,7 @@
 //! threads distincts : la [`Frame`] ne se lit qu'en partage, et chaque tuile
 //! n'écrit que dans sa pile et dans son rectangle du tampon de l'hôte.
 
-use core::sync::atomic::{AtomicU32, Ordering};
+use core::sync::atomic::Ordering;
 
 use crate::context::{
     BYTES_PER_PIXEL, CLEAR_COLOR, CLOSING, Context, OPAQUE, RECORDING, RENDERING,
@@ -134,12 +134,62 @@ impl Target for Scratch<'_> {
     }
 }
 
-/// Décompte une tuile en cours, y compris quand son rendu panique.
-struct InFlight<'a>(&'a AtomicU32);
+/// Le bit de poids fort de `in_flight` : une tuile n'est pas revenue de son
+/// rendu.
+///
+/// Dans le compteur plutôt qu'à côté, pour qu'une seule lecture réponde aux
+/// deux questions que la fin d'image pose. Les trente et un bits restants
+/// comptent des tuiles simultanées, donc des threads : la marge est sans
+/// commune mesure avec ce qu'un hôte peut en lancer.
+const FAULT: u32 = 1 << 31;
+
+/// Décompte une tuile en cours, et note celle qui n'en ressort pas.
+///
+/// Le noyau ne sait pas ce qu'est une panique. Il sait seulement qu'un rendu de
+/// tuile est entré sans appeler [`InFlight::done`], ce qui suffit : un dépliage
+/// passe par `drop` sans passer par là.
+///
+/// **Le décompte et la défaillance sont la même valeur**, relâchés d'une seule
+/// opération — voir [`FAULT`]. C'est ce qui rend la garantie indépendante de
+/// qui gagne la course, là où deux valeurs laisseraient entre elles un instant
+/// pendant lequel la fin d'image conclurait à tort.
+struct InFlight<'a> {
+    context: &'a Context,
+    done: bool,
+}
+
+impl<'a> InFlight<'a> {
+    /// Prend une tuile en compte pour la durée de son rendu.
+    fn new(context: &'a Context) -> Self {
+        context.in_flight.fetch_add(1, Ordering::SeqCst);
+        Self {
+            context,
+            done: false,
+        }
+    }
+
+    /// Note que le rendu est sorti normalement, quel que soit son résultat.
+    ///
+    /// Une erreur rendue est une sortie normale : l'appelant la reçoit et sait
+    /// à quoi s'en tenir. Ce que ce garde attrape est l'absence de retour.
+    fn done(&mut self) {
+        self.done = true;
+    }
+}
 
 impl Drop for InFlight<'_> {
     fn drop(&mut self) {
-        self.0.fetch_sub(1, Ordering::SeqCst);
+        let mark = if self.done { 0 } else { FAULT };
+        // **Une seule opération**, et c'est tout le mécanisme : le décompte et
+        // la défaillance ne peuvent pas être observés séparément, donc il
+        // n'existe aucun instant où la fin d'image verrait zéro tuile en vol
+        // sans voir la tuile perdue. En deux atomiques, cet instant existe —
+        // quelques instructions, mais c'est exactement le cas que la clause
+        // sert à couvrir, et l'ordre correct ne se vérifierait par aucun test.
+        let _ = self
+            .context
+            .in_flight
+            .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |v| Some((v - 1) | mark));
     }
 }
 
@@ -155,8 +205,18 @@ impl Context {
         // Compter avant de lire l'état, et la fin fait l'inverse : avec des
         // opérations séquentiellement cohérentes, une tuile qui voit encore le
         // rendu ouvert est forcément vue par la fin.
-        self.in_flight.fetch_add(1, Ordering::SeqCst);
-        let _in_flight = InFlight(&self.in_flight);
+        //
+        // Le corps est à part pour que le garde n'ait qu'un seul point de
+        // sortie à marquer : un `return` de plus qui l'oublierait ferait passer
+        // un refus ordinaire pour une tuile perdue.
+        let mut in_flight = InFlight::new(self);
+        let result = self.tile_inner(index, out);
+        in_flight.done();
+        result
+    }
+
+    /// Le corps de [`Context::tile`], une fois la tuile décomptée.
+    fn tile_inner<O: Output>(&self, index: u32, out: &mut O) -> Result<()> {
         if self.state.load(Ordering::SeqCst) != RENDERING {
             return Err(Error::InvalidState);
         }
@@ -206,8 +266,15 @@ impl Context {
 
     /// Le corps de [`Context::end`], une fois la main prise.
     fn finish<O: Output>(&self, out: &mut O) -> Result<()> {
-        if self.in_flight.load(Ordering::SeqCst) != 0 {
+        // Une seule lecture pour les deux questions : reste-t-il une tuile en
+        // vol, et en a-t-on perdu une. Les séparer rouvrirait la fenêtre que
+        // le garde ferme.
+        let flight = self.in_flight.load(Ordering::SeqCst);
+        if flight & !FAULT != 0 {
             return Err(Error::InvalidState);
+        }
+        if flight & FAULT != 0 {
+            return Err(Error::Faulted);
         }
         out.check(self.grid.image())?;
         for index in 0..self.grid.count() {

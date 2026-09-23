@@ -53,6 +53,10 @@ pub(crate) fn code_of(error: Error) -> i32 {
         Error::InvalidArgument(_) => SCG_ERR_INVALID_ARGUMENT,
         Error::OutOfMemory => SCG_ERR_OUT_OF_MEMORY,
         Error::InvalidState => SCG_ERR_INVALID_STATE,
+        // Le contrat d'ABI promet ce code quand une tuile a paniqué, et c'est
+        // exactement ce que le noyau signale ici : il n'a pas vu la panique,
+        // seulement une tuile entrée sans ressortir.
+        Error::Faulted => SCG_ERR_FAULTED,
     }
 }
 
@@ -113,6 +117,7 @@ pub(crate) fn message_of(error: Error) -> &'static str {
         Error::InvalidState => {
             "call out of sequence: check the frame state and whether this tile was already rendered"
         }
+        Error::Faulted => "a tile did not return from rendering; this frame is incomplete",
     }
 }
 
