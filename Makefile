@@ -31,7 +31,12 @@ HOSTS ?= c cpp web
 # chemins ne justifient pas un outil de plus à épingler. armv7 porte un `a` que
 # le triple Rust n'a pas. ANDROID_NDK_HOME vient de l'environnement ; le NDK est
 # r28 au moins, qui aligne sur des pages de 16 Ko sans option.
+#
+# **Le niveau d'API se déclare ici et nulle part ailleurs.** Le Makefile de
+# l'hôte et le manifeste le lisaient chacun de leur côté ; il est désormais
+# exporté, et l'hôte vérifie que son manifeste porte la même valeur.
 ANDROID_API ?= 21
+export ANDROID_API
 NDK_BIN      = $(ANDROID_NDK_HOME)/toolchains/llvm/prebuilt/linux-x86_64/bin
 ANDROID_ENV  = CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER=$(NDK_BIN)/aarch64-linux-android$(ANDROID_API)-clang \
                CARGO_TARGET_ARMV7_LINUX_ANDROIDEABI_LINKER=$(NDK_BIN)/armv7a-linux-androideabi$(ANDROID_API)-clang \
@@ -51,7 +56,8 @@ android_build = for cible in $(CIBLES_ANDROID); do \
 # tapée directement perd ces réglages, et l'écart ne se voit pas dans la sortie.
 -include makefile.local
 
-.PHONY: build lib lib-wasm lib-android run example web test native-libs fmt fmt-fix lint lint-doc-tests nostd \
+.PHONY: build lib lib-wasm lib-android run example web test native-libs fmt fmt-fix lint lint-doc-tests \
+        lint-android-versions nostd \
         conform conform-update conform-images header header-verif audit deny doc hosts host-c host-cpp host-web \
         host-android clean tools
 
@@ -211,7 +217,23 @@ fmt-fix:
 # de développement n'exécute : leurs `cfg` propres ne sont vérifiés par aucune
 # autre commande, et une cible sans module flottant y échoue sur le
 # `compile_error!` de screengine-ffi.
-lint: lint-doc-tests
+# Les versions du NDK et du SDK sont épinglées dans le Makefile de l'hôte, et
+# le Dockerfile les répète pour construire l'image de la machine Linux. Il ne
+# peut pas lire un Makefile, et le dire en commentaire n'a jamais empêché deux
+# valeurs de diverger : une montée faite d'un seul côté produirait une image qui
+# construit avec un NDK et une CI qui en attend un autre, ce qui ne se voit
+# qu'au premier défaut propre à une version.
+lint-android-versions:
+	@for nom in NDK_VERSION BUILD_TOOLS PLATFORM SYSTEM_IMAGE; do \
+	  fait=$$(sed -n "s/^$$nom *?= *//p" hosts/android/Makefile); \
+	  attendu=$$(sed -n "s/^ARG $$nom=//p" hosts/android/Dockerfile); \
+	  if [ "$$fait" != "$$attendu" ]; then \
+	    echo "$$nom : $$fait dans hosts/android/Makefile, $$attendu dans son Dockerfile"; \
+	    exit 1; \
+	  fi; \
+	done
+
+lint: lint-doc-tests lint-android-versions
 	cargo clippy --workspace --all-targets --all-features -- -D warnings
 	for cible in $(CIBLE_WASM) $(CIBLES_ANDROID); do \
 	  cargo clippy -p screengine -p screengine-ffi --lib --target $$cible -- -D warnings || exit 1; \
@@ -308,7 +330,7 @@ host-android: lib-android
 
 clean:
 	cargo clean
-	rm -rf $(SORTIE) dist
+	rm -rf $(SORTIE)
 
 # Les versions sont épinglées ici et nulle part ailleurs : le workflow appelle
 # make tools plutôt que de réécrire ses cargo install, et l'action qui lance le
