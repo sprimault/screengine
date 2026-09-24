@@ -101,9 +101,10 @@ fn main() -> Result<(), screengine_play::Error> {
 ```
 
 `make run` launches this example. `make example EXAMPLE=couloir` launches
-another: a corridor you walk through with the arrow keys and the mouse, with
-crates sitting on the floor. The Rust path adds convenience, never capability:
-everything it allows can also be done through the C ABI.
+another: a ruined corridor you walk through with the arrow keys and the mouse,
+lit by flickering tubes and by daylight falling through holes in the ceiling.
+The Rust path adds convenience, never capability: everything it allows can also
+be done through the C ABI.
 
 ### Embedding, from any language
 

@@ -102,9 +102,10 @@ fn main() -> Result<(), screengine_play::Error> {
 ```
 
 `make run` lance cet exemple. `make example EXAMPLE=couloir` en lance un autre :
-un couloir qu'on parcourt aux flèches et à la souris, avec des caisses posées au
-sol. Le chemin Rust ajoute du confort, jamais de capacité : tout ce qu'il permet
-se fait aussi par l'ABI C.
+un couloir en ruine qu'on parcourt aux flèches et à la souris, éclairé par des
+tubes qui clignotent et par le jour qui tombe des trouées du plafond. Le chemin
+Rust ajoute du confort, jamais de capacité : tout ce qu'il permet se fait aussi
+par l'ABI C.
 
 ### Intégrer, depuis n'importe quel langage
 

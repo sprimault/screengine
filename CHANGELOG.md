@@ -119,6 +119,10 @@ publié, et explique les conventions du dépôt à qui y contribue.
   porte les sept valeurs, la table ne se reconstruisant qu'une fois.
   `SCG_ABI_VERSION` reste à **1**. Les quatre hôtes de référence rendent la
   scène étalonnée au bit près.
+- L'exemple `couloir` de `screengine-play` montre l'étape entière au même
+  endroit : lightmaps cuites par l'hôte, lumières dynamiques qui clignotent,
+  brouillard, courbe de sortie et bascule du filtrage. C'est la scène de
+  l'animation du `README`.
 
 ### Modifié
 
@@ -206,7 +210,21 @@ publié, et explique les conventions du dépôt à qui y contribue.
   while a tile is copied out, after fog, and **leaves alpha alone**. Gamma is
   the display one — 2.2 brightens — and gain comes before it; that order will
   not change, since a host that had set its parameters would otherwise get a
-  different image with no version to warn it.
+  different image with no version to warn it. **Each channel also carries an
+  offset**, added after the gain: that is what lifts a black or lowers a white,
+  which neither gain nor gamma can do — the first multiplies, the second pins
+  both ends.
+- The C boundary exposes the output curve: `ScgGrade`, `scg_set_grade` and
+  `scg_clear_grade`. The struct is thirty-six bytes and carries **two reserved
+  fields**, required to be zero, which will only ever be able to hold an
+  **additive** setting: extensibility promises default behaviour to whoever
+  passes zeros, which a setting whose neutral is one cannot honour. That is why
+  the offsets are there from publication. A single call carries all seven
+  values, so the table is rebuilt once. `SCG_ABI_VERSION` stays at **1**. All
+  four reference hosts render the graded scene bit for bit.
+- The `couloir` example in `screengine-play` shows the whole step in one place:
+  lightmaps baked by the host, flickering dynamic lights, fog, the output curve
+  and the filtering toggle. It is the scene of the `README` animation.
 
 ### Changed
 

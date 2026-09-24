@@ -157,10 +157,12 @@ torche reçoivent donc la même lumière, et la caisse ressemble à un bloc
 uniformément éclairci plutôt qu'à un objet dont une face capte la lumière.
 
 Y ajouter du relief demanderait une **normale par sommet**, donc une structure
-de sommet de plus dans l'ABI — et une structure publiée ne se retire jamais.
-C'est pourquoi la question se tranche **à la fin de cette étape et pas avant** :
-la capture qui la franchit dira si les objets ont l'air plats, et décider plus
-tôt reviendrait à graver une structure pour un besoin que rien ne mesure.
+de sommet de plus dans l'ABI — et une structure publiée ne se retire jamais. La
+question s'est tranchée sur la capture qui franchit l'étape : les objets se
+lisent par leur silhouette et par leur texture, et **elle est reportée à
+l'étape 6**, dont les maillages animés et les sprites sont les vrais
+demandeurs. Le report ne coûte rien — une structure et une fonction de
+soumission s'ajoutent sans toucher aux publiées.
 
 **Franchie quand** une capture est montrable sans qu'on ait à expliquer ce qu'on
 regarde. C'est la première version qui donne envie de continuer, et ce n'est pas
@@ -233,6 +235,10 @@ tache sombre posée au sol sous un ennemi, modulée avec le décor. Ce n'est pas
 une ombre portée au sens du hors périmètre — rien n'est calculé par test de
 visibilité, et c'est le jeu qui décide où la tache va. Le moteur ne fournit
 que la primitive : un polygone qui assombrit au lieu de recouvrir.
+
+**C'est ici que se tranche la normale par sommet**, laissée ouverte à l'étape 3
+faute d'un cas qui la réclame : un objet animé qui traverse les lumières d'une
+salle est ce cas, là où une malle posée au sol se lit par sa silhouette.
 
 ## 7 — Collision
 
