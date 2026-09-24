@@ -117,7 +117,8 @@ pub(crate) fn message_of(error: Error) -> &'static str {
             "invalid light: position must be finite, and radius finite and positive"
         }
         Error::InvalidArgument(Argument::Grade) => {
-            "invalid output curve: gamma must be within ]0, 8], each channel gain within [0, 4]"
+            "invalid output curve: gamma must be within ]0, 8], each channel gain within [0, 4], \
+             each channel offset within [-1, 1]"
         }
         Error::InvalidArgument(Argument::TextureLength) => {
             "pixel block of the wrong length: needs width x height x 4 bytes"

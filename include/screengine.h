@@ -156,17 +156,6 @@ typedef struct ScgCamera {
   float near_plane;
 } ScgCamera;
 
-// Les tailles et décalages que le header publie, vérifiés **à la compilation**.
-//
-// En assertions de constante et non en test : un test ne s'exécute que sur la
-// cible hôte, alors qu'une liaison JavaScript reproduit ces décalages sur
-// wasm32 et une liaison JNI sur armv7. Ici, toute cible que la compilation
-// traverse les vérifie — `make lint` passe clippy sur wasm32 et sur les trois
-// ABI Android, et un champ qui bougerait y échouerait franchement.
-//
-// Les mêmes assertions existent en C, injectées dans le header par `cbindgen`
-// et compilées par les hôtes. Celles-ci les attrapent avant que le header ne
-// soit même régénéré.
 // The output curve applied while each tile is copied out: an affine per
 // channel, then gamma.
 //
@@ -844,7 +833,7 @@ int32_t scg_submit_lit(struct ScgContext *ctx,
 
 #endif  /* SCREENGINE_H */
 
-/* cbindgen place ce bloc après la garde d'inclusion : il lui en faut une. */
+/* cbindgen puts this block after the include guard, so it needs one of its own. */
 #ifndef SCREENGINE_LAYOUT_CHECKED
 #define SCREENGINE_LAYOUT_CHECKED
 #if defined(__cplusplus) && (__cplusplus >= 201103L || (defined(_MSVC_LANG) && _MSVC_LANG >= 201103L))
