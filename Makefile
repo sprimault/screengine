@@ -146,12 +146,21 @@ host_build_android    = $(call android_build,ffi-test)
 HOST_OUT = $(abspath $(SORTIE))/host-$(host_dir_$*)
 
 # Les scènes que chaque hôte décrit dans son langage, dans l'ordre où il écrit
-# leurs empreintes. `arete` relie les hôtes au chemin Rust depuis l'étape 0 ;
-# `texture` y ajoute le seul chemin que la première n'emprunte pas, celui du
-# remplissage texturé ; `texture-bilineaire` reprend la même géométrie et ne
-# change que le filtrage, donc c'est `scg_set_filter` seul qu'elle éprouve de
-# bout en bout. Une scène ajoutée ici est une scène à écrire dans les quatre
-# hôtes, et c'est voulu : c'est ce qui rend leur comparaison possible.
+# leurs empreintes. Chacune est là pour un chemin que les précédentes
+# n'empruntent pas — c'est le seul critère d'entrée dans cette liste, qui
+# s'allongerait sinon d'une scène à chaque étape :
+#
+#   arete                 relie les hôtes au chemin Rust depuis l'étape 0
+#   texture               le remplissage texturé, que la première n'atteint pas
+#   texture-bilineaire    même géométrie, donc scg_set_filter seul
+#   gamma                 même géométrie encore, donc la courbe de sortie seule
+#   lumiere               les deux chemins éclairés, texel et couleur unie
+#   lumiere-surbrillance  même scène, donc scg_set_overbright seul
+#   brouillard            le fond que nul triangle ne peint, et sa couture
+#   lumieres              les lumières dynamiques, sans lightmap
+#
+# Une scène ajoutée ici est une scène à écrire dans les quatre hôtes, et c'est
+# voulu : c'est ce qui rend leur comparaison possible.
 HOST_SCENES := arete texture texture-bilineaire gamma lumiere lumiere-surbrillance brouillard lumieres
 
 # Sans l'outillage de l'hôte, la cible saute et dit pourquoi. En intégration

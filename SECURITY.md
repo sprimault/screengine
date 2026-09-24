@@ -14,21 +14,26 @@ issue. Expect a reply within a few days.
 
 ## In scope
 
-The library decodes bytes handed to it by the host that the host did not write:
-maps, meshes, textures. That is the only real attack surface, and the one that
-matters — all the more so because it runs inside the host's process, not its
-own.
+The library decodes bytes handed to it by the host that the host did not write.
+That is the only real attack surface, and the one that matters — all the more so
+because it runs inside the host's process, not its own.
 
-- A map or mesh that crashes the decoder, loops forever, or exhausts memory
-  while loading.
-- A buffer overflow, out-of-bounds read or integer overflow reachable from a
-  malformed file.
+**Today that means texture pixel blocks**, and them alone. Map and mesh formats
+do not exist yet: they are step 4 of the roadmap, and this section will name
+them when they land rather than promise them early — a scope that claims more
+than the code does wastes a reporter's time.
+
+- A texture description or pixel block that crashes the loader, reads out of
+  bounds, or overflows an integer on its way to an allocation size.
+- A buffer overflow, out-of-bounds read or integer overflow reachable from
+  malformed input.
 - A gap between what `docs/abi.md` guarantees and what the code does: an entry
   point that writes past the declared buffer, or lets a panic escape to the
   caller.
-- Anything that would execute code from loaded content — **nothing in the
-  formats allows it, and that is an invariant**: a map holds only identifiers,
-  positions and dimensions, no binary, no script, no file path.
+- Anything that would execute code from loaded content — **nothing the library
+  loads allows it, and that is an invariant**: a texture is a block of pixels,
+  and the formats to come will hold only identifiers, positions and dimensions.
+  No binary, no script, no file path.
 
 ## Out of scope
 

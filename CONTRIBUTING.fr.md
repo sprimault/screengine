@@ -127,6 +127,12 @@ l'intégration continue seule, qui valide une fois la branche déjà poussée.
 relue en pull request, donc au moment où elle compte. La publication en tire le
 nom et les notes de la version, et une section absente l'arrête.
 
+**Le tag ne publie pas.** Il déclenche la construction des archives et crée la
+release **en brouillon** ; la rendre visible demande un geste de plus, une fois
+les notes relues telles qu'un intégrateur les lira. Tant qu'il n'est pas fait,
+les archives existent sans que personne ne les trouve. Voir
+[`docs/construction.md`](docs/construction.md), section « Publication ».
+
 **La documentation part avec le changement.** Avant de commiter, vérifier ce que
 le changement rend faux ailleurs : l'état annoncé dans le README, une clause de
 [`docs/abi.md`](docs/abi.md), une étape de [`ROADMAP.md`](ROADMAP.md).
