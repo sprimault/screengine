@@ -14,6 +14,7 @@ use crate::error::{Argument, Error, Result};
 use crate::light::MAX_OVERBRIGHT;
 use crate::light::dynamic::{self, MAX_LIGHTS};
 use crate::light::fog::Fog;
+use crate::light::grade::Grade;
 use crate::math::fixed::MAX_TEXEL_COORD;
 use crate::math::projection::ClipVertex;
 use crate::math::{Affine3, Projection, Vec3};
@@ -173,6 +174,11 @@ pub struct Context {
     fog: Fog,
     /// La rampe du brouillard, gardée pour la refaire quand la caméra change.
     fog_range: (f32, f32),
+    /// La courbe de sortie, neutre par défaut.
+    ///
+    /// Elle ne dépend ni de la caméra ni de la scène : une fois réglée, sa
+    /// table ne se refait plus jusqu'au réglage suivant.
+    grade: Grade,
     /// Le monde vers l'espace de vue, recalculé avec la caméra.
     ///
     /// Gardée plutôt que recomposée à chaque soumission : la composer est une
@@ -291,6 +297,7 @@ impl Context {
             placed: reserved(MAX_LIGHTS)?,
             fog: Fog::new()?,
             fog_range: (0.0, 0.0),
+            grade: Grade::new()?,
             view: camera.view(),
             projection: Projection::new(config.width, config.height, camera.fov_y, camera.near)?,
             state: AtomicU8::new(RECORDING),
@@ -421,6 +428,41 @@ impl Context {
     /// Vrai si le brouillard est réglé.
     pub fn has_fog(&self) -> bool {
         self.fog.is_set()
+    }
+
+    /// Règle la courbe de sortie : le gamma, puis un gain par canal.
+    ///
+    /// `gamma` est celui de l'écran, dans le sens où **2,2 éclaircit**. Les
+    /// gains s'appliquent **avant** lui, dans l'ordre R, G, B. Les deux
+    /// commutent à reparamétrisation près, si bien qu'aucune image n'est perdue
+    /// d'un ordre à l'autre ; ce qui change est ce que le nombre veut dire, et
+    /// il veut dire « je corrige la source, puis j'encode pour l'écran ».
+    ///
+    /// Refusée pendant le rendu, comme tout réglage que les tuiles d'une même
+    /// image doivent partager.
+    pub fn set_grade(&mut self, gamma: f32, gains: [f32; 3]) -> Result<()> {
+        if *self.state.get_mut() != RECORDING {
+            return Err(Error::InvalidState);
+        }
+        self.grade.set(gamma, gains)
+    }
+
+    /// Rend la sortie à son état neutre.
+    ///
+    /// Sur un contexte qui n'a jamais rien réglé, ce n'est pas une erreur : un
+    /// hôte qui remet sa courbe à plat en fin de niveau n'a pas à se souvenir
+    /// s'il l'avait réglée.
+    pub fn clear_grade(&mut self) -> Result<()> {
+        if *self.state.get_mut() != RECORDING {
+            return Err(Error::InvalidState);
+        }
+        self.grade.clear();
+        Ok(())
+    }
+
+    /// Vrai si une courbe de sortie est réglée.
+    pub fn has_grade(&self) -> bool {
+        self.grade.is_set()
     }
 
     /// Remplace les lumières dynamiques de l'image.

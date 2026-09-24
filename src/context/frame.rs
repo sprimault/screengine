@@ -14,6 +14,7 @@ use crate::context::{
 };
 use crate::error::{Argument, Error, Result};
 use crate::light;
+use crate::light::grade::{Identity, Transfer};
 use crate::raster::{Lit, NO_LIGHTING, NO_TEXTURE, Rect, Sampling, Target, fill};
 
 /// Le plus grand côté de tuile, qui dimensionne le tampon de travail posé sur
@@ -348,6 +349,30 @@ impl Context {
             fill(&mut scratch, rect, triangle, sampling, lit);
         }
 
+        // Le post-traitement se choisit **une fois par tuile**, et la recopie
+        // se monomorphise sur ce choix. Le tester par pixel le ferait payer à
+        // toute scène, y compris à celles qui n'en ont pas.
+        if self.grade.is_set() {
+            self.blit(&scratch, rect, out, &self.grade)
+        } else {
+            self.blit(&scratch, rect, out, &Identity)
+        }
+    }
+
+    /// Recopie la tuile rendue dans le tampon de l'hôte, en y appliquant le
+    /// brouillard puis la courbe de sortie.
+    ///
+    /// L'ordre n'est pas indifférent : le brouillard est un mélange en
+    /// couleurs directes, la courbe est la transformation de sortie, et elle
+    /// vient donc en dernier — sans quoi le fond embrumé et la géométrie
+    /// embrumée ne traverseraient pas la même chose.
+    fn blit<O: Output, T: Transfer>(
+        &self,
+        scratch: &Scratch<'_>,
+        rect: Rect,
+        out: &mut O,
+        transfer: &T,
+    ) -> Result<()> {
         let width = rect.width as usize;
         let fog = self.fog.is_set().then_some((&self.fog, self.fog.color()));
         for (row, (source, depths)) in scratch
@@ -375,7 +400,7 @@ impl Context {
                     let x = rect.x + i as u32;
                     let factor = fog.factor(depths[i]);
                     let mixed = light::fog::blend(*pixel, color, factor, light::fog::dither(x, y));
-                    slot.copy_from_slice(&(mixed | OPAQUE).to_le_bytes());
+                    slot.copy_from_slice(&(transfer.apply(mixed) | OPAQUE).to_le_bytes());
                 }
                 continue;
             }
@@ -386,7 +411,7 @@ impl Context {
                 // le compositeur saute le mélange — un canal laissé à la valeur
                 // de l'hôte rendrait un décor troué dans un navigateur, seule
                 // cible où il est réellement composité.
-                slot.copy_from_slice(&(pixel | OPAQUE).to_le_bytes());
+                slot.copy_from_slice(&(transfer.apply(*pixel) | OPAQUE).to_le_bytes());
             }
         }
         Ok(())

@@ -140,9 +140,16 @@ les dépendances, et cette étape-ci ne peut pas les devancer.
 s'y décidera ne change rien ici : une lightmap reste un bloc de texels, qu'il
 vienne de l'hôte ou du noyau.
 
-**Le post-traitement se fait pendant la recopie de tuile** — gamma, tonemapping,
-étalonnage —, jamais en passe plein écran. Ce qui lit les pixels voisins en est
-exclu : une tuile ne voit pas au-delà de son bord.
+**Le post-traitement se fait pendant la recopie de tuile** — un gain par canal,
+puis le gamma —, jamais en passe plein écran. Ce qui lit les pixels voisins en
+est exclu : une tuile ne voit pas au-delà de son bord.
+
+**Le tonemapping n'en fait pas partie, et le mot est abandonné ici.** Le tampon
+est en huit bits par canal, sans dynamique étendue : il n'y a aucune plage à
+compresser, et ce qu'on appellerait ainsi ne serait qu'une courbe de contraste
+de plus. Celle-ci n'apporte rien que le gain et le gamma ne donnent déjà, ne
+commute avec aucun des deux, et obligerait à graver un pivot dans l'ABI. Elle
+s'ajoutera le jour où une capture montrera qu'elle manque.
 
 **L'atténuation d'une lumière dynamique ne dépend que de la distance**, jamais
 de l'orientation de la surface. Les faces d'une caisse à égale distance d'une

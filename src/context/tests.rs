@@ -348,6 +348,84 @@ fn la_scene_ne_se_change_pas_pendant_le_rendu() {
     assert_eq!(ctx.set_camera(Camera::DEFAULT), Err(Error::InvalidState));
     assert_eq!(ctx.set_filter(Filter::Bilinear), Err(Error::InvalidState));
     assert_eq!(ctx.set_resolution(32, 32), Err(Error::InvalidState));
+    assert_eq!(ctx.set_grade(2.2, [1.0; 3]), Err(Error::InvalidState));
+    assert_eq!(ctx.clear_grade(), Err(Error::InvalidState));
+}
+
+/// Une courbe réglée à l'identité rend exactement l'image d'un contexte qui
+/// n'en a aucune — sur les deux chemins de la recopie.
+///
+/// C'est l'invariant du lot, et il ne suffit pas de le vérifier sur la table :
+/// la recopie a deux branches, l'une embrumée et l'autre non, et une courbe
+/// oubliée dans l'une des deux ne se verrait que sur les scènes qui la
+/// traversent. Les douze empreintes de conformance en dépendent.
+#[test]
+fn une_courbe_identite_rend_l_image_sans_courbe() {
+    for fog in [false, true] {
+        let mut nu = small();
+        let mut regle = small();
+        if fog {
+            let color = Color::new(0x30, 0x38, 0x48, 0xFF);
+            nu.set_fog(color, 1.0, 20.0).expect("brouillard valide");
+            regle.set_fog(color, 1.0, 20.0).expect("brouillard valide");
+        }
+        regle.set_grade(1.0, [1.0; 3]).expect("réglage valide");
+
+        for ctx in [&mut nu, &mut regle] {
+            ctx.submit(Affine3::IDENTITY, &ahead(), &one())
+                .expect("capacité");
+        }
+        let attendu = rendered(&mut nu);
+        assert!(
+            attendu
+                .chunks_exact(BYTES_PER_PIXEL)
+                .any(|p| p[..3] != [0, 0, 0]),
+            "l'image est vide, le cas ne prouve rien"
+        );
+        assert!(rendered(&mut regle) == attendu, "brouillard : {fog}");
+    }
+}
+
+/// Une courbe non neutre, elle, change bien l'image.
+///
+/// Sans ce contrôle, un post-traitement qui ne serait jamais appelé passerait
+/// le test d'identité avec les félicitations du jury.
+///
+/// **La couleur doit être intermédiaire** : une courbe de transfert ne déplace
+/// ni le noir ni le blanc, si bien qu'un triangle blanc sur fond noir — la
+/// scène des autres tests — rendrait exactement la même image et ce contrôle
+/// serait vert sans rien mesurer.
+///
+/// **Et il faut les deux branches de la recopie.** La scène de conformance qui
+/// double celle-ci n'a pas de brouillard : une courbe oubliée dans la branche
+/// embrumée n'y changerait aucune empreinte, et seul ce tour de boucle la
+/// rattrape.
+#[test]
+fn une_courbe_reglee_change_l_image() {
+    let demi = [Triangle {
+        indices: [0, 1, 2],
+        color: Color::new(0x40, 0x60, 0x80, 0xFF),
+    }];
+
+    for fog in [false, true] {
+        let mut nu = small();
+        let mut regle = small();
+        if fog {
+            let color = Color::new(0x30, 0x38, 0x48, 0xFF);
+            nu.set_fog(color, 1.0, 20.0).expect("brouillard valide");
+            regle.set_fog(color, 1.0, 20.0).expect("brouillard valide");
+        }
+        regle.set_grade(2.2, [1.0; 3]).expect("réglage valide");
+
+        for ctx in [&mut nu, &mut regle] {
+            ctx.submit(Affine3::IDENTITY, &ahead(), &demi)
+                .expect("capacité");
+        }
+        assert!(
+            rendered(&mut regle) != rendered(&mut nu),
+            "brouillard : {fog}"
+        );
+    }
 }
 
 /// Un contexte dont le maximum dépasse la résolution d'ouverture : c'est la

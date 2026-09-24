@@ -495,9 +495,27 @@ int32_t scg_frame_end(ScgContext *ctx, uint8_t *pixels, uint32_t stride);
   zéro forcé y scintillerait exactement comme une texture sans chaîne. Le coût
   est un tiers de mémoire sur une ressource qui en occupe peu, et un choix de
   niveau par segment de seize pixels.
-- **Le post-traitement** — gamma, tonemapping, étalonnage — s'applique pendant
+- **Le post-traitement** — un gain par canal, puis le gamma — s'applique pendant
   l'écriture de chaque tuile dans le tampon de l'hôte. Il n'y a pas de passe plein
   écran, et donc rien qui lise les pixels voisins.
+
+  **Les deux se composent en une table de 256 entrées par canal**, remplie au
+  réglage : le pixel ne paie que trois lectures. Le gain vient avant le gamma,
+  et les deux commutent à reparamétrisation près — `(a·x)^γ = a^γ·x^γ` —, si
+  bien qu'aucune image n'est perdue d'un ordre à l'autre ; ce qui change est ce
+  que le nombre veut dire, et l'ordre publié est celui qu'on lit « je corrige
+  la source, puis j'encode pour l'écran ». **Il ne se change donc jamais** : un
+  hôte qui a réglé ses paramètres obtiendrait une autre image, sans qu'aucune
+  version ne l'en prévienne.
+
+  Le gamma est celui de l'écran, dans le sens où **2,2 éclaircit**. La courbe
+  ne déplace ni le noir ni le blanc, et n'écrit pas l'alpha : celui-ci reste
+  forcé à 255 au seul endroit que les deux chemins de sortie traversent.
+
+  Écarté : le tonemapping. Le tampon est en huit bits par canal, sans dynamique
+  étendue, donc il n'y a aucune plage à compresser — ce qu'on appellerait ainsi
+  ne serait qu'une courbe de contraste, qui n'apporte rien que les deux autres
+  ne donnent déjà et qui obligerait à graver un pivot.
 
 ## Versionnement
 

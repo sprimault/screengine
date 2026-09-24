@@ -288,6 +288,17 @@ enum Scene {
     /// les deux empreintes comparables, et une divergence attribuable au seul
     /// filtrage.
     TexturedBilinear,
+    /// La même, passée par une courbe de sortie : gamma et gains de canal.
+    ///
+    /// Elle double `texture` pour la même raison que la précédente — le
+    /// post-traitement rend délibérément une autre image, donc il lui faut sa
+    /// référence, et la géométrie partagée au texel près rend la divergence
+    /// attribuable à lui seul.
+    ///
+    /// Les gains sont **distincts d'un canal à l'autre** : trois tables
+    /// écrites dans le mauvais ordre rendraient une image aux teintes
+    /// permutées, qu'un réglage gris laisserait passer.
+    Graded,
     /// Un sol texturé et un mur uni, tous deux éclairés par une lightmap.
     ///
     /// Les **deux chemins éclairés** dans la même image : `texel × lightmap`
@@ -558,7 +569,7 @@ impl View {
 
 impl Scene {
     /// Toutes les scènes, dans l'ordre où `--check` les rejoue.
-    const ALL: [Self; 12] = [
+    const ALL: [Self; 13] = [
         Self::Edge,
         Self::Guard,
         Self::Lateral,
@@ -567,6 +578,7 @@ impl Scene {
         Self::Rotation,
         Self::Textured,
         Self::TexturedBilinear,
+        Self::Graded,
         Self::Lit,
         Self::LitOverbright,
         Self::Fog,
@@ -604,6 +616,7 @@ impl Scene {
             Self::Rotation => "rotation",
             Self::Textured => "texture",
             Self::TexturedBilinear => "texture-bilineaire",
+            Self::Graded => "gamma",
             Self::Lit => "lumiere",
             Self::LitOverbright => "lumiere-surbrillance",
             Self::Fog => "brouillard",
@@ -673,6 +686,18 @@ impl Scene {
         match self {
             Self::TexturedBilinear => Filter::Bilinear,
             _ => Filter::Dither,
+        }
+    }
+
+    /// La courbe de sortie que la scène demande au contexte.
+    ///
+    /// Neutre partout ailleurs, et c'est ce qui garde les douze autres
+    /// empreintes inchangées : un contexte qu'on ne configure pas ne traverse
+    /// aucune table.
+    fn grade(self) -> Option<(f32, [f32; 3])> {
+        match self {
+            Self::Graded => Some((2.2, [1.15, 1.0, 0.85])),
+            _ => None,
         }
     }
 
@@ -792,10 +817,10 @@ impl Scene {
             // est de trente, ce qui donne à la perspective de quoi se tromper.
             // Huit texels par unité et des cases de huit texels : une case fait
             // une unité au sol, donc la fuite se lit case par case.
-            // Les deux scènes texturées partagent leur géométrie : seul le
-            // filtrage que le contexte porte les sépare, et c'est ce qui rend
-            // leurs empreintes comparables.
-            Self::Textured | Self::TexturedBilinear => textured_quad(
+            // Les trois scènes texturées partagent leur géométrie : seuls le
+            // filtrage et la courbe de sortie que le contexte porte les
+            // séparent, et c'est ce qui rend leurs empreintes comparables.
+            Self::Textured | Self::TexturedBilinear | Self::Graded => textured_quad(
                 context,
                 [
                     Vec3::new(2.0, -24.0, -1.2),
@@ -940,6 +965,9 @@ impl Scene {
         context.set_overbright(self.overbright())?;
         if let Some((color, start, end)) = self.fog() {
             context.set_fog(color, start, end)?;
+        }
+        if let Some((gamma, gains)) = self.grade() {
+            context.set_grade(gamma, gains)?;
         }
         let lights = self.lights();
         if !lights.is_empty() {

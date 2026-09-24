@@ -71,6 +71,9 @@ fn chaque_argument_refuse_a_son_message() {
         Argument::TextureLength,
         Argument::Overbright,
         Argument::Fog,
+        Argument::LightCapacity,
+        Argument::Light,
+        Argument::Grade,
     ];
     for (i, a) in arguments.iter().enumerate() {
         let error = Error::InvalidArgument(*a);
@@ -79,4 +82,37 @@ fn chaque_argument_refuse_a_son_message() {
             assert_ne!(message_of(error), message_of(Error::InvalidArgument(*b)));
         }
     }
+
+    // La liste ci-dessus est écrite à la main, et elle s'est déjà trouvée
+    // incomplète deux fois — une variante ajoutée au noyau n'y entrait que si
+    // quelqu'un y pensait, et le test restait vert en mesurant moins qu'il ne
+    // prétendait. Ce `match` est exhaustif : une variante nouvelle ne compile
+    // plus tant qu'elle n'est pas nommée ici, et le rang qu'elle y reçoit doit
+    // être celui qu'elle occupe là-haut.
+    let rank = |argument: Argument| match argument {
+        Argument::Resolution => 0,
+        Argument::TileSize => 1,
+        Argument::Stride => 2,
+        Argument::BufferLength => 3,
+        Argument::TileIndex => 4,
+        Argument::Region => 5,
+        Argument::ScratchLength => 6,
+        Argument::TriangleCapacity => 7,
+        Argument::VertexIndex => 8,
+        Argument::Projection => 9,
+        Argument::VertexCoordinate => 10,
+        Argument::TextureCapacity => 11,
+        Argument::TextureCoordinate => 12,
+        Argument::TextureSize => 13,
+        Argument::TextureLength => 14,
+        Argument::Overbright => 15,
+        Argument::Fog => 16,
+        Argument::LightCapacity => 17,
+        Argument::Light => 18,
+        Argument::Grade => 19,
+    };
+    for (i, a) in arguments.iter().enumerate() {
+        assert_eq!(rank(*a), i, "{a:?} n'est pas à sa place");
+    }
+    assert_eq!(arguments.len(), 20, "une variante manque à la liste");
 }
