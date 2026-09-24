@@ -25,10 +25,7 @@ const ASSETS: [(&str, &[u8]); 7] = [
         "sol-pave-mousse",
         include_bytes!("../../assets/sol-pave-mousse.png"),
     ),
-    (
-        "ciel-orageux",
-        include_bytes!("../../assets/ciel-orageux.png"),
-    ),
+    ("ciel-jour", include_bytes!("../../assets/ciel-jour.png")),
     (
         "malle-rouillee",
         include_bytes!("../../assets/malle-rouillee.png"),

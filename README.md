@@ -5,10 +5,12 @@ Français : [README.fr.md](README.fr.md)
 A software 3D rendering engine, callable from any language. No GPU, no window:
 you hand it a scene and a buffer, it fills the buffer.
 
-![Walking through a textured corridor: brick walls, cobbled floor, wooden crates](docs/couloir.webp)
+![Walking down a ruined corridor: mossy stone, flickering tubes, daylight falling through a hole in the ceiling](docs/couloir.webp)
 
 *The `couloir` example from `screengine-play`, rendered at 640×360: textures,
-mipmaps, bilinear filtering. The default filter is ordered dithering of texture
+mipmaps, bilinear filtering, lightmaps, dynamic lights, fog and an output
+curve. Daylight comes from the lightmaps the example bakes, the tubes are
+dynamic lights and flicker. The default filter is ordered dithering of texture
 coordinates, and the example toggles between the two — they are told apart
 while walking.*
 

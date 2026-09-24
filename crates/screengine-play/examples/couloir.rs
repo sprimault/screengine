@@ -12,37 +12,43 @@
 //! Les caisses portent ce que le couloir ne montre pas : l'une traverse le sol,
 //! et seules les profondeurs départagent les deux surfaces qui s'y croisent.
 //!
-//! **L'éclairage vient de lightmaps que cet exemple calcule lui-même.** À cette
-//! étape le moteur n'en produit aucune — il n'a ni carte ni cellule pour cela —
-//! et l'ABI en fait une ressource que l'hôte fournit : les cuire ici montre
-//! donc ce que l'étape du monde fera dans le noyau, et ce qu'un intégrateur
-//! peut faire dès aujourd'hui. Quatre lampes espacées de neuf mètres, et le
-//! noir entre deux — c'est lui qui donne son registre au couloir, pas la
-//! lumière.
+//! **Les deux sources de lumière du moteur s'y partagent le travail, et le
+//! partage suit ce qui bouge.** La lightmap, cuite par l'exemple, porte le jour
+//! qui tombe par les trouées du plafond — il ne bougera jamais. Les douze tubes
+//! sont des lumières dynamiques, parce qu'ils battent. Cuire ce qui clignote
+//! donnerait une flaque peinte sur le mur, calculer par sommet ce qui ne bouge
+//! pas paierait une atténuation par image pour une valeur constante.
+//!
+//! À cette étape le moteur ne produit aucune lightmap — il n'a ni carte ni
+//! cellule pour cela — et l'ABI en fait une ressource que l'hôte fournit : les
+//! cuire ici montre donc ce que l'étape du monde fera dans le noyau, et ce
+//! qu'un intégrateur peut faire dès aujourd'hui.
 //!
 //! **La géométrie est subdivisée par l'éclairage, pas par la forme.**
 //! L'atténuation se calcule par sommet : un mur d'un seul quadrilatère ne
 //! porterait la lumière qu'à ses quatre coins. Les faces se pavent donc en
-//! panneaux d'un demi-mètre — sauf ce qu'aucune lampe n'atteint, comme le ciel
-//! au bout du couloir, qui se pose d'un seul tenant et l'a d'abord payé de
+//! panneaux d'un demi-mètre — sauf ce qu'aucune source n'atteint, comme les
+//! panneaux de ciel, qui se posent d'un seul tenant et l'ont d'abord payé de
 //! cinquante mille triangles.
 //!
 //! **Une malle n'a pas de lightmap à elle**, elle échantillonne celle du
 //! décor à sa position : un texel unique, ce qu'un objet mobile reçoit dans un
 //! moteur de cette famille.
 //!
-//! **Le néon est la seule lumière dynamique**, et il bat. Un tube fatigué ne
-//! clignote pas régulièrement : il tient, lâche deux ou trois fois de suite,
-//! se rétablit. Le battement est le produit de trois ondes de périodes
-//! incommensurables, seuillé — aucun générateur pseudo-aléatoire, et la même
-//! séquence d'une machine à l'autre, puisqu'elle suit le rang du pas et non
-//! une horloge. Éteint, la lumière est **retirée** plutôt que mise à rayon nul,
-//! que le moteur refuse.
+//! **Les tubes battent, chacun pour soi.** Un tube fatigué ne clignote pas
+//! régulièrement : il tient, lâche deux ou trois fois de suite, se rétablit. Le
+//! battement est une somme de trois ondes de périodes incommensurables,
+//! seuillée — aucun générateur pseudo-aléatoire, et la même séquence d'une
+//! machine à l'autre, puisqu'elle suit le rang du pas et non une horloge. Une
+//! phase par tube les décorrèle, une usure décide de la fréquence de ses
+//! extinctions, et **le moteur n'en accepte que huit par image** : l'exemple
+//! retient les huit plus proches de la caméra. Éteint, un tube est **retiré**
+//! plutôt que mis à rayon nul, que le moteur refuse.
 //!
 //! **Le sur-éclairement reste à zéro et la courbe assombrit**, ce qui est
 //! l'inverse de ce qu'on croit devoir faire sur un décor sombre. À un, le
-//! sur-éclairement double une lightmap qui atteint déjà l'unité sous les
-//! lampes : le couloir se lave, la mousse vire au vert vif et les flaques
+//! sur-éclairement double une lightmap qui atteint déjà l'unité sous une
+//! trouée : le couloir se lave, la mousse vire au vert vif et les flaques
 //! d'ombre disparaissent. Ce qui fait le registre est le contraste entre les
 //! flaques et le noir, jamais la quantité de lumière.
 //!
@@ -92,8 +98,19 @@ const PANEL: f32 = 0.5;
 /// À quelle distance derrière le bout du couloir le ciel se tient.
 ///
 /// Assez loin pour qu'il ne bouge pas quand on avance — une paroi de ciel qui
-/// défilerait comme un mur trahirait qu'elle en est un.
-const SKY_DISTANCE: f32 = 50.0;
+/// défilerait comme un mur trahirait qu'elle en est un —, assez près pour que
+/// sortir du couloir ne donne pas sur du vide : à cinquante mètres, le
+/// brouillard l'effaçait entièrement et le bout du couloir était un trou noir.
+const SKY_DISTANCE: f32 = 25.0;
+
+/// À quelle hauteur au-dessus du plafond se tient le ciel qu'on voit par les
+/// trous.
+///
+/// **C'est lui qui porte vraiment la texture de ciel**, et non celui du fond :
+/// à huit mètres il n'est presque pas embrumé, là où l'autre est à soixante-
+/// cinq et s'y noie. Le fond donne une ouverture pâle, les trous donnent le
+/// ciel.
+const SKY_ABOVE: f32 = 8.0;
 
 /// Demi-côté du panneau de ciel.
 const SKY_SIDE: f32 = 40.0;
@@ -155,76 +172,163 @@ const CRATES: [(f32, f32, f32); 5] = [
     (31.0, -0.4, -CRATE * 0.4),
 ];
 
-/// Les lampes du couloir : leur abscisse, et la teinte qu'elles y posent.
+/// Un tube du couloir.
+struct Tube {
+    /// Son abscisse. Il est au plafond, au milieu de la largeur.
+    x: f32,
+    /// Sa teinte à pleine intensité, qui porte aussi son intensité : c'est
+    /// elle qui traverse l'ABI, et le moteur n'a pas de facteur à côté.
+    tint: [u8; 3],
+    /// Le décalage de son battement. Sans lui, tout le couloir lâcherait
+    /// ensemble, ce qui se lit comme une coupure de courant et non comme une
+    /// rangée de tubes fatigués.
+    phase: f32,
+    /// Son usure, de zéro — un tube qui ne bronche qu'à peine — à un, un tube
+    /// qui ne s'allume plus que par saccades.
+    wear: f32,
+}
+
+impl Tube {
+    /// Un tube, dans l'ordre de la déclaration.
+    ///
+    /// Un constructeur pour ce qui pourrait s'écrire en littéral : `rustfmt`
+    /// éclate un littéral de structure sur six lignes, et la rangée de tubes
+    /// cesse alors de se lire comme la table qu'elle est.
+    const fn new(x: f32, tint: [u8; 3], phase: f32, wear: f32) -> Self {
+        Self {
+            x,
+            tint,
+            phase,
+            wear,
+        }
+    }
+}
+
+/// Les tubes du couloir.
 ///
-/// Espacées de neuf mètres pour que leurs flaques ne se rejoignent pas : ce
-/// qui fait le registre n'est pas la lumière, c'est **le noir entre deux**.
-/// Une lampe tous les trois mètres rendrait un couloir uniformément éclairé,
-/// c'est-à-dire un couloir sans intention.
-const LAMPS: [(f32, [f32; 3]); 4] = [
-    (3.0, [1.00, 0.95, 0.80]),
-    (12.0, [0.85, 0.95, 1.00]),
-    (21.0, [1.00, 0.90, 0.75]),
-    (30.0, [0.80, 0.95, 1.00]),
+/// **Tout ce qui éclaire le couloir est dynamique**, et tout bat. Les lampes
+/// cuites que la lightmap portait ont disparu : elles donnaient des flaques
+/// fixes, et une flaque fixe au milieu de tubes qui clignotent se voit
+/// immédiatement comme peinte sur le mur. Ce que la lightmap porte désormais
+/// est le jour qui tombe des trouées, qui lui ne bouge pas — et c'est la seule
+/// lumière dont l'immobilité se justifie.
+///
+/// Un tube tous les trois mètres et demi : assez pour que le couloir soit
+/// équipé sur toute sa longueur, et ce sont **les tubes morts** qui rendent le
+/// noir entre deux, pas l'espacement. C'est la même image, obtenue par ce qui
+/// la cause plutôt que par ce qui la simule.
+const TUBES: [Tube; 12] = [
+    Tube::new(-1.0, [0x62, 0x86, 0x9E], 0.0, 0.20),
+    Tube::new(2.5, [0x70, 0x8C, 0xA4], 1.7, 0.90),
+    Tube::new(6.0, [0x5C, 0x84, 0xA0], 0.6, 0.05),
+    Tube::new(9.5, [0x6E, 0x92, 0xA8], 2.3, 1.00),
+    Tube::new(13.0, [0x64, 0x88, 0x9C], 3.1, 0.30),
+    Tube::new(16.5, [0x78, 0x90, 0x9A], 0.9, 1.00),
+    Tube::new(20.0, [0x5E, 0x82, 0xA2], 4.2, 0.10),
+    Tube::new(23.5, [0x6A, 0x8E, 0xA6], 1.2, 0.70),
+    Tube::new(27.0, [0x72, 0x8A, 0x96], 2.8, 1.00),
+    Tube::new(30.5, [0x60, 0x86, 0xA0], 3.7, 0.25),
+    Tube::new(34.0, [0x6C, 0x90, 0xA4], 0.3, 0.45),
+    Tube::new(37.5, [0x66, 0x88, 0x9E], 4.9, 0.15),
 ];
 
-/// Portée d'une lampe, au-delà de laquelle elle n'éclaire plus rien.
-const LAMP_REACH: f32 = 6.5;
-
-/// Où se tient le néon qui scintille, et jusqu'où il porte.
+/// Portée d'un tube.
 ///
-/// **Entre deux lampes cuites**, là où la lightmap ne donne presque rien : son
-/// battement se voit alors sur une portion de couloir que rien d'autre
-/// n'éclaire, au lieu de se noyer dans une flaque déjà installée.
-const NEON: Vec3 = Vec3::new(7.5, 0.0, HEIGHT - 0.15);
+/// Un peu plus que l'espacement : deux tubes voisins se rejoignent, de sorte
+/// qu'un tube qui lâche laisse une pénombre et non un trou net, qui trahirait
+/// la portée sphérique.
+const TUBE_REACH: f32 = 5.5;
 
-/// Portée du néon.
-const NEON_REACH: f32 = 7.5;
+/// De combien un tube pend sous le plafond.
+const TUBE_DROP: f32 = 0.15;
 
-/// Sa teinte à pleine intensité, froide contre le jaune des lampes.
-const NEON_TINT: [u8; 3] = [0x9F, 0xD8, 0xFF];
+/// Le moteur n'accepte que huit lumières dynamiques par image, et il y a douze
+/// tubes : chaque image retient **les huit plus proches de la caméra**.
+///
+/// Le tri ne se voit pas, et ce n'est pas une approximation : au-delà de la
+/// portée un tube n'ajoute rien, et un point du couloir n'est jamais à portée
+/// de plus de quatre. Ce qui est écarté est ce qui ne rendait rien.
+const LIVE_TUBES: usize = 8;
+
+/// Les trouées du plafond, à leur abscisse et à leur écart de l'axe.
+///
+/// **C'est par elles que le ciel se voit**, et c'est elles qui donnent au
+/// couloir la raison d'être dans cet état. Quatre seulement : une trouée tous
+/// les dix mètres laisse de longues portions sous les seuls tubes, et c'est
+/// l'alternance du jour et du néon qui fait la longueur.
+///
+/// La dernière n'était pas là au premier essai, et son absence se voyait : les
+/// dix derniers mètres n'avaient ni trouée ni tube sain, si bien qu'on
+/// traversait un noir complet avant de déboucher sur une ouverture éblouissante
+/// — un contraste que l'œil lit comme un défaut d'éclairage et non comme une
+/// intention.
+const HOLES: [(f32, f32); 4] = [(5.5, -0.4), (14.0, 0.5), (27.0, -0.2), (35.5, 0.3)];
+
+/// Côté d'une trouée, en mètres.
+const HOLE: f32 = 1.2;
+
+/// La teinte du jour qui tombe par une trouée.
+///
+/// Prise sur les éclaircies du ciel lui-même — 208, 193, 164 en moyenne, une
+/// lueur d'ocre sale — et non sur un blanc froid : le jour et les tubes
+/// doivent se départager à l'œil, et c'est l'écart de teinte qui le fait, pas
+/// celui d'intensité.
+const DAY_TINT: [f32; 3] = [1.00, 0.93, 0.79];
+
+/// Jusqu'où le jour porte sous une trouée.
+const DAY_REACH: f32 = 6.5;
 
 /// La couleur du brouillard, et la rampe sur laquelle il s'épaissit.
 ///
-/// Presque noir, et non gris : le fond du couloir doit se perdre, pas se voiler
-/// de blanc. La rampe commence après la portée des lampes, de sorte que ce
-/// qu'on voit éclairé n'est jamais embrumé, et qu'entre les deux il n'y a que
-/// du noir qui s'épaissit.
-const FOG_COLOR: Color = Color::new(0x06, 0x07, 0x0A, 0xFF);
-const FOG_START: f32 = 8.0;
-const FOG_END: f32 = 34.0;
+/// **Gris pâle et froid, et non presque noir**, ce qui est l'inverse du
+/// premier réglage : à six sur sept sur dix, le fond du couloir rendait 12 sur
+/// un premier plan à 23, c'est-à-dire plus sombre que ce qui est près. Un fond
+/// plus sombre que le reste ne se lit pas comme du brouillard mais comme un
+/// trou. À soixante-dix-huit sur quatre-vingt-huit sur cent quatre, la même
+/// ouverture rend 37 et les dernières malles s'y découpent en silhouette, sans
+/// qu'un seul point ne bouge au premier plan.
+const FOG_COLOR: Color = Color::new(0x4E, 0x58, 0x68, 0xFF);
+const FOG_START: f32 = 10.0;
+const FOG_END: f32 = 55.0;
 
-/// Ce qu'une surface reçoit là où aucune lampe ne porte.
+/// Ce qu'une surface reçoit là où ni le jour ni un tube ne porte.
 ///
 /// Pas zéro : un noir absolu effacerait la texture au lieu de l'assombrir, et
 /// un couloir dont on ne devine plus les murs n'est pas lugubre, il est vide.
 const AMBIENT: f32 = 0.06;
 
-/// Calcule l'éclairement d'un point, toutes lampes confondues.
+/// Calcule l'éclairement d'un point : l'ambiance, et le jour des trouées.
 ///
 /// **C'est ce que l'étape 5 fera dans le noyau**, cellule par cellule. Ici
 /// l'hôte s'en charge, comme l'ABI le prévoit à cette étape : une lightmap est
 /// une ressource qu'il fournit, le moteur ne fait que l'échantillonner.
 ///
 /// L'atténuation est celle du moteur pour ses lumières dynamiques —
-/// `(1 - d²/r²)²`, nulle et de dérivée nulle à la portée —, de sorte que le
-/// néon de la suite se fondra dans le même éclairage plutôt que de s'y
-/// superposer comme un corps étranger.
+/// `(1 - d²/r²)²`, nulle et de dérivée nulle à la portée —, de sorte que les
+/// tubes se fondent dans le même éclairage plutôt que de s'y superposer comme
+/// un corps étranger.
 fn lit_at(point: Vec3) -> [f32; 3] {
     let mut sum = [AMBIENT; 3];
-    for (x, tint) in LAMPS {
-        // La lampe est au plafond, au milieu du couloir.
-        let lamp = Vec3::new(x, 0.0, HEIGHT - 0.1);
-        let (dx, dy, dz) = (point.x - lamp.x, point.y - lamp.y, point.z - lamp.z);
+    for (x, y) in HOLES {
+        let hole = Vec3::new(x, y, HEIGHT);
+        let (dx, dy, dz) = (point.x - hole.x, point.y - hole.y, point.z - hole.z);
         let square = dx * dx + dy * dy + dz * dz;
-        let reach = LAMP_REACH * LAMP_REACH;
+        let reach = DAY_REACH * DAY_REACH;
         if square >= reach {
             continue;
         }
         let falloff = 1.0 - square / reach;
         let falloff = falloff * falloff;
-        for (channel, value) in sum.iter_mut().zip(tint) {
-            *channel += value * falloff;
+        // **Le jour tombe, il ne rayonne pas.** Une source ponctuelle posée
+        // dans la trouée éclairerait le plafond autour d'elle autant que le sol
+        // dessous, et la trouée se lirait comme une ampoule encastrée. Le
+        // facteur va de zéro dans le plan du plafond à un au sol : ce qui reste
+        // est la colonne de lumière, et le plafond garde son noir jusqu'au bord
+        // du trou.
+        let fall = (hole.z - point.z) / HEIGHT;
+        let fall = if fall < 0.0 { 0.0 } else { fall };
+        for (channel, value) in sum.iter_mut().zip(DAY_TINT) {
+            *channel += value * falloff * fall;
         }
     }
     sum
@@ -424,6 +528,16 @@ impl LitMesh {
     /// calculés. Sans lui, l'interpolation irait chercher au-delà du bord et
     /// la face s'assombrirait sur son pourtour.
     fn pave(&mut self, face: Face, density: f32) {
+        self.pave_holed(face, density, |_| false);
+    }
+
+    /// La même, en sautant les panneaux dont le centre satisfait `hole`.
+    ///
+    /// C'est ainsi que le plafond se troue : rien à découper, rien à
+    /// retriangulariser. Le bord d'une trouée suit donc la grille des panneaux
+    /// et non un rectangle exact — ce qui convient à un plafond effondré, et ne
+    /// conviendrait pas à une ouverture maçonnée.
+    fn pave_holed(&mut self, face: Face, density: f32, hole: impl Fn(Vec3) -> bool) {
         let (lw, lh) = face.lightmap_size();
         let along = length(face.along);
         let across = length(face.across);
@@ -440,6 +554,9 @@ impl LitMesh {
                 let s1 = (column + 1) as f32 / columns as f32;
                 let t0 = row as f32 / rows as f32;
                 let t1 = (row + 1) as f32 / rows as f32;
+                if hole(face.point((s0 + s1) / 2.0, (t0 + t1) / 2.0)) {
+                    continue;
+                }
                 let corner = |s: f32, t: f32| VertexUv2 {
                     position: face.point(s, t),
                     u: s * along * density,
@@ -458,20 +575,28 @@ impl LitMesh {
     }
 }
 
-/// L'intensité du néon à l'instant `time`, entre zéro et un.
+/// L'intensité d'un tube à l'instant `time`, entre zéro et un.
 ///
 /// **Un tube fatigué ne clignote pas régulièrement.** Il tient allumé, puis
 /// lâche quelques fois de suite, puis se rétablit — et c'est l'irrégularité qui
 /// fait le registre. Une alternance périodique se lirait comme un gyrophare.
 ///
-/// La forme est un produit de deux battements de périodes incommensurables,
-/// seuillé : leur somme ne se répète jamais à l'identique sur la durée d'une
-/// animation, sans qu'aucun générateur pseudo-aléatoire n'entre ici.
-fn neon_level(time: f32) -> f32 {
-    let wave = |period: f32| (time * core::f32::consts::TAU / period).sin();
+/// La forme est une somme de trois battements de périodes incommensurables,
+/// seuillée : elle ne se répète jamais à l'identique sur la durée d'une
+/// animation, sans qu'aucun générateur pseudo-aléatoire n'entre ici. La phase
+/// décale la même forme d'un tube à l'autre, ce qui coûte une addition là où
+/// douze formes distinctes coûteraient douze réglages à accorder entre eux.
+///
+/// **C'est le seuil que l'usure déplace, pas l'amplitude.** Un tube n'éclaire
+/// pas moins en vieillissant, il s'éteint plus souvent : à usure nulle le seuil
+/// est sous le minimum de la somme et le tube ne bronche qu'à peine, à usure
+/// pleine il ne repasse au-dessus que par saccades.
+fn neon_level(time: f32, phase: f32, wear: f32) -> f32 {
+    let t = time + phase;
+    let wave = |period: f32| (t * core::f32::consts::TAU / period).sin();
     let mix = wave(0.37) * 0.5 + wave(1.13) * 0.3 + wave(2.9) * 0.2;
-    // Le seuil bas coupe franchement : un tube s'éteint, il ne s'estompe pas.
-    if mix < -0.35 {
+    // Le seuil coupe franchement : un tube s'éteint, il ne s'estompe pas.
+    if mix < -0.95 + wear * 1.45 {
         return 0.0;
     }
     // Au-dessus, une variation d'intensité qui reste haute — le tube vacille
@@ -606,15 +731,41 @@ fn corridor() -> Result<Decor, screengine_play::Error> {
         along: Vec3::new(0.0, 2.0 * SKY_SIDE, 0.0),
         across: Vec3::new(0.0, 0.0, -2.0 * SKY_SIDE),
     };
+    // Le ciel qu'on voit par les trouées, à plat au-dessus du plafond. Il
+    // déborde largement le couloir : ce qu'on en voit par un trou d'un mètre
+    // dépend de l'angle du regard, et un panneau juste assez grand se
+    // terminerait dans le champ dès qu'on s'écarte de la verticale.
+    let above_face = Face {
+        origin: Vec3::new(START - SKY_SIDE, SKY_SIDE, h + SKY_ABOVE),
+        along: Vec3::new(span + SKY_DISTANCE + 2.0 * SKY_SIDE, 0.0, 0.0),
+        across: Vec3::new(0.0, -2.0 * SKY_SIDE, 0.0),
+    };
+    // Le dehors, du bout du couloir jusqu'au ciel du fond. Sans lui, sortir
+    // donnait sur rien : le regard passait sous l'horizon et ne rencontrait
+    // aucune surface, donc la couleur du brouillard et pas un repère.
+    let outside_face = Face {
+        origin: Vec3::new(l, -SKY_SIDE, 0.0),
+        along: Vec3::new(SKY_DISTANCE, 0.0, 0.0),
+        across: Vec3::new(0.0, 2.0 * SKY_SIDE, 0.0),
+    };
 
     // Un lot par face, et non un lot par matière : chaque face porte **sa**
     // lightmap, et un lot ne traverse la frontière qu'avec une seule.
     let mut walls = Vec::new();
-    for face in [ceiling_face, left_face, right_face] {
+    for face in [left_face, right_face] {
         let mut mesh = LitMesh::default();
         mesh.pave(face, stone);
         walls.push((mesh, Arc::new(face.bake()?)));
     }
+
+    // Le plafond, lui, se pave troué.
+    let mut ceiling = LitMesh::default();
+    ceiling.pave_holed(ceiling_face, stone, |p| {
+        HOLES
+            .iter()
+            .any(|(x, y)| (p.x - x).abs() < HOLE / 2.0 && (p.y - y).abs() < HOLE / 2.0)
+    });
+    walls.push((ceiling, Arc::new(ceiling_face.bake()?)));
 
     let mut floor = LitMesh::default();
     floor.pave(floor_face, cobble);
@@ -631,17 +782,24 @@ fn corridor() -> Result<Decor, screengine_play::Error> {
         crates.push((LitMesh::from_object(mesh), Arc::new(object_light(center)?)));
     }
 
-    // Le ciel ne reçoit pas les lampes : il est à cinquante mètres, hors de
-    // portée de toutes. Sa lightmap est donc pleine — le texel ressort intact,
-    // et c'est ce qui le distingue du décor, qui lui s'éteint.
+    // Ni le ciel ni le dehors ne reçoivent quoi que ce soit : ils sont hors de
+    // portée des tubes comme des trouées. Leur lightmap est donc pleine — le
+    // texel ressort intact, et c'est ce qui les distingue du couloir, qui lui
+    // s'éteint. Un seul quadrilatère chacun : l'éclairage n'y variant pas, la
+    // subdivision n'aurait rien à porter, et le ciel du dessus pavé au demi-
+    // mètre coûtait à lui seul plus de triangles que tout le couloir.
     let mut sky = LitMesh::default();
     sky.plane(sky_face, SKY_DENSITY);
+    sky.plane(above_face, SKY_DENSITY);
+    let mut outside = LitMesh::default();
+    outside.plane(outside_face, cobble);
 
     let decor = Decor {
         walls,
         floor: (floor, Arc::new(floor_face.bake()?)),
         crates,
         sky: (sky, Arc::new(full_light()?)),
+        outside: (outside, Arc::new(full_light()?)),
     };
     Ok(decor)
 }
@@ -661,8 +819,11 @@ struct Decor {
     floor: (LitMesh, Arc<Texture>),
     /// Les caisses, chacune avec son éclairement d'un texel.
     crates: Vec<(LitMesh, Arc<Texture>)>,
-    /// Le ciel au bout du couloir, à lightmap pleine.
+    /// Les deux panneaux de ciel — celui du fond et celui du dessus —, à
+    /// lightmap pleine.
     sky: (LitMesh, Arc<Texture>),
+    /// Le sol du dehors, de même.
+    outside: (LitMesh, Arc<Texture>),
 }
 
 /// Ce que la mise à jour fait avancer d'un pas à l'autre.
@@ -699,13 +860,17 @@ fn main() -> Result<(), screengine_play::Error> {
     let decor = corridor()?;
     let stone = Arc::new(load_png(include_bytes!("../assets/mur-mousse.png"))?);
     let cobble = Arc::new(load_png(include_bytes!("../assets/sol-pave-mousse.png"))?);
-    let sky = Arc::new(load_png(include_bytes!("../assets/ciel-orageux.png"))?);
+    let sky = Arc::new(load_png(include_bytes!("../assets/ciel-jour.png"))?);
     let plate = Arc::new(load_png(include_bytes!("../assets/malle-rouillee.png"))?);
     let world = World {
         camera: FreeCamera::new(Vec3::new(0.0, 0.0, 1.6)),
         filter: Filter::Dither,
         time: 0.0,
     };
+    // Le tampon des lumières vit hors de la boucle et se vide par `clear` :
+    // l'hôte n'est tenu par aucun invariant du noyau, mais réallouer douze
+    // lumières soixante fois par seconde n'a pas d'excuse non plus.
+    let mut lights: Vec<Light> = Vec::with_capacity(TUBES.len());
     // L'indication vit dans la barre de titre et non dans la console : c'est
     // là qu'on la cherche quand on ne sait plus comment récupérer sa souris,
     // et elle y reste visible pendant que le curseur est pris.
@@ -742,34 +907,48 @@ fn main() -> Result<(), screengine_play::Error> {
             let _ = context.set_camera(world.camera.camera());
             let _ = context.set_filter(world.filter);
 
-            // Le néon : une lumière dynamique réglée **avant** toute
-            // soumission, sans quoi elle n'éclairerait pas ce lot. Éteint, on
-            // la retire plutôt que de la laisser à rayon nul — que le moteur
-            // refuserait, et qui coûterait de toute façon une atténuation par
-            // sommet pour rien.
-            let level = neon_level(world.time);
-            if level > 0.0 {
+            // Les tubes, réglés **avant** toute soumission : une lumière posée
+            // après n'éclaire pas le lot déjà passé. Un tube éteint est
+            // **retiré** plutôt que mis à rayon nul — que le moteur refuse, et
+            // qui coûterait de toute façon une atténuation par sommet pour
+            // rien.
+            lights.clear();
+            for tube in &TUBES {
+                let level = neon_level(world.time, tube.phase, tube.wear);
+                if level <= 0.0 {
+                    continue;
+                }
                 let tint = |channel: u8| (f32::from(channel) * level) as u8;
-                let _ = context.set_lights(&[Light {
-                    position: NEON,
-                    radius: NEON_REACH,
+                lights.push(Light {
+                    position: Vec3::new(tube.x, 0.0, HEIGHT - TUBE_DROP),
+                    radius: TUBE_REACH,
                     color: Color::new(
-                        tint(NEON_TINT[0]),
-                        tint(NEON_TINT[1]),
-                        tint(NEON_TINT[2]),
+                        tint(tube.tint[0]),
+                        tint(tube.tint[1]),
+                        tint(tube.tint[2]),
                         0xFF,
                     ),
-                }]);
-            } else {
-                let _ = context.set_lights(&[]);
+                });
             }
+            if lights.len() > LIVE_TUBES {
+                // Les tubes ne diffèrent que par leur abscisse : l'écart en x
+                // suffit à les ordonner, et évite une racine par tube.
+                let eye = world.camera.camera().position.x;
+                lights.sort_by(|a, b| {
+                    (a.position.x - eye)
+                        .abs()
+                        .total_cmp(&(b.position.x - eye).abs())
+                });
+                lights.truncate(LIVE_TUBES);
+            }
+            let _ = context.set_lights(&lights);
 
             // Le brouillard mange le fond : on ne voit pas où le couloir
             // s'arrête, et le ciel s'y fond au lieu de se découper.
             let _ = context.set_fog(FOG_COLOR, FOG_START, FOG_END);
             // **Le sur-éclairement reste à zéro**, et c'est le réglage que
             // l'image a corrigé : à un, il double une lightmap qui atteint
-            // déjà l'unité sous les lampes, et le couloir entier se lave — la
+            // déjà l'unité sous une trouée, et le couloir entier se lave — la
             // mousse vire au vert vif, les flaques d'ombre disparaissent, il
             // ne reste qu'un couloir uniformément éclairé. Le registre tient
             // au contraste entre les flaques et le noir, pas à la quantité de
@@ -809,6 +988,14 @@ fn main() -> Result<(), screengine_play::Error> {
                 &mesh.vertices,
                 &mesh.faces,
                 Some(&sky),
+                lightmap,
+            );
+            let (mesh, lightmap) = &decor.outside;
+            let _ = context.submit_lit(
+                Affine3::IDENTITY,
+                &mesh.vertices,
+                &mesh.faces,
+                Some(&cobble),
                 lightmap,
             );
 
