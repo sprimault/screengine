@@ -46,7 +46,27 @@ publié, et explique les conventions du dépôt à qui y contribue.
 
 ## [Non publié]
 
+## [0.3.1] — 2026-09-24
+
+**Ce qu'un hôte de la 0.3.0 doit reprendre : rien.** Aucune signature ne change,
+`SCG_ABI_VERSION` reste à **1**, et une scène inchangée rend exactement la même
+image — aucune empreinte de conformance ne bouge. Cette version corrige ce que
+les documents et le header disaient de faux, et n'a pas d'autre objet.
+
+**Ce que cette version ne fait toujours pas.** Le moteur ne calcule aucune
+lightmap, ne lit ni maillage ni carte — aucun format de fichier n'existe —, et
+l'atténuation d'une lumière dynamique ignore l'orientation de la surface.
+
+### Modifié
+- Le contrat d'ABI énonce les préconditions des huit fonctions de l'étape 3 :
+  leur domaine de validité, et leur refus pendant une image. Cinq d'entre elles
+  n'en disaient aucune, et le plafond de huit lumières dynamiques n'existait que
+  dans le header. Le comportement, lui, est celui qu'il a toujours été.
+
 ### Corrigé
+- Le périmètre de `SECURITY` annonçait que la bibliothèque décode des cartes et
+  des maillages : ces deux formats n'existent pas encore. Ce qu'elle décode
+  aujourd'hui est un bloc de texels, et c'est ce que le document dit désormais.
 - Le header publiait douze lignes de français : onze en tête de la documentation
   de `ScgGrade`, où une docstring décrivant les assertions de disposition restait
   rattachée à la structure au lieu du bloc d'assertions, et une devant le bloc
@@ -62,7 +82,25 @@ publié, et explique les conventions du dépôt à qui y contribue.
 
 ***
 
+**What a 0.3.0 host must revisit: nothing.** No signature changes,
+`SCG_ABI_VERSION` stays at **1**, and an unchanged scene renders exactly the
+same image — no conformance fingerprint moves. This release fixes what the
+documents and the header stated wrongly, and has no other purpose.
+
+**What this version still does not do.** The engine computes no lightmap, reads
+neither mesh nor map — no file format exists — and a dynamic light's
+attenuation ignores surface orientation.
+
+### Changed
+- The ABI contract states the preconditions of step 3's eight functions: their
+  valid range, and their refusal during a frame. Five of them stated none, and
+  the eight-light ceiling existed only in the header. The behaviour itself is
+  what it has always been.
+
 ### Fixed
+- `SECURITY`'s scope claimed the library decodes maps and meshes: neither format
+  exists yet. What it decodes today is a block of texels, and that is what the
+  document now says.
 - The header published twelve lines of French: eleven atop `ScgGrade`'s
   documentation, where a docstring describing the layout assertions stayed
   attached to the struct instead of the assertion block, and one above the
