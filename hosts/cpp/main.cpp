@@ -472,6 +472,70 @@ uint64_t render_textured(bool &ok, uint32_t filter)
     return hash;
 }
 
+/// La scène `gamma` : la même que `texture`, passée par la courbe de sortie.
+///
+/// C'est le seul endroit où cet hôte écrit une `ScgGrade`, et c'est ce qui
+/// vérifie sa disposition autrement que par une assertion statique : les
+/// décalages relèvent le noir du fond, et une structure mal remplie se verrait
+/// aussitôt dans l'empreinte.
+uint64_t render_graded(bool &ok)
+{
+    ok = false;
+    ScgContextConfig config = scene_config();
+    ScgContext *ctx = nullptr;
+    ScgTexture *texture = nullptr;
+    const std::vector<uint8_t> texels = make_checker();
+
+    ScgTextureDesc desc{};
+    desc.width = FLOOR_SIDE;
+    desc.height = FLOOR_SIDE;
+    desc.format = SCG_TEXTURE_FORMAT_RGBA8;
+
+    check(scg_texture_load(&desc, texels.data(), texels.size(), &texture) == SCG_OK,
+          "la texture de la scène étalonnée se charge");
+    check(scg_create(&config, &ctx) == SCG_OK, "création du contexte étalonné");
+    if (texture == nullptr || ctx == nullptr) {
+        scg_texture_destroy(texture);
+        scg_destroy(ctx);
+        return 0;
+    }
+
+    // L'initialisation par valeur met tout à zéro, champs réservés compris,
+    // ce que l'ABI exige avant de remplir une structure.
+    ScgGrade grade{};
+    grade.gamma = 2.2f;
+    grade.gain_r = 1.15f;
+    grade.gain_g = 1.0f;
+    grade.gain_b = 0.85f;
+    grade.offset_r = 0.04f;
+    grade.offset_g = -0.02f;
+    grade.offset_b = 0.08f;
+
+    // Un réservé non nul est refusé : sans ce refus, la promesse d'extension
+    // ne vaudrait rien.
+    grade.reserved1 = 1;
+    check(scg_set_grade(ctx, &grade) == SCG_ERR_INVALID_ARGUMENT,
+          "un champ réservé non nul est refusé");
+    grade.reserved1 = 0;
+
+    check(scg_clear_grade(ctx) == SCG_OK, "l'extinction sans courbe passe");
+    check(scg_set_grade(ctx, &grade) == SCG_OK, "la courbe se règle");
+
+    check(scg_submit_textured(ctx, &IDENTITY, FLOOR_VERTICES, 4, FLOOR_TRIANGLES, 2, texture)
+              == SCG_OK,
+          "le lot de la scène étalonnée est accepté");
+    scg_texture_destroy(texture);
+
+    std::vector<uint8_t> pixels(static_cast<size_t>(STRIDE) * HEIGHT * 4);
+    const int32_t code = scg_frame_end(ctx, pixels.data(), STRIDE);
+    check(code == SCG_OK, "l'image étalonnée se rend");
+    ok = code == SCG_OK;
+
+    const uint64_t hash = fingerprint(pixels.data(), WIDTH, HEIGHT, STRIDE);
+    scg_destroy(ctx);
+    return hash;
+}
+
 /// Vrai si `scg_abi_version` est exporté par la bibliothèque dynamique chargée
 /// dans le processus, et rend la même version que l'appel direct. Sans ce
 /// contrôle, une bibliothèque statique liée par erreur passerait tous les
@@ -754,6 +818,9 @@ int main()
     bool bilinear_ok = false;
     const uint64_t bilinear = render_textured(bilinear_ok, SCG_FILTER_BILINEAR);
 
+    bool graded_ok = false;
+    const uint64_t graded = render_graded(graded_ok);
+
     bool lit_ok = false;
     const uint64_t lit = render_lit(lit_ok);
 
@@ -763,14 +830,15 @@ int main()
     bool lights_ok = false;
     const uint64_t lights = render_lights(lights_ok);
 
-    if (failures > 0 || !ok || !textured_ok || !bilinear_ok || !lit_ok || !fog_ok
-        || !lights_ok) {
+    if (failures > 0 || !ok || !textured_ok || !bilinear_ok || !graded_ok || !lit_ok
+        || !fog_ok || !lights_ok) {
         std::fprintf(stderr, "%d vérification(s) en échec\n", failures);
         return 1;
     }
     std::printf("%016llx\n", static_cast<unsigned long long>(hash));
     std::printf("%016llx\n", static_cast<unsigned long long>(textured));
     std::printf("%016llx\n", static_cast<unsigned long long>(bilinear));
+    std::printf("%016llx\n", static_cast<unsigned long long>(graded));
     std::printf("%016llx\n", static_cast<unsigned long long>(lit));
     std::printf("%016llx\n", static_cast<unsigned long long>(fog));
     std::printf("%016llx\n", static_cast<unsigned long long>(lights));

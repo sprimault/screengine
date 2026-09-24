@@ -106,6 +106,19 @@ publié, et explique les conventions du dépôt à qui y contribue.
   l'alpha**. Le gamma est celui de l'écran — 2,2 éclaircit —, le gain vient
   avant lui, et cet ordre ne changera plus : un hôte qui a réglé ses paramètres
   obtiendrait sinon une autre image sans qu'aucune version ne l'en prévienne.
+  **Chaque canal porte aussi un décalage**, additionné après le gain : c'est ce
+  qui permet de relever un noir ou d'abaisser un blanc, que ni le gain ni le
+  gamma ne savent faire — le premier multiplie, le second fixe les deux
+  extrêmes.
+- La frontière C expose la courbe de sortie : `ScgGrade`, `scg_set_grade` et
+  `scg_clear_grade`. La structure fait trente-six octets et porte **deux champs
+  réservés**, nuls obligatoires, qui ne pourront jamais accueillir qu'un
+  réglage **additif** : l'extensibilité promet le comportement par défaut à qui
+  passe des zéros, ce qu'un réglage dont le neutre vaut un ne peut pas honorer.
+  C'est pourquoi les décalages y figurent dès la publication. Un seul appel
+  porte les sept valeurs, la table ne se reconstruisant qu'une fois.
+  `SCG_ABI_VERSION` reste à **1**. Les quatre hôtes de référence rendent la
+  scène étalonnée au bit près.
 
 ### Modifié
 

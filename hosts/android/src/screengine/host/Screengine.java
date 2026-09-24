@@ -290,6 +290,35 @@ public final class Screengine {
     static native int clearFog(long ctx);
 
     /**
+     * {@code scg_set_grade}.
+     *
+     * <p>Les sept valeurs sont le gamma, les trois gains puis les trois
+     * décalages, dans cet ordre : c'est la couche JNI qui remplit la structure,
+     * au seul endroit qui voit le header, plutôt que de faire reproduire sa
+     * disposition ici.
+     *
+     * <p>{@code reserved} traverse quand même, pour que le refus d'un champ
+     * réservé non nul puisse être éprouvé depuis Java. Un hôte réel y passe
+     * zéro.
+     *
+     * @param ctx handle, ou 0
+     * @param values gamma, trois gains, trois décalages
+     * @param reserved la valeur du second champ réservé, nulle sauf à l'éprouver
+     * @return le code de retour
+     */
+    static native int setGrade(long ctx, float[] values, int reserved);
+
+    /**
+     * {@code scg_clear_grade}.
+     *
+     * <p>Éteindre une courbe qui n'existe pas n'est pas une erreur.
+     *
+     * @param ctx handle, ou 0
+     * @return le code de retour
+     */
+    static native int clearGrade(long ctx);
+
+    /**
      * {@code scg_set_lights}.
      *
      * <p>Les lumières arrivent en <b>deux tableaux parallèles</b> : quatre

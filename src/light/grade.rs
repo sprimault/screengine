@@ -45,6 +45,12 @@ const MAX_GAMMA: f32 = 8.0;
 /// sur-éclairement.
 const MAX_GAIN: f32 = 4.0;
 
+/// Le décalage le plus fort qu'un canal accepte, en valeur absolue.
+///
+/// Un, c'est-à-dire l'échelle entière : au-delà, le canal est un aplat noir ou
+/// blanc quoi que fasse son gain, et la borne n'a plus rien à border.
+const MAX_OFFSET: f32 = 1.0;
+
 /// Le post-traitement d'un contexte.
 #[derive(Debug)]
 pub struct Grade {
@@ -76,32 +82,47 @@ impl Grade {
         self.tables.clear();
     }
 
-    /// Règle le gamma et les trois gains de canal.
+    /// Règle le gamma, les trois gains et les trois décalages de canal.
     ///
-    /// `gamma` est le gamma d'écran, dans le sens où **2,2 éclaircit** : la
-    /// table applique `x^(1/gamma)`, la convention qu'un intégrateur attend
-    /// quand il lit ce mot. Il tient dans `]0, 8]`, les gains dans `[0, 4]`, et
+    /// Chaque canal subit **une affine puis le gamma** : `x·gain + offset`,
+    /// ramené dans `[0, 1]`, puis `^(1/gamma)`. L'affine est la transformation
+    /// la plus générale qui reste locale au pixel et propre à un canal : elle
+    /// contient le contraste, le niveau de noir et la teinte, là où un gain
+    /// seul ne peut ni relever un noir ni abaisser un blanc — le gamma non
+    /// plus, qui fixe les deux extrêmes.
+    ///
+    /// `gamma` est le gamma d'écran, dans le sens où **2,2 éclaircit** : c'est
+    /// la convention qu'un intégrateur attend quand il lit ce mot. Il tient
+    /// dans `]0, 8]`, les gains dans `[0, 4]`, les décalages dans `[-1, 1]`, et
     /// tout ce qui sort de là — ou n'est pas fini — rend
     /// [`Argument::Grade`](crate::error::Argument::Grade) sans rien changer.
-    pub fn set(&mut self, gamma: f32, gains: [f32; CHANNELS]) -> Result<()> {
+    pub fn set(
+        &mut self,
+        gamma: f32,
+        gains: [f32; CHANNELS],
+        offsets: [f32; CHANNELS],
+    ) -> Result<()> {
         // Le fini se teste d'abord et nommément : un NaN rend fausse toute
         // comparaison, et les bornes ci-dessous le laisseraient passer.
         let sane = gamma.is_finite() && gamma > 0.0 && gamma <= MAX_GAMMA;
-        let bounded = |g: &f32| g.is_finite() && *g >= 0.0 && *g <= MAX_GAIN;
-        let sane = sane && gains.iter().all(bounded);
+        let gain_ok = |g: &f32| g.is_finite() && *g >= 0.0 && *g <= MAX_GAIN;
+        let offset_ok = |o: &f32| o.is_finite() && *o >= -MAX_OFFSET && *o <= MAX_OFFSET;
+        let sane = sane && gains.iter().all(gain_ok) && offsets.iter().all(offset_ok);
         if !sane {
             return Err(Error::InvalidArgument(Argument::Grade));
         }
 
         let exponent = 1.0 / gamma;
         self.tables.clear();
-        for gain in gains {
+        for channel in 0..CHANNELS {
             for level in 0..LEVELS {
-                let value = level as f32 / (LEVELS - 1) as f32 * gain;
-                // Le gain sature avant le gamma : une valeur au-delà de un n'a
-                // pas de puissance qui tienne dans l'octet, et la borner après
+                let value = level as f32 / (LEVELS - 1) as f32;
+                // L'affine sature avant le gamma : hors de `[0, 1]` il n'y a
+                // pas de puissance qui tienne dans l'octet, et borner après
                 // reviendrait à écrêter deux fois.
+                let value = value * gains[channel] + offsets[channel];
                 let value = if value > 1.0 { 1.0 } else { value };
+                let value = if value < 0.0 { 0.0 } else { value };
                 self.tables.push(quantize(powf(value, exponent)));
             }
         }

@@ -156,6 +156,69 @@ typedef struct ScgCamera {
   float near_plane;
 } ScgCamera;
 
+// Les tailles et décalages que le header publie, vérifiés **à la compilation**.
+//
+// En assertions de constante et non en test : un test ne s'exécute que sur la
+// cible hôte, alors qu'une liaison JavaScript reproduit ces décalages sur
+// wasm32 et une liaison JNI sur armv7. Ici, toute cible que la compilation
+// traverse les vérifie — `make lint` passe clippy sur wasm32 et sur les trois
+// ABI Android, et un champ qui bougerait y échouerait franchement.
+//
+// Les mêmes assertions existent en C, injectées dans le header par `cbindgen`
+// et compilées par les hôtes. Celles-ci les attrapent avant que le header ne
+// soit même régénéré.
+// The output curve applied while each tile is copied out: an affine per
+// channel, then gamma.
+//
+// Each channel goes through `x·gain + offset`, clamped to [0, 1], then
+// `^(1/gamma)`. The affine is the most general transform that stays local to
+// one pixel and one channel: it holds contrast, black level and tint at once.
+// A gain alone can lift neither a black nor lower a white, and gamma fixes
+// both ends — that family of images is reachable only this way.
+//
+// `gamma` is the display gamma, in the sense where **2.2 brightens**, within
+// ]0, 8]. Gains are within [0, 4], offsets within [-1, 1], and the affine
+// applies **before** gamma: it corrects the source, gamma encodes for the
+// display, and that is the order in which they read. Gain and gamma commute up
+// to reparametrisation — `(a·x)^γ = a^γ·x^γ` — so no image is out of reach
+// either way; what the order fixes is what the number means. **It will never
+// change**: a host that had set its parameters would otherwise get a different
+// image with no version to warn it.
+//
+// The curve never writes alpha, which the engine forces opaque as the contract
+// promises.
+//
+// **What the reserved fields can ever hold.** They must be zero, and the
+// extension rule promises that a host written before one of them means
+// anything gets the default behaviour by passing zeros. A setting whose
+// neutral value is one — a further gain, a saturation — therefore **cannot**
+// go there as such: only additive settings can, whose neutral is zero. Should
+// a multiplicative one be wanted later, it has to be expressed as a departure
+// from neutral to fit. Written here so that the constraint steers the design
+// instead of being discovered against it — which is why the offsets are in
+// this struct from the start rather than left for later, where three fields
+// would no longer have fitted in two reserved ones.
+typedef struct ScgGrade {
+  // Display gamma, within ]0, 8].
+  float gamma;
+  // Red gain, within [0, 4], applied before gamma.
+  float gain_r;
+  // Green gain.
+  float gain_g;
+  // Blue gain.
+  float gain_b;
+  // Red offset, within [-1, 1], added after the gain.
+  float offset_r;
+  // Green offset.
+  float offset_g;
+  // Blue offset.
+  float offset_b;
+  // Reserved, must be zero.
+  uint32_t reserved0;
+  // Reserved, must be zero.
+  uint32_t reserved1;
+} ScgGrade;
+
 // A point light that adds to the lighting of a surface.
 //
 // Twenty bytes, offsets 0 to 19 on every target, with no padding.
@@ -398,6 +461,34 @@ int32_t scg_set_camera(struct ScgContext *ctx, const struct ScgCamera *camera);
 //
 // `ctx` is a live handle used by no other thread during the call.
 int32_t scg_set_resolution(struct ScgContext *ctx, uint32_t width, uint32_t height);
+
+// Sets the output curve applied while each tile is copied out.
+//
+// See `ScgGrade` for what the fields mean and what the reserved ones may ever
+// hold. Out-of-range values, or a reserved field that is not zero, return
+// `SCG_ERR_INVALID_ARGUMENT` and the context keeps the curve it had.
+//
+// Neutral by default, and turned back to neutral by `scg_clear_grade`. It
+// costs three table lookups per pixel once set, and nothing at all while it is
+// neutral. Rejected with `SCG_ERR_INVALID_STATE` between `scg_frame_begin` and
+// `scg_frame_end`, for the reason that holds for every frame-wide setting.
+//
+// # Safety
+//
+// `ctx` is a live handle used by no other thread during the call, and `grade`
+// is NULL or points to a readable `ScgGrade`.
+int32_t scg_set_grade(struct ScgContext *ctx, const struct ScgGrade *grade);
+
+// Returns the output to its neutral state.
+//
+// Doing so on a context that never set a curve is not an error: a host that
+// flattens its output at the end of a level does not have to remember whether
+// it had set one.
+//
+// # Safety
+//
+// `ctx` is a live handle used by no other thread during the call.
+int32_t scg_clear_grade(struct ScgContext *ctx);
 
 // Sets how textures are sampled from the next frames on.
 //
@@ -796,6 +887,13 @@ SCREENGINE_LAYOUT_ASSERT(sizeof(ScgTextureDesc) == 24, "ScgTextureDesc changed s
 SCREENGINE_LAYOUT_ASSERT(offsetof(ScgTextureDesc, height) == 4, "ScgTextureDesc.height moved");
 SCREENGINE_LAYOUT_ASSERT(offsetof(ScgTextureDesc, format) == 8, "ScgTextureDesc.format moved");
 SCREENGINE_LAYOUT_ASSERT(offsetof(ScgTextureDesc, reserved2) == 20, "ScgTextureDesc.reserved2 moved");
+SCREENGINE_LAYOUT_ASSERT(sizeof(ScgGrade) == 36, "ScgGrade changed size");
+SCREENGINE_LAYOUT_ASSERT(offsetof(ScgGrade, gain_r) == 4, "ScgGrade.gain_r moved");
+SCREENGINE_LAYOUT_ASSERT(offsetof(ScgGrade, gain_b) == 12, "ScgGrade.gain_b moved");
+SCREENGINE_LAYOUT_ASSERT(offsetof(ScgGrade, offset_r) == 16, "ScgGrade.offset_r moved");
+SCREENGINE_LAYOUT_ASSERT(offsetof(ScgGrade, offset_b) == 24, "ScgGrade.offset_b moved");
+SCREENGINE_LAYOUT_ASSERT(offsetof(ScgGrade, reserved0) == 28, "ScgGrade.reserved0 moved");
+SCREENGINE_LAYOUT_ASSERT(offsetof(ScgGrade, reserved1) == 32, "ScgGrade.reserved1 moved");
 SCREENGINE_LAYOUT_ASSERT(sizeof(ScgCamera) == 36, "ScgCamera changed size");
 SCREENGINE_LAYOUT_ASSERT(offsetof(ScgCamera, orientation) == 12, "orientation moved");
 SCREENGINE_LAYOUT_ASSERT(offsetof(ScgCamera, fov_y) == 28, "fov_y moved");

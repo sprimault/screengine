@@ -191,6 +191,63 @@ public final class Test {
     }
 
     /**
+     * Rend la scène {@code gamma}, ou {@code null} si le rendu a échoué.
+     *
+     * <p>La même géométrie que {@code texture}, passée par la courbe de sortie.
+     * C'est le seul endroit où cet hôte règle une courbe, et il y éprouve aussi
+     * le refus d'un champ réservé non nul — sans quoi la promesse d'extension
+     * ne serait vérifiée depuis aucun langage à objets.
+     *
+     * @return l'empreinte, ou {@code null}
+     */
+    private static String renderGraded() {
+        long texture = Screengine.textureLoad(FLOOR_SIDE, FLOOR_SIDE, makeChecker());
+        check(texture != 0, "la texture de la scène étalonnée se charge");
+
+        long[] out = {0};
+        if (texture == 0 || Screengine.create(sceneConfig(), out) != Screengine.OK) {
+            check(false, "création du contexte étalonné");
+            return null;
+        }
+
+        // Gamma, trois gains, trois décalages : les mêmes valeurs que la scène
+        // de référence, et des décalages distincts pour qu'une permutation des
+        // tables se voie.
+        float[] grade = {2.2f, 1.15f, 1.0f, 0.85f, 0.04f, -0.02f, 0.08f};
+
+        check(Screengine.setGrade(out[0], grade, 1) == Screengine.ERR_INVALID_ARGUMENT,
+                "un champ réservé non nul est refusé");
+        check(Screengine.clearGrade(out[0]) == Screengine.OK,
+                "l'extinction sans courbe passe");
+        check(Screengine.setGrade(out[0], grade, 0) == Screengine.OK, "la courbe se règle");
+
+        float[] model = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
+        float[] vertices = {
+            2.0f, -24.0f, -1.2f, 2.0f * 8.0f, -24.0f * 8.0f,
+            60.0f, -24.0f, -1.2f, 60.0f * 8.0f, -24.0f * 8.0f,
+            60.0f, 24.0f, -1.2f, 60.0f * 8.0f, 24.0f * 8.0f,
+            2.0f, 24.0f, -1.2f, 2.0f * 8.0f, 24.0f * 8.0f,
+        };
+        int[] indices = {0, 1, 2, 0, 2, 3};
+        byte[] colors = {
+            (byte) 0xFF, (byte) 0xFF, (byte) 0xFF, (byte) 0xFF,
+            (byte) 0xFF, (byte) 0xFF, (byte) 0xFF, (byte) 0xFF,
+        };
+        check(Screengine.submitTextured(out[0], model, vertices, indices, colors, texture)
+                == Screengine.OK, "le lot de la scène étalonnée est accepté");
+        Screengine.textureDestroy(texture);
+
+        int body = STRIDE * HEIGHT * Screengine.BYTES_PER_PIXEL;
+        ByteBuffer block = ByteBuffer.allocateDirect(body);
+        int code = Screengine.frameEnd(out[0], block, 0, STRIDE);
+        check(code == Screengine.OK, "l'image étalonnée se rend");
+
+        String hash = fingerprint(block, 0, STRIDE);
+        Screengine.destroy(out[0]);
+        return code == Screengine.OK ? hash : null;
+    }
+
+    /**
      * Rend la scène éclairée par des lumières, ou {@code null} si le rendu a
      * échoué.
      *
@@ -637,18 +694,20 @@ public final class Test {
         }
         String textured = renderTextured(Screengine.FILTER_DITHER);
         String bilinear = renderTextured(Screengine.FILTER_BILINEAR);
+        String graded = renderGraded();
         String lit = renderLit();
         String fog = renderFog();
         String lights = renderLights();
 
         if (failures > 0 || hash == null || textured == null || bilinear == null
-                || lit == null || fog == null || lights == null) {
+                || graded == null || lit == null || fog == null || lights == null) {
             System.err.println(failures + " vérification(s) en échec");
             System.exit(1);
         }
         System.out.println(hash);
         System.out.println(textured);
         System.out.println(bilinear);
+        System.out.println(graded);
         System.out.println(lit);
         System.out.println(fog);
         System.out.println(lights);

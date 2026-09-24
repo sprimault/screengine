@@ -694,9 +694,14 @@ impl Scene {
     /// Neutre partout ailleurs, et c'est ce qui garde les douze autres
     /// empreintes inchangées : un contexte qu'on ne configure pas ne traverse
     /// aucune table.
-    fn grade(self) -> Option<(f32, [f32; 3])> {
+    ///
+    /// Les trois gains et les trois décalages sont **tous distincts** : à
+    /// valeurs égales, une permutation des tables rendrait la même image et
+    /// l'empreinte ne dirait rien. Le décalage du vert est négatif pour que la
+    /// borne basse serve aussi.
+    fn grade(self) -> Option<(f32, [f32; 3], [f32; 3])> {
         match self {
-            Self::Graded => Some((2.2, [1.15, 1.0, 0.85])),
+            Self::Graded => Some((2.2, [1.15, 1.0, 0.85], [0.04, -0.02, 0.08])),
             _ => None,
         }
     }
@@ -966,8 +971,8 @@ impl Scene {
         if let Some((color, start, end)) = self.fog() {
             context.set_fog(color, start, end)?;
         }
-        if let Some((gamma, gains)) = self.grade() {
-            context.set_grade(gamma, gains)?;
+        if let Some((gamma, gains, offsets)) = self.grade() {
+            context.set_grade(gamma, gains, offsets)?;
         }
         let lights = self.lights();
         if !lights.is_empty() {

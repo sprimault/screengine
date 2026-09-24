@@ -437,6 +437,74 @@ impl ScgTextureDesc {
 /// Les mêmes assertions existent en C, injectées dans le header par `cbindgen`
 /// et compilées par les hôtes. Celles-ci les attrapent avant que le header ne
 /// soit même régénéré.
+/// The output curve applied while each tile is copied out: an affine per
+/// channel, then gamma.
+///
+/// Each channel goes through `x·gain + offset`, clamped to [0, 1], then
+/// `^(1/gamma)`. The affine is the most general transform that stays local to
+/// one pixel and one channel: it holds contrast, black level and tint at once.
+/// A gain alone can lift neither a black nor lower a white, and gamma fixes
+/// both ends — that family of images is reachable only this way.
+///
+/// `gamma` is the display gamma, in the sense where **2.2 brightens**, within
+/// ]0, 8]. Gains are within [0, 4], offsets within [-1, 1], and the affine
+/// applies **before** gamma: it corrects the source, gamma encodes for the
+/// display, and that is the order in which they read. Gain and gamma commute up
+/// to reparametrisation — `(a·x)^γ = a^γ·x^γ` — so no image is out of reach
+/// either way; what the order fixes is what the number means. **It will never
+/// change**: a host that had set its parameters would otherwise get a different
+/// image with no version to warn it.
+///
+/// The curve never writes alpha, which the engine forces opaque as the contract
+/// promises.
+///
+/// **What the reserved fields can ever hold.** They must be zero, and the
+/// extension rule promises that a host written before one of them means
+/// anything gets the default behaviour by passing zeros. A setting whose
+/// neutral value is one — a further gain, a saturation — therefore **cannot**
+/// go there as such: only additive settings can, whose neutral is zero. Should
+/// a multiplicative one be wanted later, it has to be expressed as a departure
+/// from neutral to fit. Written here so that the constraint steers the design
+/// instead of being discovered against it — which is why the offsets are in
+/// this struct from the start rather than left for later, where three fields
+/// would no longer have fitted in two reserved ones.
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct ScgGrade {
+    /// Display gamma, within ]0, 8].
+    pub gamma: f32,
+    /// Red gain, within [0, 4], applied before gamma.
+    pub gain_r: f32,
+    /// Green gain.
+    pub gain_g: f32,
+    /// Blue gain.
+    pub gain_b: f32,
+    /// Red offset, within [-1, 1], added after the gain.
+    pub offset_r: f32,
+    /// Green offset.
+    pub offset_g: f32,
+    /// Blue offset.
+    pub offset_b: f32,
+    /// Reserved, must be zero.
+    pub reserved0: u32,
+    /// Reserved, must be zero.
+    pub reserved1: u32,
+}
+
+impl ScgGrade {
+    /// Le gamma, les trois gains et les trois décalages, réservés vérifiés.
+    pub(crate) fn to_core(self) -> Result<(f32, [f32; 3], [f32; 3]), AbiError> {
+        if self.reserved0 != 0 || self.reserved1 != 0 {
+            return Err(AbiError::RESERVED);
+        }
+        Ok((
+            self.gamma,
+            [self.gain_r, self.gain_g, self.gain_b],
+            [self.offset_r, self.offset_g, self.offset_b],
+        ))
+    }
+}
+
 const _: () = {
     use core::mem::{align_of, offset_of, size_of};
 
@@ -464,4 +532,12 @@ const _: () = {
     assert!(offset_of!(ScgTextureDesc, height) == 4);
     assert!(offset_of!(ScgTextureDesc, format) == 8);
     assert!(offset_of!(ScgTextureDesc, reserved2) == 20);
+
+    assert!(size_of::<ScgGrade>() == 36 && align_of::<ScgGrade>() == 4);
+    assert!(offset_of!(ScgGrade, gain_r) == 4);
+    assert!(offset_of!(ScgGrade, gain_b) == 12);
+    assert!(offset_of!(ScgGrade, offset_r) == 16);
+    assert!(offset_of!(ScgGrade, offset_b) == 24);
+    assert!(offset_of!(ScgGrade, reserved0) == 28);
+    assert!(offset_of!(ScgGrade, reserved1) == 32);
 };

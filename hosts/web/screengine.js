@@ -83,6 +83,8 @@ export const EXPORTS = [
   "scg_submit_textured",
   "scg_submit_lit",
   "scg_set_resolution",
+  "scg_set_grade",
+  "scg_clear_grade",
   "scg_set_filter",
   "scg_set_overbright",
   "scg_set_fog",
@@ -107,6 +109,11 @@ export const LIGHT_SIZE = 20;
 
 /** Taille de `ScgTextureDesc` : six `uint32_t`. */
 export const TEXTURE_DESC_SIZE = 24;
+
+/**
+ * Taille de `ScgGrade` : un gamma, trois gains, trois décalages, deux réservés.
+ */
+export const GRADE_SIZE = 36;
 
 /** Taille de `ScgTriangle` : trois `uint32_t` puis quatre `uint8_t`. */
 export const TRIANGLE_SIZE = 16;
@@ -319,6 +326,24 @@ export class Screengine {
       light.color.forEach((channel, k) => view.setUint8(base + 16 + k, channel));
       view.setUint8(base + 19, 0);
     });
+  }
+
+  /**
+   * Écrit une courbe de sortie, champs réservés compris.
+   *
+   * La structure est mise à zéro d'abord : la mémoire linéaire ne l'est pas
+   * entre deux allocations, et un reste d'écriture précédente dans un champ
+   * réservé ferait refuser le réglage.
+   *
+   * @param {number} ptr adresse d'au moins `GRADE_SIZE` octets
+   * @param {{gamma: number, gains: number[], offsets: number[]}} grade
+   */
+  writeGrade(ptr, grade) {
+    new Uint8Array(this.memory.buffer, ptr, GRADE_SIZE).fill(0);
+    const view = new DataView(this.memory.buffer, ptr, GRADE_SIZE);
+    view.setFloat32(0, grade.gamma, true);
+    grade.gains.forEach((value, k) => view.setFloat32(4 + k * 4, value, true));
+    grade.offsets.forEach((value, k) => view.setFloat32(16 + k * 4, value, true));
   }
 
   /**

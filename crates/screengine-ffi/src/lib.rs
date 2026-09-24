@@ -34,8 +34,8 @@ use output::HostRows;
 
 pub use context::{ScgContext, ScgContextConfig};
 pub use scene::{
-    SCG_FILTER_BILINEAR, SCG_FILTER_DITHER, SCG_TEXTURE_FORMAT_RGBA8, ScgCamera, ScgLight, ScgMat4,
-    ScgTextureDesc, ScgTriangle, ScgVertex, ScgVertexUv, ScgVertexUv2,
+    SCG_FILTER_BILINEAR, SCG_FILTER_DITHER, SCG_TEXTURE_FORMAT_RGBA8, ScgCamera, ScgGrade,
+    ScgLight, ScgMat4, ScgTextureDesc, ScgTriangle, ScgVertex, ScgVertexUv, ScgVertexUv2,
 };
 pub use status::{
     SCG_ERR_FAULTED, SCG_ERR_INVALID_ARGUMENT, SCG_ERR_INVALID_STATE, SCG_ERR_NULL,
@@ -179,6 +179,56 @@ pub unsafe extern "C" fn scg_set_resolution(ctx: *mut ScgContext, width: u32, he
 
     // SAFETY: précondition de la fonction — `ctx` est nul ou un handle vivant.
     unsafe { entry::with_context(ctx, set) }
+}
+
+/// Sets the output curve applied while each tile is copied out.
+///
+/// See `ScgGrade` for what the fields mean and what the reserved ones may ever
+/// hold. Out-of-range values, or a reserved field that is not zero, return
+/// `SCG_ERR_INVALID_ARGUMENT` and the context keeps the curve it had.
+///
+/// Neutral by default, and turned back to neutral by `scg_clear_grade`. It
+/// costs three table lookups per pixel once set, and nothing at all while it is
+/// neutral. Rejected with `SCG_ERR_INVALID_STATE` between `scg_frame_begin` and
+/// `scg_frame_end`, for the reason that holds for every frame-wide setting.
+///
+/// # Safety
+///
+/// `ctx` is a live handle used by no other thread during the call, and `grade`
+/// is NULL or points to a readable `ScgGrade`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn scg_set_grade(ctx: *mut ScgContext, grade: *const ScgGrade) -> i32 {
+    let set = |mut core: entry::Core<'_>| {
+        // SAFETY: précondition de la fonction — le pointeur est nul ou vise une
+        // structure lisible, que rien d'autre ne modifie pendant l'appel.
+        let grade = unsafe { grade.as_ref() }.ok_or(AbiError::NULL)?;
+        let (gamma, gains, offsets) = grade.to_core()?;
+        core.exclusive()?.set_grade(gamma, gains, offsets)?;
+        Ok(())
+    };
+
+    // SAFETY: précondition de la fonction — `ctx` est nul ou un handle vivant.
+    unsafe { entry::with_context(ctx, set) }
+}
+
+/// Returns the output to its neutral state.
+///
+/// Doing so on a context that never set a curve is not an error: a host that
+/// flattens its output at the end of a level does not have to remember whether
+/// it had set one.
+///
+/// # Safety
+///
+/// `ctx` is a live handle used by no other thread during the call.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn scg_clear_grade(ctx: *mut ScgContext) -> i32 {
+    let clear = |mut core: entry::Core<'_>| {
+        core.exclusive()?.clear_grade()?;
+        Ok(())
+    };
+
+    // SAFETY: précondition de la fonction — `ctx` est nul ou un handle vivant.
+    unsafe { entry::with_context(ctx, clear) }
 }
 
 /// Sets how textures are sampled from the next frames on.

@@ -768,6 +768,109 @@ fn une_sortie_refusee_laisse_le_contexte_utilisable() {
     unsafe { scg_destroy(ctx) };
 }
 
+/// Une courbe de sortie neutre, celle qu'un hôte écrit après avoir mis la
+/// structure à zéro.
+fn neutral_grade() -> ScgGrade {
+    ScgGrade {
+        gamma: 1.0,
+        gain_r: 1.0,
+        gain_g: 1.0,
+        gain_b: 1.0,
+        offset_r: 0.0,
+        offset_g: 0.0,
+        offset_b: 0.0,
+        reserved0: 0,
+        reserved1: 0,
+    }
+}
+
+/// La courbe se pose dans ses bornes, et rien d'autre.
+///
+/// Le champ réservé non nul compte autant que les bornes : c'est lui qui rend
+/// la promesse d'extension vraie. Sans ce refus, un hôte pourrait y écrire
+/// n'importe quoi aujourd'hui, et le jour où le champ prendrait un sens il
+/// recevrait ce n'importe quoi comme réglage.
+#[test]
+fn pose_une_courbe_dans_ses_bornes_et_refuse_le_reste() {
+    let ctx = create(&sane());
+
+    // SAFETY: `ctx` est vivant, et la structure est un local qui vit jusqu'au
+    // retour de l'appel — le moteur n'en garde aucune référence.
+    assert_eq!(unsafe { scg_set_grade(ctx, &neutral_grade()) }, SCG_OK);
+
+    let chaude = ScgGrade {
+        gamma: 2.2,
+        gain_r: 1.15,
+        gain_b: 0.85,
+        offset_g: 0.05,
+        ..neutral_grade()
+    };
+    // SAFETY: mêmes préconditions.
+    assert_eq!(unsafe { scg_set_grade(ctx, &chaude) }, SCG_OK);
+
+    // Chaque variante part du neutre et n'en change qu'un champ : le refus
+    // porte alors sur ce champ, et sur rien d'autre.
+    let refuse = |quoi: &str, modifier: fn(&mut ScgGrade)| {
+        let mut grade = neutral_grade();
+        modifier(&mut grade);
+        // SAFETY: mêmes préconditions.
+        let code = unsafe { scg_set_grade(ctx, &grade) };
+        assert_eq!(code, SCG_ERR_INVALID_ARGUMENT, "{quoi}");
+    };
+
+    refuse("gamma nul", |g| g.gamma = 0.0);
+    refuse("gamma haut", |g| g.gamma = 9.0);
+    refuse("gain négatif", |g| g.gain_g = -1.0);
+    refuse("gain haut", |g| g.gain_b = 5.0);
+    refuse("décalage bas", |g| g.offset_r = -1.5);
+    refuse("décalage haut", |g| g.offset_b = 1.5);
+    refuse("réservé non nul", |g| g.reserved1 = 1);
+
+    // SAFETY: le pointeur nul est le cas que la fonction doit refuser.
+    assert_eq!(unsafe { scg_set_grade(ctx, ptr::null()) }, SCG_ERR_NULL);
+    // SAFETY: mêmes préconditions.
+    assert_eq!(unsafe { scg_clear_grade(ptr::null_mut()) }, SCG_ERR_NULL);
+
+    // Éteindre une courbe qu'on n'a pas réglée n'est pas une erreur, et le
+    // faire deux fois non plus.
+    // SAFETY: `ctx` est un handle vivant, employé par ce seul thread.
+    assert_eq!(unsafe { scg_clear_grade(ctx) }, SCG_OK);
+    // SAFETY: mêmes préconditions.
+    assert_eq!(unsafe { scg_clear_grade(ctx) }, SCG_OK);
+
+    // SAFETY: le handle est vivant et détruit une seule fois.
+    unsafe { scg_destroy(ctx) };
+}
+
+/// La courbe ne se change pas pendant une image, pour la raison qui vaut pour
+/// le filtre : les tuiles se rendent depuis des threads que le moteur ne
+/// connaît pas, et deux courbes dans la même image ne décriraient rien.
+#[test]
+fn refuse_de_changer_la_courbe_pendant_une_image() {
+    let ctx = create(&sane());
+    let mut tiles = 0;
+    // SAFETY: `ctx` est vivant, le compteur est local, l'image se referme plus
+    // bas.
+    assert_eq!(unsafe { scg_frame_begin(ctx, &mut tiles) }, SCG_OK);
+
+    // SAFETY: mêmes préconditions.
+    let pendant = unsafe { scg_set_grade(ctx, &neutral_grade()) };
+    assert_eq!(pendant, SCG_ERR_INVALID_STATE);
+    // SAFETY: mêmes préconditions.
+    assert_eq!(unsafe { scg_clear_grade(ctx) }, SCG_ERR_INVALID_STATE);
+
+    let mut pixels = vec![0u8; 64 * 32 * 4];
+    // SAFETY: le tampon porte bien `stride × hauteur × 4` octets.
+    let clos = unsafe { scg_frame_end(ctx, pixels.as_mut_ptr(), 64) };
+    assert_eq!(clos, SCG_OK);
+
+    // SAFETY: l'image est close, le réglage redevient permis.
+    assert_eq!(unsafe { scg_set_grade(ctx, &neutral_grade()) }, SCG_OK);
+
+    // SAFETY: le handle est vivant et détruit une seule fois.
+    unsafe { scg_destroy(ctx) };
+}
+
 /// La résolution se pose sous le maximum de la création, et rien d'autre.
 ///
 /// Le maximum est ce sur quoi tous les tampons ont été dimensionnés : au-delà,

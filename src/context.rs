@@ -430,21 +430,23 @@ impl Context {
         self.fog.is_set()
     }
 
-    /// Règle la courbe de sortie : le gamma, puis un gain par canal.
+    /// Règle la courbe de sortie : une affine par canal, puis le gamma.
     ///
-    /// `gamma` est celui de l'écran, dans le sens où **2,2 éclaircit**. Les
-    /// gains s'appliquent **avant** lui, dans l'ordre R, G, B. Les deux
-    /// commutent à reparamétrisation près, si bien qu'aucune image n'est perdue
-    /// d'un ordre à l'autre ; ce qui change est ce que le nombre veut dire, et
-    /// il veut dire « je corrige la source, puis j'encode pour l'écran ».
+    /// Chaque canal subit `x·gain + offset`, ramené dans `[0, 1]`, puis
+    /// `^(1/gamma)` — `gamma` étant celui de l'écran, dans le sens où **2,2
+    /// éclaircit**. L'affine vient **avant** le gamma : elle corrige la source,
+    /// il encode pour l'écran, et c'est dans cet ordre qu'on les lit. Gain et
+    /// gamma commutent d'ailleurs à reparamétrisation près, si bien qu'aucune
+    /// image n'est perdue d'un ordre à l'autre ; ce qui change est ce que le
+    /// nombre veut dire.
     ///
     /// Refusée pendant le rendu, comme tout réglage que les tuiles d'une même
     /// image doivent partager.
-    pub fn set_grade(&mut self, gamma: f32, gains: [f32; 3]) -> Result<()> {
+    pub fn set_grade(&mut self, gamma: f32, gains: [f32; 3], offsets: [f32; 3]) -> Result<()> {
         if *self.state.get_mut() != RECORDING {
             return Err(Error::InvalidState);
         }
-        self.grade.set(gamma, gains)
+        self.grade.set(gamma, gains, offsets)
     }
 
     /// Rend la sortie à son état neutre.
