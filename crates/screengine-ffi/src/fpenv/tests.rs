@@ -13,10 +13,44 @@ use super::*;
 
 /// Sur une cible sans registre de contrôle, la garde se construit et se
 /// détruit sans rien faire — c'est ce qui permet une enveloppe unique.
+///
+/// Sans assertion, et c'est voulu : il n'y a rien à observer là où la garde est
+/// vide. Ce qu'elle fait là où elle agit est le sujet du test suivant.
 #[test]
 fn la_garde_se_pose_et_se_retire() {
     let env = FpEnv::enter();
     drop(env);
+}
+
+/// La garde **rend à l'hôte le registre qu'il avait**, bit pour bit.
+///
+/// La moitié du contrat que rien ne vérifiait : `enter` était éprouvé par la
+/// normalisation, `drop` par personne. Une restauration supprimée laissait
+/// tous les tests verts, et l'hôte reprenait la main dans l'environnement du
+/// moteur — ce que `docs/abi.md` promet justement de ne pas faire, au motif
+/// qu'un hôte ayant démasqué une exception pour traquer un défaut chez lui ne
+/// doit pas la retrouver masquée.
+///
+/// Le registre est par thread, donc ce test n'en perturbe aucun autre ; il le
+/// remet malgré tout au propre, le harnais réutilisant ses threads.
+#[test]
+#[cfg(target_arch = "x86_64")]
+fn la_garde_rend_a_l_hote_son_registre() {
+    // Zéro forcé et dénormaux à zéro : deux bits que la normalisation efface,
+    // donc l'hôte n'est pas déjà conforme et la garde a quelque chose à
+    // retenir.
+    let hostile = arch::normalize(arch::read()) | 0x8000 | 0x0040;
+    arch::write(hostile);
+
+    let pendant = {
+        let _env = FpEnv::enter();
+        arch::read()
+    };
+    let apres = arch::read();
+    arch::write(arch::normalize(hostile));
+
+    assert_eq!(pendant & 0x8040, 0, "la garde n'a pas normalisé l'entrée");
+    assert_eq!(apres, hostile, "le registre de l'hôte n'a pas été rendu");
 }
 
 /// Quand l'hôte est déjà dans l'environnement par défaut, rien n'est écrit.
