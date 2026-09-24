@@ -44,12 +44,13 @@ for those making a game, and the engine does not know it exists.
 
 ## Status
 
-**Step 2 cleared, released as 0.2.0: textures.** Loading an RGBA8 block whose
-mipmap chain is built on load, perspective corrected over sixteen-pixel
-segments aligned on the image grid, a mipmap level picked per segment, and two
-filters at the host's choice — ordered dithering of texture coordinates by
-default, bilinear above it. All four reference hosts render the same image, bit
-for bit, filtering included. Light is step 3.
+**Step 3 cleared, released as 0.3.0: light and image.** Lightmaps supplied by
+the host and sampled through a second set of vertex coordinates, up to eight
+dynamic lights whose falloff is computed per vertex, distance fog, an internal
+resolution that changes without recreating the context, and an output curve —
+per-channel gain, offset, gamma — applied while a tile is copied out. All four
+reference hosts render the same image, bit for bit. Data and the map format are
+step 4.
 
 The roadmap has ten steps, each one published.
 

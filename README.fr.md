@@ -45,13 +45,13 @@ ces hôtes, écrit en Rust pour qui fait un jeu, et le moteur ignore son existen
 
 ## État
 
-**Étape 2 franchie, publiée en 0.2.0 : les textures.** Chargement d'un bloc
-RGBA8 dont la chaîne de mipmaps est engendrée au chargement, perspective
-corrigée par segments de seize pixels alignés sur la grille de l'image, niveau
-de mipmap choisi par segment, et deux filtrages au choix de l'hôte — tramage
-ordonné des coordonnées par défaut, bilinéaire au-dessus. Les quatre hôtes de
-référence rendent la même image au bit près, filtrage compris. La lumière est
-l'étape 3.
+**Étape 3 franchie, publiée en 0.3.0 : la lumière et l'image.** Lightmaps
+fournies par l'hôte et échantillonnées par un second jeu de coordonnées au
+sommet, jusqu'à huit lumières dynamiques dont l'atténuation se calcule par
+sommet, brouillard par la distance, résolution interne modifiable sans recréer
+le contexte, et une courbe de sortie — gain par canal, décalage, gamma —
+appliquée pendant la recopie de tuile. Les quatre hôtes de référence rendent la
+même image au bit près. Les données et le format de carte sont l'étape 4.
 
 La feuille de route compte dix étapes, publiées à chacune.
 

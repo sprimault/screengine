@@ -7,8 +7,10 @@ Un auteur de liaison qui ne lit pas le français trouve l'essentiel dans
 `include/screengine.h`, dont la documentation est en anglais : ce qui ne peut pas
 être ignoré à l'appel y figure, fonction par fonction.
 
-**État : l'étape 2 est publiée en 0.2.0 — les sept points d'entrée de l'étape 0,
-le rendu par tuiles, et les textures avec leur niveau de filtrage.** Chaque
+**État : l'étape 3 est publiée en 0.3.0 — les sept points d'entrée de l'étape 0,
+le rendu par tuiles, les textures avec leur niveau de filtrage, et la lumière :
+lightmaps, lumières dynamiques, brouillard, résolution interne et courbe de
+sortie.** Chaque
 décision garde ci-dessous l'option écartée et pourquoi. Un
 point reste marqué **À trancher**, celui de la dépréciation, qui attend le gel
 de l'ABI en 1.0 ; celui des ressources est tranché pour les textures et ouvert

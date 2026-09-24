@@ -168,6 +168,8 @@ soumission s'ajoutent sans toucher aux publiées.
 regarde. C'est la première version qui donne envie de continuer, et ce n'est pas
 une considération accessoire sur un projet de cette longueur.
 
+**Franchie, publiée en 0.3.0.**
+
 ## 4 — Les données
 
 Format de maillage et format de carte, versionnés dès la première ligne, chargés
