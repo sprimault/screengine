@@ -400,11 +400,25 @@ leurs empreintes se comparent par leurs hôtes.
   vérifierait rien de plus.
 - **Une archive par cible** — `windows_x64`, `linux_x64`, `wasm32`, `android`,
   cette dernière rangée en `lib/<abi>/` comme `jniLibs/` —,
-  `screengine_<tag>_<cible>`, contenant la
-  bibliothèque, le header, `LICENSE-MIT`, `LICENSE-APACHE` et
-  `THIRD-PARTY-NOTICES` ; un `SHA256SUMS`
-  calculé sur les archives, et une attestation de provenance vérifiable par
-  `gh attestation verify`.
+  `screengine_<tag>_<cible>`, contenant le header, `LICENSE-MIT`,
+  `LICENSE-APACHE`, `THIRD-PARTY-NOTICES`, et les bibliothèques suivantes ; un
+  `SHA256SUMS` calculé sur les archives, et une attestation de provenance
+  vérifiable par `gh attestation verify`.
+
+  | Archive | Ce qu'elle emporte |
+  |---|---|
+  | `windows_x64` | `screengine.dll`, sa bibliothèque d'importation, `screengine.lib` |
+  | `linux_x64` | `libscreengine.so` et `libscreengine.a` |
+  | `wasm32` | `screengine.wasm` |
+  | `android` | `libscreengine.so` par ABI, **et rien d'autre** |
+
+  **L'archive Android n'emporte pas les bibliothèques statiques**, que la
+  matrice ci-dessus dit pourtant produites — elle décrit ce que la cible sort,
+  pas ce qu'on distribue. Une statique Rust embarque la bibliothèque standard :
+  celle de Windows fait trois mégaoctets et demi en release, et il en faudrait
+  trois de plus ici, une par ABI, pour un artefact dont l'usage est `jniLibs/`,
+  qui ne prend que des `.so`. Qui veut lier en statique sur Android construit
+  depuis un clone, comme pour un correctif entre deux versions.
 - **`THIRD-PARTY-NOTICES` couvre ce que les bibliothèques embarquent** sans que
   le projet en dépende : la bibliothèque standard de Rust, `compiler-builtins`
   et son libm, et la libunwind de LLVM sur Android. Un seul fichier pour toutes

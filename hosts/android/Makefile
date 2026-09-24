@@ -25,6 +25,10 @@ OUT     ?= ../../.tmp/host-android
 TARGET  := $(or $(CARGO_TARGET_DIR),../../target)
 INCLUDE := ../../include
 
+# La version de l'APK, lue au seul endroit qui en fasse foi. `head -1` parce que
+# les dépendances en portent une elles aussi, plus bas dans le même fichier.
+VERSION := $(shell sed -n 's/^version = "\(.*\)"/\1/p' ../../Cargo.toml | head -1)
+
 # Le Makefile racine l'exporte : cette valeur ne sert qu'à un appel direct de
 # ce Makefile, et les deux ne doivent pas diverger — d'où le contrôle du
 # manifeste, plus bas, qui refuse de construire si elles le font.
@@ -145,10 +149,15 @@ dex: $(JAVA_SOURCES)
 # L'APK n'est pas lancé par le test, mais construit par lui : une application qui
 # ne se construit plus se découvre ici plutôt que le jour où on la réclame.
 # Alignement sur des pages de 16 Ko, signature par une clé de débogage.
+#
+# La version vient du `Cargo.toml` racine et non du manifeste : celui-ci est
+# versionné, et une valeur écrite dedans ment dès la publication suivante — elle
+# est restée à 0.0.0 pendant quatre versions, sans que rien ne rapproche les
+# deux. Le manifeste n'en porte donc plus, et il n'y a qu'une source.
 apk: native dex manifeste-verif
 	@rm -rf $(OUT)/apk && mkdir -p $(OUT)/apk/lib
 	$(TOOLS)/aapt2 link --manifest AndroidManifest.xml -I $(ANDROID_JAR) \
-	  --min-sdk-version $(ANDROID_API) -o $(OUT)/apk/base.apk
+	  --min-sdk-version $(ANDROID_API) --version-name $(VERSION) -o $(OUT)/apk/base.apk
 	cp $(OUT)/dex/classes.dex $(OUT)/apk/
 	for abi in $(ABIS); do \
 	  mkdir -p $(OUT)/apk/lib/$$abi && cp $(OUT)/$$abi/*.so $(OUT)/apk/lib/$$abi/; \
