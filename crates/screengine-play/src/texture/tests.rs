@@ -8,12 +8,31 @@ use png::{BitDepth, Encoder};
 
 use super::*;
 
-/// Les trois textures de l'étage d'accueil, avec le nom qui les désigne dans un
-/// message d'échec.
-const ASSETS: [(&str, &[u8]); 3] = [
+/// Les textures que l'étage d'accueil versionne, avec le nom qui les désigne
+/// dans un message d'échec.
+///
+/// **Toutes**, et pas seulement celles qu'un exemple affiche aujourd'hui : ce
+/// qui entre dans le dépôt doit se charger, et une texture qu'aucun test ne
+/// touche n'est vérifiée que le jour où quelqu'un lance la fenêtre. Les quatre
+/// dernières sont arrivées sans que cette liste bouge, ce qui est exactement le
+/// défaut qu'une liste écrite à la main finit par avoir.
+const ASSETS: [(&str, &[u8]); 7] = [
     ("brick", include_bytes!("../../assets/brick.png")),
     ("stone", include_bytes!("../../assets/stone.png")),
     ("wood", include_bytes!("../../assets/wood.png")),
+    ("mur-mousse", include_bytes!("../../assets/mur-mousse.png")),
+    (
+        "sol-pave-mousse",
+        include_bytes!("../../assets/sol-pave-mousse.png"),
+    ),
+    (
+        "ciel-orageux",
+        include_bytes!("../../assets/ciel-orageux.png"),
+    ),
+    (
+        "malle-rouillee",
+        include_bytes!("../../assets/malle-rouillee.png"),
+    ),
 ];
 
 /// Encode un PNG de test, sans palette.
