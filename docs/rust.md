@@ -582,6 +582,274 @@ la création du contexte rend une erreur plutôt que de déborder en silence.
   la scène, et un dépassement est une erreur rendue, pas une croissance.
 - La preuve est un test, pas une relecture : voir « Tests ».
 
+## Formats de fichier
+
+Deux formats : le maillage et la carte. Ils partagent un en-tête, une table de
+sections et un décodeur, dans `src/format/`. `abi.md` n'en voit rien — il ne
+connaît qu'un bloc d'octets et un handle opaque —, et c'est ici que les
+dispositions font foi.
+
+**Les dispositions sont figées avant le premier décodeur**, pour la même raison
+que les formats de virgule fixe l'ont été avant le premier remplissage : ce qui
+s'écrit après s'écrit contre ce qui existe déjà, et le format en garde la forme
+pour toujours.
+
+### En-tête et sections
+
+Vingt octets : la signature `S C G 0x1A`, le genre en quatre octets ASCII
+(`MESH`, `WRLD`), puis `version_format`, `total_length` et `section_count`, trois
+`u32`.
+
+La signature se coupe en deux : le préfixe commun refuse « ce n'est pas un
+fichier de ce projet » avant même de savoir quel format était attendu, et le
+genre distingue « un maillage là où une carte était attendue » d'une version non
+supportée. L'octet `0x1A` est le marqueur de fin de fichier des systèmes de
+l'époque : il ne coûte rien et attrape un fichier transféré en mode texte.
+Écarté : porter le numéro de version dans la signature — `version_format` le
+fait, et deux mécanismes de version finissent par diverger.
+
+**`total_length` est exigé égal à la longueur reçue, pas inférieur.** Toute
+troncature devient alors détectable au premier contrôle, et le champ sert de
+borne unique à tous les décalages qui suivent. Tolérer des octets de queue
+donnerait deux fichiers d'octets différents rendant la même image, ce qui
+désaccorderait l'empreinte d'intégrité de l'hôte de celle du moteur.
+
+Aucun champ réservé, contrairement aux structures de l'ABI : un champ réservé
+existe parce qu'une structure publiée ne change plus, alors qu'un fichier porte
+son extension dans son numéro de version. Aucune somme de contrôle non plus —
+elle ne protège de rien face à un bloc hostile, qui la recalcule, et l'intégrité
+de transport appartient à l'archive de l'hôte.
+
+La table suit l'en-tête : `section_count` entrées de douze octets — genre sur
+quatre octets ASCII, décalage et longueur en `u32`. **Les sections sont rangées
+par genre croissant, au plus une de chaque, et pavent le fichier sans
+recouvrement**, ce qui se vérifie avant qu'un seul champ ne soit lu. Sans cette
+canonicité, le même contenu aurait plusieurs écritures légitimes : un choix dont
+l'écrivain n'a pas besoin, une recherche dont le lecteur n'a pas besoin non plus.
+
+**Une section de genre inconnu refuse le fichier.** Il n'y a pas de tolérance en
+avant, et c'est la décision la moins intuitive du format. La raison est le
+déterminisme : presque tout ce qui s'ajoutera à un format de rendu change ce qui
+est rendu, et une bibliothèque qui saute en silence une section qu'une version
+plus récente emploie rend **une autre image sur le même fichier, sans erreur**.
+C'est précisément ce que la conformance existe pour attraper, et elle ne le
+verrait pas, chaque version étant cohérente avec elle-même. Une section ne
+deviendra ignorable que le jour où son absence ne pourra changer aucun pixel, et
+elle le dira.
+
+**Aucun alignement n'est exigé du bloc**, qui peut venir d'une lecture, d'une
+projection à un décalage quelconque ou d'une entrée d'archive. Chaque champ se
+lit par `from_le_bytes` sur une tranche : **jamais de réinterprétation d'une
+tranche d'octets en tranche de mots**. Une lecture non alignée est une
+instruction sur les quatre cibles, payée une fois au chargement et jamais par
+pixel. Exiger un alignement obligerait tout hôte à passer par
+`scg_buffer_alloc`, donc changerait une précondition de l'ABI, pour un gain non
+mesurable.
+
+### Ce que le décodeur tient pour hostile
+
+Que `(ptr, len)` couvre bien `len` octets lisibles est une précondition : le
+moteur ne peut pas le savoir. **Tout ce qui est à l'intérieur de ces octets est
+hostile, sans exception** — c'est le périmètre que `SECURITY` décrit.
+
+**Aucune capacité d'allocation ne vient d'un nombre déclaré, toujours d'une
+longueur présente dans le bloc.** Tout compte se recoupe avec la longueur de sa
+section, `count × taille == longueur` exactement, en arithmétique vérifiée.
+C'est la bombe d'allocation classique : quarante octets qui annoncent quatre
+milliards de sommets. `checked_mul` et non `*` — sur wasm32 et sur armv7, `usize`
+fait 32 bits, et un produit déborde bien en deçà de ce qu'un fichier peut
+déclarer.
+
+Vérifié une fois au chargement, et jamais ensuite : signature, genre, version,
+longueur totale ; le pavage de la table ; les comptes ; tout indice sous son
+compte ; toute coordonnée finie, `is_nan` nommément avant les comparaisons de
+bornes ; les identifiants non nuls, **triés, l'unicité lue en une passe
+adjacente**. Le tri se vérifie, il ne se suppose pas : une recherche dichotomique
+sur une table non triée ne plante pas, elle rend la mauvaise surface, et c'est un
+défaut « image fausse, aucune erreur ».
+
+Ne se vérifie pas : la cohérence géométrique — triangles dégénérés, faces
+retournées. Rien de cela ne corrompt la mémoire, et refuser un état intermédiaire
+d'éditeur contredirait l'édition à chaud.
+
+**Ne se revérifie surtout pas ensuite** : une soumission ne reparcourt pas les
+indices d'une ressource chargée. Un tableau reçu de l'hôte n'est pas validé et
+doit l'être ; une ressource chargée porte l'invariant dans son type. C'est le
+premier endroit du projet où une revalidation par image serait invisible — elle
+ne ferait rougir aucun test, ne changerait aucune empreinte, et coûterait un
+parcours complet par image.
+
+**Un fichier malformé rend une erreur, il ne panique pas**, même en débogage.
+C'est déjà la règle générale du projet, et c'est ici qu'elle se joue.
+
+### Maillage
+
+Quatre sections : `SURF`, `TEXN`, `TRIS`, `VTXS`.
+
+| Élément | Disposition | Taille |
+|---|---|---|
+| Sommet | `x, y, z, u, v` en `f32` | 20 |
+| Triangle | `i0, i1, i2` en `u32`, puis `r, g, b, a` en `u8` | 16 |
+| Groupe de surface | `id`, `first_triangle`, `triangle_count`, `texture_slot` en `u32` | 16 |
+| Nom d'emplacement | longueur en `u16`, puis les octets UTF-8, sans remplissage | variable |
+
+Un seul format de sommet, pas de masque d'attributs : le rasteriseur a
+exactement trois formes de sommet et n'en aura pas de quatrième sans une fonction
+de soumission de plus. Les cinq champs sont ceux de `ScgVertexUv`, dans le même
+ordre, **par convergence et non par dépendance** — le décodeur vit dans le noyau
+et ne peut pas voir les types de la couche C, et lier une disposition de fichier
+qui cassera à une structure publiée qui ne change plus ferait gouverner la
+promesse forte par la faible.
+
+Indices en `u32` et non `u16` : un second chemin de décodage et un plafond de
+65 536 sommets qu'un décor fusionné atteint, contre six octets par triangle.
+Couleur par triangle et non par groupe : elle sert aux surfaces sans texture, et
+la porter par groupe économiserait un quart de la section au prix d'un modèle de
+fichier différent de celui du moteur.
+
+**Les groupes pavent l'intervalle des triangles dans l'ordre, sans trou ni
+recouvrement, et c'est vérifié.** Une soumission vaut pour un groupe ; un groupe
+dispersé imposerait de rassembler ses triangles à chaque image, donc un tampon,
+donc une allocation par image.
+
+Pas de second jeu de coordonnées : une lightmap se calcule par cellule, et un
+accessoire mobile n'est pas une cellule. Le jour où un décor statique se livrera
+en maillage, ce sera une version de format de plus. **Ce format cassera de toute
+façon à l'étape 6**, qui tranche la normale par sommet, et c'est prévu.
+
+La boîte englobante se calcule au chargement et ne se stocke pas. C'est
+l'argument des liens de portails transposé : une boîte stockée est une occasion
+d'incohérence à maintenir à chaque opération d'éditeur, et une boîte *fausse* est
+un défaut de rendu — un objet visible éliminé — qu'aucune validation ne peut
+attraper sans la recalculer.
+
+### Carte
+
+Quatre sections : `CELL`, `ENTS`, `LGTS`, `MATS`. Sont **source** la table de
+matériaux, les cellules avec leurs sommets, surfaces et portails, les lumières
+statiques et les entités. Rien d'autre.
+
+Sont **dérivés au chargement** les liens de portails, les plans, la
+triangulation, les coordonnées de texture et de lightmap, les boîtes
+englobantes, les étendues en luxels et les tables d'identifiants. Est dérivée
+**sur appel explicite de l'hôte** la lightmap elle-même, et elle seule : un
+calcul d'éclairage au chargement ferait de l'ouverture d'une carte une opération
+de plusieurs secondes. Aucune place n'est réservée à une visibilité précalculée
+— elle n'existe pas dans ce moteur, et lui en réserver une en ferait la source de
+vérité que le projet refuse.
+
+**Chaque cellule est un enregistrement longueur-préfixé qui possède ses sommets,
+ses surfaces et ses portails en propre.** Ce n'est pas un choix de commodité :
+l'appariement des portails se fait en comparant leurs sommets, et avec une table
+globale deux portails appariés partageraient les mêmes indices, ce qui viderait
+la comparaison de son sens. La duplication de part et d'autre d'un portail est la
+condition du mécanisme, pas son coût. Elle permet en outre de remplacer une
+cellule sans toucher aux autres, ce dont l'édition à chaud a besoin.
+
+**La surface est un polygone plan simple ; la convexité n'est pas exigée**, et la
+triangulation se fait par découpe d'oreilles au chargement, plafonnée à 64
+sommets — le chargement alloue dessus et la découpe est quadratique. Ce n'est pas
+la compilation de cartes que le projet écarte : celle-ci découpe une surface
+*contre d'autres surfaces*, alors qu'une triangulation est locale à un polygone,
+ne crée aucun sommet et se refait pour cette surface seule quand elle change.
+Exiger la convexité renverrait la subdivision d'une face en L — que la moindre
+extrusion produit — à l'éditeur.
+
+Une surface porte son identifiant, ses drapeaux, son matériau, ses indices de
+sommets dans la cellule, et **deux repères complets et indépendants** : un de
+texture, un de lightmap, chacun une origine et deux axes dont la longueur porte
+l'échelle. **Le fichier porte le repère, jamais les coordonnées par sommet** ;
+elles se calculent au chargement par projection sur les axes. Déplacer un sommet
+d'un mur dont on ne connaît que les coordonnées obligerait l'éditeur à
+reconstruire le repère par moindres carrés à chaque opération, et deux éditeurs
+le reconstruiraient différemment : le repère est la source, les coordonnées la
+dérivée.
+
+**Le chargement vérifie que les axes du repère de lightmap ont une longueur
+puissance de deux et que son origine en est un multiple.** C'est ce qui aligne
+exactement les grilles de deux surfaces coplanaires adjacentes, donc ce qui
+évite une marche d'éclairage à leur jointure — vérifié plutôt que conventionnel.
+L'unité de lightmap est la surface ; l'atlas par cellule est un cache assemblé
+au calcul, jamais dans le fichier, où il figerait une disposition que le premier
+déplacement de sommet invalide.
+
+Les drapeaux d'une surface ont trois bits définis — deux faces, ne reçoit pas de
+lightmap, non solide — et **tous les autres nuls obligatoires**, même règle que
+les champs réservés de l'ABI. « Non solide » décrit la géométrie, pas le joueur :
+ce n'est pas une notion de jeu qui entre dans le moteur.
+
+**Le portail est un polygone plan convexe, et la convexité est exigée là où elle
+ne l'est pas pour la cellule parce que le portail décide de ce qu'on voit.** La
+traversée réduira la fenêtre de découpe à l'intersection de la fenêtre courante
+et de la projection du portail ; une projection concave n'a pas d'intersection
+exprimable comme réduction de fenêtre, et l'erreur se paierait en trou définitif.
+Une cellule concave ne rend la traversée que conservatrice, jamais fausse.
+
+**L'appariement se fait au bit près, sans tolérance**, sur `to_bits`. Une
+tolérance donnerait une relation non transitive — `a≈b`, `b≈c`, `a≉c` —, donc un
+résultat dépendant de l'ordre de parcours, ce que le déterminisme interdit. C'est
+l'éditeur qui écrit les mêmes octets des deux côtés, et c'est une clause du
+format. L'appariement passe par un tri lexicographique de clés canoniques — les
+sommets triés par bits, les deux portails ayant des enroulements inverses — et
+non par une table de hachage, dont l'ordre d'itération n'est pas contractuel.
+**Un portail non apparié est un mur, pas une erreur** : une carte en cours
+d'édition en a toujours. **Trois portails sur la même clé sont une erreur** : il
+n'y a pas de réponse à « lequel des deux ».
+
+**Une entité est un identifiant, une classe jamais interprétée, une pose, une
+cellule et un bloc d'octets que le moteur copie et ne lit pas.** Pas de classes
+nommées par le moteur, pas d'entité qu'il évalue ou déplace, pas de modèle de
+propriétés typé — ce serait un langage de jeu qu'il faudrait ensuite faire
+évoluer avec les jeux.
+
+**Les lumières statiques sont une section propre, et ce n'est pas une exception.**
+Si les sources d'éclairage étaient des entités opaques, le calcul de lightmap
+devrait recevoir un tableau produit par l'hôte, et deux hôtes donneraient deux
+éclairages pour la même carte — ce qui retirerait au moteur la même image sur
+toutes les cibles. La lumière est déjà dans son vocabulaire. Points de départ,
+déclencheurs et objets ramassables restent des entités opaques.
+
+Les identifiants sont attribués par l'éditeur, jamais par le moteur, avec **un
+espace par famille** — cellules, portails, surfaces, entités, lumières,
+matériaux. Si le moteur les attribuait, un aller-retour par le fichier
+renumériserait et l'annulation de l'éditeur ne retrouverait plus ses objets. La
+correspondance est un tableau `(identifiant, index)` trié, interrogé par
+dichotomie : aucune allocation par image, aucun ordre d'itération de table de
+hachage. **Le fichier n'exige pas qu'ils soient triés** — l'exiger obligerait
+l'éditeur à réécrire la carte entière pour un ajout.
+
+### Trois pièges du décodage
+
+**Les coordonnées de texture dérivées d'un repère dépassent trivialement la borne
+de l'ABI.** Un plaquage fin sur une grande surface produit des valeurs bien
+au-delà de ce que `abi.md` admet, et la soumission refuse alors le lot entier
+sans dire quelle surface. Le chargement ramène donc les coordonnées de chaque surface dans
+`[0, 2048)` en soustrayant un multiple entier de 2048 texels. **L'image est
+identique au bit près** : les côtés de texture sont des puissances de deux d'au
+plus 2048 et le repli se fait par masque, et les dérivées — donc le niveau de
+mipmap et le motif de tramage — sont invariantes par translation.
+
+**Le calcul des coordonnées au chargement est un calcul flottant hors du
+rasteriseur**, et il suit le même ordre d'opérations figé que les
+transformations. Sinon deux cibles produisent deux jeux de coordonnées pour la
+même carte, sur un chemin qu'aucune scène de conformance n'emprunte aujourd'hui,
+toutes écrivant leurs coordonnées à la main.
+
+**L'ordre du fichier fait partie du contenu.** Le test de profondeur est strict :
+à égalité, le premier triangle soumis reste. Deux surfaces coplanaires se
+départagent donc par leur ordre dans le fichier, et un éditeur qui réordonne ses
+tables sans rien changer d'autre déplace les empreintes.
+
+Corollaire général : **toute valeur dérivée au chargement entre dans le rendu**,
+donc son ordre d'opérations est contractuel. Une boîte englobante par minimum et
+maximum est exacte et sans piège ; un centre par moyenne ne le serait pas.
+
+Enfin, les `f32` se lisent par `from_bits` sur les octets lus, et **rien ne fait
+d'arithmétique dessus avant le contrôle de finitude** : la charge utile d'un NaN
+signalant peut être normalisée par un passage en registre, et la divergence
+serait silencieuse entre cibles. Le refus des non-finis au chargement ferme le
+cas.
+
 ## Documentation et commentaires
 
 - **Toute déclaration a sa documentation** — fonctions, méthodes, types, champs
@@ -782,3 +1050,44 @@ le droit d'allouer.
 Pas de bibliothèque de tests par propriétés dans le noyau. Les tests qui tirent
 des entrées au hasard utilisent un générateur écrit dans le test, avec une graine fixe
 affichée en cas d'échec : un échec qui ne se rejoue pas n'a pas été trouvé.
+
+### Décodage de fichiers
+
+**Les fichiers d'épreuve s'écrivent en octets dans le test**, par un constructeur
+qui pose les champs un à un ; aucun fichier binaire n'est versionné pour éprouver
+le décodeur. Un binaire ne se relit pas en revue, et le format cassant une
+douzaine de fois, chaque cassure obligerait à régénérer à la main ce que le test
+sait produire. La raison décisive est ailleurs : **un fichier produit par
+l'écrivain du projet rendrait le test tautologique** — il prouverait que
+l'écrivain et le lecteur s'accordent, pas que l'un des deux est juste. Le
+constructeur du test est le seul endroit où les décalages sont écrits deux fois,
+et un désaccord y fait rougir.
+
+Quatre épreuves, et la première est celle qui trouve :
+
+- **tronquer un fichier valide à chacune de ses longueurs**, et exiger une erreur
+  de format partout, sans une seule panique. C'est le contrôle exhaustif qui
+  attrape la borne oubliée ;
+- chaque compte porté à son maximum, des sections qui se recouvrent, un décalage
+  au-delà de la fin, des identifiants dupliqués ou désordonnés, un indice égal à
+  son compte ;
+- **muter un fichier valide au hasard**, générateur et graine fixe comme
+  ci-dessus, avec pour invariant « jamais de panique, toujours un succès ou une
+  erreur de format ». C'est l'équivalent honnête d'un fuzzer dans un noyau qui
+  n'admet aucune dépendance ;
+- **une scène de conformance rendue depuis une ressource décodée.** Elle seule
+  prouve que le décodeur rend la *bonne* ressource et pas seulement une ressource
+  bien formée — et elle fait entrer le décodage dans la comparaison croisée entre
+  cibles, que rien d'autre ne couvre.
+
+Les bornes s'écrivent sur des valeurs choisies, jamais en comptant sur la cible :
+`usize` fait 32 bits sur deux des quatre, la compilation sans `std` le vérifie
+mais n'y exécute aucun test.
+
+**Côté hôtes, un fichier binaire versionné, un seul, partagé par les quatre.**
+Chacun doit charger une ressource pour prouver que le point d'entrée franchit
+réellement la frontière ; leur faire recopier la disposition dans quatre langages
+serait la même liste à quatre endroits, et ce qu'une liste recopiée coûte quand
+elle diverge est connu du projet. **Le test Rust régénère ce fichier et le compare
+octet pour octet**, sur le modèle du header : le binaire n'est alors jamais la
+source de vérité, et un fichier périmé échoue franchement.
