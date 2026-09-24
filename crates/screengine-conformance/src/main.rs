@@ -288,6 +288,25 @@ enum Scene {
     /// les deux empreintes comparables, et une divergence attribuable au seul
     /// filtrage.
     TexturedBilinear,
+    /// Le même sol, éclairé par les seules lumières dynamiques.
+    ///
+    /// Le bras du remplissage qu'aucune autre scène n'atteint : une surface
+    /// **texturée** que des lumières éclairent **sans lightmap**. `lumieres`
+    /// pose les lumières sur des surfaces unies, `lumiere` pose une lightmap
+    /// sans lumière ; entre les deux, la combinaison la plus courante d'un
+    /// décor — un mur texturé sous une torche — n'était rendue nulle part.
+    ///
+    /// **Le quadrilatère reste entier**, celui de `texture` au texel près, là où
+    /// `lumieres` découpe son sol en seize panneaux. L'atténuation étant par
+    /// sommet, l'éclairage n'y est donc qu'un dégradé entre quatre coins : c'est
+    /// assumé, parce que ce que cette scène doit fixer est le bras de
+    /// remplissage, et non ce que le découpage change — `lumieres` en répond
+    /// déjà. Découper introduirait une seconde différence avec la scène
+    /// doublée, et une divergence ne serait plus attribuable aux lumières.
+    ///
+    /// La contrepartie est que les rayons doivent couvrir le quadrilatère
+    /// entier : voir `Scene::lights`.
+    TexturedDynamic,
     /// La même, passée par une courbe de sortie : gamma et gains de canal.
     ///
     /// Elle double `texture` pour la même raison que la précédente — le
@@ -343,6 +362,17 @@ enum Scene {
     /// il lui faut sa propre référence. C'est aussi le seul endroit où la
     /// saturation de la combinaison s'exerce sur une image entière.
     LitOverbright,
+    /// La même, avec des lumières dynamiques par-dessus la lightmap.
+    ///
+    /// Le second bras que rien n'atteignait : lightmap **et** lumière dynamique
+    /// sur la même surface, ce que fait tout décor cuit où passe une source
+    /// mobile. Ses deux surfaces le prennent chacune par son chemin — le sol
+    /// texturé, le mur uni —, et c'est la seule image du dépôt où les deux
+    /// sources de lumière s'additionnent avant la combinaison au texel.
+    ///
+    /// La géométrie et la lightmap sont celles de `lumiere`, au texel près :
+    /// une divergence n'est donc attribuable qu'aux lumières.
+    LitDynamic,
 }
 
 /// Un damier de `side` texels de côté, ses cases de `cell`.
@@ -569,7 +599,7 @@ impl View {
 
 impl Scene {
     /// Toutes les scènes, dans l'ordre où `--check` les rejoue.
-    const ALL: [Self; 13] = [
+    const ALL: [Self; 15] = [
         Self::Edge,
         Self::Guard,
         Self::Lateral,
@@ -578,9 +608,11 @@ impl Scene {
         Self::Rotation,
         Self::Textured,
         Self::TexturedBilinear,
+        Self::TexturedDynamic,
         Self::Graded,
         Self::Lit,
         Self::LitOverbright,
+        Self::LitDynamic,
         Self::Fog,
         Self::Lights,
     ];
@@ -616,9 +648,11 @@ impl Scene {
             Self::Rotation => "rotation",
             Self::Textured => "texture",
             Self::TexturedBilinear => "texture-bilineaire",
+            Self::TexturedDynamic => "texture-dynamique",
             Self::Graded => "gamma",
             Self::Lit => "lumiere",
             Self::LitOverbright => "lumiere-surbrillance",
+            Self::LitDynamic => "lumiere-dynamique",
             Self::Fog => "brouillard",
             Self::Lights => "lumieres",
         }
@@ -630,6 +664,47 @@ impl Scene {
     /// inchangées : un contexte qu'on ne configure pas n'éclaire rien.
     fn lights(self) -> Vec<Light> {
         match self {
+            // Une lumière à chaque bout de la diagonale du sol, de teintes
+            // opposées : leurs contributions décroissent en sens inverse, et
+            // l'image porte un dégradé que ni l'une ni l'autre ne donnerait
+            // seule. Deux et non trois — le mélange de teintes qui se
+            // recouvrent est le sujet de `lumieres`, qui a le découpage pour le
+            // montrer.
+            //
+            // **Les rayons couvrent le quadrilatère entier**, et c'est une
+            // contrainte, pas un réglage : l'atténuation se calcule par sommet,
+            // ces scènes partagent la géométrie d'un sol de plusieurs dizaines
+            // d'unités, et des rayons dimensionnés pour un halo n'auraient
+            // atteint aucun de ses quatre coins. La surface s'éteint alors
+            // entièrement — vu à l'écriture de ces scènes, où `texture-dynamique`
+            // rendait une image noire, que le contrôle de couverture refuse.
+            Self::TexturedDynamic => vec![
+                Light {
+                    position: Vec3::new(10.0, -18.0, 6.0),
+                    radius: 70.0,
+                    color: Color::new(0xFF, 0xC0, 0x60, 0xFF),
+                },
+                Light {
+                    position: Vec3::new(52.0, 18.0, 6.0),
+                    radius: 70.0,
+                    color: Color::new(0x40, 0x80, 0xFF, 0xFF),
+                },
+            ],
+            // Les mêmes, ramenées sur le sol plus court de `lumiere` ; la
+            // seconde est près du mur, qu'elle éclaire de biais par son bord
+            // haut.
+            Self::LitDynamic => vec![
+                Light {
+                    position: Vec3::new(6.0, -12.0, 6.0),
+                    radius: 60.0,
+                    color: Color::new(0xFF, 0xC0, 0x60, 0xFF),
+                },
+                Light {
+                    position: Vec3::new(38.0, 12.0, 6.0),
+                    radius: 60.0,
+                    color: Color::new(0x40, 0x80, 0xFF, 0xFF),
+                },
+            ],
             Self::Lights => vec![
                 // Trois teintes primaires, espacées le long du couloir et
                 // assez larges pour se recouvrir deux à deux.
@@ -822,20 +897,23 @@ impl Scene {
             // est de trente, ce qui donne à la perspective de quoi se tromper.
             // Huit texels par unité et des cases de huit texels : une case fait
             // une unité au sol, donc la fuite se lit case par case.
-            // Les trois scènes texturées partagent leur géométrie : seuls le
-            // filtrage et la courbe de sortie que le contexte porte les
-            // séparent, et c'est ce qui rend leurs empreintes comparables.
-            Self::Textured | Self::TexturedBilinear | Self::Graded => textured_quad(
-                context,
-                [
-                    Vec3::new(2.0, -24.0, -1.2),
-                    Vec3::new(60.0, -24.0, -1.2),
-                    Vec3::new(60.0, 24.0, -1.2),
-                    Vec3::new(2.0, 24.0, -1.2),
-                ],
-                8.0,
-                &checker(64, 8),
-            ),
+            // Les quatre scènes texturées partagent leur géométrie : seuls le
+            // filtrage, la courbe de sortie et les lumières que le contexte
+            // porte les séparent, et c'est ce qui rend leurs empreintes
+            // comparables.
+            Self::Textured | Self::TexturedBilinear | Self::Graded | Self::TexturedDynamic => {
+                textured_quad(
+                    context,
+                    [
+                        Vec3::new(2.0, -24.0, -1.2),
+                        Vec3::new(60.0, -24.0, -1.2),
+                        Vec3::new(60.0, 24.0, -1.2),
+                        Vec3::new(2.0, 24.0, -1.2),
+                    ],
+                    8.0,
+                    &checker(64, 8),
+                )
+            }
             // Un sol et un mur découpés en panneaux, éclairés par trois
             // lumières et **sans aucune lightmap**. Le découpage est le sujet
             // autant que les lumières : l'atténuation étant par sommet, un sol
@@ -902,7 +980,7 @@ impl Scene {
             // chemins éclairés dans la même image. Le mur est en retrait du
             // bout du sol pour qu'on voie les deux se rejoindre, et sa couleur
             // est franche pour que la lightmap se lise dessus.
-            Self::Lit | Self::LitOverbright => {
+            Self::Lit | Self::LitOverbright | Self::LitDynamic => {
                 let lightmap = gradient(16);
                 lit_quad(
                     context,
