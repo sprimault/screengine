@@ -7,13 +7,18 @@ Un auteur de liaison qui ne lit pas le français trouve l'essentiel dans
 `include/screengine.h`, dont la documentation est en anglais : ce qui ne peut pas
 être ignoré à l'appel y figure, fonction par fonction.
 
-**État : l'étape 3 est publiée en 0.3.0 — les sept points d'entrée de l'étape 0,
-le rendu par tuiles, les textures avec leur niveau de filtrage, et la lumière :
+**État : l'étape 3 est publiée — les sept points d'entrée de l'étape 0, le rendu
+par tuiles, les textures avec leur niveau de filtrage, et la lumière :
 lightmaps, lumières dynamiques, brouillard, résolution interne et courbe de
-sortie.** Chaque décision garde ci-dessous l'option écartée et pourquoi. Deux
-points restent marqués **À trancher** : la dépréciation, qui attend le gel de
-l'ABI en 1.0, et les octets de données, tranchés pour les textures et ouverts
-pour les cartes et les maillages seuls.
+sortie.** Chaque décision garde ci-dessous l'option écartée et pourquoi. Un seul
+point reste marqué **À trancher** : la dépréciation, qui attend le gel de l'ABI
+en 1.0.
+
+**Les points d'entrée de l'étape 4 sont spécifiés ici mais ne sont pas encore
+exposés**, et leur section le redit. Le contrat d'un format se fige avant son
+premier décodeur, comme les formats de virgule fixe se sont figés avant le
+premier remplissage : ce qui s'écrit après s'écrit contre ce qui a déjà été
+codé.
 
 ## Principes
 
@@ -156,6 +161,37 @@ ce dont une liaison a besoin pour traiter celui qu'elle ne connaît pas.
 `SCG_ERR_INVALID_STATE` couvre un appel hors séquence, par exemple une tuile
 rendue avant le début de l'image. Une fin d'image sans début n'en est pas un :
 elle fait le début elle-même, voir « Rendu par tuiles ».
+
+Les trois codes de la plage données se distinguent par **où est la faute**.
+`SCG_ERR_INVALID_ARGUMENT` est une faute dans l'**appel** — une longueur qui ne
+concorde pas, un emplacement hors borne, un tableau de textures de la mauvaise
+taille. Les deux suivants sont des fautes dans le **contenu**, que l'hôte n'a pas
+écrit : ce qu'il rapporte à son utilisateur comme « ce fichier est mauvais », et
+non à son développeur comme « tu m'as mal appelé ». Rendre `-2` sur un fichier
+malformé le classerait « général », et le chemin « mauvais asset » d'un hôte ne
+se déclencherait jamais.
+
+- **`SCG_ERR_INVALID_FORMAT`** : tout ce qui est faux à l'intérieur du bloc —
+  signature, genre, table de sections incohérente, compte qui ne recoupe pas la
+  longueur de sa section, indice hors borne, coordonnée non finie, identifiant
+  dupliqué, section de genre inconnu.
+- **`SCG_ERR_UNSUPPORTED_FORMAT_VERSION`** : signature et genre justes, mais une
+  version de format que cette bibliothèque ne lit pas. C'est le seul des trois
+  qui dise à l'hôte quoi faire — prendre une version plus récente, ou réexporter
+  la donnée. **Le contrôle de version passe immédiatement après la signature et
+  le genre, avant tout contrôle de structure** : sinon un fichier plus récent
+  remonte « format invalide » et l'intégrateur cherche une corruption qui
+  n'existe pas.
+- **`SCG_ERR_UNKNOWN_RESOURCE`** : une recherche par identifiant stable qui ne
+  trouve rien. **Aucun appel ne le rend à l'étape 4** — un identifiant absent y
+  est attrapé au chargement, et un index hors borne est une faute d'appel. Il est
+  défini maintenant parce qu'un code publié ne change jamais de sens, et qu'un
+  code défini sans être rendu ne coûte rien.
+
+Écarté : un code distinct pour un fichier tronqué. Du côté du moteur, une
+troncature ne se distingue pas d'un en-tête qui ment sur sa longueur ; aucun hôte
+ne peut agir différemment sur les deux, et un quatrième code obligerait à figer
+l'ordre des contrôles du décodeur dans le contrat.
 
 **La plage est une règle arithmétique, pas une convention de rédaction** : la
 catégorie d'un code est `(-code) / 100`. Une liaison qui rencontre un code
@@ -324,11 +360,17 @@ dans la mémoire linéaire après le trap, sans rappeler le module.
   chemins SIMD de l'étape 9, qui liront le tampon de l'hôte et non un bloc du
   moteur. C'est pour la seule chose qui l'exige vraiment, les chargements alignés
   de SSE. Il est gratuit sur bureau, où l'allocateur système donne déjà 16.
-- **Octets de données.** **Tranché pour les textures à l'étape 2 : le moteur
-  copie.** L'hôte peut libérer son bloc dès le retour de l'appel, et aucune
-  durée de vie ne traverse la frontière. **À trancher — A8**, échéance étape 4,
-  pour les cartes et les maillages seuls, dont la sémantique de mutation n'est
-  pas décidée ; la recommandation reste la copie, pour la même raison.
+- **Octets de données. Le moteur copie**, pour les textures comme pour les
+  maillages et les cartes. L'hôte peut libérer son bloc dès le retour de l'appel,
+  et aucune durée de vie ne traverse la frontière. Trois raisons, dans l'ordre :
+  un bloc emprunté que l'hôte pourrait modifier entre deux images casserait le
+  déterminisme ; un tampon de décodeur n'a aucun alignement garanti ; et l'hôte
+  doit pouvoir libérer au retour, faute de quoi toute liaison devrait maintenir
+  une durée de vie qu'aucun langage ne lui impose de la même façon.
+
+  Écarté : emprunter le bloc et en documenter la durée de vie. Le coût de la
+  copie est payé une fois au chargement, jamais par image ; le coût de l'emprunt
+  serait payé par chaque auteur de liaison, et une seule fois de travers suffit.
 - **Ressources** (textures, maillages, mondes). Elles sont indépendantes de tout
   contexte, ce qu'impose la collision sans rendu de l'étape 7. Leur mémoire est
   allouée à leur chargement, mipmaps compris. **Une lightmap fournie par l'hôte
@@ -336,6 +378,15 @@ dans la mémoire linéaire après le trap, sans rappeler le module.
   noyau calculera à l'étape 5 alloue à l'appel qui la calcule. Détruire une
   ressource encore référencée par un appel de dessin est une précondition, pas
   un cas d'erreur.
+
+  **Détruire une ressource pendant une image est sans effet sur cette image,
+  mais pas pour la même raison selon la ressource, et c'est la différence qu'un
+  auteur de liaison écrit de mémoire et se trompe.** Une texture survit parce que
+  le contexte en garde une référence forte jusqu'à la fin de l'image. Un maillage
+  ou une carte survit parce que **plus rien ne les lit après le retour de la
+  soumission** : chaque soumission transforme, découpe et prépare immédiatement.
+  Les deux se comportent pareil aujourd'hui ; supposer que c'est la même règle
+  se paiera le jour où l'une des deux changera.
 
 ## Concurrence
 
@@ -908,6 +959,83 @@ Huit fonctions ajoutées, trois structures nouvelles, aucune constante :
   ses paramètres, sans qu'aucune version ne l'en prévienne.
 - **Aucun code d'erreur nouveau**, six messages de plus.
 
+### Étape 4
+
+**Aucun de ces points d'entrée n'est encore exposé.** Ce qui suit est le contrat
+auquel ils se conformeront, figé avant le premier décodeur pour la raison dite en
+tête de document. Les dispositions binaires elles-mêmes sont dans `docs/rust.md`,
+section « Formats de fichier » : elles n'appartiennent pas à l'ABI, qui ne voit
+qu'un bloc d'octets.
+
+```c
+int32_t scg_mesh_load(const uint8_t *bytes, size_t len, struct ScgMesh **out);
+void    scg_mesh_destroy(struct ScgMesh *mesh);
+int32_t scg_mesh_texture_count(const struct ScgMesh *mesh, uint32_t *out);
+int32_t scg_mesh_texture_name(const struct ScgMesh *mesh, uint32_t slot,
+                              char *buf, size_t cap, size_t *out_len);
+int32_t scg_mesh_triangle_count(const struct ScgMesh *mesh, uint32_t *out);
+int32_t scg_submit_mesh(struct ScgContext *ctx, const struct ScgMat4 *model,
+                        const struct ScgMesh *mesh,
+                        const struct ScgTexture *const *textures,
+                        uint32_t texture_count);
+```
+
+Les six fonctions du monde sont les mêmes, `world` pour `mesh` et `material`
+pour `texture` : `scg_world_load`, `scg_world_destroy`,
+`scg_world_material_count`, `scg_world_material_name`,
+`scg_world_triangle_count`, `scg_submit_world`. La symétrie est voulue — deux
+ressources chargées depuis un bloc n'ont aucune raison de se manipuler
+autrement, et une liaison écrite pour l'une se relit pour l'autre.
+
+Arrêté :
+
+- **Le chargement ne prend pas de contexte**, comme celui d'une texture : une
+  ressource est indépendante de tout contexte, ce qu'impose la collision sans
+  rendu de l'étape 7. L'erreur va dans l'emplacement par thread, et se lit par
+  `scg_last_error(NULL)`.
+- **Pas de structure de description en entrée.** Un fichier se décrit lui-même ;
+  une description doublerait son en-tête et ouvrirait un désaccord entre les
+  deux, qu'il faudrait alors arbitrer dans un sens ou dans l'autre.
+- **Pas de structure rendue à l'hôte**, conformément aux principes : ce que la
+  ressource dit d'elle-même passe par des accesseurs scalaires, sur le modèle de
+  `scg_frame_begin`. Un `ScgMeshInfo` en un seul appel aurait été plus commode et
+  n'existe pas.
+- **Les textures se lient à la soumission, jamais à la ressource.** Le fichier
+  porte des noms d'emplacements ; l'hôte les découvre par les deux accesseurs,
+  charge ce qu'il veut avec ses propres fichiers, et passe un tableau de handles
+  dans l'ordre des emplacements. C'est ce qui permet de dessiner la même
+  ressource avec deux habillages, ce qui garde la ressource indépendante du
+  contexte, et ce qui tient la promesse que le moteur n'ouvre rien sans exiger de
+  callback. Une entrée nulle vaut « sans texture », comme pour un lot éclairé.
+
+  Écarté : une liaison par position, sans noms. Elle fonctionne, mais l'hôte ne
+  sait alors pas *quoi* charger, et cette connaissance émigre dans un second
+  fichier que le format devrait décrire de toute façon.
+- **`texture_count` est vérifié égal** au nombre d'emplacements de la ressource,
+  jamais « au moins ». Un tableau plus long est une faute d'appel :
+  `SCG_ERR_INVALID_ARGUMENT`.
+- **Le nom se lit en deux temps** : `buf` nul avec `cap` à zéro rend la longueur
+  nécessaire dans `out_len`, puis un second appel remplit. Le tampon rendu est
+  terminé par un octet nul, et `out_len` ne le compte pas.
+- **Le compte de triangles existe** parce que l'hôte doit dimensionner
+  `max_triangles` à la création du contexte, avant d'avoir soumis quoi que ce
+  soit. Sans lui, la seule façon de connaître ce nombre serait d'essayer.
+- **Une soumission qui dépasse la capacité restante est refusée en entier**,
+  jamais groupe par groupe. Une image partiellement soumise serait une image
+  fausse sans erreur.
+- **Le rendu du monde ne prend pas de cellule de départ**, puisqu'il ne fait
+  aucune élimination : il dessine toutes les surfaces de toutes les cellules. La
+  traversée par portails est l'étape 5 et ajoutera sa propre fonction. Un
+  paramètre qui ne sert pas encore est un paramètre dont le sens changera, ce qui
+  imposerait alors une version d'ABI.
+- **Aucune allocation pendant une soumission.** Le tableau de textures est lu sur
+  place, jamais recopié dans un tampon intermédiaire : c'est le chemin le plus
+  banal de l'étape, et c'est celui où une allocation par image passerait
+  inaperçue.
+- **Aucun changement de `SCG_ABI_VERSION`** : douze fonctions nouvelles, deux
+  types opaques nouveaux, trois codes d'erreur déjà réservés. Aucune signature
+  publiée, aucune structure, aucune précondition ne bouge.
+
 ### Étapes suivantes
 
 Prévisionnel. Ce qui doit être exposé est arrêté par la feuille de route ; les
@@ -918,7 +1046,7 @@ noms ne le sont pas.
 | 1 | ✓ début d'image et rendu d'une tuile (voir « Rendu par tuiles »), caméra et projection, soumission de triangles avec une matrice |
 | 2 | ✓ chargement d'une texture, mipmaps engendrés au chargement, niveau de qualité du filtrage par `scg_set_filter` |
 | 3 | ✓ soumission d'un lot éclairé, réglage du sur-éclairement, du brouillard, des lumières dynamiques, de la résolution interne et de la courbe de sortie |
-| 4 | chargement d'un maillage et d'une carte depuis un bloc d'octets, libération |
+| 4 | chargement d'un maillage et d'une carte depuis un bloc d'octets, libération — contrat écrit ci-dessus, pas encore exposé |
 | 5 | rendu du monde depuis la caméra, calcul des lightmaps d'une cellule et reprise d'un cache |
 | 6 | interpolation entre trames, sprites orientés caméra |
 | 7 | module de collision, utilisable sans contexte de rendu |
@@ -952,5 +1080,9 @@ noms ne le sont pas.
   « Après une panique ».
 - **Sur wasm, le module s'instancie sans aucun import.** Il n'en réclame pas, et
   exporte `memory` avec les fonctions `scg_`.
+- **Ne pas supposer que deux ressources se détruisent pour la même raison.**
+  Détruire une texture ou une ressource chargée pendant une image est sans effet
+  sur cette image, mais les mécanismes diffèrent — voir « Durées de vie et
+  propriété ». Ce qui est vrai des deux aujourd'hui ne le restera pas forcément.
 - **Ne rien calculer.** Une liaison convertit des types. Ce qui devrait être
   partagé entre deux liaisons remonte dans le noyau.

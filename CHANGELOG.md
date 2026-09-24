@@ -46,6 +46,38 @@ publié, et explique les conventions du dépôt à qui y contribue.
 
 ## [Non publié]
 
+### Ajouté
+- Le contrat d'ABI décrit les douze points d'entrée du chargement de maillages
+  et de cartes : leurs signatures, la liaison des textures à la soumission et
+  non à la ressource, l'ordre des contrôles et les trois codes d'erreur de la
+  plage données. **Aucun n'est encore exposé** — le contrat d'un format se fige
+  avant son premier décodeur, comme les formats de virgule fixe se sont figés
+  avant le premier remplissage.
+- Les conventions Rust décrivent les dispositions binaires des deux formats :
+  en-tête et table de sections communs, maillage, carte, et ce que le décodeur
+  tient pour hostile.
+
+### Modifié
+- Les octets d'une carte et d'un maillage sont copiés par le moteur, comme ceux
+  d'une texture : l'hôte peut libérer son bloc dès le retour de l'appel. Le
+  contrat laissait le point ouvert pour ces deux formats.
+
+***
+
+### Added
+- The ABI contract describes the twelve entry points for loading meshes and
+  maps: their signatures, textures bound at submission rather than to the
+  resource, the order of validation, and the three error codes of the data
+  range. **None is exposed yet** — a format's contract is frozen before its
+  first decoder, as the fixed-point formats were frozen before the first fill.
+- The Rust conventions describe both formats' binary layouts: the shared header
+  and section table, the mesh, the map, and what the decoder treats as hostile.
+
+### Changed
+- A map's and a mesh's bytes are copied by the engine, like a texture's: the
+  host may free its block as soon as the call returns. The contract left the
+  point open for those two formats.
+
 ## [0.3.1] — 2026-09-24
 
 **Ce qu'un hôte de la 0.3.0 doit reprendre : rien.** Aucune signature ne change,
