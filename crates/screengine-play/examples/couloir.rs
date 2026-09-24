@@ -27,9 +27,24 @@
 //! au bout du couloir, qui se pose d'un seul tenant et l'a d'abord payé de
 //! cinquante mille triangles.
 //!
-//! **Une caisse n'a pas de lightmap à elle**, elle échantillonne celle du
+//! **Une malle n'a pas de lightmap à elle**, elle échantillonne celle du
 //! décor à sa position : un texel unique, ce qu'un objet mobile reçoit dans un
 //! moteur de cette famille.
+//!
+//! **Le néon est la seule lumière dynamique**, et il bat. Un tube fatigué ne
+//! clignote pas régulièrement : il tient, lâche deux ou trois fois de suite,
+//! se rétablit. Le battement est le produit de trois ondes de périodes
+//! incommensurables, seuillé — aucun générateur pseudo-aléatoire, et la même
+//! séquence d'une machine à l'autre, puisqu'elle suit le rang du pas et non
+//! une horloge. Éteint, la lumière est **retirée** plutôt que mise à rayon nul,
+//! que le moteur refuse.
+//!
+//! **Le sur-éclairement reste à zéro et la courbe assombrit**, ce qui est
+//! l'inverse de ce qu'on croit devoir faire sur un décor sombre. À un, le
+//! sur-éclairement double une lightmap qui atteint déjà l'unité sous les
+//! lampes : le couloir se lave, la mousse vire au vert vif et les flaques
+//! d'ombre disparaissent. Ce qui fait le registre est le contraste entre les
+//! flaques et le noir, jamais la quantité de lumière.
 //!
 //! C'est aussi là que le filtrage se juge, et il ne se juge qu'à l'œil : le
 //! pavage du sol scintille si le niveau de mipmap est mal choisi, et le tramage
@@ -47,7 +62,7 @@
 use std::sync::Arc;
 
 use screengine_play::{
-    Affine3, Color, Filter, FreeCamera, KeyCode, MouseButton, Play, Texture, Triangle, Vec3,
+    Affine3, Color, Filter, FreeCamera, KeyCode, Light, MouseButton, Play, Texture, Triangle, Vec3,
     VertexUv, VertexUv2, load_png,
 };
 
@@ -115,9 +130,17 @@ const STONE_DENSITY: f32 = 256.0;
 /// donc de ce qui reste lisible au loin, pas le filtrage.
 const COBBLE_DENSITY: f32 = 128.0;
 
-/// Texels de bois par unité de monde : une répétition exacte par face de
-/// caisse, soit des planches de dix-sept centimètres.
-const WOOD_DENSITY: f32 = 512.0 / CRATE;
+/// Texels de tôle par unité de monde : une répétition exacte par face de
+/// malle, soit des rivets espacés de quelques centimètres.
+///
+/// La malle a remplacé une caisse de bois, et c'est une mesure qui l'a décidé :
+/// la planche avait une luminance moyenne de 180 dans un couloir dont le mur
+/// est à 33, si bien qu'elle ressortait comme une lampe. La tôle est à 41 —
+/// assez proche du décor pour lui appartenir, assez au-dessus pour s'en
+/// détacher là où la lumière l'atteint. Ses rivets et ses coulures de rouille
+/// sont en outre des formes à grande échelle, qui survivent au mipmap là où le
+/// grain du bois disparaissait au deuxième niveau.
+const PLATE_DENSITY: f32 = 512.0 / CRATE;
 
 /// Les caisses, à leur abscisse le long du couloir, avec leur cote de base.
 ///
@@ -147,6 +170,29 @@ const LAMPS: [(f32, [f32; 3]); 4] = [
 
 /// Portée d'une lampe, au-delà de laquelle elle n'éclaire plus rien.
 const LAMP_REACH: f32 = 6.5;
+
+/// Où se tient le néon qui scintille, et jusqu'où il porte.
+///
+/// **Entre deux lampes cuites**, là où la lightmap ne donne presque rien : son
+/// battement se voit alors sur une portion de couloir que rien d'autre
+/// n'éclaire, au lieu de se noyer dans une flaque déjà installée.
+const NEON: Vec3 = Vec3::new(7.5, 0.0, HEIGHT - 0.15);
+
+/// Portée du néon.
+const NEON_REACH: f32 = 7.5;
+
+/// Sa teinte à pleine intensité, froide contre le jaune des lampes.
+const NEON_TINT: [u8; 3] = [0x9F, 0xD8, 0xFF];
+
+/// La couleur du brouillard, et la rampe sur laquelle il s'épaissit.
+///
+/// Presque noir, et non gris : le fond du couloir doit se perdre, pas se voiler
+/// de blanc. La rampe commence après la portée des lampes, de sorte que ce
+/// qu'on voit éclairé n'est jamais embrumé, et qu'entre les deux il n'y a que
+/// du noir qui s'épaissit.
+const FOG_COLOR: Color = Color::new(0x06, 0x07, 0x0A, 0xFF);
+const FOG_START: f32 = 8.0;
+const FOG_END: f32 = 34.0;
 
 /// Ce qu'une surface reçoit là où aucune lampe ne porte.
 ///
@@ -412,6 +458,27 @@ impl LitMesh {
     }
 }
 
+/// L'intensité du néon à l'instant `time`, entre zéro et un.
+///
+/// **Un tube fatigué ne clignote pas régulièrement.** Il tient allumé, puis
+/// lâche quelques fois de suite, puis se rétablit — et c'est l'irrégularité qui
+/// fait le registre. Une alternance périodique se lirait comme un gyrophare.
+///
+/// La forme est un produit de deux battements de périodes incommensurables,
+/// seuillé : leur somme ne se répète jamais à l'identique sur la durée d'une
+/// animation, sans qu'aucun générateur pseudo-aléatoire n'entre ici.
+fn neon_level(time: f32) -> f32 {
+    let wave = |period: f32| (time * core::f32::consts::TAU / period).sin();
+    let mix = wave(0.37) * 0.5 + wave(1.13) * 0.3 + wave(2.9) * 0.2;
+    // Le seuil bas coupe franchement : un tube s'éteint, il ne s'estompe pas.
+    if mix < -0.35 {
+        return 0.0;
+    }
+    // Au-dessus, une variation d'intensité qui reste haute — le tube vacille
+    // sans jamais retrouver tout à fait sa pleine lumière.
+    0.72 + mix * 0.28
+}
+
 /// La lightmap d'un objet : un éclairement unique, pris à sa position.
 ///
 /// **C'est ce qu'un objet mobile reçoit** dans un moteur de cette famille : il
@@ -449,9 +516,9 @@ fn crate_at(mesh: &mut Mesh, x: f32, y: f32, z: f32) {
     let (x0, x1) = (x - h, x + h);
     let (y0, y1) = (y - h, y + h);
     let (z0, z1) = (z, z + CRATE);
-    let d = WOOD_DENSITY;
-    // Sur les côtés, la texture descend avec la caisse : `v` se compte depuis
-    // le dessus, faute de quoi les planches sont la tête en bas.
+    let d = PLATE_DENSITY;
+    // Sur les côtés, la texture descend avec la malle : `v` se compte depuis
+    // le dessus, faute de quoi les rangées de rivets sont la tête en bas.
     let down = |cote: f32| (z1 - cote) * d;
 
     // Dessus, vu d'en haut : les planches suivent y.
@@ -607,6 +674,12 @@ struct World {
     /// Il part du tramage, qui est le défaut du moteur : l'exemple montre
     /// d'abord ce qu'un hôte obtient sans rien configurer.
     filter: Filter,
+    /// Le temps écoulé, qui fait battre le néon.
+    ///
+    /// Compté en pas de la boucle à pas fixe et non par une horloge : deux
+    /// machines de vitesses différentes voient alors le même battement, ce
+    /// qu'une mesure de temps réel ne garantirait pas.
+    time: f32,
 }
 
 /// Le titre de la fenêtre, qui porte les commandes et le filtrage actif.
@@ -627,10 +700,11 @@ fn main() -> Result<(), screengine_play::Error> {
     let stone = Arc::new(load_png(include_bytes!("../assets/mur-mousse.png"))?);
     let cobble = Arc::new(load_png(include_bytes!("../assets/sol-pave-mousse.png"))?);
     let sky = Arc::new(load_png(include_bytes!("../assets/ciel-orageux.png"))?);
-    let wood = Arc::new(load_png(include_bytes!("../assets/wood.png"))?);
+    let plate = Arc::new(load_png(include_bytes!("../assets/malle-rouillee.png"))?);
     let world = World {
         camera: FreeCamera::new(Vec3::new(0.0, 0.0, 1.6)),
         filter: Filter::Dither,
+        time: 0.0,
     };
     // L'indication vit dans la barre de titre et non dans la console : c'est
     // là qu'on la cherche quand on ne sait plus comment récupérer sa souris,
@@ -656,6 +730,9 @@ fn main() -> Result<(), screengine_play::Error> {
                 };
                 tick.set_title(title(world.filter));
             }
+            // L'index du pas et non un temps cumulé : c'est lui qui rejoue une
+            // partie à l'identique, et le battement du néon doit en être.
+            world.time = tick.index() as f32 * tick.dt();
             world.camera.update(tick);
         },
         move |world, context| {
@@ -664,6 +741,44 @@ fn main() -> Result<(), screengine_play::Error> {
             // boucle sur une image manquante.
             let _ = context.set_camera(world.camera.camera());
             let _ = context.set_filter(world.filter);
+
+            // Le néon : une lumière dynamique réglée **avant** toute
+            // soumission, sans quoi elle n'éclairerait pas ce lot. Éteint, on
+            // la retire plutôt que de la laisser à rayon nul — que le moteur
+            // refuserait, et qui coûterait de toute façon une atténuation par
+            // sommet pour rien.
+            let level = neon_level(world.time);
+            if level > 0.0 {
+                let tint = |channel: u8| (f32::from(channel) * level) as u8;
+                let _ = context.set_lights(&[Light {
+                    position: NEON,
+                    radius: NEON_REACH,
+                    color: Color::new(
+                        tint(NEON_TINT[0]),
+                        tint(NEON_TINT[1]),
+                        tint(NEON_TINT[2]),
+                        0xFF,
+                    ),
+                }]);
+            } else {
+                let _ = context.set_lights(&[]);
+            }
+
+            // Le brouillard mange le fond : on ne voit pas où le couloir
+            // s'arrête, et le ciel s'y fond au lieu de se découper.
+            let _ = context.set_fog(FOG_COLOR, FOG_START, FOG_END);
+            // **Le sur-éclairement reste à zéro**, et c'est le réglage que
+            // l'image a corrigé : à un, il double une lightmap qui atteint
+            // déjà l'unité sous les lampes, et le couloir entier se lave — la
+            // mousse vire au vert vif, les flaques d'ombre disparaissent, il
+            // ne reste qu'un couloir uniformément éclairé. Le registre tient
+            // au contraste entre les flaques et le noir, pas à la quantité de
+            // lumière.
+            let _ = context.set_overbright(0);
+            // La courbe **assombrit** au lieu d'éclaircir — gamma sous un —,
+            // refroidit d'un souffle par les gains, et relève le noir d'un
+            // rien pour qu'on devine encore les murs hors des flaques.
+            let _ = context.set_grade(0.92, [0.92, 0.98, 1.06], [0.012, 0.014, 0.022]);
 
             // Un lot par face : chacune porte sa lightmap, et un lot n'en
             // traverse qu'une.
@@ -705,7 +820,7 @@ fn main() -> Result<(), screengine_play::Error> {
                     Affine3::IDENTITY,
                     &mesh.vertices,
                     &mesh.faces,
-                    Some(&wood),
+                    Some(&plate),
                     lightmap,
                 );
             }
