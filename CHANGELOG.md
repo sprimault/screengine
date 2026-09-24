@@ -98,6 +98,14 @@ publié, et explique les conventions du dépôt à qui y contribue.
   nombre de tuiles, qu'il faut redemander à `scg_frame_begin`.
   `SCG_ABI_VERSION` reste à **1**. L'étage d'accueil ouvre le plafond par
   `Play::max_resolution`, et sa fenêtre suit d'elle-même.
+- Le post-traitement de sortie : `Context::set_grade` prend un gamma et un gain
+  par canal, `Context::clear_grade` revient au neutre, et il est neutre par
+  défaut. Les deux se composent en une table de 256 entrées par canal, remplie
+  au réglage, si bien qu'un pixel ne paie que trois lectures. Il s'applique
+  pendant la recopie d'une tuile, après le brouillard, et **ne touche pas
+  l'alpha**. Le gamma est celui de l'écran — 2,2 éclaircit —, le gain vient
+  avant lui, et cet ordre ne changera plus : un hôte qui a réglé ses paramètres
+  obtiendrait sinon une autre image sans qu'aucune version ne l'en prévienne.
 
 ### Modifié
 
@@ -178,6 +186,14 @@ publié, et explique les conventions du dépôt à qui y contribue.
   must be asked of `scg_frame_begin` again. `SCG_ABI_VERSION` stays at **1**.
   The Rust host stage opens the ceiling through `Play::max_resolution`, and its
   window follows by itself.
+- Output post-processing: `Context::set_grade` takes a gamma and one gain per
+  channel, `Context::clear_grade` returns to neutral, and neutral is the
+  default. The two compose into a 256-entry table per channel, filled when the
+  setting changes, so a pixel pays three lookups and nothing else. It is applied
+  while a tile is copied out, after fog, and **leaves alpha alone**. Gamma is
+  the display one — 2.2 brightens — and gain comes before it; that order will
+  not change, since a host that had set its parameters would otherwise get a
+  different image with no version to warn it.
 
 ### Changed
 

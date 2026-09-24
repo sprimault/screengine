@@ -95,6 +95,9 @@ impl fmt::Display for Error {
                 Argument::Light => f.write_str(
                     "a light has a non-finite position, or a radius that is not positive",
                 ),
+                Argument::Grade => f.write_str(
+                    "output curve out of range: gamma within ]0, 8], channel gains within [0, 4]",
+                ),
             },
             Self::Engine(screengine::Error::OutOfMemory) => {
                 f.write_str("the engine could not allocate its buffers")

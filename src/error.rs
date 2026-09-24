@@ -128,6 +128,12 @@ pub enum Argument {
     /// Un rayon nul n'éclaire rien et ferait diviser par zéro ; une position
     /// non finie empoisonnerait chaque sommet du lot.
     Light,
+    /// Un gamma hors de `]0, 8]`, ou un gain de canal hors de `[0, 4]`.
+    ///
+    /// Les deux bornes sont larges — un réglage d'écran vit entre 1,8 et 2,6,
+    /// un gain au-delà de deux diaphragmes ne laisse qu'un aplat — et
+    /// n'existent que pour refuser l'absurde plutôt que de le rendre.
+    Grade,
 }
 
 /// Le résultat d'un appel du noyau.
