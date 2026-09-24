@@ -115,6 +115,19 @@ impl Plane {
     }
 
     /// Le pas d'un pixel vers la droite, décalé de [`GRADIENT_BITS`].
+    ///
+    /// **Ce pas n'est pas borné par la chaîne de `new`.** Celle-ci borne le
+    /// gradient *décalé* à 2⁶², mais `dx` en est le quotient par l'aire : une
+    /// aire de quelques sous-pixels — un triangle en lame de couteau, qu'un
+    /// `area != 0` laisse passer — le ramène près de cette borne, et la
+    /// multiplication par les seize sous-pixels d'un pixel la franchit. D'où
+    /// `wrapping_mul`, et non un débordement qu'on aurait laissé au profil.
+    ///
+    /// L'enveloppement est déterministe, donc sans effet sur l'invariant : les
+    /// deux appelants n'en font qu'un choix de niveau de mipmap, qui serait
+    /// faux sur un triangle dont l'aire se compte en sous-pixels et juste
+    /// partout ailleurs. Le parcours, lui, ne s'en sert pas — il reprend la
+    /// forme close de [`Plane::at`] à chaque ligne.
     pub fn step_x(&self, pixel: i32) -> i64 {
         self.dx.wrapping_mul(pixel as i64)
     }

@@ -1390,10 +1390,14 @@ fn mip_level(triangle: &Prepared, planes: &[Plane; 2], u: i32, v: i32, reciproca
         triangle.depth.step_x(pixel) >> GRADIENT_BITS,
         triangle.depth.step_y(pixel) >> GRADIENT_BITS,
     );
-    // `S` est en 14.12 et la coordonnée en 16.16 : le décalage met les deux
-    // termes à la même échelle avant la soustraction. `step_x` n'est pas encore
-    // réduit de `GRADIENT_BITS`, ce qui laisse les quatre bits de marge dont ce
-    // décalage a besoin.
+    // Le gradient porte `GRADIENT_BITS` bits de fraction, la coordonnée en
+    // porte `UV_BITS` : le décalage de quatre les met à la même échelle avant
+    // la soustraction. C'est une conversion d'échelle et non une marge — rien
+    // ici ne garantit que le produit tienne, et il n'a pas à le garantir : voir
+    // la borne de `Plane::step_x`, qu'une aire minuscule fait sortir de
+    // l'`i64`. Le résultat enveloppe alors, à l'identique sur toutes les
+    // cibles, et ne fausse qu'un niveau de mipmap sur un triangle en lame de
+    // couteau.
     let numerator = |plane: &Plane, coord: i32, depth_step: i64| {
         let slope = plane.step_x(pixel) << (UV_BITS - GRADIENT_BITS);
         slope - ((i64::from(coord).saturating_mul(depth_step)) >> UV_SHIFT)
