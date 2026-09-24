@@ -20,8 +20,8 @@ use std::cell::Cell;
 use std::sync::Arc;
 
 use screengine::{
-    Affine3, BYTES_PER_PIXEL, Color, Config, Context, Filter, Rows, Texture, Triangle, Vec3,
-    VertexUv,
+    Affine3, BYTES_PER_PIXEL, Color, Config, Context, Filter, Light, Rows, Texture, Triangle, Vec3,
+    VertexUv, VertexUv2,
 };
 
 /// Le quadrilatère de la scène de référence, resoumis à chaque image.
@@ -330,5 +330,81 @@ fn aucune_tuile_n_alloue_sur_un_autre_thread() {
                 .sum()
         });
         assert_eq!(seen, 0, "{seen} allocation(s) dans les threads de rendu");
+    }
+}
+
+/// Une image éclairée n'alloue pas davantage : lightmap **et** lumières
+/// dynamiques.
+///
+/// Ce que l'étape 3 a ajouté au contexte — le tableau annexe des plans
+/// d'éclairage et la liste des lumières placées — n'était écrit sous aucune
+/// mesure. L'invariant tenait, les deux étant dimensionnés par `Context::new`,
+/// mais rien ne le prouvait : c'est exactement la forme du défaut que ce
+/// fichier existe pour voir, une réserve qui grandit au premier lot qui s'en
+/// sert.
+///
+/// **`set_lights` est dans la mesure**, et c'est le point : la lightmap est une
+/// ressource, donc son chargement est un appel nommé qui a le droit d'allouer,
+/// alors que régler des lumières se fait entre deux images, autant de fois que
+/// le jeu veut déplacer une torche.
+#[test]
+fn aucune_image_eclairee_n_alloue() {
+    let (width, height) = (640, 360);
+    let mut context = Context::new(Config {
+        max_width: width,
+        max_height: height,
+        width,
+        height,
+        tile_size: 64,
+        max_triangles: 0,
+    })
+    .expect("configuration valide");
+    let mut pixels = vec![0u8; width as usize * height as usize * BYTES_PER_PIXEL];
+
+    // Hors mesure : deux ressources, donc deux appels nommés.
+    let texture = Arc::new(
+        Texture::load(64, 64, &vec![0x80u8; 64 * 64 * BYTES_PER_PIXEL]).expect("texture valide"),
+    );
+    let lightmap = Arc::new(
+        Texture::load(16, 16, &vec![0xC0u8; 16 * 16 * BYTES_PER_PIXEL]).expect("lightmap valide"),
+    );
+
+    let vertices: Vec<VertexUv2> = VERTICES
+        .iter()
+        .enumerate()
+        .map(|(i, position)| VertexUv2 {
+            position: *position,
+            u: ((i & 1) * 64) as f32,
+            v: ((i >> 1) * 64) as f32,
+            u2: ((i & 1) * 16) as f32,
+            v2: ((i >> 1) * 16) as f32,
+        })
+        .collect();
+
+    let lights = [Light {
+        position: Vec3::new(2.5, 0.0, 0.5),
+        radius: 8.0,
+        color: Color::new(0xFF, 0xC0, 0x60, 0xFF),
+    }];
+
+    // Avec texture puis sans : un mur uni éclairé est le premier cas de
+    // l'étape, et il ne passe pas par la table de textures.
+    for avec_texture in [true, false] {
+        let seen = allocations(|| {
+            for _ in 0..3 {
+                context.set_lights(&lights).expect("hors image");
+                context
+                    .submit_lit(
+                        Affine3::IDENTITY,
+                        &vertices,
+                        &TRIANGLES,
+                        avec_texture.then_some(&texture),
+                        &lightmap,
+                    )
+                    .expect("scène soumise");
+                context.frame_end(&mut pixels, width).expect("image rendue");
+            }
+        });
+        assert_eq!(seen, 0, "{seen} allocation(s), texture : {avec_texture}");
     }
 }

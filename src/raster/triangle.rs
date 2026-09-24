@@ -293,6 +293,15 @@ impl Vertex {
     pub(crate) fn uv2(self, s2: i32, t2: i32) -> Self {
         Self { s2, t2, ..self }
     }
+
+    /// Le même, avec l'apport des lumières dynamiques à ce sommet.
+    ///
+    /// C'est lui, et lui seul, qui décide du `glowing` d'un triangle : un
+    /// sommet laissé à zéro partout range des plans nuls, et le remplissage
+    /// prend alors le bras sans lumière.
+    pub(crate) fn light(self, light: [i32; 3]) -> Self {
+        Self { light, ..self }
+    }
 }
 
 impl Prepared {
