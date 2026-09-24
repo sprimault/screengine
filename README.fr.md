@@ -5,12 +5,14 @@ English: [README.md](README.md)
 Un moteur de rendu 3D logiciel, appelable depuis n'importe quel langage. Pas de
 GPU, pas de fenêtre : on lui donne une scène et un tampon, il remplit le tampon.
 
-![Traversée d'un couloir texturé : murs de brique, sol pavé, caisses de bois](docs/couloir.webp)
+![Traversée d'un couloir en ruine : pierre moussue, tubes qui clignotent, jour tombant par une trouée du plafond](docs/couloir.webp)
 
 *L'exemple `couloir` de `screengine-play`, rendu en 640×360 : textures,
-mipmaps, filtrage bilinéaire. Le filtrage par défaut, lui, est le tramage
-ordonné des coordonnées, et l'exemple bascule de l'un à l'autre — c'est en
-marchant que les deux se départagent.*
+mipmaps, filtrage bilinéaire, lightmaps, lumières dynamiques, brouillard et
+courbe de sortie. Le jour vient des lightmaps que l'exemple cuit, les tubes
+sont des lumières dynamiques et clignotent. Le filtrage par défaut, lui, est le
+tramage ordonné des coordonnées, et l'exemple bascule de l'un à l'autre —
+c'est en marchant que les deux se départagent.*
 
 MIT ou Apache-2.0, au choix — voir [`LICENSE-MIT`](LICENSE-MIT) et
 [`LICENSE-APACHE`](LICENSE-APACHE). Sauf mention contraire de son auteur, toute
