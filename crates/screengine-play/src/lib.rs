@@ -45,7 +45,9 @@ pub use screengine;
 // Réexportés et non redéfinis : ce crate ajoute du comportement, jamais des
 // données. Deux modèles de scène qui divergeraient seraient la seule façon de
 // le rater.
-pub use screengine::{Affine3, Camera, Color, Filter, Quat, Texture, Triangle, Vec3, VertexUv};
+pub use screengine::{
+    Affine3, Camera, Color, Filter, Light, Quat, Texture, Triangle, Vec3, VertexUv, VertexUv2,
+};
 pub use texture::load_png;
 pub use winit::event::MouseButton;
 pub use winit::keyboard::KeyCode;
