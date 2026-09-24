@@ -14,8 +14,10 @@ use core::sync::atomic::Ordering;
 
 use super::*;
 use crate::context::{Config, TRIANGLE_CAPACITY};
+use crate::math::Vec3;
 use crate::math::fixed::{DEPTH_MARGIN, SUBPIXEL_SCALE};
 use crate::raster::{NO_TEXTURE, Vertex};
+use crate::scene::{Color, Light};
 use crate::testing::Rng;
 use crate::texture::Texture;
 
@@ -57,6 +59,27 @@ fn scene(context: &mut Context, seed: u64) {
     context.triangles.clear();
     context.textures.clear();
     context.textures.push(alloc::sync::Arc::new(damier()));
+    // La lightmap prend l'index 1, que `push` reçoit pour les triangles qui en
+    // portent une. Un dégradé plutôt qu'un damier : une lightmap se lit
+    // toujours en bilinéaire, et un motif à deux valeurs y rendrait surtout le
+    // filtrage, pas la lecture.
+    context.textures.push(alloc::sync::Arc::new(degrade()));
+
+    // **Une graine sur deux règle des lumières**, et ce n'est pas un
+    // raffinement : dès qu'une lumière est placée, la scène entière passe par
+    // le chemin éclairé, y compris les triangles sans lightmap — c'est le seul
+    // régime où le bras dynamique seul est pris. Sans lumière, seuls ceux qui
+    // portent une lightmap y passent, et l'apport par sommet n'a aucun effet.
+    // Les deux tests qui comparent les découpages bouclent sur douze graines,
+    // donc ils traversent les deux régimes.
+    let lights = [Light {
+        position: Vec3::new(0.0, 0.0, 0.0),
+        radius: 64.0,
+        color: Color::new(0xC0, 0x90, 0x60, 0xFF),
+    }];
+    context
+        .set_lights(if seed % 2 == 1 { &lights } else { &[] })
+        .expect("hors image");
     let span = (u32::MAX - 2 * DEPTH_MARGIN) as u64;
     for _ in 0..300 {
         let reach = if rng.next() % 4 == 0 { 400 } else { 40 };
@@ -68,38 +91,57 @@ fn scene(context: &mut Context, seed: u64) {
             _ => None,
         };
         let textured = rng.next() % 2 == 0;
+        // Un triangle sur deux porte une lightmap, un sur deux un apport
+        // dynamique, indépendamment : les quatre bras du remplissage sont donc
+        // tirés, et non seulement les deux qui se passent de lumière.
+        let mapped = rng.next() % 2 == 0;
+        let glowing = rng.next() % 2 == 0;
         let mut vertex = || {
             let z = flat.unwrap_or(DEPTH_MARGIN + (rng.next() % span) as u32);
             // `s` et `t` sont `u·d` et `v·d` : les tirer à partir de la
             // profondeur du sommet les garde dans le domaine que la mise en
             // place attend, au lieu de valeurs qui satureraient les gradients.
             let scale = |c: i64| ((c * i64::from(z >> 16)) >> 4) as i32;
-            // Ni lightmap ni lumière : le constructeur les laisse nulles, et
-            // la scène n'a rien à en dire.
-            let vertex = Vertex::plain(
+            let mut vertex = Vertex::plain(
                 (cx + rng.coord(-reach, reach)) * SUBPIXEL_SCALE + rng.coord(0, 15),
                 (cy + rng.coord(-reach, reach)) * SUBPIXEL_SCALE + rng.coord(0, 15),
                 z,
             );
             if textured {
-                vertex.uv(
+                vertex = vertex.uv(
                     scale(i64::from(rng.coord(0, 63))),
                     scale(i64::from(rng.coord(0, 63))),
-                )
-            } else {
-                vertex
+                );
             }
+            // Le second jeu se tire indépendamment du premier : une lightmap
+            // est étirée là où une texture se répète, et deux jeux qu'on
+            // dériverait l'un de l'autre atteindraient toujours le même niveau
+            // de mipmap.
+            if mapped {
+                vertex = vertex.uv2(
+                    scale(i64::from(rng.coord(0, 15))),
+                    scale(i64::from(rng.coord(0, 15))),
+                );
+            }
+            if glowing {
+                // Par sommet, donc le plan a une pente : un apport égal sur les
+                // trois rendrait une rampe constante, que le pas par pixel
+                // traverserait sans jamais changer de valeur.
+                vertex = vertex.light([rng.coord(0, 255), rng.coord(0, 255), rng.coord(0, 255)]);
+            }
+            vertex
         };
         let (a, b, c) = (vertex(), vertex(), vertex());
         let color = rng.next() as u32 | 0xFF00_0000;
         let texture = if textured { 0 } else { NO_TEXTURE };
         // Les deux orientations, pour que la moitié des tirages ne soit pas
         // éliminée comme dos de face.
+        let lit = mapped.then_some(1);
         context
-            .push([a, b, c], color, texture, None)
+            .push([a, b, c], color, texture, lit)
             .expect("capacité");
         context
-            .push([a, c, b], color, texture, None)
+            .push([a, c, b], color, texture, lit)
             .expect("capacité");
     }
 
@@ -111,6 +153,13 @@ fn scene(context: &mut Context, seed: u64) {
         .filter(|t| t.texture() != NO_TEXTURE)
         .count();
     assert!(textures > 50, "{textures} triangles texturés, trop peu");
+
+    // Même raison pour l'éclairage : sans ce contrôle, un tirage pourrait
+    // n'éclairer aucun triangle et les comparaisons resteraient vertes en ne
+    // mesurant que les deux bras sans lumière. Le compte porte sur les plans
+    // rangés dans le tableau annexe, qui est ce que le remplissage lit.
+    let eclaires = context.lighting.len();
+    assert!(eclaires > 50, "{eclaires} triangles éclairés, trop peu");
 }
 
 /// Une texture en damier de 64 texels de côté, dont la chaîne descend jusqu'à
@@ -128,6 +177,30 @@ fn damier() -> Texture {
         texel.copy_from_slice(&[value, value, value, 0xFF]);
     }
     Texture::load(side as u32, side as u32, &pixels).expect("texture valide")
+}
+
+/// Une lightmap de 16 texels de côté, en dégradé sur ses deux axes.
+///
+/// Seize et non soixante-quatre : c'est l'ordre de grandeur d'une vraie
+/// lightmap, et c'est ce qui fait que ses coordonnées n'atteignent pas le même
+/// niveau de mipmap que celles de la texture sur le même triangle.
+///
+/// Asymétrique entre les deux axes, pour qu'un jeu de coordonnées transposé
+/// change l'image au lieu de la laisser intacte.
+fn degrade() -> Texture {
+    let side = 16;
+    let mut pixels = vec![0u8; side * side * 4];
+    for (i, texel) in pixels.chunks_exact_mut(4).enumerate() {
+        let (x, y) = (i % side, i / side);
+        let scale = |c: usize, span: usize| (48 + c * 207 / span) as u8;
+        texel.copy_from_slice(&[
+            scale(x, side - 1),
+            scale((x + y) / 2, side - 1),
+            scale(y, side - 1),
+            0xFF,
+        ]);
+    }
+    Texture::load(side as u32, side as u32, &pixels).expect("lightmap valide")
 }
 
 /// Un tampon d'hôte vide à la taille de l'image.
