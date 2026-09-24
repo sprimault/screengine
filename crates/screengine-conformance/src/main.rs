@@ -964,6 +964,37 @@ impl Scene {
     /// l'envers est éliminée comme dos de face sans un mot : c'est par ce
     /// chemin que les tests vérifient qu'il y a quelque chose à hacher.
     fn render_pixels(self, pass: Pass, view: View) -> Result<Vec<u8>, screengine::Error> {
+        self.render_with(pass, view, true)
+    }
+
+    /// Rend le fond de la scène : ses réglages, et rien de soumis.
+    ///
+    /// C'est la référence contre laquelle se mesure la couverture. Un critère
+    /// écrit en dur — « différent du noir » — est inerte dès qu'une scène a un
+    /// fond qui ne l'est pas : le brouillard peint le sien de sa propre couleur,
+    /// et une courbe de sortie fait traverser le noir. Les deux scènes
+    /// concernées rendaient donc « toute l'image couverte » quoi qu'il arrive,
+    /// et une scène soumise à l'envers y serait passée.
+    ///
+    /// Le fond vient ainsi par construction plutôt que d'une couleur déclarée
+    /// scène par scène, qu'il aurait fallu tenir à jour à chaque réglage
+    /// nouveau — et qu'on aurait tenue d'après le même raisonnement que celui
+    /// qui a produit le critère inerte.
+    ///
+    /// `cfg(test)` parce que rien du binaire n'en a l'usage : ni `--check`, ni
+    /// `--print`, ni `--images` ne rendent un fond seul.
+    #[cfg(test)]
+    fn render_background(self, pass: Pass, view: View) -> Result<Vec<u8>, screengine::Error> {
+        self.render_with(pass, view, false)
+    }
+
+    /// Le corps commun aux deux, `submit` faisant seul la différence.
+    fn render_with(
+        self,
+        pass: Pass,
+        view: View,
+        submit: bool,
+    ) -> Result<Vec<u8>, screengine::Error> {
         let (width, height) = (view.width, view.height);
         let mut context = pass.open(view)?;
         context.set_filter(self.filter())?;
@@ -978,7 +1009,9 @@ impl Scene {
         if !lights.is_empty() {
             context.set_lights(&lights)?;
         }
-        self.submit(&mut context, view)?;
+        if submit {
+            self.submit(&mut context, view)?;
+        }
         let mut pixels = vec![0u8; width as usize * height as usize * BYTES_PER_PIXEL];
         pass.render(context.frame_begin()?, &mut pixels, width, height)?;
         Ok(pixels)

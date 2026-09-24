@@ -106,11 +106,21 @@ fn une_scene_a_vue_unique_garde_l_empreinte_de_son_image() {
 /// Chaque scène couvre une part franche de l'image.
 ///
 /// Le contrôle qui manquerait le plus : une scène soumise dans le mauvais sens
-/// est éliminée comme dos de face, rend un fond noir, et son empreinte reste
+/// est éliminée comme dos de face, rend le fond seul, et son empreinte reste
 /// parfaitement stable d'une plateforme à l'autre. La suite entière resterait
 /// verte en ne comparant rien.
 ///
-/// Un dixième de l'image : assez haut pour qu'un fond noir ou quelques pixels
+/// **Un pixel peint est un pixel qui diffère du fond de sa propre scène**, et
+/// non un pixel non noir. Ce dernier critère, celui d'avant, ne mordait que sur
+/// les scènes dont le fond est effectivement noir : `brouillard` peint le sien
+/// de la couleur du brouillard, `gamma` fait traverser le noir par la courbe de
+/// sortie, qui le porte aux environs de (59, 0, 81). Les deux rendaient donc
+/// « toute l'image couverte », quoi qu'elles soumettent.
+///
+/// Le fond se rend par la scène elle-même, sans soumission — voir
+/// `Scene::render_background`.
+///
+/// Un dixième de l'image : assez haut pour qu'un fond seul ou quelques pixels
 /// égarés échouent, assez bas pour n'imposer aucun cadrage aux scènes à venir.
 #[test]
 fn chaque_scene_couvre_une_part_de_l_image() {
@@ -119,14 +129,80 @@ fn chaque_scene_couvre_une_part_de_l_image() {
             let pixels = scene
                 .render_pixels(Scene::HOST_PASS, view)
                 .expect("scène valide");
+            let background = scene
+                .render_background(Scene::HOST_PASS, view)
+                .expect("scène valide");
             let total = view.width as usize * view.height as usize;
             let drawn = pixels
                 .chunks_exact(BYTES_PER_PIXEL)
-                .filter(|pixel| pixel[..3] != [0, 0, 0])
+                .zip(background.chunks_exact(BYTES_PER_PIXEL))
+                .filter(|(pixel, empty)| pixel != empty)
                 .count();
             assert!(
                 drawn * 10 > total,
                 "{} ({}) : {drawn} pixels dessinés sur {total}",
+                scene.name(),
+                view.label()
+            );
+        }
+    }
+}
+
+/// Deux scènes ont un fond qui n'est pas noir, et c'est ce qui rendait le
+/// critère d'avant inerte.
+///
+/// La preuve que le changement de critère servait à quelque chose. La couverture
+/// comptait les pixels non noirs : sur ces deux scènes, le fond lui-même en est
+/// un, donc `drawn` valait le nombre total de pixels quoi qu'elles soumettent,
+/// et une scène rendue à l'envers y aurait été déclarée couverte.
+///
+/// Les deux sont nommées, plutôt que comptées : ce sont celles de l'audit, et un
+/// réglage retiré de l'une des deux doit faire tomber ce test — c'est alors le
+/// cas de figure qui disparaît, pas le contrôle qui se périme.
+#[test]
+fn le_fond_de_gamma_et_de_brouillard_n_est_pas_noir() {
+    for name in ["gamma", "brouillard"] {
+        let scene = Scene::ALL
+            .into_iter()
+            .find(|s| s.name() == name)
+            .expect("scène de l'audit");
+        let view = scene.views()[0];
+        let background = scene
+            .render_background(Scene::HOST_PASS, view)
+            .expect("scène valide");
+        assert_ne!(
+            background[..3],
+            [0, 0, 0],
+            "{name} : le fond est noir, le critère d'avant n'était donc pas inerte sur elle"
+        );
+    }
+}
+
+/// Le fond d'une scène est une image d'une seule couleur.
+///
+/// La contrepartie du test précédent, et ce qui le garde honnête. Sans
+/// géométrie, tous les pixels suivent le même chemin : couleur de fond, puis
+/// brouillard à profondeur infinie, puis la courbe de sortie — donc une image
+/// uniforme. Si `render_background` soumettait quoi que ce soit, la comparaison
+/// du test précédent porterait sur deux images voisines et la couverture
+/// tomberait sous le seuil sans qu'on sache pourquoi ; ici, le défaut se nomme.
+#[test]
+fn le_fond_d_une_scene_est_uniforme() {
+    for scene in Scene::ALL {
+        for view in scene.views() {
+            let background = scene
+                .render_background(Scene::HOST_PASS, view)
+                .expect("scène valide");
+            let first = &background[..BYTES_PER_PIXEL];
+            let strays = background
+                .chunks_exact(BYTES_PER_PIXEL)
+                .filter(|pixel| *pixel != first)
+                .count();
+            assert_eq!(
+                strays,
+                0,
+                "{} ({}) : {strays} pixels s'écartent du fond, qui devrait être uni — \
+                 render_background a soumis quelque chose",
                 scene.name(),
                 view.label()
             );
