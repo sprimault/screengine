@@ -117,14 +117,25 @@ fn refuse_une_configuration_invalide_et_dit_pourquoi() {
 /// sens, puisqu'il ne sert qu'aux liaisons qui écrivent la structure elles-mêmes.
 #[test]
 fn refuse_un_champ_reserve_non_nul() {
-    let mut config = sane();
-    config.reserved1 = 1;
+    // Les deux, séparément : un contrôle écrit sur un seul champ laisse passer
+    // celui qu'on ajoute à l'autre, et c'est précisément le champ qu'un hôte
+    // écrit par erreur qui n'est pas celui que le test a choisi.
+    for (quoi, modifier) in [
+        (
+            "reserved1",
+            (|c: &mut ScgContextConfig| c.reserved1 = 1) as fn(&mut _),
+        ),
+        ("reserved2", |c: &mut ScgContextConfig| c.reserved2 = 1),
+    ] {
+        let mut config = sane();
+        modifier(&mut config);
 
-    let mut ctx = ptr::null_mut();
-    // SAFETY: les deux pointeurs visent des valeurs locales vivantes.
-    let code = unsafe { scg_create(&config, &mut ctx) };
-    assert_eq!(code, SCG_ERR_INVALID_ARGUMENT);
-    assert_eq!(last_error(ptr::null()), "reserved fields must be zero");
+        let mut ctx = ptr::null_mut();
+        // SAFETY: les deux pointeurs visent des valeurs locales vivantes.
+        let code = unsafe { scg_create(&config, &mut ctx) };
+        assert_eq!(code, SCG_ERR_INVALID_ARGUMENT, "{quoi}");
+        assert_eq!(last_error(ptr::null()), "reserved fields must be zero");
+    }
 }
 
 /// Un handle nul sur une fonction qui prend aussi un tampon : le contexte se
@@ -571,21 +582,22 @@ fn refuse_une_description_a_zero() {
 /// qui permettra d'en employer un sans casser les liaisons déjà écrites.
 #[test]
 fn refuse_un_champ_reserve_de_texture_non_nul() {
-    let mut out = ptr::null_mut();
-    // SAFETY: description locale vivante, bloc de la longueur annoncée.
-    let code = unsafe {
-        scg_texture_load(
-            &ScgTextureDesc {
-                reserved1: 1,
-                ..desc(4, 4)
-            },
-            [0u8; 64].as_ptr(),
-            64,
-            &mut out,
-        )
-    };
-    assert_eq!(code, SCG_ERR_INVALID_ARGUMENT);
-    assert!(last_error(ptr::null()).contains("reserved"));
+    // Les trois, séparément : la description en porte trois, et un contrôle
+    // écrit sur un seul ne dit rien des deux autres.
+    for quoi in 0..3 {
+        let mut d = desc(4, 4);
+        match quoi {
+            0 => d.reserved0 = 1,
+            1 => d.reserved1 = 1,
+            _ => d.reserved2 = 1,
+        }
+
+        let mut out = ptr::null_mut();
+        // SAFETY: description locale vivante, bloc de la longueur annoncée.
+        let code = unsafe { scg_texture_load(&d, [0u8; 64].as_ptr(), 64, &mut out) };
+        assert_eq!(code, SCG_ERR_INVALID_ARGUMENT, "reserved{quoi}");
+        assert!(last_error(ptr::null()).contains("reserved"));
+    }
 }
 
 /// Les refus du noyau traversent la frontière avec leur message : un côté qui
@@ -824,7 +836,8 @@ fn pose_une_courbe_dans_ses_bornes_et_refuse_le_reste() {
     refuse("gain haut", |g| g.gain_b = 5.0);
     refuse("décalage bas", |g| g.offset_r = -1.5);
     refuse("décalage haut", |g| g.offset_b = 1.5);
-    refuse("réservé non nul", |g| g.reserved1 = 1);
+    refuse("réservé 0 non nul", |g| g.reserved0 = 1);
+    refuse("réservé 1 non nul", |g| g.reserved1 = 1);
 
     // SAFETY: le pointeur nul est le cas que la fonction doit refuser.
     assert_eq!(unsafe { scg_set_grade(ctx, ptr::null()) }, SCG_ERR_NULL);
@@ -1162,4 +1175,61 @@ fn une_destruction_d_un_pointeur_nul_vide_aussi_le_message() {
     // SAFETY: idem, et la longueur d'un pointeur nul n'est pas lue.
     unsafe { scg_buffer_free(ptr::null_mut(), 0) };
     assert_eq!(last_error(ptr::null()), "", "libération nulle sans vidage");
+}
+
+/// Le sur-éclairement pose ses trois valeurs et refuse le reste.
+///
+/// Exporté, documenté dans le header et dans `docs/abi.md`, ce point d'entrée
+/// n'était appelé par aucun test ni aucun hôte : rien ne disait qu'il traverse
+/// la frontière, ni qu'un décalage de trois est refusé plutôt que tronqué à
+/// deux. Un décalage silencieusement rabattu rendrait une image plus sombre que
+/// ce que l'hôte a demandé, sans rien pour l'en avertir.
+#[test]
+fn pose_les_trois_sur_eclairements_et_refuse_le_reste() {
+    let ctx = create(&sane());
+
+    for shift in [0, 1, 2] {
+        // SAFETY: `ctx` est un handle vivant, seul ce thread l'emploie.
+        assert_eq!(unsafe { scg_set_overbright(ctx, shift) }, SCG_OK, "{shift}");
+    }
+
+    // SAFETY: mêmes préconditions ; la valeur n'est pas un pointeur.
+    let refus = unsafe { scg_set_overbright(ctx, 3) };
+    assert_eq!(refus, SCG_ERR_INVALID_ARGUMENT);
+    assert!(last_error(ctx).contains("overbright"));
+
+    // SAFETY: idem, le handle nul est refusé et non déréférencé.
+    let nul = unsafe { scg_set_overbright(ptr::null_mut(), 0) };
+    assert_eq!(nul, SCG_ERR_NULL);
+
+    // SAFETY: le handle est vivant et détruit une seule fois.
+    unsafe { scg_destroy(ctx) };
+}
+
+/// Le sur-éclairement ne se change pas pendant une image, comme le filtre.
+///
+/// La clause d'`abi.md` vaut pour les huit fonctions de l'étape ; celle-ci ne
+/// l'éprouvait pas, alors qu'elle écrit dans l'état que les tuiles lisent.
+#[test]
+fn refuse_de_changer_le_sur_eclairement_pendant_une_image() {
+    let ctx = create(&sane());
+    let mut tiles = 0;
+    // SAFETY: `ctx` est vivant, le compteur est local, et l'image se referme
+    // plus bas.
+    assert_eq!(unsafe { scg_frame_begin(ctx, &mut tiles) }, SCG_OK);
+
+    // SAFETY: mêmes préconditions.
+    let pendant = unsafe { scg_set_overbright(ctx, 2) };
+    assert_eq!(pendant, SCG_ERR_INVALID_STATE);
+
+    let mut pixels = vec![0u8; 64 * 32 * 4];
+    // SAFETY: le tampon porte bien `stride × hauteur × 4` octets.
+    let fin = unsafe { scg_frame_end(ctx, pixels.as_mut_ptr(), 64) };
+    assert_eq!(fin, SCG_OK);
+
+    // SAFETY: l'image est close, le réglage redevient permis.
+    assert_eq!(unsafe { scg_set_overbright(ctx, 2) }, SCG_OK);
+
+    // SAFETY: le handle est vivant et détruit une seule fois.
+    unsafe { scg_destroy(ctx) };
 }

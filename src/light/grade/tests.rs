@@ -177,6 +177,38 @@ fn les_reglages_hors_bornes_sont_refuses() {
     assert!(!grade.is_set(), "un refus ne doit rien laisser derrière");
 }
 
+/// **Un refus ne détruit pas la courbe en place.**
+///
+/// Le voisin ci-dessus part d'un `Grade` neuf : il attrape un `set` qui
+/// remplirait ses tables avant de valider, et rien d'autre — les tables y sont
+/// vides quoi qu'il arrive. Le cas qu'il laisse passer est celui qu'un hôte
+/// rencontre vraiment : une courbe réglée depuis un moment, un appel fautif, et
+/// l'image qui change alors qu'un code d'erreur vient d'être rendu.
+#[test]
+fn un_refus_laisse_la_courbe_precedente_intacte() {
+    let mut grade = Grade::new().expect("réservation");
+    grade
+        .set(2.2, [1.15, 1.0, 0.85], [0.04, -0.02, 0.08])
+        .expect("réglage valide");
+    let temoin = grade.tables.clone();
+
+    let refus = Err(Error::InvalidArgument(Argument::Grade));
+    assert_eq!(grade.set(f32::NAN, UNIT, ZERO), refus, "gamma NaN");
+    assert_eq!(
+        grade.set(1.0, [1.0, MAX_GAIN + 0.1, 1.0], ZERO),
+        refus,
+        "gain au-delà de la borne"
+    );
+    assert_eq!(
+        grade.set(1.0, UNIT, [0.0, 0.0, MAX_OFFSET + 0.1]),
+        refus,
+        "décalage au-delà de la borne"
+    );
+
+    assert!(grade.is_set(), "un refus a éteint la courbe");
+    assert_eq!(grade.tables, temoin, "un refus a modifié la table");
+}
+
 /// Régler ne réalloue pas : la capacité est prise une fois pour toutes à la
 /// création, et un hôte qui ajuste sa courbe entre deux images n'alloue pas
 /// davantage qu'un hôte qui n'y touche jamais.
