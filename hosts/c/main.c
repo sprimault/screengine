@@ -346,6 +346,38 @@ static void check_refusals(void)
      * après les refus ci-dessus, et tout appel exclusif serait perdu. */
     check(scg_set_resolution(ctx, WIDTH, HEIGHT) == SCG_OK, "le contexte répond encore après une sortie refusée");
 
+    /* La caméra : aucune scène de conformance n'en règle, celle du chemin Rust
+     * tournant son modèle et non son point de vue. Elle n'était donc franchie
+     * par aucun hôte, et son contrat se vérifie ici plutôt que par une image.
+     *
+     * Le quaternion n'est pas exigé unitaire — le moteur le normalise —, mais
+     * le champ de vision est refusé sur les radians eux-mêmes : trois
+     * demi-tours se replieraient sinon en un seul, acceptés en silence. */
+    ScgCamera camera;
+    memset(&camera, 0, sizeof camera);
+    camera.orientation[3] = 1.0f;
+    camera.fov_y = 1.2f;
+    camera.near_plane = 0.1f;
+    check(scg_set_camera(ctx, &camera) == SCG_OK, "la caméra se règle");
+    check(scg_set_camera(ctx, NULL) == SCG_ERR_NULL, "caméra nulle refusée");
+    check(scg_set_camera(NULL, &camera) == SCG_ERR_NULL, "contexte nul refusé par scg_set_camera");
+
+    ScgCamera bad = camera;
+    bad.fov_y = 4.0f;
+    check(scg_set_camera(ctx, &bad) == SCG_ERR_INVALID_ARGUMENT, "champ de vision au-delà de pi refusé");
+    bad = camera;
+    bad.near_plane = 0.0f;
+    check(scg_set_camera(ctx, &bad) == SCG_ERR_INVALID_ARGUMENT, "plan proche nul refusé");
+
+    /* Et elle est refusée dès qu'un triangle de l'image en cours est retenu :
+     * chaque soumission projette immédiatement, si bien qu'une caméra changée
+     * au milieu laisserait deux espaces écran dans la même image. Corrigé en
+     * 0.2.1, et vérifié par aucun hôte jusqu'ici. */
+    check(scg_submit(ctx, &IDENTITY, SCENE_VERTICES, 4, SCENE_TRIANGLES, 2) == SCG_OK,
+          "un triangle est retenu");
+    check(scg_set_camera(ctx, &camera) == SCG_ERR_INVALID_STATE,
+          "la caméra est refusée après une soumission retenue");
+
     scg_destroy(ctx);
     scg_destroy(NULL);
 }
@@ -825,7 +857,7 @@ static uint64_t render_fog(int *ok)
  * passe une texture nulle, ce que ce point d'entrée accepte là où
  * `scg_submit_textured` le refuse — c'est l'asymétrie que le header signale,
  * et cet hôte l'exerce pour de bon. */
-static uint64_t render_lit(int *ok)
+static uint64_t render_lit(int *ok, uint32_t overbright)
 {
     ScgContextConfig config = scene_config();
     ScgContext *ctx = NULL;
@@ -863,6 +895,15 @@ static uint64_t render_lit(int *ok)
     check(scg_create(&config, &ctx) == SCG_OK, "création du contexte éclairé");
 
     if (loaded == SCG_OK && lit == SCG_OK && ctx != NULL) {
+        /* Le sur-éclairement, seul réglage de l'étape 3 qu'aucun hôte
+         * n'empruntait : trois valeurs permises, et toute autre refusée. Un
+         * décalage rabattu en silence rendrait une image plus sombre que
+         * demandée, sans rien pour l'annoncer. */
+        check(scg_set_overbright(ctx, 3) == SCG_ERR_INVALID_ARGUMENT,
+              "un sur-éclairement de trois est refusé");
+        check(scg_set_overbright(ctx, overbright) == SCG_OK,
+              "le sur-éclairement se règle");
+
         /* Une lightmap nulle est refusée, elle : sans elle, ce lot n'a rien à
          * faire sur ce chemin. */
         int32_t refused = scg_submit_lit(ctx, &IDENTITY, LIT_FLOOR, 4,
@@ -931,7 +972,12 @@ int main(void)
     uint64_t graded = render_graded(&graded_ok);
 
     int lit_ok = 0;
-    uint64_t lit = render_lit(&lit_ok);
+    uint64_t lit = render_lit(&lit_ok, 0);
+
+    /* La même scène au sur-éclairement maximal : seul le réglage du contexte
+     * les sépare, donc une divergence ne peut venir que de lui. */
+    int overbright_ok = 0;
+    uint64_t overbright = render_lit(&overbright_ok, 2);
 
     int fog_ok = 0;
     uint64_t fog = render_fog(&fog_ok);
@@ -940,7 +986,7 @@ int main(void)
     uint64_t lights = render_lights(&lights_ok);
 
     if (failures > 0 || !ok || !textured_ok || !bilinear_ok || !graded_ok || !lit_ok
-        || !fog_ok || !lights_ok) {
+        || !overbright_ok || !fog_ok || !lights_ok) {
         fprintf(stderr, "%d vérification(s) en échec\n", failures);
         return 1;
     }
@@ -949,6 +995,7 @@ int main(void)
     printf("%016llx\n", (unsigned long long)bilinear);
     printf("%016llx\n", (unsigned long long)graded);
     printf("%016llx\n", (unsigned long long)lit);
+    printf("%016llx\n", (unsigned long long)overbright);
     printf("%016llx\n", (unsigned long long)fog);
     printf("%016llx\n", (unsigned long long)lights);
     return 0;

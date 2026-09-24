@@ -260,6 +260,23 @@ public final class Screengine {
     static native int setOverbright(long ctx, int shift);
 
     /**
+     * {@code scg_set_camera}.
+     *
+     * <p>Neuf flottants : trois de position, quatre d'orientation, le champ de
+     * vision et le plan proche. En tableau plutôt qu'en objet, pour que Java
+     * n'ait pas à reproduire la disposition de la structure — c'est la couche
+     * JNI qui la remplit, au seul endroit qui voit le header, et l'ordre
+     * {@code x, y, z, w} du quaternion n'a pas à être connu ici.
+     *
+     * <p>Un tableau nul vaut une caméra nulle, et permet d'éprouver le refus.
+     *
+     * @param ctx handle, ou 0
+     * @param camera les neuf flottants, ou {@code null}
+     * @return le code de retour
+     */
+    static native int setCamera(long ctx, float[] camera);
+
+    /**
      * {@code scg_set_fog}.
      *
      * <p>Les trois canaux sont des entiers et non des octets : Java n'a pas
