@@ -226,7 +226,21 @@ jobs:
       - name: Éprouver l'archive wasm
         if: matrix.cible == 'wasm32'
         run: |
-          node hosts/web/test.js "$PAQUET/lib/screengine.wasm" "$PAQUET/include/screengine.h"
+          # Les empreintes du module publié, comparées aux références
+          # versionnées : l'étape les produisait sans que personne ne les lise,
+          # et seuls les contrôles internes de `test.js` décidaient du succès.
+          # Une image fausse aurait donc passé le tag. Même liste et même ordre
+          # que l'épreuve des hôtes C et C++ plus bas, lue dans le Makefile.
+          attendu=$(for scene in $(make -s print-HOST_SCENES); do
+            cat "crates/screengine-conformance/references/$scene"
+          done)
+          obtenu=$(node hosts/web/test.js \
+            "$PAQUET/lib/screengine.wasm" "$PAQUET/include/screengine.h" | tr -d '\r')
+          if [ "$obtenu" != "$attendu" ]; then
+            echo "archive wasm : $obtenu, référence $attendu" >&2
+            exit 1
+          fi
+          echo "archive wasm : $obtenu"
 
       # Pas l'émulateur une seconde fois : ce que l'archive peut cacher et que
       # les tests ne voient pas, c'est un `.so` d'une autre architecture rangé
