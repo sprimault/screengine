@@ -817,9 +817,33 @@ Huit fonctions ajoutées, trois structures nouvelles, aucune constante :
 - **Le sur-éclairement vaut zéro par défaut**, ce qui rend le texel intact sous
   pleine lumière et jamais plus clair. C'est le réglage juste et une scène
   terne — une lightmap réelle n'atteint le blanc nulle part. Un décalage de un
-  ou deux double ou quadruple la valeur combinée, avec saturation.
-  `scg_set_overbright` est refusé entre `scg_frame_begin` et `scg_frame_end`,
-  pour la raison qui vaut pour `scg_set_filter`.
+  ou deux double ou quadruple la valeur combinée, avec saturation. Toute autre
+  valeur que 0, 1 ou 2 rend `SCG_ERR_INVALID_ARGUMENT`.
+- **Les huit fonctions de l'étape sont refusées pendant une image**, par
+  `SCG_ERR_INVALID_STATE`, y compris celles qui effacent un réglage. Elles
+  écrivent toutes dans un état que les tuiles lisent depuis des threads que le
+  moteur ne connaît pas, et un réglage changé au milieu laisserait une part de
+  l'image rendue autrement que le reste. C'est la raison de `scg_set_filter`,
+  et elle ne souffre pas d'exception.
+- **Ce que chacune exige de ses arguments**, faute de quoi
+  `SCG_ERR_INVALID_ARGUMENT` et le contexte garde ce qu'il avait :
+
+  | Fonction | Domaine |
+  |---|---|
+  | `scg_set_fog` | `start` et `end` finis, `start` positif ou nul, `end` strictement supérieur à `start` |
+  | `scg_set_lights` | au plus **huit** lumières ; chaque position finie ; chaque rayon fini et strictement positif ; chaque `_reserved` nul |
+  | `scg_set_grade` | `gamma` fini dans `]0, 8]` ; chaque gain fini dans `[0, 4]` ; chaque décalage fini dans `[-1, 1]` ; les deux champs réservés nuls |
+  | `scg_clear_fog`, `scg_clear_grade` | rien : elles n'ont pas d'argument, et effacer ce qui n'était pas réglé n'est pas une erreur — un hôte qui éteint le brouillard en fin de niveau n'a pas à se souvenir s'il l'avait allumé |
+
+  **Un rayon nul est refusé et non ignoré** : il n'éclaire rien et ferait
+  diviser par zéro. **`NaN` se teste nommément**, avant les comparaisons de
+  bornes, qui sont fausses dans les deux sens et le laisseraient passer.
+- **Le plafond de huit lumières est une constante du moteur**, et il ne se
+  configure pas. L'atténuation se calcule par sommet, à la soumission : chaque
+  lumière de plus est un parcours de plus sur chaque sommet soumis, et c'est le
+  budget d'un cœur de téléphone qui fixe la borne. Une neuvième lumière refuse
+  l'appel entier plutôt que d'être ignorée en silence — un hôte qui en place
+  neuf doit savoir laquelle manque, et il n'y a pas de réponse à cette question.
 - **Le brouillard ne demande pas à l'hôte d'effacer avec sa couleur.** Il
   s'applique pendant la recopie d'une tuile, où la profondeur est déjà sous la
   main, et un pixel qu'aucun triangle n'a peint est infiniment lointain : le
@@ -830,8 +854,6 @@ Huit fonctions ajoutées, trois structures nouvelles, aucune constante :
 - **Trois canaux de couleur, pas quatre.** Le tampon de sortie est opaque par
   contrat : un alpha sur la couleur du brouillard serait une valeur que le
   moteur ignore, et un hôte se demanderait légitimement ce qu'elle fait.
-- **`scg_clear_fog` sur un contexte sans brouillard n'est pas une erreur.** Un
-  hôte qui l'éteint en fin de niveau n'a pas à se souvenir s'il l'avait allumé.
 - **La couleur d'une lumière tient en trois octets plus un champ réservé**, et
   non en trois flottants. Trois `float` normalisés auraient donné vingt-huit
   octets sans un seul bourrage, mais c'aurait été le seul endroit de l'ABI où
@@ -854,8 +876,8 @@ Huit fonctions ajoutées, trois structures nouvelles, aucune constante :
   consomme a été dimensionné sur ce maximum, et c'est la raison pour laquelle
   il ne se relève pas. Au-delà, ou sur une dimension nulle,
   `SCG_ERR_INVALID_ARGUMENT`, et le contexte garde la résolution qu'il avait.
-  Refusée pendant le rendu et dès qu'un triangle de l'image est retenu, comme
-  `scg_set_camera` et pour la même raison.
+  Refusée **en outre dès qu'un triangle de l'image est retenu**, comme
+  `scg_set_camera` et pour la même raison — c'est la seule des huit à l'être.
 
   **Le tampon de l'hôte ne suit pas.** Après une hausse, un tampon laissé à sa
   taille d'avant est trop court, et le moteur ne peut pas s'en apercevoir — il
