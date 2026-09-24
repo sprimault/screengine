@@ -46,6 +46,29 @@ publié, et explique les conventions du dépôt à qui y contribue.
 
 ## [Non publié]
 
+## [0.3.0] — 2026-09-24 — La lumière et l'image
+
+**Ce qu'un hôte de la 0.2.1 doit reprendre : rien, s'il est conforme.**
+`SCG_ABI_VERSION` reste à **1**, aucune signature publiée ne change, et **une
+scène inchangée rend exactement la même image** — les empreintes de conformance
+existantes ne bougent pas, et les cinq nouvelles portent l'éclairage, le
+brouillard et la courbe de sortie.
+
+**Deux appels sont refusés là où ils passaient**, et le contrat les interdisait
+déjà. `scg_set_camera` rend `SCG_ERR_INVALID_STATE` dès qu'un triangle de
+l'image en cours est retenu : la caméra vaut pour l'image entière, et la changer
+au milieu laissait deux espaces écran dans la même image. `scg_frame_end`
+vérifie le tampon **avant** d'ouvrir l'image quand personne ne l'a commencée :
+un `stride` trop court laissait le contexte en rendu, et tous les appels
+suivants échouaient sans rien pour l'expliquer.
+
+**Ce que cette version ne fait pas encore.** Le moteur ne calcule aucune
+lightmap : c'est une ressource que l'hôte fournit et charge comme une texture,
+le calcul venant avec les cellules. Il ne lit ni maillage ni carte —
+aucun format de fichier n'existe —, et l'atténuation d'une lumière dynamique
+ignore l'orientation de la surface : les faces d'un objet à égale distance
+d'une source reçoivent la même lumière.
+
 ### Ajouté
 
 - L'API Rust accepte des sommets portant un second jeu de coordonnées, celui
@@ -155,6 +178,26 @@ publié, et explique les conventions du dépôt à qui y contribue.
   avant : celle-là, il l'a voulue.
 
 ***
+
+**What a 0.2.1 host has to take up: nothing, if it conforms.**
+`SCG_ABI_VERSION` stays at **1**, no published signature changes, and **an
+unchanged scene renders exactly the same image** — the existing conformance
+hashes do not move, and the five new ones cover lighting, fog and the output
+curve.
+
+**Two calls are now refused where they used to go through**, and the contract
+already forbade both. `scg_set_camera` returns `SCG_ERR_INVALID_STATE` as soon
+as one triangle of the current frame is held: the camera applies to the whole
+frame, and changing it midway left two screen spaces in the same image.
+`scg_frame_end` checks the buffer **before** opening a frame when no one has
+begun one: a `stride` shorter than the width used to leave the context
+rendering, and every later call failed with nothing to explain it.
+
+**What this version does not do yet.** The engine computes no lightmap: it is a
+resource the host supplies and loads like a texture, the computation coming with
+cells. It reads neither mesh nor map — no file format exists — and a dynamic
+light's falloff ignores surface orientation: the faces of an object at equal
+distance from a source all receive the same light.
 
 ### Added
 
