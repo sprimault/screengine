@@ -37,7 +37,7 @@ usize_is_size_t = true
 # à 199711 sans /Zc:__cplusplus quelle que soit la norme demandée : c'est
 # _MSVC_LANG qui la dit.
 trailer = """
-/* cbindgen place ce bloc après la garde d'inclusion : il lui en faut une. */
+/* cbindgen puts this block after the include guard, so it needs one of its own. */
 #ifndef SCREENGINE_LAYOUT_CHECKED
 #define SCREENGINE_LAYOUT_CHECKED
 #if defined(__cplusplus) && (__cplusplus >= 201103L || (defined(_MSVC_LANG) && _MSVC_LANG >= 201103L))

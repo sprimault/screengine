@@ -46,6 +46,35 @@ publié, et explique les conventions du dépôt à qui y contribue.
 
 ## [Non publié]
 
+### Corrigé
+- Le header publiait douze lignes de français : onze en tête de la documentation
+  de `ScgGrade`, où une docstring décrivant les assertions de disposition restait
+  rattachée à la structure au lieu du bloc d'assertions, et une devant le bloc
+  d'assertions lui-même. La documentation du header est en anglais, et c'est le
+  seul document qu'un auteur de liaison lise.
+- Le message rendu par `scg_last_error` pour une courbe de sortie refusée ne
+  nommait que le gamma et les gains, alors que le refus porte aussi sur les
+  trois décalages.
+- Le contrat d'ABI décrivait encore la courbe de sortie comme un gain suivi du
+  gamma, et affirmait qu'elle ne déplace ni le noir ni le blanc — ce que les
+  décalages font. Il laissait aussi entendre que le tampon de l'hôte suivait un
+  changement de résolution interne de lui-même.
+
+***
+
+### Fixed
+- The header published twelve lines of French: eleven atop `ScgGrade`'s
+  documentation, where a docstring describing the layout assertions stayed
+  attached to the struct instead of the assertion block, and one above the
+  assertion block itself. Header documentation is in English, and it is the only
+  document a binding author reads.
+- The message `scg_last_error` returns for a refused output curve named only
+  gamma and the gains, although the refusal covers the three offsets too.
+- The ABI contract still described the output curve as a gain followed by gamma,
+  and claimed it moves neither black nor white — which is what the offsets do.
+  It also suggested the host buffer follows a change of internal resolution on
+  its own.
+
 ## [0.3.0] — 2026-09-24 — La lumière et l'image
 
 **Ce qu'un hôte de la 0.2.1 doit reprendre : rien, s'il est conforme.**

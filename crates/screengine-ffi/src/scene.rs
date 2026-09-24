@@ -426,17 +426,6 @@ impl ScgTextureDesc {
     }
 }
 
-/// Les tailles et décalages que le header publie, vérifiés **à la compilation**.
-///
-/// En assertions de constante et non en test : un test ne s'exécute que sur la
-/// cible hôte, alors qu'une liaison JavaScript reproduit ces décalages sur
-/// wasm32 et une liaison JNI sur armv7. Ici, toute cible que la compilation
-/// traverse les vérifie — `make lint` passe clippy sur wasm32 et sur les trois
-/// ABI Android, et un champ qui bougerait y échouerait franchement.
-///
-/// Les mêmes assertions existent en C, injectées dans le header par `cbindgen`
-/// et compilées par les hôtes. Celles-ci les attrapent avant que le header ne
-/// soit même régénéré.
 /// The output curve applied while each tile is copied out: an affine per
 /// channel, then gamma.
 ///
@@ -505,6 +494,17 @@ impl ScgGrade {
     }
 }
 
+/// Les tailles et décalages que le header publie, vérifiés **à la compilation**.
+///
+/// En assertions de constante et non en test : un test ne s'exécute que sur la
+/// cible hôte, alors qu'une liaison JavaScript reproduit ces décalages sur
+/// wasm32 et une liaison JNI sur armv7. Ici, toute cible que la compilation
+/// traverse les vérifie — `make lint` passe clippy sur wasm32 et sur les trois
+/// ABI Android, et un champ qui bougerait y échouerait franchement.
+///
+/// Les mêmes assertions existent en C, injectées dans le header par `cbindgen`
+/// et compilées par les hôtes. Celles-ci les attrapent avant que le header ne
+/// soit même régénéré.
 const _: () = {
     use core::mem::{align_of, offset_of, size_of};
 
