@@ -10,8 +10,17 @@ rg -o 'todo!\("étape' src crates --glob '!*tests*' | wc -l
 `src` autant que `crates` : le noyau est le paquet racine, et une mesure qui ne
 regarde que `crates/` ignore précisément l'endroit où le travail se fait.
 
-C'est la mesure d'avancement la plus honnête du projet. Elle descend toute
-seule, et elle ne ment pas.
+**Ce compte vaut zéro, et il a valu zéro à chacune des versions publiées.** Ce
+n'est pas un défaut de la mesure : elle compte ce qui a été *amorcé* puis laissé
+en plan, et ce projet ne livre pas d'étape à moitié — ce qu'une étape ne fait pas
+encore, elle ne l'esquisse pas, elle l'attend. Zéro veut donc dire « rien
+d'entamé qui ne soit fini », jamais « rien ne reste à faire » : ce qui reste est
+écrit en prose dans les étapes ci-dessous, et c'est l'écart entre les deux qui
+informe.
+
+Un stub sert à autre chose : quand une étape doit exposer un point d'entrée
+avant de savoir le remplir, le marqueur porte son numéro, il panique, et les
+notes de version disent ce qu'elles ne font pas encore.
 
 **Les numéros ordonnent les dépendances, pas le calendrier.** Ils ne se
 renumérotent jamais — ce sont eux que portent les marqueurs du code. Une étape

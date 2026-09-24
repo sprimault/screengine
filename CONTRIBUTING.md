@@ -124,6 +124,12 @@ which validates once the branch has already been pushed.
 reviewed in the pull request, which is when it matters. The release takes its
 name and notes from it, and a missing section stops the release.
 
+**The tag does not publish.** It builds the archives and creates the release as
+a **draft**; making it visible takes one more step, once the notes have been
+read as an integrator will read them. Until then the archives exist without
+anyone finding them. See [`docs/construction.md`](docs/construction.md),
+"Publication".
+
 **Documentation ships with the change.** Before committing, check what the
 change makes wrong elsewhere: the status stated in the README, a clause of
 [`docs/abi.md`](docs/abi.md), a step of [`ROADMAP.md`](ROADMAP.md) (French).

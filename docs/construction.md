@@ -407,8 +407,14 @@ leurs empreintes se comparent par leurs hôtes.
   version du `Cargo.toml` concordent, lit la section du `CHANGELOG`, repasse les
   tests et la conformance — un tag posé sur un commit rouge ne publie pas —,
   construit par `make lib` — `make lib-wasm` et `make lib-android` pour les deux
-  autres —, puis crée la
-  release en brouillon. Les notes se relisent avant de publier.
+  autres —, puis crée la release **en brouillon**.
+
+  **Le tag ne publie donc pas.** Le brouillon est voulu : c'est le moment où les
+  notes se relisent, une dernière fois, telles qu'un intégrateur les lira. La
+  release devient visible par un geste explicite — `gh release edit vX.Y.Z
+  --draft=false`, ou le bouton de l'interface —, et tant qu'il n'est pas fait,
+  les archives existent sans que personne ne puisse les trouver. C'est la
+  dernière étape de la publication, pas une formalité oubliée.
 - **L'hôte Android se teste une fois par publication**, émulateur démarré, sur
   l'entrée qui publie sa bibliothèque. Les autres entrées le retirent par
   `SANS=android` : Windows n'a pas d'émulateur, et le repasser sous Linux ne
