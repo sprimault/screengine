@@ -438,6 +438,42 @@ static jint set_grade(JNIEnv *env, jclass cls, jlong ctx, jfloatArray values, ji
     return scg_set_grade((ScgContext *)(intptr_t)ctx, &grade);
 }
 
+/* scg_set_camera : neuf `float` — trois de position, quatre d'orientation, le
+ * champ de vision et le plan proche —, pour la raison qui vaut pour la courbe.
+ * C'est ici que la structure se remplit, et Java n'a pas à connaître l'ordre
+ * `x, y, z, w` du quaternion, qui est l'inverse de la convention la plus
+ * répandue.
+ *
+ * Un tableau nul vaut une caméra nulle : c'est ainsi que l'hôte éprouve le
+ * refus par SCG_ERR_NULL, qu'aucun appel Java ne produirait autrement. */
+static jint set_camera(JNIEnv *env, jclass cls, jlong ctx, jfloatArray values)
+{
+    (void)cls;
+    if (values == NULL) {
+        return scg_set_camera((ScgContext *)(intptr_t)ctx, NULL);
+    }
+
+    jfloat raw[9];
+    if ((*env)->GetArrayLength(env, values) != 9) {
+        return SCG_ERR_INVALID_ARGUMENT;
+    }
+    (*env)->GetFloatArrayRegion(env, values, 0, 9, raw);
+
+    ScgCamera camera;
+    memset(&camera, 0, sizeof camera);
+    camera.position[0] = raw[0];
+    camera.position[1] = raw[1];
+    camera.position[2] = raw[2];
+    camera.orientation[0] = raw[3];
+    camera.orientation[1] = raw[4];
+    camera.orientation[2] = raw[5];
+    camera.orientation[3] = raw[6];
+    camera.fov_y = raw[7];
+    camera.near_plane = raw[8];
+
+    return scg_set_camera((ScgContext *)(intptr_t)ctx, &camera);
+}
+
 /* scg_clear_grade. */
 static jint clear_grade(JNIEnv *env, jclass cls, jlong ctx)
 {
@@ -525,6 +561,7 @@ static const JNINativeMethod METHODS[] = {
     {"setFog", "(JIIIFF)I", (void *)set_fog},
     {"clearFog", "(J)I", (void *)clear_fog},
     {"setGrade", "(J[FI)I", (void *)set_grade},
+    {"setCamera", "(J[F)I", (void *)set_camera},
     {"clearGrade", "(J)I", (void *)clear_grade},
     {"setLights", "(J[F[B)I", (void *)set_lights},
 };

@@ -571,7 +571,7 @@ function makeGradient() {
  * @param {scg.Screengine} engine
  * @returns {string | null}
  */
-function renderLit(engine) {
+function renderLit(engine, overbright) {
   const e = engine.exports;
   const out = engine.alloc(4);
   const desc = engine.alloc(scg.TEXTURE_DESC_SIZE);
@@ -622,6 +622,17 @@ function renderLit(engine) {
       lightmap,
     );
   };
+
+  // Le sur-éclairement, seul réglage de l'étape 3 qu'aucun hôte n'empruntait :
+  // trois valeurs permises, et toute autre refusée plutôt que rabattue.
+  check(
+    e.scg_set_overbright(ctx, 3) === scg.SCG_ERR_INVALID_ARGUMENT,
+    "un sur-éclairement de trois est refusé",
+  );
+  check(
+    e.scg_set_overbright(ctx, overbright) === scg.SCG_OK,
+    "le sur-éclairement se règle",
+  );
 
   // Une lightmap nulle est refusée, elle : sans elle, ce lot n'a rien à faire
   // sur ce chemin.
@@ -818,6 +829,56 @@ function checkRefusals(engine) {
     check(e.scg_frame_end(ctx, small, WIDTH - 1) === scg.SCG_ERR_INVALID_ARGUMENT, "stride inférieur à la largeur refusé");
     check(messageOk(() => engine.lastError(ctx), true), "message du contexte après un stride refusé");
     check(e.scg_frame_end(0, small, WIDTH) === scg.SCG_ERR_NULL, "contexte nul refusé");
+
+    // La caméra : aucune scène de conformance n'en règle, celle du chemin Rust
+    // tournant son modèle et non son point de vue. Son contrat se vérifie donc
+    // ici plutôt que par une image — et c'est le seul hôte qui écrit cette
+    // structure octet par octet.
+    const camera = engine.alloc(scg.CAMERA_SIZE);
+    const sane = {
+      position: [0, 0, 0],
+      orientation: [0, 0, 0, 1],
+      fovY: 1.2,
+      nearPlane: 0.1,
+    };
+    engine.writeCamera(camera, sane);
+    check(e.scg_set_camera(ctx, camera) === scg.SCG_OK, "la caméra se règle");
+    check(e.scg_set_camera(ctx, 0) === scg.SCG_ERR_NULL, "caméra nulle refusée");
+    check(
+      e.scg_set_camera(0, camera) === scg.SCG_ERR_NULL,
+      "contexte nul refusé par scg_set_camera",
+    );
+
+    engine.writeCamera(camera, { ...sane, fovY: 4.0 });
+    check(
+      e.scg_set_camera(ctx, camera) === scg.SCG_ERR_INVALID_ARGUMENT,
+      "champ de vision au-delà de pi refusé",
+    );
+    engine.writeCamera(camera, { ...sane, nearPlane: 0.0 });
+    check(
+      e.scg_set_camera(ctx, camera) === scg.SCG_ERR_INVALID_ARGUMENT,
+      "plan proche nul refusé",
+    );
+
+    // Et refusée dès qu'un triangle de l'image en cours est retenu : chaque
+    // soumission projette immédiatement, si bien qu'une caméra changée au
+    // milieu laisserait deux espaces écran dans la même image.
+    engine.writeCamera(camera, sane);
+    const model = engine.alloc(scg.MAT4_SIZE);
+    const vertices = engine.alloc(SCENE_VERTICES.length * scg.VERTEX_SIZE);
+    const triangles = engine.alloc(SCENE_TRIANGLES.length * scg.TRIANGLE_SIZE);
+    engine.writeIdentity(model);
+    engine.writeVertices(vertices, SCENE_VERTICES);
+    engine.writeTriangles(triangles, SCENE_TRIANGLES);
+    check(
+      e.scg_submit(ctx, model, vertices, SCENE_VERTICES.length, triangles,
+        SCENE_TRIANGLES.length) === scg.SCG_OK,
+      "un triangle est retenu",
+    );
+    check(
+      e.scg_set_camera(ctx, camera) === scg.SCG_ERR_INVALID_STATE,
+      "la caméra est refusée après une soumission retenue",
+    );
 
     e.scg_destroy(ctx);
   } else {
@@ -1051,7 +1112,10 @@ async function main() {
   const textured = renderTextured(engine, scg.SCG_FILTER_DITHER);
   const bilinear = renderTextured(engine, scg.SCG_FILTER_BILINEAR);
   const graded = renderGraded(engine);
-  const lit = renderLit(engine);
+  const lit = renderLit(engine, 0);
+  // La même scène au sur-éclairement maximal : seul le réglage du contexte les
+  // sépare, donc une divergence ne peut venir que de lui.
+  const overbright = renderLit(engine, 2);
   const fog = renderFog(engine);
   const lights = renderLights(engine);
   if (
@@ -1060,6 +1124,7 @@ async function main() {
     bilinear === null ||
     graded === null ||
     lit === null ||
+    overbright === null ||
     fog === null ||
     lights === null
   ) {
@@ -1068,7 +1133,7 @@ async function main() {
   }
 
   process.stdout.write(
-    `${hash}\n${textured}\n${bilinear}\n${graded}\n${lit}\n${fog}\n${lights}\n`,
+    `${hash}\n${textured}\n${bilinear}\n${graded}\n${lit}\n${overbright}\n${fog}\n${lights}\n`,
   );
   return 0;
 }

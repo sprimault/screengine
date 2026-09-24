@@ -115,6 +115,12 @@ export const TEXTURE_DESC_SIZE = 24;
  */
 export const GRADE_SIZE = 36;
 
+/**
+ * Taille de `ScgCamera` : une position, un quaternion, un champ de vision, un
+ * plan proche.
+ */
+export const CAMERA_SIZE = 36;
+
 /** Taille de `ScgTriangle` : trois `uint32_t` puis quatre `uint8_t`. */
 export const TRIANGLE_SIZE = 16;
 
@@ -344,6 +350,29 @@ export class Screengine {
     view.setFloat32(0, grade.gamma, true);
     grade.gains.forEach((value, k) => view.setFloat32(4 + k * 4, value, true));
     grade.offsets.forEach((value, k) => view.setFloat32(16 + k * 4, value, true));
+  }
+
+  /**
+   * Écrit une caméra.
+   *
+   * Le quaternion se range `x, y, z, w`, la partie réelle en dernier :
+   * l'identité est `{0, 0, 0, 1}`, et c'est la convention inverse de la plus
+   * répandue — une liaison qui écrit ces octets à la main s'y trompe une fois.
+   * Il n'est pas exigé unitaire, le moteur le normalise.
+   *
+   * @param {number} ptr adresse d'au moins `CAMERA_SIZE` octets
+   * @param {{position: number[], orientation: number[], fovY: number,
+   *   nearPlane: number}} camera la caméra à écrire
+   */
+  writeCamera(ptr, camera) {
+    new Uint8Array(this.memory.buffer, ptr, CAMERA_SIZE).fill(0);
+    const view = new DataView(this.memory.buffer, ptr, CAMERA_SIZE);
+    camera.position.forEach((value, k) => view.setFloat32(k * 4, value, true));
+    camera.orientation.forEach((value, k) =>
+      view.setFloat32(12 + k * 4, value, true),
+    );
+    view.setFloat32(28, camera.fovY, true);
+    view.setFloat32(32, camera.nearPlane, true);
   }
 
   /**

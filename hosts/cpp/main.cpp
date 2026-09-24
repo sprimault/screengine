@@ -373,7 +373,7 @@ std::vector<uint8_t> make_gradient()
 /// second passe une texture nulle, ce que ce point d'entrée accepte là où
 /// `scg_submit_textured` la refuse — l'asymétrie que le header signale, et que
 /// cet hôte exerce pour de bon.
-uint64_t render_lit(bool &ok)
+uint64_t render_lit(bool &ok, uint32_t overbright)
 {
     ok = false;
     ScgContextConfig config = scene_config();
@@ -402,6 +402,12 @@ uint64_t render_lit(bool &ok)
         scg_destroy(ctx);
         return 0;
     }
+
+    // Le sur-éclairement, seul réglage de l'étape 3 qu'aucun hôte n'empruntait :
+    // trois valeurs permises, et toute autre refusée plutôt que rabattue.
+    check(scg_set_overbright(ctx, 3) == SCG_ERR_INVALID_ARGUMENT,
+          "un sur-éclairement de trois est refusé");
+    check(scg_set_overbright(ctx, overbright) == SCG_OK, "le sur-éclairement se règle");
 
     // Une lightmap nulle est refusée, elle : sans elle, ce lot n'a rien à faire
     // sur ce chemin.
@@ -623,6 +629,33 @@ void check_refusals()
     check(scg_frame_end(ctx.get(), scratch, WIDTH - 1) == SCG_ERR_INVALID_ARGUMENT, "stride inférieur à la largeur refusé");
     check(message_ok(scg_last_error(ctx.get()), true), "message du contexte après un stride refusé");
     check(scg_frame_end(nullptr, scratch, WIDTH) == SCG_ERR_NULL, "contexte nul refusé");
+
+    // La caméra : aucune scène de conformance n'en règle, celle du chemin Rust
+    // tournant son modèle et non son point de vue. Son contrat se vérifie donc
+    // ici plutôt que par une image.
+    ScgCamera camera{};
+    camera.orientation[3] = 1.0f;
+    camera.fov_y = 1.2f;
+    camera.near_plane = 0.1f;
+    check(scg_set_camera(ctx.get(), &camera) == SCG_OK, "la caméra se règle");
+    check(scg_set_camera(ctx.get(), nullptr) == SCG_ERR_NULL, "caméra nulle refusée");
+    check(scg_set_camera(nullptr, &camera) == SCG_ERR_NULL, "contexte nul refusé par scg_set_camera");
+
+    ScgCamera bad = camera;
+    bad.fov_y = 4.0f;
+    check(scg_set_camera(ctx.get(), &bad) == SCG_ERR_INVALID_ARGUMENT, "champ de vision au-delà de pi refusé");
+    bad = camera;
+    bad.near_plane = 0.0f;
+    check(scg_set_camera(ctx.get(), &bad) == SCG_ERR_INVALID_ARGUMENT, "plan proche nul refusé");
+
+    // Et refusée dès qu'un triangle de l'image en cours est retenu : chaque
+    // soumission projette immédiatement, si bien qu'une caméra changée au
+    // milieu laisserait deux espaces écran dans la même image. Corrigé en
+    // 0.2.1, et vérifié par aucun hôte jusqu'ici.
+    check(scg_submit(ctx.get(), &IDENTITY, SCENE_VERTICES, 4, SCENE_TRIANGLES, 2) == SCG_OK,
+          "un triangle est retenu");
+    check(scg_set_camera(ctx.get(), &camera) == SCG_ERR_INVALID_STATE,
+          "la caméra est refusée après une soumission retenue");
 }
 
 /// L'allocation pour le compte de l'hôte : alignement de l'ABI, longueur écrite
@@ -822,7 +855,12 @@ int main()
     const uint64_t graded = render_graded(graded_ok);
 
     bool lit_ok = false;
-    const uint64_t lit = render_lit(lit_ok);
+    const uint64_t lit = render_lit(lit_ok, 0);
+
+    // La même scène au sur-éclairement maximal : seul le réglage du contexte
+    // les sépare, donc une divergence ne peut venir que de lui.
+    bool overbright_ok = false;
+    const uint64_t overbright = render_lit(overbright_ok, 2);
 
     bool fog_ok = false;
     const uint64_t fog = render_fog(fog_ok);
@@ -831,7 +869,7 @@ int main()
     const uint64_t lights = render_lights(lights_ok);
 
     if (failures > 0 || !ok || !textured_ok || !bilinear_ok || !graded_ok || !lit_ok
-        || !fog_ok || !lights_ok) {
+        || !overbright_ok || !fog_ok || !lights_ok) {
         std::fprintf(stderr, "%d vérification(s) en échec\n", failures);
         return 1;
     }
@@ -840,6 +878,7 @@ int main()
     std::printf("%016llx\n", static_cast<unsigned long long>(bilinear));
     std::printf("%016llx\n", static_cast<unsigned long long>(graded));
     std::printf("%016llx\n", static_cast<unsigned long long>(lit));
+    std::printf("%016llx\n", static_cast<unsigned long long>(overbright));
     std::printf("%016llx\n", static_cast<unsigned long long>(fog));
     std::printf("%016llx\n", static_cast<unsigned long long>(lights));
     return 0;

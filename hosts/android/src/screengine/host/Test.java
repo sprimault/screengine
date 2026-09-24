@@ -421,7 +421,7 @@ public final class Test {
      *
      * @return l'empreinte
      */
-    private static String renderLit() {
+    private static String renderLit(int overbright) {
         long texture = Screengine.textureLoad(FLOOR_SIDE, FLOOR_SIDE, makeChecker());
         check(texture != 0, "la texture du sol se charge");
         long lightmap = Screengine.textureLoad(LIGHT_SIDE, LIGHT_SIDE, makeGradient());
@@ -460,6 +460,14 @@ public final class Test {
             (byte) 0xC0, (byte) 0xB0, (byte) 0x90, (byte) 0xFF,
             (byte) 0xC0, (byte) 0xB0, (byte) 0x90, (byte) 0xFF,
         };
+
+        // Le sur-éclairement, seul réglage de l'étape 3 qu'aucun hôte
+        // n'empruntait : trois valeurs permises, et toute autre refusée plutôt
+        // que rabattue.
+        check(Screengine.setOverbright(out[0], 3) == Screengine.ERR_INVALID_ARGUMENT,
+                "un sur-éclairement de trois est refusé");
+        check(Screengine.setOverbright(out[0], overbright) == Screengine.OK,
+                "le sur-éclairement se règle");
 
         // Une lightmap nulle est refusée, elle : sans elle, ce lot n'a rien à
         // faire sur ce chemin.
@@ -537,6 +545,31 @@ public final class Test {
         check(Screengine.frameEnd(ctx, small, 0, WIDTH - 1) == Screengine.ERR_INVALID_ARGUMENT, "stride inférieur à la largeur refusé");
         check(messageOk(Screengine.lastError(ctx), true), "message du contexte après un stride refusé");
         check(Screengine.frameEnd(0, small, 0, WIDTH) == Screengine.ERR_NULL, "contexte nul refusé");
+
+        // La caméra : aucune scène de conformance n'en règle, celle du chemin
+        // Rust tournant son modèle et non son point de vue. Son contrat se
+        // vérifie donc ici plutôt que par une image.
+        float[] camera = {0, 0, 0, 0, 0, 0, 1, 1.2f, 0.1f};
+        check(Screengine.setCamera(ctx, camera) == Screengine.OK, "la caméra se règle");
+        check(Screengine.setCamera(ctx, null) == Screengine.ERR_NULL, "caméra nulle refusée");
+        check(Screengine.setCamera(0, camera) == Screengine.ERR_NULL,
+                "contexte nul refusé par setCamera");
+
+        float[] wide = camera.clone();
+        wide[7] = 4.0f;
+        check(Screengine.setCamera(ctx, wide) == Screengine.ERR_INVALID_ARGUMENT,
+                "champ de vision au-delà de pi refusé");
+        float[] flat = camera.clone();
+        flat[8] = 0.0f;
+        check(Screengine.setCamera(ctx, flat) == Screengine.ERR_INVALID_ARGUMENT,
+                "plan proche nul refusé");
+
+        // Et refusée dès qu'un triangle de l'image en cours est retenu : chaque
+        // soumission projette immédiatement, si bien qu'une caméra changée au
+        // milieu laisserait deux espaces écran dans la même image.
+        check(submitScene(ctx) == Screengine.OK, "un triangle est retenu");
+        check(Screengine.setCamera(ctx, camera) == Screengine.ERR_INVALID_STATE,
+                "la caméra est refusée après une soumission retenue");
 
         Screengine.destroy(ctx);
         Screengine.destroy(0);
@@ -695,12 +728,16 @@ public final class Test {
         String textured = renderTextured(Screengine.FILTER_DITHER);
         String bilinear = renderTextured(Screengine.FILTER_BILINEAR);
         String graded = renderGraded();
-        String lit = renderLit();
+        String lit = renderLit(0);
+        // La même scène au sur-éclairement maximal : seul le réglage du
+        // contexte les sépare, donc une divergence ne peut venir que de lui.
+        String overbright = renderLit(2);
         String fog = renderFog();
         String lights = renderLights();
 
         if (failures > 0 || hash == null || textured == null || bilinear == null
-                || graded == null || lit == null || fog == null || lights == null) {
+                || graded == null || lit == null || overbright == null || fog == null
+                || lights == null) {
             System.err.println(failures + " vérification(s) en échec");
             System.exit(1);
         }
@@ -709,6 +746,7 @@ public final class Test {
         System.out.println(bilinear);
         System.out.println(graded);
         System.out.println(lit);
+        System.out.println(overbright);
         System.out.println(fog);
         System.out.println(lights);
         System.exit(0);
