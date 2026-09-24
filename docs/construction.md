@@ -28,7 +28,7 @@ Sans lui, un clone se construit dans `target/`.
 | `cbindgen` | `0.29.0`, épinglé | un générateur : une autre version produit un autre header, et `make header-verif` échouerait sur un dépôt propre |
 | `cargo-deny` | `0.19.4`, épinglé | ses règles changent de sens d'une version à l'autre ; en deçà de 0.19.1, il ne lit pas les scores CVSS 4.0 de la base d'avis |
 | `cargo-audit` | la dernière | il lit des avis publiés en continu ; l'épingler figerait ce qu'il sait lire |
-| Node | 22 au minimum | exécute l'hôte wasm de `make test` et sert sa page ; aucun paquet npm. Présent sur les images d'intégration continue |
+| Node | 22, celui des images d'intégration continue | exécute l'hôte wasm de `make test` et sert sa page ; aucun paquet npm. Ce n'est pas un plancher que le code impose — il n'emploie que des modules ES et le préfixe `node:`, tous deux bien antérieurs — mais la version sur laquelle les tests tournent réellement |
 | NDK, SDK Android | NDK r29, build-tools 36.0.0, `android-36`, épinglés dans `hosts/android/Makefile` | l'hôte Android ; r28 au minimum pour les pages de 16 Ko. Fournis par `hosts/android/Dockerfile` |
 | JDK | 17 | `javac` et les outils du SDK |
 | `qemu-user` | celui de la distribution | exécute les tests aarch64 et armv7 de l'hôte Android sans appareil |
@@ -39,8 +39,13 @@ Les versions sont épinglées dans le `Makefile` et nulle part ailleurs.
 clippy sur `wasm32-unknown-unknown` et sur les trois cibles Android, là où un
 `cfg` propre à une plateforme ne serait vérifié par rien d'autre ; la cible sans
 `std`, elle, est couverte par `make nostd`, qui la compile. L'intégration
-continue appelle `make tools` et lit les versions par `make print-CBINDGEN_VERSION`
-plutôt que de les recopier.
+continue appelle `make tools`, qui les installe aux versions épinglées ici.
+
+**`make print-<VARIABLE>` écrit une valeur et rien d'autre**, et c'est ainsi que
+les workflows lisent ce qui vit dans le `Makefile` plutôt que de le recopier :
+la cible wasm, les trois cibles Android, la liste des scènes que les hôtes
+rendent. Les versions d'outils n'ont pas besoin d'y passer — `make tools` les
+installe lui-même, et aucun workflow ne les nomme.
 
 ## Profils
 
@@ -106,8 +111,8 @@ l'exécution par `scg_abi_version`.
 | Windows x64 | `x86_64-pc-windows-msvc` | `.dll`, `.lib` | MSVC Build Tools | `screengine-play`, `hosts/c`, `hosts/cpp` | CI |
 | Linux x64 | `x86_64-unknown-linux-gnu` | `.so`, `.a` | gcc ou clang | `hosts/c`, `hosts/cpp`, conformance | CI |
 | Navigateur | `wasm32-unknown-unknown` | `.wasm` | cible rustup, Node | `hosts/web` | CI, `make test-wasm` sous Linux et Windows |
-| Android arm64 | `aarch64-linux-android` | `.so`, `.a` | NDK, `qemu-user` | `hosts/android` | CI, `make test-android` sous Linux, sans appareil |
-| Android armv7 | `armv7-linux-androideabi` | `.so`, `.a` | NDK, `qemu-user` | `hosts/android` | CI, `make test-android` sous Linux, sans appareil |
+| Android arm64 | `aarch64-linux-android` | `.so`, `.a` | NDK, `qemu-user` | `hosts/android` | CI, `make test-android` sous Linux, sous `qemu-user` |
+| Android armv7 | `armv7-linux-androideabi` | `.so`, `.a` | NDK, `qemu-user` | `hosts/android` | CI, `make test-android` sous Linux, sous `qemu-user` |
 | Android x64 | `x86_64-linux-android` | `.so`, `.a` | NDK, SDK, émulateur | `hosts/android` | CI, `make test-android` sous Linux, sur émulateur par JNI |
 | Sans `std` | `thumbv7em-none-eabihf` | `.rlib` du noyau seul | cible rustup | aucun | `make nostd`, CI |
 | iOS, macOS | — | — | — | — | hors périmètre v1 |
@@ -260,7 +265,10 @@ et un cycle de retour lent depuis un poste Windows.
   et Gradle un cache de dépendances, pour un hôte de quelques centaines de
   lignes.
 - **Le test a deux paliers**, et `make test-android` exige que leurs cinq
-  empreintes soient identiques :
+  empreintes soient identiques. **La cible entière demande un appareil ou un
+  émulateur joignable par `adb`** : le premier palier s'en passe, mais il ne se
+  lance pas seul, et sans `adb` la cible s'annonce impossible plutôt que de
+  rendre un demi-résultat.
   1. `hosts/c/main.c`, lié en statique à la bibliothèque statique de chaque ABI,
      exécuté sans appareil — x86_64 directement, aarch64 et armv7 sous
      `qemu-user`. C'est le seul palier qui éprouve FPCR et FPSCR : un émulateur
@@ -365,9 +373,16 @@ et chaque semaine pour l'audit :
 
 | Job | Plateforme | Contrôles |
 |---|---|---|
-| vérification | Linux | `fmt`, `lint`, `nostd`, `header-verif`, `deny` |
+| vérification | Linux | `fmt`, `lint`, `nostd`, `header-verif`, `msrv`, `deny` |
 | tests | Linux et Windows | `test`, hôtes C, C++ et wasm compris, `conform` ; l'hôte Android sous Linux seulement, émulateur démarré, et retiré sous Windows par `SANS=android` |
 | audit | Linux | `audit`, dans un job à part : un avis publié en amont n'est pas un défaut de la PR en cours |
+
+**`make msrv` construit le noyau et la frontière avec la chaîne que
+`rust-version` annonce**, et il est dans ce job plutôt que dans la liste fixe
+d'avant-publication : il installe une chaîne, donc il télécharge à froid, et ce
+coût se paie une fois ici. Sans lui, une fonction stabilisée après le plancher
+déclaré passerait inaperçue jusqu'à ce qu'un intégrateur ouvre le dépôt avec la
+chaîne annoncée.
 
 Tout passe par le `Makefile`, et les outils par `make tools`. Les actions sont
 épinglées au SHA.

@@ -263,18 +263,6 @@ lint-doc-tests:
 nostd:
 	cargo build -p screengine --no-default-features --target $(CIBLE_NOSTD)
 
-# La version minimale déclarée, compilée pour de bon.
-#
-# `rust-version` est un engagement que `CONTRIBUTING` reprend et qu'un
-# intégrateur lit avant de choisir sa chaîne — et que rien ne vérifiait : tout
-# se construit ici avec une chaîne récente, et une fonction stabilisée depuis
-# 1.85 passerait sans bruit jusqu'à ce que quelqu'un ouvre le dépôt avec la
-# chaîne annoncée. Le noyau et la frontière suffisent : ce sont eux qu'un
-# intégrateur construit, l'étage d'accueil et la conformance portant des
-# dépendances dont le plancher leur appartient.
-# La version se lit dans le `Cargo.toml` au moment de l'appel, plutôt que
-# d'être recopiée ici : c'est lui qui fait foi pour Cargo, et une copie de plus
-# se serait mise à mentir comme celles que ce dépôt vient de supprimer.
 # La référence de performance, prise avant que l'étape 3 touche au remplissage.
 #
 # **Hors de la liste fixe, délibérément.** Une durée dépend de la charge de la
@@ -285,6 +273,23 @@ nostd:
 bench:
 	cargo bench -p screengine
 
+# La version minimale déclarée, compilée pour de bon.
+#
+# `rust-version` est un engagement que `CONTRIBUTING` reprend et qu'un
+# intégrateur lit avant de choisir sa chaîne — et que rien ne vérifiait : tout
+# se construit ici avec une chaîne récente, et une fonction stabilisée depuis
+# 1.85 passerait sans bruit jusqu'à ce que quelqu'un ouvre le dépôt avec la
+# chaîne annoncée. Le noyau et la frontière suffisent : ce sont eux qu'un
+# intégrateur construit, l'étage d'accueil et la conformance portant des
+# dépendances dont le plancher leur appartient.
+#
+# La version se lit dans le `Cargo.toml` au moment de l'appel, plutôt que
+# d'être recopiée ici : c'est lui qui fait foi pour Cargo, et une copie de plus
+# se serait mise à mentir comme celles que ce dépôt vient de supprimer.
+#
+# **Hors de la liste fixe** : elle installe une chaîne, donc elle télécharge et
+# prend du temps à froid. L'intégration continue la passe dans son job de
+# vérification, où ce coût est payé une fois.
 msrv:
 	@version=$$(grep '^rust-version = ' Cargo.toml | cut -d'"' -f2); \
 	echo "version minimale declaree : $$version"; \
