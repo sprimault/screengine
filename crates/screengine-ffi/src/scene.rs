@@ -540,4 +540,20 @@ const _: () = {
     assert!(offset_of!(ScgGrade, offset_b) == 24);
     assert!(offset_of!(ScgGrade, reserved0) == 28);
     assert!(offset_of!(ScgGrade, reserved1) == 32);
+
+    assert!(size_of::<ScgVertexUv2>() == 28 && align_of::<ScgVertexUv2>() == 4);
+    assert!(offset_of!(ScgVertexUv2, z) == 8);
+    assert!(offset_of!(ScgVertexUv2, u) == 12);
+    assert!(offset_of!(ScgVertexUv2, v) == 16);
+    assert!(offset_of!(ScgVertexUv2, u2) == 20);
+    assert!(offset_of!(ScgVertexUv2, v2) == 24);
+
+    // Le seul type de l'ABI dont les champs n'ont pas tous la même largeur :
+    // quatre `float` puis quatre octets. C'est donc le seul où un bourrage
+    // pourrait s'insérer, et celui qu'il fallait le moins oublier.
+    assert!(size_of::<ScgLight>() == 20 && align_of::<ScgLight>() == 4);
+    assert!(offset_of!(ScgLight, z) == 8);
+    assert!(offset_of!(ScgLight, radius) == 12);
+    assert!(offset_of!(ScgLight, r) == 16);
+    assert!(offset_of!(ScgLight, _reserved) == 19);
 };

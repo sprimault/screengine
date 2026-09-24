@@ -753,6 +753,7 @@ function checkLayout(header) {
     ScgTextureDesc: scg.TEXTURE_DESC_SIZE,
     ScgTriangle: scg.TRIANGLE_SIZE,
     ScgMat4: scg.MAT4_SIZE,
+    ScgGrade: scg.GRADE_SIZE,
   };
   const asserts = [
     ...header.matchAll(/LAYOUT_ASSERT\(sizeof\((\w+)\) == (\d+)/g),
