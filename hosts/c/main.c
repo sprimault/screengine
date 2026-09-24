@@ -589,6 +589,83 @@ static uint64_t render_textured(int *ok, uint32_t filter)
     return hash;
 }
 
+/* La scène `gamma` : la même que `texture`, passée par la courbe de sortie.
+ *
+ * C'est le seul endroit où un hôte écrit une `ScgGrade`, et c'est ce qui
+ * vérifie sa disposition autrement que par une assertion statique : les
+ * décalages relèvent le noir du fond, et une structure mal remplie se verrait
+ * aussitôt dans l'empreinte. */
+static uint64_t render_graded(int *ok)
+{
+    ScgContextConfig config = scene_config();
+    ScgContext *ctx = NULL;
+    ScgTexture *texture = NULL;
+    uint8_t *pixels = malloc((size_t)STRIDE * HEIGHT * 4);
+    uint8_t *texels = malloc((size_t)FLOOR_SIDE * FLOOR_SIDE * 4);
+    uint64_t hash = 0;
+
+    *ok = 0;
+    if (pixels == NULL || texels == NULL) {
+        check(0, "allocation des tampons de la scène étalonnée");
+        free(pixels);
+        free(texels);
+        return 0;
+    }
+    make_checker(texels);
+
+    ScgTextureDesc desc;
+    memset(&desc, 0, sizeof desc);
+    desc.width = FLOOR_SIDE;
+    desc.height = FLOOR_SIDE;
+    desc.format = SCG_TEXTURE_FORMAT_RGBA8;
+
+    int loaded = scg_texture_load(&desc, texels, (size_t)FLOOR_SIDE * FLOOR_SIDE * 4, &texture);
+    check(loaded == SCG_OK, "la texture de la scène étalonnée se charge");
+    check(scg_create(&config, &ctx) == SCG_OK, "création du contexte étalonné");
+
+    if (loaded == SCG_OK && ctx != NULL) {
+        /* Mise à zéro entière avant remplissage, comme l'ABI l'exige : c'est
+         * ce qui rend les champs réservés utilisables un jour. */
+        ScgGrade grade;
+        memset(&grade, 0, sizeof grade);
+        grade.gamma = 2.2f;
+        grade.gain_r = 1.15f;
+        grade.gain_g = 1.0f;
+        grade.gain_b = 0.85f;
+        grade.offset_r = 0.04f;
+        grade.offset_g = -0.02f;
+        grade.offset_b = 0.08f;
+
+        /* Un réservé non nul est refusé, et le contexte garde sa courbe : sans
+         * ce refus, la promesse d'extension ne vaudrait rien. */
+        grade.reserved1 = 1;
+        check(scg_set_grade(ctx, &grade) == SCG_ERR_INVALID_ARGUMENT,
+              "un champ réservé non nul est refusé");
+        grade.reserved1 = 0;
+
+        /* Éteindre une courbe qu'on n'a pas réglée n'est pas une erreur. */
+        check(scg_clear_grade(ctx) == SCG_OK, "l'extinction sans courbe passe");
+        check(scg_set_grade(ctx, &grade) == SCG_OK, "la courbe se règle");
+
+        int32_t code = scg_submit_textured(ctx, &IDENTITY, FLOOR_VERTICES, 4,
+                                           FLOOR_TRIANGLES, 2, texture);
+        check(code == SCG_OK, "le lot de la scène étalonnée est accepté");
+        scg_texture_destroy(texture);
+        texture = NULL;
+
+        code = scg_frame_end(ctx, pixels, STRIDE);
+        check(code == SCG_OK, "l'image étalonnée se rend");
+        *ok = code == SCG_OK;
+        hash = fingerprint(pixels, WIDTH, HEIGHT, STRIDE);
+    }
+
+    scg_texture_destroy(texture);
+    scg_destroy(ctx);
+    free(pixels);
+    free(texels);
+    return hash;
+}
+
 /* Le sol de la scène `brouillard`, plus long que la rampe : sa moitié
  * lointaine se confond avec le fond, sa moitié proche garde son damier. */
 static const ScgVertexUv FOG_FLOOR[4] = {
@@ -850,6 +927,9 @@ int main(void)
     int bilinear_ok = 0;
     uint64_t bilinear = render_textured(&bilinear_ok, SCG_FILTER_BILINEAR);
 
+    int graded_ok = 0;
+    uint64_t graded = render_graded(&graded_ok);
+
     int lit_ok = 0;
     uint64_t lit = render_lit(&lit_ok);
 
@@ -859,14 +939,15 @@ int main(void)
     int lights_ok = 0;
     uint64_t lights = render_lights(&lights_ok);
 
-    if (failures > 0 || !ok || !textured_ok || !bilinear_ok || !lit_ok || !fog_ok
-        || !lights_ok) {
+    if (failures > 0 || !ok || !textured_ok || !bilinear_ok || !graded_ok || !lit_ok
+        || !fog_ok || !lights_ok) {
         fprintf(stderr, "%d vérification(s) en échec\n", failures);
         return 1;
     }
     printf("%016llx\n", (unsigned long long)hash);
     printf("%016llx\n", (unsigned long long)textured);
     printf("%016llx\n", (unsigned long long)bilinear);
+    printf("%016llx\n", (unsigned long long)graded);
     printf("%016llx\n", (unsigned long long)lit);
     printf("%016llx\n", (unsigned long long)fog);
     printf("%016llx\n", (unsigned long long)lights);

@@ -761,6 +761,22 @@ int32_t scg_set_fog(ScgContext *ctx, uint8_t r, uint8_t g, uint8_t b,
 int32_t scg_clear_fog(ScgContext *ctx);
 int32_t scg_set_lights(ScgContext *ctx, const ScgLight *lights, uint32_t count);
 int32_t scg_set_resolution(ScgContext *ctx, uint32_t width, uint32_t height);
+int32_t scg_set_grade(ScgContext *ctx, const ScgGrade *grade);
+int32_t scg_clear_grade(ScgContext *ctx);
+```
+
+```c
+typedef struct ScgGrade {
+    float    gamma;
+    float    gain_r;
+    float    gain_g;
+    float    gain_b;
+    float    offset_r;
+    float    offset_g;
+    float    offset_b;
+    uint32_t reserved0;
+    uint32_t reserved1;
+} ScgGrade;
 ```
 
 ```c
@@ -776,7 +792,7 @@ typedef struct ScgLight {
 typedef struct ScgVertexUv2 { float x, y, z, u, v, u2, v2; } ScgVertexUv2;
 ```
 
-Six fonctions ajoutées, deux structures nouvelles, aucune constante :
+Huit fonctions ajoutées, trois structures nouvelles, aucune constante :
 `SCG_ABI_VERSION` reste à **1**.
 
 - **Une structure de sommet nouvelle, et non deux champs de plus sur
@@ -844,7 +860,27 @@ Six fonctions ajoutées, deux structures nouvelles, aucune constante :
   précédente. Écartée : une fonction qui rendrait la résolution courante ;
   l'hôte vient de la fixer, et elle pourra s'ajouter sans changer la version
   d'ABI.
-- **Aucun code d'erreur nouveau**, cinq messages de plus.
+- **La courbe de sortie se règle par `scg_set_grade`**, en un seul appel :
+  `ScgGrade` porte le gamma, trois gains et trois décalages, trente-six octets,
+  décalages de 0 à 32 identiques sur les quatre cibles. Un appel plutôt que
+  trois, parce que les réglages se composent en une seule table par canal :
+  séparés, chacun la reconstruirait entière. `scg_clear_grade` revient au
+  neutre, et l'appeler sur un contexte sans courbe n'est pas une erreur.
+- **`ScgGrade` porte deux champs réservés, et la clause qui décide de ce qu'ils
+  pourront tenir.** Un champ réservé doit avoir **zéro pour valeur neutre**,
+  puisque l'extensibilité promet qu'un hôte écrit avant qu'il serve obtienne le
+  défaut en passant des zéros. Un réglage dont le neutre est un — un gain de
+  plus, une saturation — n'y entre donc pas tel quel : seuls les réglages
+  **additifs** le peuvent. C'est pour cette raison que les trois décalages
+  figurent dans la structure **dès sa publication** plutôt que d'attendre un
+  besoin démontré : trois champs n'auraient jamais tenu dans deux réservés, et
+  il aurait fallu une seconde structure et une seconde fonction, pour toujours.
+- **L'affine précède le gamma, et cet ordre ne se change jamais.** Gain et
+  gamma commutent à reparamétrisation près — `(a·x)^γ = a^γ·x^γ` —, donc aucune
+  image n'est hors d'atteinte d'un ordre à l'autre ; ce que l'ordre fixe est ce
+  que le nombre veut dire. Le changer déplacerait l'image d'un hôte qui a réglé
+  ses paramètres, sans qu'aucune version ne l'en prévienne.
+- **Aucun code d'erreur nouveau**, six messages de plus.
 
 ### Étapes suivantes
 
@@ -855,7 +891,7 @@ noms ne le sont pas.
 |---|---|
 | 1 | ✓ début d'image et rendu d'une tuile (voir « Rendu par tuiles »), caméra et projection, soumission de triangles avec une matrice |
 | 2 | ✓ chargement d'une texture, mipmaps engendrés au chargement, niveau de qualité du filtrage par `scg_set_filter` |
-| 3 | ✓ soumission d'un lot éclairé, réglage du sur-éclairement, du brouillard, des lumières dynamiques et de la résolution interne ; reste : post-traitement |
+| 3 | ✓ soumission d'un lot éclairé, réglage du sur-éclairement, du brouillard, des lumières dynamiques, de la résolution interne et de la courbe de sortie |
 | 4 | chargement d'un maillage et d'une carte depuis un bloc d'octets, libération |
 | 5 | rendu du monde depuis la caméra, calcul des lightmaps d'une cellule et reprise d'un cache |
 | 6 | interpolation entre trames, sprites orientés caméra |

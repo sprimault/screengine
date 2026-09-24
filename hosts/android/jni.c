@@ -406,6 +406,46 @@ static jint set_fog(JNIEnv *env, jclass cls, jlong ctx, jint r, jint g, jint b,
                        start, end);
 }
 
+/*
+ * scg_set_grade : la courbe arrive en sept `float` et deux réservés, plutôt
+ * qu'en tableau, pour que Java n'ait pas à reproduire la disposition de la
+ * structure — c'est ici qu'elle se remplit, au seul endroit qui voit le header.
+ *
+ * Les réservés traversent quand même : sans eux, cet hôte ne pourrait pas
+ * vérifier qu'un réservé non nul est refusé, et la promesse d'extension ne
+ * serait éprouvée nulle part côté Java.
+ */
+static jint set_grade(JNIEnv *env, jclass cls, jlong ctx, jfloatArray values, jint reserved)
+{
+    (void)cls;
+    jfloat raw[7];
+    if ((*env)->GetArrayLength(env, values) != 7) {
+        return SCG_ERR_INVALID_ARGUMENT;
+    }
+    (*env)->GetFloatArrayRegion(env, values, 0, 7, raw);
+
+    ScgGrade grade;
+    memset(&grade, 0, sizeof grade);
+    grade.gamma = raw[0];
+    grade.gain_r = raw[1];
+    grade.gain_g = raw[2];
+    grade.gain_b = raw[3];
+    grade.offset_r = raw[4];
+    grade.offset_g = raw[5];
+    grade.offset_b = raw[6];
+    grade.reserved1 = (uint32_t)reserved;
+
+    return scg_set_grade((ScgContext *)(intptr_t)ctx, &grade);
+}
+
+/* scg_clear_grade. */
+static jint clear_grade(JNIEnv *env, jclass cls, jlong ctx)
+{
+    (void)env;
+    (void)cls;
+    return scg_clear_grade((ScgContext *)(intptr_t)ctx);
+}
+
 /* scg_clear_fog. */
 static jint clear_fog(JNIEnv *env, jclass cls, jlong ctx)
 {
@@ -484,6 +524,8 @@ static const JNINativeMethod METHODS[] = {
     {"setOverbright", "(JI)I", (void *)set_overbright},
     {"setFog", "(JIIIFF)I", (void *)set_fog},
     {"clearFog", "(J)I", (void *)clear_fog},
+    {"setGrade", "(J[FI)I", (void *)set_grade},
+    {"clearGrade", "(J)I", (void *)clear_grade},
     {"setLights", "(J[F[B)I", (void *)set_lights},
 };
 

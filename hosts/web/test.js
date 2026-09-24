@@ -232,6 +232,88 @@ function renderTextured(engine, filter) {
 }
 
 /**
+ * Rend la scène `gamma`, ou `null` en cas d'échec.
+ *
+ * C'est le seul endroit où cet hôte écrit une `ScgGrade`, **octet par octet
+ * dans la mémoire linéaire**, d'après les décalages du header. Une structure
+ * dont la disposition aurait bougé ne se verrait nulle part ailleurs ici : les
+ * assertions statiques du header ne sont compilées que par les hôtes C et C++.
+ *
+ * @param {scg.Screengine} engine
+ * @returns {bigint | null}
+ */
+function renderGraded(engine) {
+  const e = engine.exports;
+  const texels = makeChecker();
+  const desc = engine.alloc(scg.TEXTURE_DESC_SIZE);
+  const block = engine.alloc(texels.length);
+  const out = engine.alloc(4);
+  const config = engine.alloc(scg.CONFIG_SIZE);
+
+  engine.writeTextureDesc(desc, FLOOR_SIDE, FLOOR_SIDE);
+  engine.bytes().set(texels, block);
+  const loaded = e.scg_texture_load(desc, block, texels.length, out);
+  check(loaded === scg.SCG_OK, "la texture de la scène étalonnée se charge");
+  const texture = engine.readU32(out);
+
+  engine.writeConfig(config, sceneConfig());
+  if (loaded !== scg.SCG_OK || e.scg_create(config, out) !== scg.SCG_OK) {
+    check(false, "création du contexte étalonné");
+    return null;
+  }
+  const ctx = engine.readU32(out);
+
+  const grade = engine.alloc(scg.GRADE_SIZE);
+  engine.writeGrade(grade, {
+    gamma: 2.2,
+    gains: [1.15, 1.0, 0.85],
+    offsets: [0.04, -0.02, 0.08],
+  });
+
+  // Un réservé non nul est refusé : sans ce refus, la promesse d'extension ne
+  // vaudrait rien. Le champ est remis à zéro ensuite, à la main, puisque la
+  // mémoire linéaire garde ce qu'on y écrit.
+  new DataView(engine.memory.buffer, grade, scg.GRADE_SIZE).setUint32(32, 1, true);
+  const refuse = e.scg_set_grade(ctx, grade);
+  check(refuse === scg.SCG_ERR_INVALID_ARGUMENT, "un champ réservé non nul est refusé");
+  new DataView(engine.memory.buffer, grade, scg.GRADE_SIZE).setUint32(32, 0, true);
+
+  check(e.scg_clear_grade(ctx) === scg.SCG_OK, "l'extinction sans courbe passe");
+  check(e.scg_set_grade(ctx, grade) === scg.SCG_OK, "la courbe se règle");
+
+  const vertexBytes = FLOOR_VERTICES.length * scg.VERTEX_UV_SIZE;
+  const triangleBytes = FLOOR_TRIANGLES.length * scg.TRIANGLE_SIZE;
+  const model = engine.alloc(scg.MAT4_SIZE);
+  const vertices = engine.alloc(vertexBytes);
+  const triangles = engine.alloc(triangleBytes);
+  engine.writeIdentity(model);
+  engine.writeVerticesUv(vertices, FLOOR_VERTICES);
+  engine.writeTriangles(triangles, FLOOR_TRIANGLES);
+
+  const submitted = e.scg_submit_textured(
+    ctx,
+    model,
+    vertices,
+    FLOOR_VERTICES.length,
+    triangles,
+    FLOOR_TRIANGLES.length,
+    texture,
+  );
+  check(submitted === scg.SCG_OK, "le lot de la scène étalonnée est accepté");
+  e.scg_texture_destroy(texture);
+
+  const pixels = engine.alloc(STRIDE * HEIGHT * scg.BYTES_PER_PIXEL);
+  const code = e.scg_frame_end(ctx, pixels, STRIDE);
+  check(code === scg.SCG_OK, "l'image étalonnée se rend");
+  const hash = code === scg.SCG_OK
+    ? engine.fingerprint(pixels, WIDTH, HEIGHT, STRIDE)
+    : null;
+
+  e.scg_destroy(ctx);
+  return hash;
+}
+
+/**
  * Les trois lumières de la scène `lumieres`, aux mêmes valeurs que la scène de
  * conformance.
  */
@@ -967,6 +1049,7 @@ async function main() {
   }
   const textured = renderTextured(engine, scg.SCG_FILTER_DITHER);
   const bilinear = renderTextured(engine, scg.SCG_FILTER_BILINEAR);
+  const graded = renderGraded(engine);
   const lit = renderLit(engine);
   const fog = renderFog(engine);
   const lights = renderLights(engine);
@@ -974,6 +1057,7 @@ async function main() {
     failures > 0 ||
     textured === null ||
     bilinear === null ||
+    graded === null ||
     lit === null ||
     fog === null ||
     lights === null
@@ -983,7 +1067,7 @@ async function main() {
   }
 
   process.stdout.write(
-    `${hash}\n${textured}\n${bilinear}\n${lit}\n${fog}\n${lights}\n`,
+    `${hash}\n${textured}\n${bilinear}\n${graded}\n${lit}\n${fog}\n${lights}\n`,
   );
   return 0;
 }

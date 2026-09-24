@@ -348,7 +348,8 @@ fn la_scene_ne_se_change_pas_pendant_le_rendu() {
     assert_eq!(ctx.set_camera(Camera::DEFAULT), Err(Error::InvalidState));
     assert_eq!(ctx.set_filter(Filter::Bilinear), Err(Error::InvalidState));
     assert_eq!(ctx.set_resolution(32, 32), Err(Error::InvalidState));
-    assert_eq!(ctx.set_grade(2.2, [1.0; 3]), Err(Error::InvalidState));
+    let courbe = ctx.set_grade(2.2, [1.0; 3], [0.0; 3]);
+    assert_eq!(courbe, Err(Error::InvalidState));
     assert_eq!(ctx.clear_grade(), Err(Error::InvalidState));
 }
 
@@ -369,7 +370,9 @@ fn une_courbe_identite_rend_l_image_sans_courbe() {
             nu.set_fog(color, 1.0, 20.0).expect("brouillard valide");
             regle.set_fog(color, 1.0, 20.0).expect("brouillard valide");
         }
-        regle.set_grade(1.0, [1.0; 3]).expect("réglage valide");
+        regle
+            .set_grade(1.0, [1.0; 3], [0.0; 3])
+            .expect("réglage valide");
 
         for ctx in [&mut nu, &mut regle] {
             ctx.submit(Affine3::IDENTITY, &ahead(), &one())
@@ -415,7 +418,9 @@ fn une_courbe_reglee_change_l_image() {
             nu.set_fog(color, 1.0, 20.0).expect("brouillard valide");
             regle.set_fog(color, 1.0, 20.0).expect("brouillard valide");
         }
-        regle.set_grade(2.2, [1.0; 3]).expect("réglage valide");
+        regle
+            .set_grade(2.2, [1.0; 3], [0.0; 3])
+            .expect("réglage valide");
 
         for ctx in [&mut nu, &mut regle] {
             ctx.submit(Affine3::IDENTITY, &ahead(), &demi)

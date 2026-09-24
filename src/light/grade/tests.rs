@@ -9,6 +9,12 @@ use super::*;
 /// canaux ou un alpha emporté s'y voient, là où un gris les cacherait.
 const PIXEL: u32 = 0xC0_40_80_20;
 
+/// Des gains neutres, que la plupart des cas n'ont pas à faire varier.
+const UNIT: [f32; CHANNELS] = [1.0; CHANNELS];
+
+/// Des décalages neutres.
+const ZERO: [f32; CHANNELS] = [0.0; CHANNELS];
+
 /// Un post-traitement neutre par vacuité laisse le pixel intact.
 ///
 /// C'est l'invariant du lot : un contexte qu'on ne configure pas rend ce qu'il
@@ -29,7 +35,7 @@ fn un_post_traitement_neutre_ne_change_rien() {
 #[test]
 fn une_identite_reglee_ne_change_rien() {
     let mut grade = Grade::new().expect("réservation");
-    grade.set(1.0, [1.0; CHANNELS]).expect("réglage valide");
+    grade.set(1.0, UNIT, ZERO).expect("réglage valide");
     assert!(grade.is_set());
 
     for level in 0..LEVELS {
@@ -49,7 +55,7 @@ fn une_identite_reglee_ne_change_rien() {
 #[test]
 fn eteindre_ramene_a_l_etat_neutre() {
     let mut grade = Grade::new().expect("réservation");
-    grade.set(2.2, [1.0; CHANNELS]).expect("réglage valide");
+    grade.set(2.2, UNIT, ZERO).expect("réglage valide");
     grade.clear();
     assert!(!grade.is_set());
 }
@@ -61,7 +67,7 @@ fn eteindre_ramene_a_l_etat_neutre() {
 #[test]
 fn un_gamma_de_deux_deux_eclaircit() {
     let mut grade = Grade::new().expect("réservation");
-    grade.set(2.2, [1.0; CHANNELS]).expect("réglage valide");
+    grade.set(2.2, UNIT, ZERO).expect("réglage valide");
 
     // Les extrêmes restent des extrêmes : une courbe de transfert ne déplace
     // ni le noir ni le blanc.
@@ -88,7 +94,9 @@ fn un_gamma_de_deux_deux_eclaircit() {
 #[test]
 fn chaque_gain_va_sur_son_canal() {
     let mut grade = Grade::new().expect("réservation");
-    grade.set(1.0, [1.0, 0.75, 0.5]).expect("réglage valide");
+    grade
+        .set(1.0, [1.0, 0.75, 0.5], ZERO)
+        .expect("réglage valide");
 
     let sortie = grade.apply(0x00_80_80_80);
     let (rouge, vert, bleu) = (sortie & 0xFF, sortie >> 8 & 0xFF, sortie >> 16 & 0xFF);
@@ -100,12 +108,37 @@ fn chaque_gain_va_sur_son_canal() {
     );
 }
 
+/// Le décalage relève le noir — ce que ni le gain ni le gamma ne savent faire.
+///
+/// C'est la raison d'être du champ, et elle tient en une phrase : le gamma fixe
+/// les deux extrêmes, et un gain multiplie donc laisse le zéro à zéro. Seule
+/// une affine complète atteint cette famille d'images, et c'est pour elle que
+/// la structure publiée porte trois décalages plutôt que de les renvoyer à
+/// plus tard, où ils n'auraient plus tenu dans ses champs réservés.
+#[test]
+fn un_decalage_releve_le_noir() {
+    let mut grade = Grade::new().expect("réservation");
+
+    // Ni l'un ni l'autre ne bouge le noir.
+    grade.set(2.2, [4.0; CHANNELS], ZERO).expect("valide");
+    assert_eq!(grade.tables[0], 0, "gain et gamma laissent le noir à zéro");
+
+    grade.set(1.0, UNIT, [0.25; CHANNELS]).expect("valide");
+    assert!(grade.tables[0] > 0, "le décalage relève le noir");
+    assert_eq!(grade.tables[LEVELS - 1], 255, "le blanc reste plein");
+
+    // Et dans l'autre sens, il abaisse le blanc.
+    grade.set(1.0, [0.5; CHANNELS], ZERO).expect("valide");
+    assert!(grade.tables[LEVELS - 1] < 255, "le gain abaisse le blanc");
+    assert_eq!(grade.tables[0], 0, "sans toucher au noir");
+}
+
 /// Le gain sature avant le gamma, et la table s'arrête à l'octet plein.
 #[test]
 fn un_gain_fort_sature_sans_deborder() {
     let mut grade = Grade::new().expect("réservation");
     grade
-        .set(1.0, [MAX_GAIN; CHANNELS])
+        .set(1.0, [MAX_GAIN; CHANNELS], ZERO)
         .expect("réglage valide");
 
     // Le plein est atteint dès le quart de l'échelle — exactement au niveau
@@ -123,16 +156,23 @@ fn les_reglages_hors_bornes_sont_refuses() {
     let mut grade = Grade::new().expect("réservation");
     let refus = Err(Error::InvalidArgument(Argument::Grade));
 
-    assert_eq!(grade.set(0.0, [1.0; CHANNELS]), refus, "gamma nul");
-    assert_eq!(grade.set(-1.0, [1.0; CHANNELS]), refus, "gamma négatif");
-    assert_eq!(grade.set(f32::NAN, [1.0; CHANNELS]), refus, "gamma NaN");
-    let haut = grade.set(MAX_GAMMA + 0.1, [1.0; CHANNELS]);
+    assert_eq!(grade.set(0.0, UNIT, ZERO), refus, "gamma nul");
+    assert_eq!(grade.set(-1.0, UNIT, ZERO), refus, "gamma négatif");
+    assert_eq!(grade.set(f32::NAN, UNIT, ZERO), refus, "gamma NaN");
+    let haut = grade.set(MAX_GAMMA + 0.1, UNIT, ZERO);
     assert_eq!(haut, refus, "gamma au-delà de la borne");
-    assert_eq!(grade.set(1.0, [-0.1, 1.0, 1.0]), refus, "gain négatif");
-    let gain = grade.set(1.0, [1.0, MAX_GAIN + 0.1, 1.0]);
+    let negatif = grade.set(1.0, [-0.1, 1.0, 1.0], ZERO);
+    assert_eq!(negatif, refus, "gain négatif");
+    let gain = grade.set(1.0, [1.0, MAX_GAIN + 0.1, 1.0], ZERO);
     assert_eq!(gain, refus, "gain au-delà de la borne");
-    let infini = grade.set(1.0, [1.0, 1.0, f32::INFINITY]);
+    let infini = grade.set(1.0, [1.0, 1.0, f32::INFINITY], ZERO);
     assert_eq!(infini, refus, "gain infini");
+    let bas = grade.set(1.0, UNIT, [-MAX_OFFSET - 0.1, 0.0, 0.0]);
+    assert_eq!(bas, refus, "décalage sous la borne");
+    let sup = grade.set(1.0, UNIT, [0.0, MAX_OFFSET + 0.1, 0.0]);
+    assert_eq!(sup, refus, "décalage au-delà de la borne");
+    let nan = grade.set(1.0, UNIT, [0.0, 0.0, f32::NAN]);
+    assert_eq!(nan, refus, "décalage NaN");
 
     assert!(!grade.is_set(), "un refus ne doit rien laisser derrière");
 }
@@ -147,7 +187,7 @@ fn le_reglage_n_alloue_pas() {
 
     for gamma in 1..=20 {
         grade
-            .set(gamma as f32 / 10.0, [1.0; CHANNELS])
+            .set(gamma as f32 / 10.0, UNIT, ZERO)
             .expect("réglage valide");
         grade.clear();
     }
