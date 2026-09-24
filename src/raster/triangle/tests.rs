@@ -1376,24 +1376,50 @@ fn un_triangle_de_dos_ne_reserve_aucune_place() {
 /// est étirée là où une texture se répète, donc les deux jeux n'atteignent
 /// jamais le même niveau de mipmap sur la même surface.
 fn sol_eclaire(devant: f32, densite: f32, densite_lightmap: f32) -> (Prepared, Lighting) {
+    sol_eclaire_glow(devant, densite, densite_lightmap, None)
+}
+
+/// Le même sol, dont chaque sommet peut porter une contribution de lumière
+/// dynamique.
+///
+/// `glow` donne l'apport du sommet le plus proche de la caméra ; les deux autres
+/// en reçoivent le tiers, pour que l'apport **décroisse le long de la surface**
+/// comme le ferait une source posée devant elle. Un apport égal partout rendrait
+/// un plan constant, et une rampe qui ne se déplacerait pas d'un pixel à l'autre
+/// passerait tous les contrôles sans transporter quoi que ce soit.
+///
+/// `None` laisse les sommets à zéro **et** `glowing` à faux : c'est le cas des
+/// tests d'avant, qui n'éprouvaient que les deux bras sans lumière dynamique.
+fn sol_eclaire_glow(
+    devant: f32,
+    densite: f32,
+    densite_lightmap: f32,
+    glow: Option<[f32; 3]>,
+) -> (Prepared, Lighting) {
     use crate::math::{Projection, Vec3};
 
     let p = Projection::new(W as u32, H as u32, 1.0, 0.1).unwrap_or_else(|_| unreachable!());
-    let sol = |avant: f32, cote: f32| {
+    let sol = |avant: f32, cote: f32, light: [f32; 3]| {
         p.to_clip(
             Vec3::new(cote, 1.2, avant),
             avant * densite,
             cote * densite,
             avant * densite_lightmap,
             cote * densite_lightmap,
-            [0.0; 3],
+            light,
         )
         .expect("sommet projetable")
     };
+    let proche = glow.unwrap_or([0.0; 3]);
+    let loin = proche.map(|c| c / 3.0);
     let large = devant / 3.0;
-    let corners = [sol(1.5, -2.0), sol(devant, large), sol(devant, -large)];
+    let corners = [
+        sol(1.5, -2.0, proche),
+        sol(devant, large, loin),
+        sol(devant, -large, loin),
+    ];
     let vertices = corners.map(|c| Vertex::from(p.to_vertex(c)));
-    prepare_lit(vertices, 0xFFFF_FFFF, 0, 0, false, 0).expect("sol visible")
+    prepare_lit(vertices, 0xFFFF_FFFF, 0, 0, glow.is_some(), 0).expect("sol visible")
 }
 
 /// Une lightmap unie, dont tous les texels valent `value` sur les trois canaux.
@@ -1621,5 +1647,105 @@ fn la_lightmap_se_lit_en_bilineaire_meme_en_tramage() {
         teintes.len() > 50,
         "{} teintes : la lightmap a été lue au plus proche voisin",
         teintes.len()
+    );
+}
+
+/// Une surface que **seules** des lumières dynamiques éclairent passe par le
+/// bras sans lightmap.
+///
+/// Le cas qu'aucun test du noyau n'atteignait : `Glow<false, true>`. Jusqu'aux
+/// scènes `texture-dynamique` et `lumiere-dynamique`, il n'était exercé qu'à
+/// l'échelle d'une image entière, où un canal faux de quelques unités ne se
+/// distingue pas du bruit du tramage.
+///
+/// Trois assertions, parce que deux d'entre elles se laissent satisfaire par un
+/// bras qui ne ferait rien de la lumière : que l'image change, qu'elle soit plus
+/// claire — une contribution s'ajoute, elle ne retranche jamais —, et qu'elle
+/// dégrade, puisque l'apport décroît d'un bout à l'autre de la surface.
+#[test]
+fn une_surface_sans_lightmap_prend_le_bras_des_lumieres_dynamiques() {
+    let (triangle, planes) = sol_eclaire_glow(30.0, 0.0, 1.0, Some([0.75, 0.55, 0.30]));
+
+    let mut peint = Paint::new();
+    fill(
+        &mut peint,
+        CLIP,
+        &triangle,
+        None,
+        Some(Lit {
+            lightmap: None,
+            planes: &planes,
+            overbright: 0,
+        }),
+    );
+
+    let (brut, _) = sol_eclaire_glow(30.0, 0.0, 1.0, None);
+    let mut sans = Paint::new();
+    fill(&mut sans, CLIP, &brut, None, None);
+
+    let couverts = peint.color.iter().filter(|c| **c != 0).count();
+    assert!(couverts > 200, "{couverts} pixels, le cas ne couvre rien");
+    assert_ne!(
+        peint.color, sans.color,
+        "les lumières dynamiques n'ont rien changé à une surface sans lightmap"
+    );
+
+    let teintes = {
+        let mut v: Vec<u32> = peint.color.iter().copied().filter(|c| *c != 0).collect();
+        v.sort_unstable();
+        v.dedup();
+        v.len()
+    };
+    // Douze et non vingt, qui est le seuil du test voisin : sa lightmap varie
+    // sur deux axes, quand une rampe de lumière ne varie que le long de la
+    // surface et se quantifie sur huit bits. La mesure est de dix-sept ; ce
+    // qu'il faut séparer, c'est une rampe d'un aplat — qui n'aurait qu'une
+    // teinte — et de quelques paliers.
+    assert!(
+        teintes > 12,
+        "{teintes} teintes : l'apport ne décroît pas le long de la surface"
+    );
+}
+
+/// Une lightmap et des lumières dynamiques s'ajoutent sur la même surface.
+///
+/// Le quatrième bras, `Glow<true, true>`. Son défaut propre est d'en ignorer une
+/// des deux sources : l'image serait alors celle de la lightmap seule, ou celle
+/// des lumières seules, et les deux rendent une image parfaitement plausible.
+/// C'est pourquoi la comparaison porte sur **les deux** cas simples, et non sur
+/// une valeur attendue.
+#[test]
+fn la_lightmap_et_les_lumieres_dynamiques_s_ajoutent() {
+    let lightmap = addressed(64);
+    let glow = Some([0.60, 0.45, 0.25]);
+
+    let peindre = |glow: Option<[f32; 3]>, avec_lightmap: bool| {
+        let (triangle, planes) = sol_eclaire_glow(30.0, 0.0, 1.0, glow);
+        let mut cible = Paint::new();
+        fill(
+            &mut cible,
+            CLIP,
+            &triangle,
+            None,
+            Some(Lit {
+                lightmap: avec_lightmap.then_some(&lightmap),
+                planes: &planes,
+                overbright: 0,
+            }),
+        );
+        cible.color
+    };
+
+    let ensemble = peindre(glow, true);
+    let lightmap_seule = peindre(None, true);
+    let lumieres_seules = peindre(glow, false);
+
+    assert_ne!(
+        ensemble, lightmap_seule,
+        "les lumières dynamiques sont ignorées quand une lightmap est présente"
+    );
+    assert_ne!(
+        ensemble, lumieres_seules,
+        "la lightmap est ignorée quand des lumières dynamiques sont présentes"
     );
 }
