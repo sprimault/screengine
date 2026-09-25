@@ -51,6 +51,13 @@ pub enum Error {
     /// récente, ou réexporter la donnée. Confondue avec l'autre, elle enverrait
     /// chercher une corruption qui n'existe pas.
     UnsupportedFormatVersion,
+    /// Un identifiant stable qui ne désigne rien dans la ressource.
+    ///
+    /// Le fichier est bon et l'appel est bien formé : c'est la référence qui ne
+    /// trouve pas sa cible, ce qui n'est ni une malformation ni une faute
+    /// d'argument. Réservée dans l'ABI depuis l'étape 4 sans qu'aucun appel ne la
+    /// rende, elle trouve son premier avec la cellule de départ d'une traversée.
+    UnknownResource,
 }
 
 /// L'argument qu'une [`Error::InvalidArgument`] refuse.

@@ -15,7 +15,7 @@ use super::*;
 use crate::testing::Rng;
 
 /// Les octets d'une suite de flottants.
-fn floats(values: &[f32]) -> Vec<u8> {
+pub(crate) fn floats(values: &[f32]) -> Vec<u8> {
     let mut bytes = Vec::new();
     for value in values {
         bytes.extend_from_slice(&value.to_le_bytes());
@@ -24,7 +24,7 @@ fn floats(values: &[f32]) -> Vec<u8> {
 }
 
 /// Les octets d'une suite d'entiers.
-fn words(values: &[u32]) -> Vec<u8> {
+pub(crate) fn words(values: &[u32]) -> Vec<u8> {
     let mut bytes = Vec::new();
     for value in values {
         bytes.extend_from_slice(&value.to_le_bytes());
@@ -33,7 +33,7 @@ fn words(values: &[u32]) -> Vec<u8> {
 }
 
 /// Une entrée de matériau : son identifiant, puis son nom.
-fn material(id: u32, name: &str) -> Vec<u8> {
+pub(crate) fn material(id: u32, name: &str) -> Vec<u8> {
     let mut bytes = words(&[id]);
     bytes.extend_from_slice(&(name.len() as u16).to_le_bytes());
     bytes.extend_from_slice(name.as_bytes());
@@ -44,14 +44,14 @@ fn material(id: u32, name: &str) -> Vec<u8> {
 ///
 /// Les axes valent une unité de longueur par défaut, ce qui est une puissance de
 /// deux : le repère de lightmap l'exige, celui de texture s'en accommode.
-fn frame(origin: [f32; 3], u: [f32; 3], v: [f32; 3]) -> Vec<u8> {
+pub(crate) fn frame(origin: [f32; 3], u: [f32; 3], v: [f32; 3]) -> Vec<u8> {
     floats(&[
         origin[0], origin[1], origin[2], u[0], u[1], u[2], v[0], v[1], v[2],
     ])
 }
 
 /// Le repère par défaut : origine nulle, axes unitaires sur X et Y.
-fn unit_frame() -> Vec<u8> {
+pub(crate) fn unit_frame() -> Vec<u8> {
     frame([0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0])
 }
 
@@ -61,7 +61,7 @@ fn unit_frame() -> Vec<u8> {
 /// Les deux repères se lisent par le même décodeur, mais un seul est contraint :
 /// isoler le repère de lightmap est ce qui permet à chaque contrôle d'avoir son
 /// propre cas au lieu d'un cas qui en refuserait plusieurs à la fois.
-fn surface_with_lightmap(indices: &[u32], lightmap: &[u8]) -> Vec<u8> {
+pub(crate) fn surface_with_lightmap(indices: &[u32], lightmap: &[u8]) -> Vec<u8> {
     let mut bytes = words(&[11, 0, 1, indices.len() as u32]);
     bytes.extend_from_slice(&words(indices));
     bytes.extend_from_slice(&unit_frame());
@@ -70,7 +70,7 @@ fn surface_with_lightmap(indices: &[u32], lightmap: &[u8]) -> Vec<u8> {
 }
 
 /// La carte d'un carré dont la surface porte le repère de lightmap donné.
-fn map_with_lightmap(lightmap: &[u8]) -> Vec<u8> {
+pub(crate) fn map_with_lightmap(lightmap: &[u8]) -> Vec<u8> {
     let cell = cell_bytes(
         7,
         0,
@@ -82,7 +82,7 @@ fn map_with_lightmap(lightmap: &[u8]) -> Vec<u8> {
 }
 
 /// Une surface : son en-tête, ses indices, ses deux repères.
-fn surface_bytes(id: u32, flags: u32, material: u32, indices: &[u32]) -> Vec<u8> {
+pub(crate) fn surface_bytes(id: u32, flags: u32, material: u32, indices: &[u32]) -> Vec<u8> {
     let mut bytes = words(&[id, flags, material, indices.len() as u32]);
     bytes.extend_from_slice(&words(indices));
     bytes.extend_from_slice(&unit_frame());
@@ -91,14 +91,14 @@ fn surface_bytes(id: u32, flags: u32, material: u32, indices: &[u32]) -> Vec<u8>
 }
 
 /// Un portail : son identifiant et ses indices.
-fn portal_bytes(id: u32, indices: &[u32]) -> Vec<u8> {
+pub(crate) fn portal_bytes(id: u32, indices: &[u32]) -> Vec<u8> {
     let mut bytes = words(&[id, indices.len() as u32]);
     bytes.extend_from_slice(&words(indices));
     bytes
 }
 
 /// Une cellule complète, longueur-préfixée.
-fn cell_bytes(
+pub(crate) fn cell_bytes(
     id: u32,
     flags: u32,
     points: &[[f32; 3]],
@@ -131,7 +131,7 @@ fn cell_bytes(
 ///
 /// Les décalages sont posés ici à la main, comme pour le maillage : vingt octets
 /// d'en-tête, douze par entrée de table, les sections par genre croissant.
-fn file(cells: &[u8], ents: &[u8], lgts: &[u8], mats: &[u8]) -> Vec<u8> {
+pub(crate) fn file(cells: &[u8], ents: &[u8], lgts: &[u8], mats: &[u8]) -> Vec<u8> {
     let sections: Vec<([u8; 4], &[u8])> = [
         (*b"CELL", cells),
         (*b"ENTS", ents),
@@ -166,7 +166,7 @@ fn file(cells: &[u8], ents: &[u8], lgts: &[u8], mats: &[u8]) -> Vec<u8> {
 }
 
 /// Les quatre coins d'un carré du plan `z = 0`, en sens antihoraire vu de `+Z`.
-const SQUARE: [[f32; 3]; 4] = [
+pub(crate) const SQUARE: [[f32; 3]; 4] = [
     [0.0, 0.0, 0.0],
     [4.0, 0.0, 0.0],
     [4.0, 4.0, 0.0],
@@ -175,7 +175,7 @@ const SQUARE: [[f32; 3]; 4] = [
 
 /// Une carte d'une cellule, un carré, un matériau : celle que les tests
 /// abîment.
-fn valid() -> Vec<u8> {
+pub(crate) fn valid() -> Vec<u8> {
     let cell = cell_bytes(
         7,
         0,
@@ -187,7 +187,7 @@ fn valid() -> Vec<u8> {
 }
 
 /// L'erreur attendue, écrite court.
-fn refused(malformation: Malformation) -> Error {
+pub(crate) fn refused(malformation: Malformation) -> Error {
     Error::InvalidFormat(malformation)
 }
 

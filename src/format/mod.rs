@@ -18,7 +18,10 @@
 mod cursor;
 mod ears;
 mod mesh;
-mod world;
+// Visible dans le crate pour ses constructeurs de fichiers de test, que la
+// traversée réemploie : une carte d'épreuve s'écrit en octets, et la recopier
+// dans un second module de test donnerait deux listes de décalages à tenir.
+pub(crate) mod world;
 
 pub(crate) use cursor::Cursor;
 pub use mesh::Mesh;

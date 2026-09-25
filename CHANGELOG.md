@@ -54,23 +54,15 @@ critère est `code < 0`, et un statut inconnu se traite comme `SCG_OK`.
 `SCG_ABI_VERSION` reste à **1**, et aucune signature publiée ne change.
 
 ### Ajouté
-- Le contrat d'ABI décrit les quatorze points d'entrée de l'étape 5 : la
-  traversée par portails, le suivi de la cellule de la caméra, et le calcul des
-  lightmaps avec la reprise de son cache. **Aucun n'est encore exposé** — le
-  contrat se fige avant le premier code, comme celui d'un format se fige avant
-  son premier décodeur. Ce que la traversée refuse, sa borne de profondeur et ce
-  qu'elle rend en l'atteignant y figurent, ainsi que la raison pour laquelle la
-  plage d'erreurs réservée au monde reste vide.
-- Les conventions Rust décrivent la fenêtre de portail — un rectangle de pixels
-  entiers qui borne la boucle de remplissage et jamais les valeurs, si bien que
-  l'image ne dépend pas d'elle —, le calcul des lightmaps d'une cellule et la
-  disposition de son cache, troisième genre du conteneur commun aux deux formats
-  existants.
-- **Le noyau réduit une fenêtre par un portail projeté**, ce sur quoi la traversée
-  s'appuiera : découpage du portail en éventail, passage par le chemin de
-  projection existant sans y ajouter une seule opération flottante, puis boîte du
-  portail **découpé par la fenêtre reçue**. `Rect` gagne son intersection et son
-  rectangle vide. Rien n'appelle encore cette réduction, et l'image ne change pas.
+- Le contrat de l'étape 5 est écrit : les quatorze points d'entrée de la traversée
+  par portails, du suivi de la cellule de la caméra et du calcul des lightmaps,
+  avec les bornes de la traversée et ce qu'elle rend en les atteignant. Aucun
+  n'est encore exposé.
+- **Le noyau traverse un décor par ses portails** et ne soumet que les cellules
+  visibles, chacune une fois et dans l'ordre du fichier : le total reste donc
+  borné par le nombre de triangles de la carte. Une cellule inconnue est refusée ;
+  aucune cellule de départ est une clause, pas une erreur. **Sur un décor où tout
+  est visible, la traversée rend la même image que le chemin brut**, qui reste.
 
 ### Modifié
 - Le chargement d'une carte vérifie cinq propriétés du repère de lightmap de
@@ -101,21 +93,14 @@ status is handled as `SCG_OK`. `SCG_ABI_VERSION` stays at **1**, and no publishe
 signature changes.
 
 ### Added
-- The ABI contract describes step 5's fourteen entry points: portal traversal,
-  tracking the camera's cell, and computing lightmaps with cache restore. **None
-  is exposed yet** — a contract is frozen before the first code, just as a file
-  format's is frozen before its first decoder. What traversal refuses, its depth
-  bound and what it returns on reaching it are all written down, along with why
-  the error range reserved for the world stays empty.
-- The Rust conventions describe the portal window — a rectangle of whole pixels
-  that bounds the fill loop and never the values, so that the image does not
-  depend on it —, the per-cell lightmap computation, and its cache layout, a
-  third kind of the container shared by both existing formats.
-- **The core reduces a window by a projected portal**, which traversal will build
-  on: the portal is fanned into triangles, run through the existing projection
-  path without adding a single floating-point operation, then bounded **after
-  being clipped by the incoming window**. `Rect` gains its intersection and its
-  empty value. Nothing calls this reduction yet, and the image does not change.
+- Step 5's contract is written: the fourteen entry points for portal traversal,
+  camera cell tracking and lightmap computation, with traversal's bounds and what
+  it returns on reaching them. None is exposed yet.
+- **The core traverses a level through its portals** and submits only the visible
+  cells, each once and in file order: the total therefore stays bounded by the
+  map's triangle count. An unknown cell is refused; no starting cell at all is a
+  clause, not an error. **On a level where everything is visible, traversal
+  renders the same image as the raw path**, which remains.
 
 ### Changed
 - Loading a map checks five properties of each surface's lightmap frame where it

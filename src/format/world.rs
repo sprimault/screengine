@@ -151,11 +151,14 @@ pub(crate) struct Portal {
     /// Recopiés et non indexés : l'appariement compare des positions, et deux
     /// portails appariés appartiennent à deux cellules qui ne partagent aucun
     /// sommet. La duplication est la condition du mécanisme, pas son coût.
-    points: Vec<Vec3>,
+    pub(crate) points: Vec<Vec3>,
     /// La cellule et le portail qu'il rejoint, ou `None` pour un mur.
-    // Lu par la traversée, à l'étape 5. L'appariement a lieu au chargement
-    // parce que c'est là qu'on a les deux côtés sous la main.
-    link: Option<(u32, u32)>,
+    ///
+    /// Des **index**, et non des identifiants : c'est la traversée qui les lit,
+    /// et elle dépile des cellules sans avoir à interroger une table à chaque
+    /// portail franchi. L'appariement a lieu au chargement parce que c'est là
+    /// qu'on a les deux côtés sous la main.
+    pub(crate) link: Option<(u32, u32)>,
 }
 
 /// Une cellule : l'unité d'édition, un volume fermé quelconque.
@@ -176,7 +179,7 @@ pub(crate) struct Cell {
     /// Ses surfaces.
     pub(crate) surfaces: Vec<Surface>,
     /// Ses portails.
-    portals: Vec<Portal>,
+    pub(crate) portals: Vec<Portal>,
 }
 
 /// Une lumière statique du décor.
@@ -229,6 +232,13 @@ pub struct World {
     /// Les cellules, dans l'ordre du fichier — qui est celui de la soumission,
     /// donc ce qui départage deux surfaces coplanaires.
     cells: Vec<Cell>,
+    /// Les identifiants de cellules avec leur index, triés par identifiant.
+    ///
+    /// Une table plutôt qu'une recherche linéaire dans les cellules : ce n'est
+    /// pas le coût d'une image qui le commande — une seule cellule se désigne par
+    /// image — mais l'étape 8, qui remplacera une cellule nommée par son
+    /// identifiant à chaque opération d'éditeur.
+    cell_index: Vec<(u32, u32)>,
     /// Les identifiants de matériaux, dans l'ordre du fichier.
     ///
     /// Le seul des six espaces d'identifiants que rien ne lit encore : les
@@ -267,8 +277,21 @@ impl World {
         let cell_ids: Vec<u32> = cells.iter().map(|cell| cell.id).collect();
         let entities = entities(sections[ENTS], &cell_ids)?;
 
+        // La table des identifiants de cellules, triée, que toute désignation
+        // par identifiant interroge par dichotomie : la cellule où commence une
+        // traversée, celle dont on calcule les lightmaps, celle qu'une entrée de
+        // cache nomme. Le fichier n'exige pas ses identifiants triés — l'exiger
+        // obligerait l'éditeur à réécrire la carte entière pour un ajout —, donc
+        // le tri est ici.
+        let mut cell_index = reserved(cells.len())?;
+        for (index, cell) in cells.iter().enumerate() {
+            cell_index.push((cell.id, index as u32));
+        }
+        cell_index.sort_unstable();
+
         Ok(Self {
             cells,
+            cell_index,
             material_ids,
             material_names,
             triangle_count,
@@ -280,6 +303,20 @@ impl World {
     /// Combien de triangles la carte porte, toutes cellules confondues.
     pub fn triangle_count(&self) -> u32 {
         self.triangle_count
+    }
+
+    /// L'index de la cellule que cet identifiant désigne, s'il en désigne une.
+    ///
+    /// Par dichotomie sur la table triée au chargement. `0` ne désigne aucune
+    /// cellule — l'éditeur le réserve à « aucun » —, et c'est un identifiant
+    /// inconnu comme un autre ici : c'est à l'appelant de distinguer « aucune
+    /// cellule » de « cette cellule n'existe pas », les deux n'ayant pas la même
+    /// réponse.
+    pub(crate) fn cell_of(&self, id: u32) -> Option<u32> {
+        self.cell_index
+            .binary_search_by_key(&id, |(key, _)| *key)
+            .ok()
+            .map(|rank| self.cell_index[rank].1)
     }
 
     /// Combien de matériaux elle réclame.
@@ -1086,5 +1123,8 @@ fn unique(ids: &[u32]) -> Result<()> {
     Ok(())
 }
 
+// `pub(crate)` pour ses constructeurs de cartes d'épreuve, que les tests de la
+// traversée réemploient : ils sont le seul endroit du noyau où les décalages du
+// format sont écrits une seconde fois, et deux copies divergeraient.
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;

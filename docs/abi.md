@@ -1196,7 +1196,17 @@ int32_t scg_lighting_restore(ScgLighting *lighting, const uint8_t *bytes, size_t
 
 Constantes : `SCG_STATUS_INCOMPLETE` (1), `SCG_STATUS_NO_CELL` (2),
 `SCG_LIGHTMAP_ABSENT` (0), `SCG_LIGHTMAP_READY` (1), `SCG_LIGHTMAP_STALE` (2),
-`SCG_TRAVERSAL_DEPTH` (64) et `SCG_MAX_LIGHTMAP_SIZE` (1024).
+`SCG_TRAVERSAL_DEPTH` (64), `SCG_TRAVERSAL_CELLS` (4096) et
+`SCG_MAX_LIGHTMAP_SIZE` (1024).
+
+**Deux bornes et non une**, et la seconde ne se devine pas depuis la première : la
+profondeur limite la longueur d'un chemin, `SCG_TRAVERSAL_CELLS` le nombre de
+cellules qu'une image peut retenir. Elle existe parce que la traversée doit garder
+la fenêtre de chaque cellule visitée quelque part, et que ce quelque part ne peut
+être dimensionné ni sur la carte — que le contexte ne connaît pas à sa création —
+ni à la soumission, où toute allocation est interdite. L'atteindre rend le même
+statut que la profondeur, pour la même raison : l'image est complète de ce qui a
+été atteint, et ce qui manque commence plus loin.
 
 #### La traversée
 

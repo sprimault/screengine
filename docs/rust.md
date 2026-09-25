@@ -877,14 +877,23 @@ l'invariant du projet l'interdit.
 Sont **dérivés au chargement** les liens de portails, les plans, la
 triangulation, les coordonnées de texture et de lightmap, les boîtes
 englobantes, les étendues en luxels et les tables d'identifiants. Aucun n'est
-optionnel, et chacun sert un appel nommé : les plans de portail décident du sens
-de traversée, ceux de surface portent la normale du calcul d'éclairage, les
-boîtes englobantes de cellule sélectionnent les lumières, les étendues en luxels
-dimensionnent un atlas, et les tables d'identifiants servent toute désignation
-par identifiant — la cellule de départ d'une traversée, celle dont on calcule les
-lightmaps, celle qu'une entrée de cache nomme. Une table `(identifiant, index)`
-triée, interrogée par dichotomie : aucune allocation par image, aucun ordre
-d'itération de table de hachage.
+optionnel, et chacun sert un appel nommé : les plans de surface portent la
+normale du calcul d'éclairage, les boîtes englobantes de cellule sélectionnent
+les lumières, les étendues en luxels dimensionnent un atlas, et les tables
+d'identifiants servent toute désignation par identifiant — la cellule de départ
+d'une traversée, celle dont on calcule les lightmaps, celle qu'une entrée de
+cache nomme. Une table `(identifiant, index)` triée, interrogée par dichotomie :
+aucune allocation par image, aucun ordre d'itération de table de hachage.
+
+**Le plan d'un portail n'en fait pas partie, et c'est une clause qui manque au
+format.** Il servirait à ne pas traverser un portail vu de dos, ce qui coupe les
+allers-retours entre deux cellules pour le prix d'un produit scalaire. Mais le
+format ne dit pas **quel côté d'un portail est l'avant** : il fixe seulement que
+les deux portails d'une paire ont des enroulements inverses. Un test de face
+écrit sans cette convention est juste une fois sur deux, et se paie en trou. La
+traversée s'en passe donc : ses cycles sont coupés par le chemin courant, et sa
+terminaison par la profondeur. La clause s'écrira le jour où l'éditeur la
+garantira.
 
 Est dérivée **sur appel explicite de l'hôte** la lightmap elle-même, et elle
 seule : un calcul d'éclairage au chargement ferait de l'ouverture d'une carte une

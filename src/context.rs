@@ -25,6 +25,7 @@ use crate::raster::{
 };
 use crate::scene::{Camera, Color, Light, Triangle, VertexUv, VertexUv2};
 use crate::texture::{Filter, Texture};
+use crate::world::traversal::{MAX_VISITS, Visit, traverse};
 
 pub use frame::{Frame, Output, Rows};
 
@@ -59,6 +60,32 @@ const CLEAR_COLOR: u32 = OPAQUE;
 /// Le contrat d'ABI promet l'alpha écrit à 255 partout, et la sortie l'y force
 /// plutôt que de le faire promettre à chaque appelant.
 const OPAQUE: u32 = 0xFF00_0000;
+
+/// Ce qu'une traversée a pu montrer de la carte.
+///
+/// Un succès dans les trois cas : rien ici n'est une faute, et un appelant qui
+/// n'en fait rien obtient une image juste. C'est ce que la frontière traduit en
+/// codes positifs — un succès accompagné d'un statut —, et c'est pour ce jour que
+/// l'ABI les avait réservés.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Visibility {
+    /// Tout ce que la caméra voit a été soumis.
+    Complete,
+    /// L'exploration s'est arrêtée à une de ses bornes.
+    ///
+    /// La cellule du fond est dessinée entière ; seuls ses portails ne sont pas
+    /// dépliés, si bien que ce qui manque commence une cellule plus loin. C'est
+    /// une condition de décor, jamais une faute d'appel — la profondeur et le
+    /// nombre de visites sont des constantes du noyau, et l'hôte n'a aucun levier
+    /// dessus.
+    Incomplete,
+    /// Aucune cellule n'a été donnée, et rien n'a été soumis.
+    ///
+    /// Le fond, l'alpha et le post-traitement s'écrivent comme pour une scène
+    /// vide. Un hôte peut légitimement poser sa caméra dans un interstice d'une
+    /// carte en cours d'édition, et le moteur ne se relocalise jamais de lui-même.
+    NoCell,
+}
 
 /// Ce que reçoit la création d'un contexte.
 ///
@@ -167,6 +194,19 @@ pub struct Context {
     /// pendant une image, mais le tableau doit exister quelque part, et le
     /// contexte est le seul endroit qui n'alloue pas par image.
     placed: Vec<dynamic::Placed>,
+    /// Les cellules que la dernière traversée a retenues, avec leur fenêtre.
+    ///
+    /// Dimensionnée à la création parce qu'elle ne peut l'être nulle part
+    /// ailleurs : le contexte ne connaît pas encore la carte, et une soumission
+    /// n'a pas le droit d'allouer. La liste sort de la traversée triée par index
+    /// de cellule, fenêtres d'une même cellule déjà fusionnées.
+    visits: Vec<Visit>,
+    /// Le premier triangle que la traversée n'a pas produit.
+    ///
+    /// Un lot soumis autrement dans la même image ne se borne par aucune
+    /// fenêtre : sans cette limite, la dernière plage s'étendrait jusqu'au bout
+    /// et le rognerait à la fenêtre d'une cellule qui ne le contient pas.
+    visited_end: u32,
     /// Le brouillard, éteint par défaut.
     ///
     /// Sa table dépend du plan proche de la caméra, qui convertit une
@@ -296,6 +336,8 @@ impl Context {
             overbright: 0,
             lights: reserved(MAX_LIGHTS)?,
             placed: reserved(MAX_LIGHTS)?,
+            visits: reserved(MAX_VISITS)?,
+            visited_end: 0,
             fog: Fog::new()?,
             fog_range: (0.0, 0.0),
             grade: Grade::new()?,
@@ -631,6 +673,10 @@ impl Context {
             // Les textures meurent avec les triangles qui les référencent :
             // les garder ferait vivre une ressource que plus rien ne dessine.
             self.textures.clear();
+            // Et les fenêtres avec eux : gardées, elles borneraient les triangles
+            // d'une image suivante que la traversée n'a pas produits.
+            self.visits.clear();
+            self.visited_end = 0;
             *self.stale.get_mut() = false;
         }
     }
@@ -906,6 +952,95 @@ impl Context {
             }
         }
         Ok(())
+    }
+
+    /// Soumet ce qu'une caméra voit d'une carte, depuis la cellule où elle est.
+    ///
+    /// **La traversée décide d'abord, la soumission suit.** Chaque cellule
+    /// retenue est soumise **une fois**, dans l'ordre du fichier : c'est cet ordre
+    /// qui départage deux surfaces coplanaires, et en ordre de traversée il
+    /// dépendrait de la position de la caméra. Le total soumis reste donc inférieur
+    /// ou égal à ce que rend [`World::triangle_count`], qui demeure un
+    /// dimensionnement valide de la capacité du contexte.
+    ///
+    /// `cell_id` à zéro vaut « aucune cellule » : rien n'est soumis et
+    /// [`Visibility::NoCell`] le dit. Un identifiant qui ne désigne aucune cellule
+    /// est une erreur, lui — c'est la différence entre « la caméra n'est nulle
+    /// part » et « cette cellule n'existe pas », qui n'ont pas la même réponse.
+    pub fn submit_world_visible<'t, F>(
+        &mut self,
+        model: Affine3,
+        world: &World,
+        cell_id: u32,
+        texture: F,
+    ) -> Result<Visibility>
+    where
+        F: Fn(u32) -> Option<&'t Arc<Texture>>,
+    {
+        if *self.state.get_mut() != RECORDING {
+            return Err(Error::InvalidState);
+        }
+        if cell_id == 0 {
+            return Ok(Visibility::NoCell);
+        }
+        let start = world.cell_of(cell_id).ok_or(Error::UnknownResource)?;
+
+        let image = Rect {
+            x: 0,
+            y: 0,
+            width: self.width,
+            height: self.height,
+        };
+        let truncated = traverse(
+            world,
+            start,
+            image,
+            self.view,
+            &self.projection,
+            &mut self.visits,
+        );
+
+        let (mark, textures) = (self.triangles.len(), self.textures.len());
+        let lights = self.lighting.len();
+        let cells = world.cells();
+
+        for rank in 0..self.visits.len() {
+            let visit = self.visits[rank];
+            // La plage s'ouvre ici, avant que la cellule ne prépare un seul
+            // triangle : c'est par elle que le remplissage retrouvera la fenêtre.
+            self.visits[rank].first_triangle = self.triangles.len() as u32;
+            let cell = &cells[visit.cell as usize];
+            for surface in &cell.surfaces {
+                let first = surface.first_triangle as usize;
+                let result = self.submit_each_uv(
+                    model,
+                    surface.triangle_count as usize,
+                    texture(surface.material),
+                    |i| {
+                        let triangle = cell.triangles[first + i];
+                        let mut corners = [VertexUv::untextured(Vec3::ZERO); 3];
+                        for (corner, &index) in corners.iter_mut().zip(&triangle) {
+                            *corner = cell.vertices[index as usize];
+                        }
+                        Ok((corners, Color::new(0xFF, 0xFF, 0xFF, 0xFF)))
+                    },
+                );
+                if let Err(error) = result {
+                    self.triangles.truncate(mark);
+                    self.lighting.truncate(lights);
+                    self.textures.truncate(textures);
+                    self.visits.clear();
+                    return Err(error);
+                }
+            }
+        }
+
+        self.visited_end = self.triangles.len() as u32;
+        Ok(if truncated {
+            Visibility::Incomplete
+        } else {
+            Visibility::Complete
+        })
     }
 
     /// Soumet un lot de triangles habillés d'une texture.
