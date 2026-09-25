@@ -25,6 +25,20 @@ fn les_codes_generaux_sont_dans_la_premiere_plage() {
     }
 }
 
+/// Les codes des données sont dans la deuxième plage, et c'est ce qui les
+/// distingue d'un refus d'argument pour une liaison qui ne les connaît pas :
+/// elle les dégrade en « mauvais fichier » et non en « mauvais appel ».
+#[test]
+fn les_codes_des_donnees_sont_dans_la_deuxieme_plage() {
+    for code in [
+        SCG_ERR_UNKNOWN_RESOURCE,
+        SCG_ERR_INVALID_FORMAT,
+        SCG_ERR_UNSUPPORTED_FORMAT_VERSION,
+    ] {
+        assert_eq!((-code) / 100, 1, "code {code} hors de la plage des données");
+    }
+}
+
 /// L'ancien nom reste un alias exact : un hôte compilé contre le header de la
 /// 0.0.0 doit recevoir le même code qu'avant le renommage.
 #[test]
@@ -40,6 +54,8 @@ fn chaque_erreur_du_noyau_a_son_code() {
         Error::InvalidArgument(Argument::Resolution),
         Error::OutOfMemory,
         Error::InvalidState,
+        Error::InvalidFormat(Malformation::Signature),
+        Error::UnsupportedFormatVersion,
     ];
     for (i, a) in errors.iter().enumerate() {
         for b in &errors[i + 1..] {
@@ -115,4 +131,47 @@ fn chaque_argument_refuse_a_son_message() {
         assert_eq!(rank(*a), i, "{a:?} n'est pas à sa place");
     }
     assert_eq!(arguments.len(), 20, "une variante manque à la liste");
+}
+
+/// Même règle pour un bloc refusé : un seul code, et un message par cause.
+///
+/// C'est tout ce qui reste à l'auteur d'un exportateur pour trouver son défaut :
+/// deux causes qui partageraient un texte lui feraient relire la mauvaise partie
+/// de son écrivain.
+#[test]
+fn chaque_malformation_a_son_message() {
+    let malformations = [
+        Malformation::Truncated,
+        Malformation::Signature,
+        Malformation::Kind,
+        Malformation::Length,
+        Malformation::SectionKind,
+        Malformation::SectionOrder,
+        Malformation::SectionBounds,
+        Malformation::NonFinite,
+    ];
+    for (i, a) in malformations.iter().enumerate() {
+        let error = Error::InvalidFormat(*a);
+        assert_eq!(code_of(error), SCG_ERR_INVALID_FORMAT);
+        for b in &malformations[i + 1..] {
+            assert_ne!(message_of(error), message_of(Error::InvalidFormat(*b)));
+        }
+    }
+
+    // Exhaustif pour la même raison que la liste des arguments : une variante
+    // nouvelle ne compile plus tant qu'elle n'est pas nommée ici.
+    let rank = |malformation: Malformation| match malformation {
+        Malformation::Truncated => 0,
+        Malformation::Signature => 1,
+        Malformation::Kind => 2,
+        Malformation::Length => 3,
+        Malformation::SectionKind => 4,
+        Malformation::SectionOrder => 5,
+        Malformation::SectionBounds => 6,
+        Malformation::NonFinite => 7,
+    };
+    for (i, a) in malformations.iter().enumerate() {
+        assert_eq!(rank(*a), i, "{a:?} n'est pas à sa place");
+    }
+    assert_eq!(malformations.len(), 8, "une variante manque à la liste");
 }

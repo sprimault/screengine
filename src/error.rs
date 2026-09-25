@@ -36,6 +36,21 @@ pub enum Error {
     /// n'ait pu marquer quoi que ce soit. Entre les deux, une fin d'image voit
     /// zéro tuile en vol et un contexte sain.
     Faulted,
+    /// Un bloc de données n'est pas un fichier que le moteur peut lire, et
+    /// [`Malformation`] dit ce qui l'a fait refuser.
+    ///
+    /// Une donnée fausse, jamais un défaut du moteur : le contenu d'un bloc est
+    /// hostile par hypothèse, et ce refus ne passe donc pas par une panique,
+    /// même en débogage.
+    InvalidFormat(Malformation),
+    /// La signature et le genre sont justes, mais cette construction ne lit pas
+    /// la version de format annoncée.
+    ///
+    /// Séparée de [`Error::InvalidFormat`] parce que c'est le seul refus de
+    /// chargement qui dise à l'hôte quoi faire — prendre une bibliothèque plus
+    /// récente, ou réexporter la donnée. Confondue avec l'autre, elle enverrait
+    /// chercher une corruption qui n'existe pas.
+    UnsupportedFormatVersion,
 }
 
 /// L'argument qu'une [`Error::InvalidArgument`] refuse.
@@ -134,6 +149,53 @@ pub enum Argument {
     /// un gain au-delà de deux diaphragmes ne laisse qu'un aplat — et
     /// n'existent que pour refuser l'absurde plutôt que de le rendre.
     Grade,
+}
+
+/// Ce qui a fait refuser un bloc par [`Error::InvalidFormat`].
+///
+/// Un seul code d'ABI pour tout le contenu d'un fichier, parce qu'un hôte n'a
+/// qu'une chose à en faire ; la variante ne se lit que dans le message, et
+/// c'est ce qui reste à l'auteur d'un exportateur pour trouver son défaut.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Malformation {
+    /// Une lecture au-delà de la fin du bloc, de la table de sections ou d'une
+    /// section.
+    Truncated,
+    /// Les quatre premiers octets ne sont pas la signature du projet.
+    Signature,
+    /// Le genre annoncé n'est pas celui qu'attendait l'appel : un maillage là
+    /// où une carte était attendue.
+    Kind,
+    /// La longueur annoncée en tête n'est pas celle du bloc reçu.
+    ///
+    /// Une troncature et un en-tête qui mentirait sur sa longueur arrivent ici
+    /// ensemble : le moteur ne peut pas les distinguer, et aucun hôte n'agirait
+    /// différemment sur les deux.
+    Length,
+    /// Une section d'un genre que ce format ne connaît pas.
+    ///
+    /// Refusée et non ignorée, et c'est la décision la moins intuitive du
+    /// format : presque tout ce qui s'ajoutera à un format de rendu change ce
+    /// qui est rendu, si bien qu'une construction qui sauterait en silence une
+    /// section employée par une version plus récente rendrait une autre image
+    /// sur le même fichier, sans erreur. La conformance ne le verrait pas,
+    /// chaque construction étant cohérente avec elle-même.
+    SectionKind,
+    /// Deux sections du même genre, ou des genres qui ne croissent pas.
+    ///
+    /// Sans cette canonicité, le même contenu aurait plusieurs écritures
+    /// légitimes : un choix dont l'écrivain n'a pas besoin, une recherche dont
+    /// le lecteur n'a pas besoin non plus.
+    SectionOrder,
+    /// Les sections ne pavent pas le fichier : un décalage qui n'est pas la fin
+    /// de la section précédente, ou des octets laissés au bout.
+    SectionBounds,
+    /// Un flottant du fichier n'est pas fini.
+    ///
+    /// Refusé à la lecture, avant toute arithmétique : la charge utile d'un
+    /// `NaN` signalant peut être normalisée par un passage en registre, et la
+    /// divergence entre deux cibles serait silencieuse.
+    NonFinite,
 }
 
 /// Le résultat d'un appel du noyau.

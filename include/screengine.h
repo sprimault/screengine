@@ -75,6 +75,29 @@
 // against an earlier header still compile; it will not be removed before 1.0.
 #define SCG_ERR_POISONED -6
 
+// A lookup by stable identifier found nothing.
+//
+// No call returns it yet: an identifier missing from a file is caught while
+// loading it, and an index beyond its count is a fault in the call. It is
+// defined now because a published code never changes meaning.
+#define SCG_ERR_UNKNOWN_RESOURCE -100
+
+// The block is not a data file this library can read.
+//
+// The fault is in the content, not in the call: report it to the user as a bad
+// asset, not to the developer as a misuse. Read the message with
+// `scg_last_error(NULL)` for what was rejected. Unknown section kinds are
+// rejected too, deliberately: silently skipping one would render a different
+// image from the same file, without an error.
+#define SCG_ERR_INVALID_FORMAT -101
+
+// The signature and kind are right, but this library does not read that format
+// version.
+//
+// The only one of the three data codes that says what to do: take a newer
+// library, or export the data again.
+#define SCG_ERR_UNSUPPORTED_FORMAT_VERSION -102
+
 // An opaque rendering context.
 //
 // Created by `scg_create`, released by `scg_destroy`. Use it from one thread
