@@ -45,6 +45,15 @@ export const SCG_ERR_FAULTED = -6;
 /** Ancien nom de `SCG_ERR_FAULTED`, gardé comme dans le header. */
 export const SCG_ERR_POISONED = -6;
 
+/** Recherche par identifiant stable qui ne trouve rien. Aucun appel ne le rend encore. */
+export const SCG_ERR_UNKNOWN_RESOURCE = -100;
+
+/** Le bloc n'est pas un fichier de données lisible : la faute est dans le contenu. */
+export const SCG_ERR_INVALID_FORMAT = -101;
+
+/** Version de format que cette bibliothèque ne lit pas. Le seul code qui dise quoi faire. */
+export const SCG_ERR_UNSUPPORTED_FORMAT_VERSION = -102;
+
 /**
  * Le seul format de pixels qu'une texture accepte.
  *

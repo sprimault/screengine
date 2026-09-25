@@ -5,7 +5,7 @@
 
 use std::fmt;
 
-use screengine::Argument;
+use screengine::{Argument, Malformation};
 
 /// Une erreur de l'étage d'accueil.
 ///
@@ -107,6 +107,35 @@ impl fmt::Display for Error {
             }
             Self::Engine(screengine::Error::Faulted) => {
                 f.write_str("a tile did not return from rendering; this frame is incomplete")
+            }
+            Self::Engine(screengine::Error::InvalidFormat(malformation)) => match malformation {
+                Malformation::Truncated => {
+                    f.write_str("a field or a section of the data file runs past its end")
+                }
+                Malformation::Signature => {
+                    f.write_str("not a Screengine data file: wrong signature")
+                }
+                Malformation::Kind => {
+                    f.write_str("wrong kind of data file: a mesh where a world was expected")
+                }
+                Malformation::Length => {
+                    f.write_str("the declared total length is not the length of the file")
+                }
+                Malformation::SectionKind => {
+                    f.write_str("the data file has a section of an unknown kind")
+                }
+                Malformation::SectionOrder => f.write_str(
+                    "sections must be in increasing kind order, at most one of each kind",
+                ),
+                Malformation::SectionBounds => {
+                    f.write_str("sections must pave the file, with no gap and no overlap")
+                }
+                Malformation::NonFinite => {
+                    f.write_str("a floating-point value in the data file is not finite")
+                }
+            },
+            Self::Engine(screengine::Error::UnsupportedFormatVersion) => {
+                f.write_str("unsupported data format version: export the data again")
             }
             Self::Setting(what) => f.write_str(what),
             Self::ScaleTooLarge {

@@ -56,6 +56,11 @@ publié, et explique les conventions du dépôt à qui y contribue.
 - Les conventions Rust décrivent les dispositions binaires des deux formats :
   en-tête et table de sections communs, maillage, carte, et ce que le décodeur
   tient pour hostile.
+- Le header définit les trois codes de la plage données :
+  `SCG_ERR_UNKNOWN_RESOURCE`, `SCG_ERR_INVALID_FORMAT` et
+  `SCG_ERR_UNSUPPORTED_FORMAT_VERSION`. Aucun appel ne les rend encore — aucun
+  point d'entrée ne lit de fichier —, et ils sont définis maintenant parce qu'un
+  code publié ne change jamais de sens. `SCG_ABI_VERSION` reste à **1**.
 
 ### Modifié
 - Les octets d'une carte et d'un maillage sont copiés par le moteur, comme ceux
@@ -72,6 +77,11 @@ publié, et explique les conventions du dépôt à qui y contribue.
   first decoder, as the fixed-point formats were frozen before the first fill.
 - The Rust conventions describe both formats' binary layouts: the shared header
   and section table, the mesh, the map, and what the decoder treats as hostile.
+- The header defines the three codes of the data range:
+  `SCG_ERR_UNKNOWN_RESOURCE`, `SCG_ERR_INVALID_FORMAT` and
+  `SCG_ERR_UNSUPPORTED_FORMAT_VERSION`. No call returns them yet — no entry point
+  reads a file — and they are defined now because a published code never changes
+  meaning. `SCG_ABI_VERSION` stays at **1**.
 
 ### Changed
 - A map's and a mesh's bytes are copied by the engine, like a texture's: the

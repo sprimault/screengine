@@ -8,7 +8,7 @@
 //! qu'elle ne connaît pas l'y ramène, au lieu de le traiter en erreur
 //! générique. Voir `docs/abi.md`.
 
-use screengine::{Argument, Error};
+use screengine::{Argument, Error, Malformation};
 
 /// Success.
 pub const SCG_OK: i32 = 0;
@@ -44,6 +44,29 @@ pub const SCG_ERR_FAULTED: i32 = -6;
 // lisent les `#define` du header, JavaScript et PHP, n'évaluent pas un nom.
 pub const SCG_ERR_POISONED: i32 = -6;
 
+/// A lookup by stable identifier found nothing.
+///
+/// No call returns it yet: an identifier missing from a file is caught while
+/// loading it, and an index beyond its count is a fault in the call. It is
+/// defined now because a published code never changes meaning.
+pub const SCG_ERR_UNKNOWN_RESOURCE: i32 = -100;
+
+/// The block is not a data file this library can read.
+///
+/// The fault is in the content, not in the call: report it to the user as a bad
+/// asset, not to the developer as a misuse. Read the message with
+/// `scg_last_error(NULL)` for what was rejected. Unknown section kinds are
+/// rejected too, deliberately: silently skipping one would render a different
+/// image from the same file, without an error.
+pub const SCG_ERR_INVALID_FORMAT: i32 = -101;
+
+/// The signature and kind are right, but this library does not read that format
+/// version.
+///
+/// The only one of the three data codes that says what to do: take a newer
+/// library, or export the data again.
+pub const SCG_ERR_UNSUPPORTED_FORMAT_VERSION: i32 = -102;
+
 /// Traduit une erreur du noyau en code d'ABI.
 ///
 /// Sans bras générique : c'est ce qui fait échouer la compilation le jour où le
@@ -57,6 +80,8 @@ pub(crate) fn code_of(error: Error) -> i32 {
         // exactement ce que le noyau signale ici : il n'a pas vu la panique,
         // seulement une tuile entrée sans ressortir.
         Error::Faulted => SCG_ERR_FAULTED,
+        Error::InvalidFormat(_) => SCG_ERR_INVALID_FORMAT,
+        Error::UnsupportedFormatVersion => SCG_ERR_UNSUPPORTED_FORMAT_VERSION,
     }
 }
 
@@ -132,6 +157,33 @@ pub(crate) fn message_of(error: Error) -> &'static str {
             "call out of sequence: check the frame state and whether this tile was already rendered"
         }
         Error::Faulted => "a tile did not return from rendering; this frame is incomplete",
+        Error::InvalidFormat(Malformation::Truncated) => {
+            "malformed data file: a field, the section table or a section runs past the end of the block"
+        }
+        Error::InvalidFormat(Malformation::Signature) => {
+            "not a Screengine data file: the four signature bytes do not match"
+        }
+        Error::InvalidFormat(Malformation::Kind) => {
+            "wrong kind of data file: a mesh was given where a world was expected, or the reverse"
+        }
+        Error::InvalidFormat(Malformation::Length) => {
+            "malformed data file: the declared total length is not the length of the block received"
+        }
+        Error::InvalidFormat(Malformation::SectionKind) => {
+            "malformed data file: a section of a kind this version does not know"
+        }
+        Error::InvalidFormat(Malformation::SectionOrder) => {
+            "malformed data file: sections must be in increasing kind order, at most one of each"
+        }
+        Error::InvalidFormat(Malformation::SectionBounds) => {
+            "malformed data file: sections must pave the file, with no gap and no overlap"
+        }
+        Error::InvalidFormat(Malformation::NonFinite) => {
+            "malformed data file: a floating-point value is not finite"
+        }
+        Error::UnsupportedFormatVersion => {
+            "unsupported data format version: take a newer library, or export the data again"
+        }
     }
 }
 
