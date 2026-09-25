@@ -34,6 +34,7 @@ crates/screengine-conformance/references/* binary
 # la conformance réengendre : une conversion le ferait diverger sans qu'une
 # ligne de code ait bougé, exactement comme pour le header.
 *.mesh binary
+*.world binary
 *.png binary
 *.webp binary
 *.bin binary

@@ -222,6 +222,10 @@ et un cycle de retour lent depuis un poste Windows.
   commun au test et à la page, sans API de Node ni du DOM. `make test-wasm` le
   lance sous Node, sans fenêtre ; `make web` sert la page sur
   `http://127.0.0.1:8080/`, puisque `fetch` ne lit pas un `.wasm` en `file://`.
+  **La page charge `couloir.world` et le parcourt au clavier** : c'est l'hôte de
+  démonstration du web, et le patron des trois autres — un canvas, des
+  événements, une boucle, et aucune bibliothèque de fenêtrage à démêler de ce
+  qu'il montre du moteur.
   Écarté : TypeScript, que Node exécute désormais sans compilation mais qu'un
   navigateur ne lit pas — la page exigerait alors un compilateur, donc npm.
   La page a été vue dans un navigateur avant la 0.0.0 ; l'intégration continue

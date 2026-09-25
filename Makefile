@@ -328,6 +328,7 @@ conform-images:
 # faire diverger quatre empreintes sans dire pourquoi.
 mesh:
 	cargo run -p screengine-conformance --release -- --mesh hosts/caisse.mesh
+	cargo run -p screengine-conformance --release -- --world hosts/couloir.world
 
 # Le header est généré et versionné : généré parce qu'écrit à la main il
 # divergerait des signatures, versionné parce qu'un intégrateur doit pouvoir le
