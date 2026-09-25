@@ -941,11 +941,22 @@ répond à un besoin distinct — c'est pourquoi aucun ne remplace un autre :
 Ce sont des contrôles et non une disposition : `version_format` ne bouge pas, et
 une carte que ces clauses refusent était déjà fausse.
 
-**L'étendue en luxels d'une surface est plafonnée, et le refus tombe au
-chargement.** Un grand mur à pas de lightmap fin produit un atlas qui ne tient
-pas ; le vérifier dans le même passage que le repère le fait découvrir à
+**Les trois premiers sont exacts, les deux derniers tolèrent un résidu relatif**,
+et la différence n'est pas un relâchement : une puissance de deux est exacte ou
+n'est pas, alors qu'un repère oblique posé sur une surface oblique porte le résidu
+de sa propre construction. Une tolérance serait interdite sur l'appariement des
+portails, qui est une **relation** — un epsilon la rendrait non transitive ; ici
+c'est un **prédicat**, dont le verdict est le même sur toutes les cibles dès que
+son calcul l'est. Il se fait en `f64`, permis hors image, ce qui dispense de se
+demander si le produit de grandes coordonnées déborde.
+
+**L'étendue en luxels d'une surface est plafonnée à 256 sur un côté, et le refus
+tombe au chargement.** Un grand mur à pas de lightmap fin produit un atlas qui ne
+tient pas ; le vérifier dans le même passage que le repère le fait découvrir à
 l'ouverture de la carte, une fois, plutôt qu'au calcul, trois appels plus tard et
-pour une seule cellule.
+pour une seule cellule. Les extrema se prennent par comparaisons écrites : le
+résultat de `f32::min` sur `min(-0,0, 0,0)` n'est pas spécifié, et deux cibles
+refuseraient des cartes différentes.
 
 L'unité de lightmap est la surface ; l'atlas par cellule est un cache assemblé
 au calcul, jamais dans le fichier, où il figerait une disposition que le premier
@@ -980,10 +991,10 @@ n'est pas un refus mais une traversée qui ouvre sur une cellule non voisine —
 défaut de la classe « image fausse, aucune erreur », et de ceux qui ne se
 rattrapent pas par un correctif local.
 
-**Deux portails de la même cellule ne s'apparient pas**, et un portail dont les
-sommets ne sont pas sur la frontière de sa cellule est refusé : sans ces deux
-contrôles, un lien peut ramener sur la cellule courante et la traversée tourne sur
-place.
+**Deux portails de la même cellule ne s'apparient pas** : le lien ramènerait sur
+la cellule courante, et la traversée tournerait sur place au lieu d'avancer. Rien
+d'autre n'est à vérifier de l'appartenance d'un portail à sa cellule — ses sommets
+sont désignés par indices parmi ceux de la cellule, donc déjà sous son compte.
 **Un portail non apparié est un mur, pas une erreur** : une carte en cours
 d'édition en a toujours. **Trois portails sur la même clé sont une erreur** : il
 n'y a pas de réponse à « lequel des deux ».

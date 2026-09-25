@@ -55,6 +55,32 @@ fn unit_frame() -> Vec<u8> {
     frame([0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0])
 }
 
+/// Une surface dont le repère de lightmap est donné, celui de texture restant
+/// neutre.
+///
+/// Les deux repères se lisent par le même décodeur, mais un seul est contraint :
+/// isoler le repère de lightmap est ce qui permet à chaque contrôle d'avoir son
+/// propre cas au lieu d'un cas qui en refuserait plusieurs à la fois.
+fn surface_with_lightmap(indices: &[u32], lightmap: &[u8]) -> Vec<u8> {
+    let mut bytes = words(&[11, 0, 1, indices.len() as u32]);
+    bytes.extend_from_slice(&words(indices));
+    bytes.extend_from_slice(&unit_frame());
+    bytes.extend_from_slice(lightmap);
+    bytes
+}
+
+/// La carte d'un carré dont la surface porte le repère de lightmap donné.
+fn map_with_lightmap(lightmap: &[u8]) -> Vec<u8> {
+    let cell = cell_bytes(
+        7,
+        0,
+        &SQUARE,
+        &[surface_with_lightmap(&[0, 1, 2, 3], lightmap)],
+        &[],
+    );
+    file(&cell, &[], &[], &material(1, "mur"))
+}
+
 /// Une surface : son en-tête, ses indices, ses deux repères.
 fn surface_bytes(id: u32, flags: u32, material: u32, indices: &[u32]) -> Vec<u8> {
     let mut bytes = words(&[id, flags, material, indices.len() as u32]);
@@ -344,6 +370,75 @@ fn deux_portails_qui_se_touchent_s_apparient() {
     assert_eq!(world.cells()[1].portals[0].link, Some((0, 0)));
 }
 
+/// Deux portails dont les sommets collisionnaient sous l'ancienne clé restent
+/// des murs.
+///
+/// La clé d'un sommet a longtemps mêlé ses trois mots en un seul `u64`, par
+/// rotations et `XOR`. Les deux sommets ci-dessous sont construits pour tomber
+/// sur la même valeur : `y` diffère d'un bit de mantisse, et `z` du bit que la
+/// rotation de vingt-et-un amenait au même rang. L'appariement les prenait donc
+/// pour le même point et liait deux cellules qui ne se touchent pas — une
+/// traversée vers une cellule non voisine, c'est-à-dire un trou ou une fuite que
+/// rien ne signale.
+#[test]
+fn deux_portails_qui_collisionnaient_restent_des_murs() {
+    // Même clé sous l'ancien condensé, deux points distincts : `4.0` dont le bit
+    // de mantisse le plus bas est mis, et `0.0` dont le bit 21 l'est.
+    let colliding = [
+        0.0,
+        f32::from_bits(4.0f32.to_bits() ^ 1),
+        f32::from_bits(1 << 21),
+    ];
+    let triangle = [[0.0, 0.0, 0.0], [4.0, 0.0, 0.0], [0.0, 4.0, 0.0]];
+    let shifted = [triangle[0], triangle[1], colliding];
+
+    let first = cell_bytes(
+        7,
+        0,
+        &triangle,
+        &[surface_bytes(11, 0, 1, &[0, 1, 2])],
+        &[portal_bytes(21, &[0, 1, 2])],
+    );
+    let second = cell_bytes(
+        8,
+        0,
+        &shifted,
+        &[surface_bytes(12, 0, 1, &[0, 1, 2])],
+        &[portal_bytes(22, &[0, 1, 2])],
+    );
+
+    let mut cells = first;
+    cells.extend_from_slice(&second);
+    let world = World::load(&file(&cells, &[], &[], &material(1, "mur"))).expect("carte valide");
+
+    assert_eq!(world.cells()[0].portals[0].link, None);
+    assert_eq!(world.cells()[1].portals[0].link, None);
+}
+
+/// Deux portails d'une même cellule ne s'apparient pas.
+///
+/// Le lien ramènerait sur la cellule courante, et la traversée tournerait sur
+/// place au lieu d'avancer. Rien dans le fichier ne l'interdisait : les deux
+/// portails ont les mêmes sommets, donc la même clé, et l'appariement les liait
+/// l'un à l'autre.
+#[test]
+fn deux_portails_de_la_meme_cellule_sont_refuses() {
+    let cell = cell_bytes(
+        7,
+        0,
+        &SQUARE,
+        &[surface_bytes(11, 0, 1, &[0, 1, 2, 3])],
+        &[
+            portal_bytes(21, &[0, 1, 2, 3]),
+            portal_bytes(22, &[3, 2, 1, 0]),
+        ],
+    );
+    assert_eq!(
+        World::load(&file(&cell, &[], &[], &material(1, "mur"))).unwrap_err(),
+        refused(Malformation::Portal)
+    );
+}
+
 /// Un portail seul est un mur, pas une erreur : une carte en cours d'édition en
 /// a toujours.
 #[test]
@@ -430,6 +525,78 @@ fn un_repere_de_lightmap_mal_aligne_est_refuse() {
     let cell = cell_bytes(7, 0, &SQUARE, &[body], &[]);
     assert_eq!(
         World::load(&file(&cell, &[], &[], &material(1, "mur"))).unwrap_err(),
+        refused(Malformation::Mapping)
+    );
+}
+
+/// Un axe de lightmap dont le carré a un exposant impair est refusé.
+///
+/// `(1, 1, 0)` donne `|u|² = 2` exactement, donc une puissance de deux — et une
+/// longueur `√2`, qui n'en est pas une. Le pas de la grille étant la longueur,
+/// deux surfaces coplanaires aux pas `2` et `√2` ne partagent plus leurs luxels.
+/// Le cas est isolé : les deux axes sont orthogonaux, de même carré, et dans le
+/// plan du carré, si bien qu'aucun autre contrôle ne peut le refuser à la place.
+#[test]
+fn un_axe_de_lightmap_de_longueur_irrationnelle_est_refuse() {
+    let oblique = frame([0.0, 0.0, 0.0], [1.0, 1.0, 0.0], [-1.0, 1.0, 0.0]);
+    assert_eq!(
+        World::load(&map_with_lightmap(&oblique)).unwrap_err(),
+        refused(Malformation::Mapping)
+    );
+}
+
+/// Une origine de lightmap qui ne tombe pas sur un nœud de sa grille est
+/// refusée.
+///
+/// Des axes au bon pas ne suffisent pas : deux grilles de pas égal mais
+/// déphasées d'un demi-luxel ne coïncident pas davantage, et c'est la même marche
+/// d'éclairage à la jointure.
+#[test]
+fn une_origine_de_lightmap_hors_grille_est_refusee() {
+    let shifted = frame([0.5, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]);
+    assert_eq!(
+        World::load(&map_with_lightmap(&shifted)).unwrap_err(),
+        refused(Malformation::Mapping)
+    );
+}
+
+/// Deux axes de lightmap qui ne sont pas orthogonaux sont refusés.
+///
+/// Pris confondus, le cas le plus net : sans orthogonalité, retrouver le point du
+/// monde d'un luxel demande d'inverser une 2×2 quelconque, donc une division dont
+/// l'arrondi deviendrait contractuel.
+#[test]
+fn des_axes_de_lightmap_non_orthogonaux_sont_refuses() {
+    let collapsed = frame([0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [1.0, 0.0, 0.0]);
+    assert_eq!(
+        World::load(&map_with_lightmap(&collapsed)).unwrap_err(),
+        refused(Malformation::Mapping)
+    );
+}
+
+/// Un axe de lightmap qui sort du plan de la surface est refusé.
+///
+/// Le carré vit dans `z = 0` ; un axe porté par `Z` est sa normale, et la grille
+/// qu'il engendre ne recouvre rien de ce qu'elle est censée éclairer.
+#[test]
+fn un_axe_de_lightmap_hors_du_plan_est_refuse() {
+    let normal = frame([0.0, 0.0, 0.0], [0.0, 0.0, 1.0], [0.0, 1.0, 0.0]);
+    assert_eq!(
+        World::load(&map_with_lightmap(&normal)).unwrap_err(),
+        refused(Malformation::Mapping)
+    );
+}
+
+/// Une surface dont l'étendue en luxels dépasse le plafond est refusée.
+///
+/// Un pas de `2⁻⁹` sur un carré de quatre unités demande 2048 luxels de côté. Le
+/// refus tombe ici et non au calcul : l'hôte l'apprend en ouvrant la carte, une
+/// fois, au lieu de le voir remonter d'une cuisson pour une seule cellule.
+#[test]
+fn une_etendue_de_lightmap_demesuree_est_refusee() {
+    let fine = frame([0.0, 0.0, 0.0], [0.001_953_125, 0.0, 0.0], [0.0, 1.0, 0.0]);
+    assert_eq!(
+        World::load(&map_with_lightmap(&fine)).unwrap_err(),
         refused(Malformation::Mapping)
     );
 }

@@ -30,9 +30,10 @@ pub const MAX_CLIP_TRIANGLES: usize = MAX_CLIP_VERTICES - 2;
 
 /// Le polygone convexe issu de la découpe.
 ///
-/// Tient sur la pile de l'appel : huit sommets de vingt octets, deux tampons en
-/// alternance. Aucun tampon de contexte n'est nécessaire, et il n'y a donc rien
-/// à dimensionner à la création.
+/// Tient sur la pile de l'appel : huit sommets de quarante octets — position
+/// homogène, deux jeux de coordonnées et trois canaux de lumière —, deux tampons
+/// en alternance. Aucun tampon de contexte n'est nécessaire, et il n'y a donc
+/// rien à dimensionner à la création.
 #[derive(Debug, Clone, Copy)]
 pub struct Polygon {
     v: [ClipVertex; MAX_CLIP_VERTICES],

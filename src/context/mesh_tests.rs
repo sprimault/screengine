@@ -338,10 +338,13 @@ fn one_surface_world() -> World {
     for index in [0u32, 3, 2, 1] {
         surface.extend_from_slice(&index.to_le_bytes());
     }
-    // Deux repères unitaires : le plaquage et la lightmap, dont les axes
-    // doivent être de longueur puissance de deux.
+    // Deux repères unitaires, le plaquage et la lightmap. **Leurs axes sont dans
+    // le plan de la surface**, qui est `x = 10` : un axe porté par X serait sa
+    // normale, et la grille de luxels qu'il engendrerait ne recouvrirait rien.
+    // La texture étant unie, les coordonnées ne changent pas ce que le test
+    // affirme — que la carte peint, et à quelle couleur.
     for _ in 0..2 {
-        for value in [0.0f32, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0] {
+        for value in [0.0f32, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0] {
             surface.extend_from_slice(&value.to_le_bytes());
         }
     }
