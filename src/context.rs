@@ -11,6 +11,7 @@ use core::sync::atomic::{AtomicBool, AtomicU8, AtomicU32, Ordering};
 
 use crate::buffer::reserved;
 use crate::error::{Argument, Error, Result};
+use crate::format::Mesh;
 use crate::light::MAX_OVERBRIGHT;
 use crate::light::dynamic::{self, MAX_LIGHTS};
 use crate::light::fog::Fog;
@@ -807,6 +808,55 @@ impl Context {
         })
     }
 
+    /// Soumet un maillage chargé, un lot par groupe de surface.
+    ///
+    /// `texture` rend la texture d'un emplacement, ou `None` pour « sans
+    /// texture » : une fonction d'accès et non une tranche, pour que la table de
+    /// l'hôte se lise sur place — la recopier dans un tampon intermédiaire
+    /// serait une allocation sur le chemin le plus banal de l'étape.
+    ///
+    /// **Refusé en entier ou pas du tout.** Le dépassement de capacité ne se voit
+    /// pas à l'entrée : un triangle soumis consomme plusieurs places quand le
+    /// découpage le multiplie, si bien qu'un groupe peut échouer après que
+    /// d'autres ont été posés. D'où la marque et la troncature, plutôt qu'un
+    /// contrôle a priori qui, dimensionné sur le pire cas du découpage,
+    /// refuserait des maillages tenant largement — et rendrait inutilisable le
+    /// compte de triangles sur lequel l'hôte dimensionne son contexte.
+    ///
+    /// Rien n'est revalidé : les indices et le pavage des groupes tiennent du
+    /// chargement, et c'est ce qui permet d'indexer sans contrôle.
+    pub fn submit_mesh<'t, F>(&mut self, model: Affine3, mesh: &Mesh, texture: F) -> Result<()>
+    where
+        F: Fn(u32) -> Option<&'t Arc<Texture>>,
+    {
+        let (mark, textures) = (self.triangles.len(), self.textures.len());
+        let lights = self.lighting.len();
+
+        for group in mesh.groups() {
+            let first = group.first_triangle as usize;
+            let result = self.submit_each_uv(
+                model,
+                group.triangle_count as usize,
+                texture(group.texture_slot),
+                |i| {
+                    let triangle = mesh.triangles()[first + i];
+                    let mut corners = [VertexUv::untextured(Vec3::ZERO); 3];
+                    for (corner, &index) in corners.iter_mut().zip(&triangle.indices) {
+                        *corner = mesh.vertices()[index as usize];
+                    }
+                    Ok((corners, triangle.color))
+                },
+            );
+            if result.is_err() {
+                self.triangles.truncate(mark);
+                self.lighting.truncate(lights);
+                self.textures.truncate(textures);
+                return result;
+            }
+        }
+        Ok(())
+    }
+
     /// Soumet un lot de triangles habillés d'une texture.
     ///
     /// **La texture vaut pour le lot entier**, et non pour chaque triangle :
@@ -1108,5 +1158,7 @@ impl Context {
     }
 }
 
+#[cfg(test)]
+mod mesh_tests;
 #[cfg(test)]
 mod tests;

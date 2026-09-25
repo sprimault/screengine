@@ -12,82 +12,10 @@ use alloc::vec;
 use alloc::vec::Vec;
 
 use super::*;
-use crate::testing::Rng;
-
-/// Un sommet d'épreuve, écrit en octets.
-fn vertex(x: f32, y: f32, z: f32, u: f32, v: f32) -> Vec<u8> {
-    let mut bytes = Vec::new();
-    for value in [x, y, z, u, v] {
-        bytes.extend_from_slice(&value.to_le_bytes());
-    }
-    bytes
-}
-
-/// Un triangle d'épreuve : trois indices puis quatre composantes de couleur.
-fn triangle(i0: u32, i1: u32, i2: u32, color: [u8; 4]) -> Vec<u8> {
-    let mut bytes = Vec::new();
-    for index in [i0, i1, i2] {
-        bytes.extend_from_slice(&index.to_le_bytes());
-    }
-    bytes.extend_from_slice(&color);
-    bytes
-}
-
-/// Un groupe d'épreuve : identifiant, premier triangle, compte, emplacement.
-fn group(id: u32, first: u32, count: u32, slot: u32) -> Vec<u8> {
-    let mut bytes = Vec::new();
-    for value in [id, first, count, slot] {
-        bytes.extend_from_slice(&value.to_le_bytes());
-    }
-    bytes
-}
-
-/// Un nom d'emplacement : sa longueur en deux octets, puis ses octets.
-fn name(text: &str) -> Vec<u8> {
-    let mut bytes = Vec::new();
-    bytes.extend_from_slice(&(text.len() as u16).to_le_bytes());
-    bytes.extend_from_slice(text.as_bytes());
-    bytes
-}
-
-/// Un fichier de maillage bien formé, à partir de ses quatre sections.
-///
-/// Les décalages sont posés ici — vingt octets d'en-tête, douze par entrée de
-/// table — et les sections rangées par genre croissant, comme le conteneur
-/// l'exige. Une section vide n'entre pas dans la table.
-fn file(surf: &[u8], texn: &[u8], tris: &[u8], vtxs: &[u8]) -> Vec<u8> {
-    let sections: Vec<([u8; 4], &[u8])> = [
-        (*b"SURF", surf),
-        (*b"TEXN", texn),
-        (*b"TRIS", tris),
-        (*b"VTXS", vtxs),
-    ]
-    .into_iter()
-    .filter(|(_, body)| !body.is_empty())
-    .collect();
-
-    let first = 20 + 12 * sections.len();
-    let total = first + sections.iter().map(|(_, body)| body.len()).sum::<usize>();
-
-    let mut bytes = Vec::new();
-    bytes.extend_from_slice(b"SCG\x1a");
-    bytes.extend_from_slice(b"MESH");
-    bytes.extend_from_slice(&1u32.to_le_bytes());
-    bytes.extend_from_slice(&(total as u32).to_le_bytes());
-    bytes.extend_from_slice(&(sections.len() as u32).to_le_bytes());
-
-    let mut offset = first;
-    for (tag, body) in &sections {
-        bytes.extend_from_slice(tag);
-        bytes.extend_from_slice(&(offset as u32).to_le_bytes());
-        bytes.extend_from_slice(&(body.len() as u32).to_le_bytes());
-        offset += body.len();
-    }
-    for (_, body) in &sections {
-        bytes.extend_from_slice(body);
-    }
-    bytes
-}
+use crate::testing::{
+    Rng, group_bytes as group, mesh_file as file, name_bytes as name, triangle_bytes as triangle,
+    vertex_bytes as vertex,
+};
 
 /// Quatre sommets, deux triangles, deux groupes, deux emplacements : le maillage
 /// que les tests abîment.

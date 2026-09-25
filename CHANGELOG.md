@@ -56,6 +56,13 @@ publié, et explique les conventions du dépôt à qui y contribue.
 - Les conventions Rust décrivent les dispositions binaires des deux formats :
   en-tête et table de sections communs, maillage, carte, et ce que le décodeur
   tient pour hostile.
+- `scg_submit_mesh` dessine un maillage, un lot par groupe de surface, avec une
+  texture par emplacement — une entrée nulle laissant les couleurs du fichier
+  décider. La matrice de modèle place la ressource, et le maillage est **soumis
+  en entier ou pas du tout** : s'il ne tient pas dans la capacité restante, rien
+  n'entre dans l'image. Une scène de conformance rend désormais une caisse
+  chargée depuis un fichier, ce qui fait entrer le décodage dans la comparaison
+  entre cibles.
 - Le chargement d'un maillage : `scg_mesh_load`, `scg_mesh_destroy`,
   `scg_mesh_texture_count`, `scg_mesh_texture_name` et
   `scg_mesh_triangle_count`. La ressource est immuable, indépendante de tout
@@ -84,6 +91,12 @@ publié, et explique les conventions du dépôt à qui y contribue.
   first decoder, as the fixed-point formats were frozen before the first fill.
 - The Rust conventions describe both formats' binary layouts: the shared header
   and section table, the mesh, the map, and what the decoder treats as hostile.
+- `scg_submit_mesh` draws a mesh, one batch per surface group, with a texture per
+  slot — a null entry leaves the colours from the file to decide. The model
+  matrix places the resource, and the mesh is **submitted whole or not at all**:
+  if it does not fit in the remaining capacity, nothing enters the frame. A
+  conformance scene now renders a crate loaded from a file, which brings decoding
+  into the cross-target comparison.
 - Mesh loading: `scg_mesh_load`, `scg_mesh_destroy`, `scg_mesh_texture_count`,
   `scg_mesh_texture_name` and `scg_mesh_triangle_count`. The resource is
   immutable, belongs to no context, and the engine copies the bytes — the host

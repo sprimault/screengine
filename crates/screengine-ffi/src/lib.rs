@@ -1032,6 +1032,72 @@ pub unsafe extern "C" fn scg_mesh_texture_count(mesh: *const ScgMesh, out: *mut 
     unsafe { mesh_count(mesh, out, Mesh::texture_count) }
 }
 
+/// Submits a mesh, one batch per surface group, with a texture per slot.
+///
+/// `textures` holds `texture_count` handles in slot order, and `texture_count`
+/// must **equal** `scg_mesh_texture_count`, not merely reach it. A null entry
+/// means "no texture" for that slot, and the triangle colours from the file
+/// decide instead. The array is read in place and never copied, so nothing is
+/// allocated during the call.
+///
+/// `model` places the mesh in the world; the engine composes its camera itself.
+///
+/// **The mesh is submitted whole or not at all.** If it does not fit in the
+/// remaining triangle capacity, the call returns `SCG_ERR_INVALID_ARGUMENT` and
+/// leaves nothing behind — not even the groups it had already placed. Size the
+/// capacity with `scg_mesh_triangle_count` before creating the context.
+///
+/// Nothing in the mesh is validated again here: indices and group bounds were
+/// checked once, when it was loaded.
+///
+/// # Safety
+///
+/// `ctx` must be null or a live handle. `model` must point to a readable matrix,
+/// `mesh` must be a live handle from `scg_mesh_load`, and `textures` must be null
+/// with `texture_count` zero, or cover `texture_count` readable pointers, each
+/// null or a live handle from `scg_texture_load`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn scg_submit_mesh(
+    ctx: *mut ScgContext,
+    model: *const ScgMat4,
+    mesh: *const ScgMesh,
+    textures: *const *const ScgTexture,
+    texture_count: u32,
+) -> i32 {
+    let submit = |mut core: entry::Core<'_>| {
+        // SAFETY: précondition de la fonction — chaque pointeur est nul ou vise
+        // une valeur lisible.
+        let model = unsafe { model.as_ref() }.ok_or(AbiError::NULL)?;
+        let model = model.to_core()?;
+        // SAFETY: précondition de la fonction — `mesh` est un handle vivant.
+        let mesh = unsafe { mesh.as_ref() }.ok_or(AbiError::NULL)?;
+        if textures.is_null() && texture_count != 0 {
+            return Err(AbiError::NULL);
+        }
+        if texture_count != mesh.inner.texture_count() {
+            return Err(AbiError::TEXTURE_COUNT);
+        }
+        // SAFETY: précondition de la fonction — le tableau couvre son nombre
+        // d'éléments, le cas vide étant traité par `slice_of`.
+        let slots = unsafe { slice_of(textures, texture_count) };
+
+        core.exclusive()?
+            .submit_mesh(model, &mesh.inner, |slot| {
+                // SAFETY: précondition de la fonction — chaque entrée du tableau
+                // est nulle ou un handle vivant. Le compte ayant été vérifié
+                // égal, `get` ne rend jamais `None` ici.
+                slots
+                    .get(slot as usize)
+                    .and_then(|handle| unsafe { handle.as_ref() })
+                    .map(|texture| &texture.inner)
+            })
+            .map_err(AbiError::from)
+    };
+
+    // SAFETY: précondition de la fonction — `ctx` est nul ou un handle vivant.
+    unsafe { entry::with_context(ctx, submit) }
+}
+
 /// Reads the name of one texture slot, in two steps.
 ///
 /// Call it once with `buf` null and `cap` zero: it writes the length of the name
