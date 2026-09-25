@@ -34,8 +34,17 @@ constexpr int HEIGHT = 360;
 constexpr uint32_t TILE = 64;
 /// Facteur d'agrandissement de la fenêtre.
 constexpr int SCALE = 2;
-/// Côté des damiers, en texels.
-constexpr uint32_t TEXTURE_SIDE = 64;
+/// Côté du damier des murs, en texels.
+///
+/// Les côtés suivent la densité de plaquage de la carte — 256 texels par unité
+/// aux murs, 128 au sol : une case y fait un demi-mètre et un quart. Un damier
+/// plus petit donnerait des cases de quelques centimètres, que le mipmap
+/// ramènerait à un aplat.
+constexpr uint32_t WALL_SIDE = 512;
+/// Celui du sol et du plafond.
+constexpr uint32_t FLOOR_SIDE = 256;
+/// Celui des caisses, dont le maillage a son propre plaquage.
+constexpr uint32_t CRATE_SIDE = 64;
 /// Vitesse de déplacement, en unités de monde par seconde.
 constexpr float SPEED = 6.0f;
 /// Vitesse de rotation, en radians par seconde.
@@ -62,12 +71,12 @@ std::vector<uint8_t> read_file(const char *path)
 }
 
 /// Un damier de `cell` texels de case, le même que la suite de conformance.
-std::vector<uint8_t> make_checker(uint32_t cell)
+std::vector<uint8_t> make_checker(uint32_t side, uint32_t cell)
 {
-    std::vector<uint8_t> texels(static_cast<size_t>(TEXTURE_SIDE) * TEXTURE_SIDE * 4);
-    for (uint32_t v = 0; v < TEXTURE_SIDE; v++) {
-        for (uint32_t u = 0; u < TEXTURE_SIDE; u++) {
-            uint8_t *texel = texels.data() + (static_cast<size_t>(v) * TEXTURE_SIDE + u) * 4;
+    std::vector<uint8_t> texels(static_cast<size_t>(side) * side * 4);
+    for (uint32_t v = 0; v < side; v++) {
+        for (uint32_t u = 0; u < side; u++) {
+            uint8_t *texel = texels.data() + (static_cast<size_t>(v) * side + u) * 4;
             const bool edge = u % cell == 0 || v % cell == 0;
             const bool dark = ((u / cell) + (v / cell)) % 2 == 0;
             if (edge) {
@@ -84,12 +93,12 @@ std::vector<uint8_t> make_checker(uint32_t cell)
 }
 
 /// Charge une texture de damier, ou rend nul.
-ScgTexture *load_checker(uint32_t cell)
+ScgTexture *load_checker(uint32_t side, uint32_t cell)
 {
-    const std::vector<uint8_t> texels = make_checker(cell);
+    const std::vector<uint8_t> texels = make_checker(side, cell);
     ScgTextureDesc desc{};
-    desc.width = TEXTURE_SIDE;
-    desc.height = TEXTURE_SIDE;
+    desc.width = side;
+    desc.height = side;
     desc.format = SCG_TEXTURE_FORMAT_RGBA8;
 
     ScgTexture *texture = nullptr;
@@ -199,7 +208,8 @@ int main(int argc, char **argv)
             fail(nullptr, "nom de matériau illisible");
             return 1;
         }
-        slots[i] = load_checker(std::strcmp(name.c_str(), "mur") == 0 ? 16 : 8);
+        const bool wall = std::strcmp(name.c_str(), "mur") == 0;
+        slots[i] = load_checker(wall ? WALL_SIDE : FLOOR_SIDE, wall ? 128 : 32);
         if (slots[i] == nullptr) {
             fail(nullptr, "texture refusée");
             return 1;
@@ -208,8 +218,7 @@ int main(int argc, char **argv)
 
     // Le maillage des caisses, chargé comme la carte : un bloc d'octets, que le
     // moteur copie. Ses deux emplacements portent des noms, et l'hôte décide de
-    // ce qu'il met dedans — ici un damier sur les côtés, rien sur le dessus, si
-    // bien que les couleurs du fichier y décident.
+    // ce qu'il met dedans — ici le même damier sur les deux.
     const std::vector<uint8_t> mesh_bytes = read_file(argv[2]);
     if (mesh_bytes.empty()) {
         std::fprintf(stderr, "%s : lecture impossible\n", argv[2]);
@@ -222,7 +231,8 @@ int main(int argc, char **argv)
     }
     const std::unique_ptr<ScgMesh, decltype(&scg_mesh_destroy)> crate(raw_crate,
                                                                      &scg_mesh_destroy);
-    const ScgTexture *crate_slots[2] = { load_checker(8), nullptr };
+    const ScgTexture *crate_side = load_checker(CRATE_SIDE, 8);
+    const ScgTexture *crate_slots[2] = { crate_side, crate_side };
     if (crate_slots[0] == nullptr) {
         fail(nullptr, "texture de caisse refusée");
         return 1;

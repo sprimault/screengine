@@ -1133,8 +1133,13 @@ impl Scene {
                 // Deux damiers de pas différents : celui des murs a des cases
                 // deux fois plus grandes, si bien qu'une texture liée au mauvais
                 // matériau se voit sans qu'on ait à comparer des teintes.
-                let walls = checker(64, 16);
-                let floor = checker(64, 8);
+                //
+                // Les côtés suivent la densité de plaquage de la carte, 256
+                // texels par unité aux murs et 128 au sol : une case y fait un
+                // demi-mètre et un quart, là où des damiers de 64 donneraient
+                // des cases de six centimètres que le mipmap aplatirait.
+                let walls = checker(512, 128);
+                let floor = checker(256, 32);
                 context.submit_world(Affine3::IDENTITY, &world, |material| match material {
                     0 => Some(&walls),
                     _ => Some(&floor),
