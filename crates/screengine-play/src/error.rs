@@ -133,6 +133,16 @@ impl fmt::Display for Error {
                 Malformation::NonFinite => {
                     f.write_str("a floating-point value in the data file is not finite")
                 }
+                Malformation::NonUtf8 => f.write_str("a name in the data file is not valid UTF-8"),
+                Malformation::Index => {
+                    f.write_str("an index in the data file is beyond what it points into")
+                }
+                Malformation::Identifier => {
+                    f.write_str("an identifier is zero, or used twice in its family")
+                }
+                Malformation::GroupBounds => f.write_str(
+                    "surface groups must pave the triangles in order, with no gap and no overlap",
+                ),
             },
             Self::Engine(screengine::Error::UnsupportedFormatVersion) => {
                 f.write_str("unsupported data format version: export the data again")

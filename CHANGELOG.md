@@ -56,6 +56,13 @@ publié, et explique les conventions du dépôt à qui y contribue.
 - Les conventions Rust décrivent les dispositions binaires des deux formats :
   en-tête et table de sections communs, maillage, carte, et ce que le décodeur
   tient pour hostile.
+- Le chargement d'un maillage : `scg_mesh_load`, `scg_mesh_destroy`,
+  `scg_mesh_texture_count`, `scg_mesh_texture_name` et
+  `scg_mesh_triangle_count`. La ressource est immuable, indépendante de tout
+  contexte, et le moteur copie les octets — l'hôte libère son bloc au retour.
+  Les noms d'emplacements se lisent en deux temps, et l'hôte charge ce qu'il veut
+  avec ses propres fichiers. **Rien ne se dessine encore** :
+  `scg_submit_mesh` n'est pas exposée.
 - Le header définit les trois codes de la plage données :
   `SCG_ERR_UNKNOWN_RESOURCE`, `SCG_ERR_INVALID_FORMAT` et
   `SCG_ERR_UNSUPPORTED_FORMAT_VERSION`. Aucun appel ne les rend encore — aucun
@@ -77,6 +84,12 @@ publié, et explique les conventions du dépôt à qui y contribue.
   first decoder, as the fixed-point formats were frozen before the first fill.
 - The Rust conventions describe both formats' binary layouts: the shared header
   and section table, the mesh, the map, and what the decoder treats as hostile.
+- Mesh loading: `scg_mesh_load`, `scg_mesh_destroy`, `scg_mesh_texture_count`,
+  `scg_mesh_texture_name` and `scg_mesh_triangle_count`. The resource is
+  immutable, belongs to no context, and the engine copies the bytes — the host
+  frees its block as soon as the call returns. Slot names are read in two steps,
+  and the host loads whatever it wants for them with its own files. **Nothing is
+  drawn yet**: `scg_submit_mesh` is not exposed.
 - The header defines the three codes of the data range:
   `SCG_ERR_UNKNOWN_RESOURCE`, `SCG_ERR_INVALID_FORMAT` and
   `SCG_ERR_UNSUPPORTED_FORMAT_VERSION`. No call returns them yet — no entry point

@@ -149,6 +149,10 @@ fn chaque_malformation_a_son_message() {
         Malformation::SectionOrder,
         Malformation::SectionBounds,
         Malformation::NonFinite,
+        Malformation::NonUtf8,
+        Malformation::Index,
+        Malformation::Identifier,
+        Malformation::GroupBounds,
     ];
     for (i, a) in malformations.iter().enumerate() {
         let error = Error::InvalidFormat(*a);
@@ -169,9 +173,13 @@ fn chaque_malformation_a_son_message() {
         Malformation::SectionOrder => 5,
         Malformation::SectionBounds => 6,
         Malformation::NonFinite => 7,
+        Malformation::NonUtf8 => 8,
+        Malformation::Index => 9,
+        Malformation::Identifier => 10,
+        Malformation::GroupBounds => 11,
     };
     for (i, a) in malformations.iter().enumerate() {
         assert_eq!(rank(*a), i, "{a:?} n'est pas à sa place");
     }
-    assert_eq!(malformations.len(), 8, "une variante manque à la liste");
+    assert_eq!(malformations.len(), 12, "une variante manque à la liste");
 }

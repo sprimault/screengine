@@ -181,6 +181,18 @@ pub(crate) fn message_of(error: Error) -> &'static str {
         Error::InvalidFormat(Malformation::NonFinite) => {
             "malformed data file: a floating-point value is not finite"
         }
+        Error::InvalidFormat(Malformation::NonUtf8) => {
+            "malformed data file: a name is not valid UTF-8"
+        }
+        Error::InvalidFormat(Malformation::Index) => {
+            "malformed data file: an index is beyond what it points into"
+        }
+        Error::InvalidFormat(Malformation::Identifier) => {
+            "malformed data file: an identifier is zero, or used twice in its family"
+        }
+        Error::InvalidFormat(Malformation::GroupBounds) => {
+            "malformed data file: surface groups must pave the triangles in order, with no gap and no overlap"
+        }
         Error::UnsupportedFormatVersion => {
             "unsupported data format version: take a newer library, or export the data again"
         }

@@ -15,6 +15,7 @@
 mod context;
 mod entry;
 mod fpenv;
+mod mesh;
 mod message;
 mod output;
 mod scene;
@@ -27,12 +28,13 @@ use std::ptr;
 
 use std::sync::Arc;
 
-use screengine::{Argument, Context, Error as CoreError, Texture, Vec3, VertexUv, VertexUv2};
+use screengine::{Argument, Context, Error as CoreError, Mesh, Texture, Vec3, VertexUv, VertexUv2};
 
 use entry::AbiError;
 use output::HostRows;
 
 pub use context::{ScgContext, ScgContextConfig};
+pub use mesh::ScgMesh;
 pub use scene::{
     SCG_FILTER_BILINEAR, SCG_FILTER_DITHER, SCG_TEXTURE_FORMAT_RGBA8, ScgCamera, ScgGrade,
     ScgLight, ScgMat4, ScgTextureDesc, ScgTriangle, ScgVertex, ScgVertexUv, ScgVertexUv2,
@@ -943,4 +945,185 @@ pub unsafe extern "C" fn scg_submit_lit(
 
     // SAFETY: précondition de la fonction — `ctx` est nul ou un handle vivant.
     unsafe { entry::with_context(ctx, submit) }
+}
+
+/// Loads a mesh from a block of bytes.
+///
+/// The engine copies what it keeps: the host may free `bytes` as soon as the
+/// call returns, and no lifetime crosses the boundary. `len` must be exactly the
+/// length the file declares in its header — a longer or shorter block is
+/// rejected, tail bytes included.
+///
+/// The mesh belongs to no context, so the failure is read with
+/// `scg_last_error(NULL)`. Two codes say different things to the host:
+/// `SCG_ERR_INVALID_FORMAT` means the content is bad, to report as a bad asset;
+/// `SCG_ERR_UNSUPPORTED_FORMAT_VERSION` means this library cannot read that
+/// version, so take a newer one or export the data again.
+///
+/// An empty mesh is a valid file, not an error.
+///
+/// # Safety
+///
+/// `bytes` must cover `len` readable bytes, or `len` must be zero. `out` must
+/// point to a writable handle; nothing is written unless the call succeeds.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn scg_mesh_load(
+    bytes: *const u8,
+    len: usize,
+    out: *mut *mut ScgMesh,
+) -> i32 {
+    entry::without_context(|| {
+        if out.is_null() {
+            return Err(AbiError::NULL);
+        }
+        if bytes.is_null() && len != 0 {
+            return Err(AbiError::NULL);
+        }
+        // SAFETY: précondition de la fonction — `bytes` couvre `len` octets
+        // lisibles. Un `len` nul admet le pointeur nul, que `from_raw_parts`
+        // exigerait quand même aligné.
+        let bytes = unsafe { slice_of_bytes(bytes, len) };
+        let mesh = Mesh::load(bytes)?;
+        let handle = Box::into_raw(Box::new(ScgMesh { inner: mesh }));
+        // SAFETY: précondition de la fonction — `out` vise un handle
+        // inscriptible, et rien n'y a été écrit avant ce point.
+        unsafe { out.write(handle) };
+        Ok(())
+    })
+}
+
+/// Releases a mesh.
+///
+/// `scg_mesh_destroy(NULL)` does nothing, like `free(NULL)`. Destroying a mesh
+/// during a frame is harmless, but **not for the same reason as a texture**:
+/// nothing reads a mesh once the submission has returned, whereas the engine
+/// holds a reference to a texture until the frame ends. Do not assume the two
+/// follow one rule.
+///
+/// # Safety
+///
+/// `mesh` must be null, or a handle returned by `scg_mesh_load` and not yet
+/// destroyed.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn scg_mesh_destroy(mesh: *mut ScgMesh) {
+    entry::nothing(|| {
+        if mesh.is_null() {
+            return;
+        }
+        // SAFETY: précondition de la fonction — le handle vient de
+        // `Box::into_raw` dans `scg_mesh_load` et n'a pas encore été rendu.
+        drop(unsafe { Box::from_raw(mesh) });
+    });
+}
+
+/// Writes the number of texture slots the mesh asks for to `out`.
+///
+/// Slots are numbered from zero. Read each name with `scg_mesh_texture_name`,
+/// load what you want with your own files, and pass the handles in slot order.
+///
+/// # Safety
+///
+/// `mesh` must be a live handle from `scg_mesh_load`, and `out` must point to a
+/// writable `uint32_t`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn scg_mesh_texture_count(mesh: *const ScgMesh, out: *mut u32) -> i32 {
+    // SAFETY: précondition de la fonction — `mesh` est nul ou un handle vivant,
+    // `out` est nul ou inscriptible.
+    unsafe { mesh_count(mesh, out, Mesh::texture_count) }
+}
+
+/// Reads the name of one texture slot, in two steps.
+///
+/// Call it once with `buf` null and `cap` zero: it writes the length of the name
+/// to `out_len`, not counting the terminator. Call it again with a buffer of at
+/// least `*out_len + 1` bytes: it writes the name and a null terminator.
+///
+/// A `cap` too small for the name and its terminator returns
+/// `SCG_ERR_INVALID_ARGUMENT` and **writes nothing**, `out_len` included — the
+/// measuring call is how you learn the length. A `slot` beyond
+/// `scg_mesh_texture_count` returns `SCG_ERR_INVALID_ARGUMENT` too: the file is
+/// fine, the index is not. `out_len` is required in both steps.
+///
+/// The name is what the file calls the slot, never a path: the engine opens
+/// nothing, and the host decides what it loads for that slot.
+///
+/// # Safety
+///
+/// `mesh` must be a live handle from `scg_mesh_load`. `buf` must be null with
+/// `cap` zero, or cover `cap` writable bytes. `out_len` must point to a writable
+/// `size_t`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn scg_mesh_texture_name(
+    mesh: *const ScgMesh,
+    slot: u32,
+    buf: *mut c_char,
+    cap: usize,
+    out_len: *mut usize,
+) -> i32 {
+    entry::without_context(|| {
+        if out_len.is_null() || (buf.is_null() && cap != 0) {
+            return Err(AbiError::NULL);
+        }
+        // SAFETY: précondition de la fonction — le pointeur est nul ou vise un
+        // handle vivant.
+        let mesh = unsafe { mesh.as_ref() }.ok_or(AbiError::NULL)?;
+        let name = mesh
+            .inner
+            .texture_name(slot)
+            .ok_or(AbiError::TEXTURE_SLOT)?;
+
+        if !buf.is_null() {
+            if cap < name.len() + 1 {
+                return Err(AbiError::NAME_CAPACITY);
+            }
+            // SAFETY: précondition de la fonction — `buf` couvre `cap` octets
+            // inscriptibles, et `cap` vient d'être vérifié plus grand que le nom
+            // et son terminateur. Le nom vit dans la ressource, que `buf` ne
+            // recouvre pas.
+            unsafe {
+                ptr::copy_nonoverlapping(name.as_ptr(), buf.cast::<u8>(), name.len());
+                buf.add(name.len()).write(0);
+            }
+        }
+        // SAFETY: précondition de la fonction — `out_len` vise une `size_t`
+        // inscriptible.
+        unsafe { out_len.write(name.len()) };
+        Ok(())
+    })
+}
+
+/// Writes the number of triangles the mesh carries to `out`.
+///
+/// It is what a host needs to size `max_triangles` before creating the context
+/// it will submit to: without it, the only way to know is to try.
+///
+/// # Safety
+///
+/// `mesh` must be a live handle from `scg_mesh_load`, and `out` must point to a
+/// writable `uint32_t`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn scg_mesh_triangle_count(mesh: *const ScgMesh, out: *mut u32) -> i32 {
+    // SAFETY: mêmes préconditions que ci-dessus.
+    unsafe { mesh_count(mesh, out, Mesh::triangle_count) }
+}
+
+/// Le corps commun des deux accesseurs scalaires d'un maillage.
+///
+/// # Safety
+///
+/// `mesh` est nul ou un handle vivant, `out` est nul ou vise un `u32`
+/// inscriptible.
+unsafe fn mesh_count(mesh: *const ScgMesh, out: *mut u32, count: impl Fn(&Mesh) -> u32) -> i32 {
+    entry::without_context(|| {
+        if out.is_null() {
+            return Err(AbiError::NULL);
+        }
+        // SAFETY: précondition de la fonction — le pointeur est nul ou vise un
+        // handle vivant.
+        let mesh = unsafe { mesh.as_ref() }.ok_or(AbiError::NULL)?;
+        // SAFETY: précondition de la fonction — `out` vise un `u32`
+        // inscriptible.
+        unsafe { out.write(count(&mesh.inner)) };
+        Ok(())
+    })
 }
