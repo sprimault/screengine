@@ -59,7 +59,7 @@ android_build = for cible in $(CIBLES_ANDROID); do \
 .PHONY: build lib lib-wasm lib-android run example web test native-libs fmt fmt-fix lint lint-doc-tests \
         lint-android-versions nostd msrv bench \
         conform conform-update conform-images mesh header header-verif audit deny doc hosts host-c host-cpp host-web \
-        host-android clean tools
+        host-android demo-c demo-cpp clean tools
 
 build:
 	cargo build --workspace
@@ -371,6 +371,25 @@ host-cpp: lib
 
 host-web: lib-wasm
 	$(MAKE) -C hosts/web
+
+# Les hôtes de démonstration : ils ouvrent une fenêtre, donc ils ne sont dans
+# aucun contrôle — ni `make test`, ni l'intégration continue ne les construisent.
+# `make demo-c` et `make demo-cpp` les lancent sur le décor versionné ; sans
+# SDL3, la cible dit ce qui manque plutôt que d'échouer sur un include.
+#
+# SDL3 vient de `makefile.local` sous Windows, de pkg-config ailleurs : une
+# dépendance système ne s'installe pas au même endroit d'un poste à l'autre.
+demo-c: lib
+	@reason=$$($(MAKE) -s --no-print-directory -C hosts/c why-not-demo); \
+	if [ -n "$$reason" ]; then echo "demo-c impossible : $$reason"; exit 1; fi
+	$(MAKE) -C hosts/c demo-run PROFILE=release-ffi OUT=$(abspath $(SORTIE))/host-c \
+	  WORLD=$(abspath hosts/couloir.world) MESH=$(abspath hosts/caisse.mesh)
+
+demo-cpp: lib
+	@reason=$$($(MAKE) -s --no-print-directory -C hosts/cpp why-not-demo); \
+	if [ -n "$$reason" ]; then echo "demo-cpp impossible : $$reason"; exit 1; fi
+	$(MAKE) -C hosts/cpp demo-run PROFILE=release-ffi OUT=$(abspath $(SORTIE))/host-cpp \
+	  WORLD=$(abspath hosts/couloir.world) MESH=$(abspath hosts/caisse.mesh)
 
 # La page du navigateur, servie en local : `fetch` ne lit pas un .wasm en
 # file://. PORT se choisit sur la ligne de commande.

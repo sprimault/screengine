@@ -321,6 +321,33 @@ Dans l'ordre où les causes se rencontrent :
    signature mal reproduit dans `jni.c`. Sans `RegisterNatives`, le même défaut
    n'apparaîtrait qu'au premier appel, en `UnsatisfiedLinkError`.
 
+## Hôtes de démonstration
+
+Les hôtes de `hosts/` viennent par deux : celui qui éprouve la frontière sans
+fenêtre — `make test` le construit et compare son empreinte —, et celui qui
+montre le moteur. Le second ouvre une fenêtre, donc il n'est dans aucun
+contrôle : ni `make test`, ni l'intégration continue ne le construisent.
+
+- **`make demo-c` et `make demo-cpp`** chargent la carte et le maillage
+  versionnés, et s'y déplacent au clavier — flèches ou ZQSD, Échap pour
+  fermer. Ils suivent la page web pas à pas, parce qu'elle n'a aucune
+  bibliothèque de fenêtrage à démêler de ce qu'elle montre du moteur.
+- **SDL3 y fournit la fenêtre, la texture et les événements**, rien de plus :
+  le moteur rend dans un bloc d'octets, et l'hôte le remonte. Une autre
+  bibliothèque de fenêtrage se substituerait à SDL sans toucher aux appels
+  `scg_`.
+- **Sa racine vient de `makefile.local` sous Windows** — la variable `SDL3`,
+  pointant sur l'archive `SDL3-devel-VC` dépliée —, **de `pkg-config` ailleurs**,
+  qui est la convention de la plateforme. Sans elle, la cible dit ce qui manque
+  plutôt que d'échouer sur un `#include`.
+- **`build-demo.cmd` compile en `-W4` sans `-WX`**, contrairement aux deux
+  autres scripts : les en-têtes de SDL3 ne sont pas écrits pour le niveau
+  d'avertissement du projet, et une dépendance tierce n'a pas à l'être.
+- **Les deux DLL sont copiées à côté de l'exécutable** pour l'hôte C++, celle du
+  moteur et celle de SDL3, pour la raison déjà donnée plus haut.
+- **Vus sous Windows** avec SDL3 3.4.16. **À vérifier** : les deux démonstrations
+  sous Linux, où SDL3 vient du gestionnaire de paquets.
+
 ## Header
 
 - **`include/screengine.h` est généré** par `cbindgen`, à partir de

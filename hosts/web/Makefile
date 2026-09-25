@@ -38,9 +38,9 @@ all: $(WASM)
 	@mkdir -p $(OUT)
 	cp $(SOURCES) $(OUT)/
 	cp $(WASM) $(OUT)/
-	# Le décor que la page parcourt : `fetch` ne lit que ce qui est servi, et
-	# c'est OUT que `make web` sert.
-	cp $(WORLD) $(OUT)/
+	# Le décor et les caisses que la page parcourt : `fetch` ne lit que ce qui
+	# est servi, et c'est OUT que `make web` sert.
+	cp $(WORLD) $(MESH) $(OUT)/
 
 # Écrit l'empreinte sur la sortie standard, les échecs sur la sortie d'erreur.
 run: all
