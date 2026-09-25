@@ -10,8 +10,8 @@
 //! impraticable pour un projet seul.
 //!
 //! Les dispositions font foi dans `docs/rust.md`, section « Formats de
-//! fichier ». Les sections `ENTS` et `LGTS` sont des genres connus de ce format
-//! et ne sont pas encore lues : leur contenu arrive avec leurs accesseurs.
+//! fichier ». Les quatre sections sont lues, et ce que la carte dit d'elle-même
+//! passe par des accesseurs scalaires plutôt que par une structure rendue.
 
 use alloc::string::String;
 use alloc::vec::Vec;
@@ -56,6 +56,26 @@ const VERTEX_LEN: usize = 12;
 /// déjà écrites.
 const SURFACE_FLAGS: u32 = 0b111;
 
+/// L'étendue maximale d'une surface dans son repère de lightmap, en luxels sur
+/// un côté.
+///
+/// Refusée ici plutôt qu'au calcul : un grand mur à pas de lightmap fin produit
+/// un atlas qui ne tient pas, et le vérifier au chargement le fait découvrir à
+/// l'ouverture de la carte, une fois, au lieu de le faire remonter d'un appel de
+/// cuisson pour une seule cellule.
+const MAX_LUXELS: f32 = 256.0;
+
+/// L'écart relatif toléré sur l'orthogonalité des axes de lightmap et sur leur
+/// appartenance au plan de la surface.
+///
+/// Les trois autres propriétés du repère — puissances de deux, exposant pair,
+/// origine sur la grille — sont exactes ou ne sont pas. Ces deux-ci portent le
+/// résidu de la construction d'un repère oblique sur une surface oblique, et une
+/// tolérance y est admissible là où elle serait interdite sur l'appariement des
+/// portails : celui-ci est une relation, qu'un epsilon rendrait non transitive,
+/// alors que ceci est un prédicat, qui rend les mêmes bits sur toutes les cibles.
+const SQUARE_TOLERANCE: f64 = 1.0 / 1048576.0;
+
 /// Un repère de plaquage : une origine et deux axes dont la longueur porte
 /// l'échelle.
 ///
@@ -96,10 +116,8 @@ pub(crate) struct Surface {
     /// Son identifiant stable, attribué par l'éditeur, jamais nul.
     // Lu par l'interrogation de la scène, à l'étape 8 : le décodage le valide
     // dès maintenant, l'unicité d'un identifiant n'étant vérifiable qu'ici.
-    #[allow(dead_code)]
     id: u32,
     /// Ses drapeaux, dont les bits non définis sont nuls.
-    #[allow(dead_code)]
     flags: u32,
     /// Le rang du matériau qui l'habille, dans la table de la carte.
     ///
@@ -120,7 +138,6 @@ pub(crate) struct Surface {
     // maintenant : c'est cet alignement qui évite une marche d'éclairage à la
     // jointure de deux surfaces coplanaires, et il se vérifie plutôt qu'il ne
     // se convient.
-    #[allow(dead_code)]
     lightmap: Mapping,
 }
 
@@ -128,7 +145,6 @@ pub(crate) struct Surface {
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct Portal {
     /// Son identifiant stable, jamais nul.
-    #[allow(dead_code)]
     id: u32,
     /// Ses sommets, en propre.
     ///
@@ -139,7 +155,6 @@ pub(crate) struct Portal {
     /// La cellule et le portail qu'il rejoint, ou `None` pour un mur.
     // Lu par la traversée, à l'étape 5. L'appariement a lieu au chargement
     // parce que c'est là qu'on a les deux côtés sous la main.
-    #[allow(dead_code)]
     link: Option<(u32, u32)>,
 }
 
@@ -147,10 +162,8 @@ pub(crate) struct Portal {
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct Cell {
     /// Son identifiant stable, jamais nul.
-    #[allow(dead_code)]
     id: u32,
     /// Ses drapeaux, dont aucun bit n'est défini : tous nuls.
-    #[allow(dead_code)]
     flags: u32,
     /// Les sommets dérivés, un par sommet et par surface qui l'emploie.
     ///
@@ -180,7 +193,6 @@ pub(crate) struct StaticLight {
     ///
     /// Sans accesseur : à cette étape, l'hôte lit une lumière pour la repasser
     /// au moteur, et le calcul de lightmap qui la désignera est interne.
-    #[allow(dead_code)]
     id: u32,
     /// Ce que le moteur connaît d'une lumière, et rien de plus.
     light: Light,
@@ -195,10 +207,8 @@ pub(crate) struct StaticLight {
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct Entity {
     /// Son identifiant stable, jamais nul.
-    #[allow(dead_code)]
     id: u32,
     /// L'identifiant de la cellule où elle se trouve, vérifié existant.
-    #[allow(dead_code)]
     cell: u32,
     /// Sa classe, que le moteur transmet sans jamais la comparer à rien.
     class: String,
@@ -220,6 +230,12 @@ pub struct World {
     /// donc ce qui départage deux surfaces coplanaires.
     cells: Vec<Cell>,
     /// Les identifiants de matériaux, dans l'ordre du fichier.
+    ///
+    /// Le seul des six espaces d'identifiants que rien ne lit encore : les
+    /// accesseurs publiés désignent un matériau par son rang, et c'est la
+    /// modification d'une surface, à l'étape 8, qui aura besoin de le désigner par
+    /// son identifiant. Gardé plutôt que reconstruit alors, parce que la table des
+    /// identifiants d'une famille est ce que le chargement dérive.
     #[allow(dead_code)]
     material_ids: Vec<u32>,
     /// Leurs noms, dans le même ordre.
@@ -278,8 +294,6 @@ impl World {
     }
 
     /// Les cellules, dans l'ordre du fichier.
-    // Lues par la soumission du monde, au lot suivant.
-    #[allow(dead_code)]
     pub(crate) fn cells(&self) -> &[Cell] {
         &self.cells
     }
@@ -647,7 +661,7 @@ fn surface(
     // adjacentes, et c'est ce qui évite une marche d'éclairage à leur jointure.
     // Vérifié plutôt que conventionnel : une carte qui ne respecterait pas cet
     // alignement ne se verrait qu'à la première capture d'éclairage.
-    if !aligned(lightmap) {
+    if !aligned(lightmap, corners) || !within_luxel_bound(lightmap, corners) {
         return Err(Error::InvalidFormat(Malformation::Mapping));
     }
 
@@ -702,20 +716,143 @@ fn mapping(cursor: &mut Cursor<'_>) -> Result<Mapping> {
     })
 }
 
-/// Vrai si les axes d'un repère de lightmap ont une longueur puissance de deux
-/// et que l'origine en est un multiple.
+/// Le produit scalaire de deux vecteurs, en double précision.
 ///
-/// La longueur se mesure par le carré, qui évite une racine : une puissance de
-/// deux au carré en est une aussi, et c'est tout ce que le contrôle demande.
-fn aligned(mapping: Mapping) -> bool {
-    let square = |v: Vec3| v.dot(v);
-    let power_of_two = |value: f32| {
-        // Un flottant est une puissance de deux quand sa mantisse est nulle. Le
-        // contrôle passe par les bits plutôt que par une division : il est exact
-        // et ne dépend d'aucune table.
-        value > 0.0 && value.is_finite() && value.to_bits() & 0x007f_ffff == 0
+/// Le `f64` est permis hors image, et ces contrôles n'ont aucun budget à tenir :
+/// il évite de se demander si le produit de grandes coordonnées déborde, sans
+/// rien coûter à personne. IEEE 754 impose les quatre opérations au bit près en
+/// `f64` comme en `f32`, donc le verdict est le même sur toutes les cibles.
+fn dot64(a: Vec3, b: Vec3) -> f64 {
+    f64::from(a.x) * f64::from(b.x)
+        + f64::from(a.y) * f64::from(b.y)
+        + f64::from(a.z) * f64::from(b.z)
+}
+
+/// Vrai si la valeur est un entier exact.
+///
+/// Bornée avant la conversion, comme toute conversion du projet : `as` sature, et
+/// la saturation ne sert jamais de bornage.
+fn whole(value: f64) -> bool {
+    if !value.is_finite() || value < -9.007_199_254_740_992e15 || value > 9.007_199_254_740_992e15 {
+        return false;
+    }
+    value == (value as i64) as f64
+}
+
+/// Vrai si `dot` est nul à la tolérance relative près, les deux carrés de
+/// longueur étant donnés.
+///
+/// Comparé au carré pour n'appeler aucune racine : la forme `(a·b)² ≤ ε²·|a|²·|b|²`
+/// dit la même chose que « l'angle est droit à ε près » sans quitter les quatre
+/// opérations.
+fn perpendicular(dot: f64, square_a: f64, square_b: f64) -> bool {
+    dot * dot <= SQUARE_TOLERANCE * SQUARE_TOLERANCE * square_a * square_b
+}
+
+/// Vrai si le repère de lightmap d'une surface est utilisable pour la cuire.
+///
+/// Cinq propriétés, et aucune ne remplace une autre.
+///
+/// La longueur **au carré** de chaque axe est une puissance de deux, ce qui rend
+/// son inverse exact : la reconstruction d'un luxel vers un point du monde se
+/// fait alors par deux multiplications et trois additions, sans division, donc
+/// sans arrondi à rendre déterministe.
+///
+/// Son exposant est **pair**, donc la longueur elle-même est une puissance de
+/// deux. Le pas de la grille en unités de monde étant cette longueur, le seul
+/// contrôle du carré laissait passer un axe de `√2` — et deux surfaces
+/// coplanaires adjacentes aux pas `2` et `√2` ne partagent plus leur grille,
+/// c'est-à-dire la marche d'éclairage à la jointure que ce contrôle existe pour
+/// interdire.
+///
+/// L'origine tombe sur un nœud de sa propre grille, mesurée depuis le zéro du
+/// monde. Le contrôle est local à la surface et emporte le global : deux origines
+/// à coordonnée entière diffèrent d'un entier, donc leurs grilles coïncident,
+/// alors que comparer les surfaces deux à deux serait quadratique et n'aurait
+/// aucun sens pour une surface isolée.
+///
+/// Les axes sont **orthogonaux**, faute de quoi la reconstruction demande
+/// l'inverse d'une 2×2 quelconque, donc une division. Et ils sont **dans le plan
+/// de la surface**, faute de quoi la grille ne recouvre pas ce qu'elle éclaire.
+/// Ces deux derniers contrôles tolèrent un résidu, pour la raison écrite sur
+/// [`SQUARE_TOLERANCE`].
+fn aligned(mapping: Mapping, corners: &[Vec3]) -> bool {
+    let power_of_two_even = |value: f32| {
+        // Mantisse nulle : la valeur est une puissance de deux. Exposant pair :
+        // sa racine en est une aussi — et c'est la racine, la longueur de l'axe,
+        // qui est le pas de la grille.
+        if !(value > 0.0 && value.is_finite() && value.to_bits() & 0x007f_ffff == 0) {
+            return false;
+        }
+        let exponent = ((value.to_bits() >> 23) as i32) - 127;
+        exponent % 2 == 0
     };
-    power_of_two(square(mapping.u)) && power_of_two(square(mapping.v))
+
+    let square_u = mapping.u.dot(mapping.u);
+    let square_v = mapping.v.dot(mapping.v);
+    if !power_of_two_even(square_u) || !power_of_two_even(square_v) {
+        return false;
+    }
+
+    if !whole(dot64(mapping.origin, mapping.u) / f64::from(square_u))
+        || !whole(dot64(mapping.origin, mapping.v) / f64::from(square_v))
+    {
+        return false;
+    }
+
+    if !perpendicular(
+        dot64(mapping.u, mapping.v),
+        f64::from(square_u),
+        f64::from(square_v),
+    ) {
+        return false;
+    }
+
+    // Le plan vient de la normale de Newell, celle-là même dont la convexité se
+    // sert : elle n'est pas normalisée, ce dont la forme au carré n'a pas besoin.
+    let normal = super::ears::newell(corners);
+    let square_n = dot64(normal, normal);
+    perpendicular(dot64(normal, mapping.u), square_n, f64::from(square_u))
+        && perpendicular(dot64(normal, mapping.v), square_n, f64::from(square_v))
+}
+
+/// Vrai si l'étendue de la surface dans son repère de lightmap tient sous le
+/// plafond.
+///
+/// Les extrema se prennent par comparaisons écrites et non par `f32::min`, dont
+/// le résultat sur `min(-0,0, 0,0)` n'est pas spécifié : deux cibles refuseraient
+/// alors des cartes différentes.
+fn within_luxel_bound(mapping: Mapping, corners: &[Vec3]) -> bool {
+    let square_u = f64::from(mapping.u.dot(mapping.u));
+    let square_v = f64::from(mapping.v.dot(mapping.v));
+    let mut bounds = [(f64::MAX, f64::MIN); 2];
+
+    for corner in corners {
+        let offset = Vec3::new(
+            corner.x - mapping.origin.x,
+            corner.y - mapping.origin.y,
+            corner.z - mapping.origin.z,
+        );
+        let coordinates = [
+            dot64(offset, mapping.u) / square_u,
+            dot64(offset, mapping.v) / square_v,
+        ];
+        for (bound, value) in bounds.iter_mut().zip(coordinates) {
+            if !value.is_finite() {
+                return false;
+            }
+            if value < bound.0 {
+                bound.0 = value;
+            }
+            if value > bound.1 {
+                bound.1 = value;
+            }
+        }
+    }
+
+    bounds
+        .iter()
+        .all(|(low, high)| high - low <= f64::from(MAX_LUXELS))
 }
 
 /// Les coordonnées de texture d'une surface, repliées dans `[0, 2048)`.
@@ -870,10 +1007,10 @@ fn convex(points: &[Vec3]) -> bool {
 /// Par tri de clés canoniques et non par table de hachage : le noyau n'en a
 /// aucune, et l'ordre d'itération d'une table n'est pas contractuel.
 fn link_portals(cells: &mut [Cell]) -> Result<()> {
-    let mut keys: Vec<(Vec<u64>, u32, u32)> = Vec::new();
+    let mut keys: Vec<(Vec<[u32; 3]>, u32, u32)> = Vec::new();
     for (c, cell) in cells.iter().enumerate() {
         for (p, portal) in cell.portals.iter().enumerate() {
-            let mut key = reserved(portal.points.len() * 3)?;
+            let mut key = reserved(portal.points.len())?;
             for point in &portal.points {
                 key.push(bits(*point));
             }
@@ -900,6 +1037,12 @@ fn link_portals(cells: &mut [Cell]) -> Result<()> {
             2 => {
                 let first = (keys[i].1, keys[i].2);
                 let second = (keys[i + 1].1, keys[i + 1].2);
+                // Deux portails d'une même cellule ne s'apparient pas : le lien
+                // ramènerait sur la cellule courante, et la traversée tournerait
+                // sur place au lieu d'avancer.
+                if first.0 == second.0 {
+                    return Err(Error::InvalidFormat(Malformation::Portal));
+                }
                 cells[first.0 as usize].portals[first.1 as usize].link = Some(second);
                 cells[second.0 as usize].portals[second.1 as usize].link = Some(first);
             }
@@ -917,12 +1060,16 @@ fn link_portals(cells: &mut [Cell]) -> Result<()> {
 /// Sur `to_bits` et non sur la valeur : `-0,0` et `+0,0` sont égaux en
 /// arithmétique, et deux portails que l'éditeur a écrits différents
 /// s'apparieraient en silence.
-fn bits(point: Vec3) -> u64 {
-    let mut key = 0u64;
-    for value in [point.x, point.y, point.z] {
-        key = key.rotate_left(21) ^ value.to_bits() as u64;
-    }
-    key
+///
+/// **Les trois mots en entier, jamais mêlés en un seul.** Quatre-vingt-seize
+/// bits ne tiennent pas dans soixante-quatre, et les réduire — par rotations et
+/// `XOR`, ce que ce fichier faisait — rend l'appariement exact « à collision
+/// près » : deux portails de sommets différents portent alors la même clé et se
+/// lient en silence, sur des coordonnées de carte qui sont régulières par
+/// construction. Le prix n'est pas un refus mais une traversée qui ouvre sur une
+/// cellule non voisine, et ce défaut-là ne se rattrape pas localement.
+fn bits(point: Vec3) -> [u32; 3] {
+    [point.x.to_bits(), point.y.to_bits(), point.z.to_bits()]
 }
 
 /// Refuse deux identifiants égaux dans une même famille.

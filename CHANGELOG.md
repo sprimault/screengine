@@ -68,11 +68,23 @@ critère est `code < 0`, et un statut inconnu se traite comme `SCG_OK`.
   existants.
 
 ### Modifié
-- Le chargement d'une carte vérifiera cinq propriétés du repère de lightmap de
+- Le chargement d'une carte vérifie cinq propriétés du repère de lightmap de
   chaque surface, là où il n'en vérifiait qu'une : longueur des axes en puissance
   de deux, exposant pair, origine multiple de cette longueur, axes orthogonaux et
-  contenus dans le plan de la surface. Une carte que ces clauses refusent
-  produisait déjà des grilles de luxels désalignées entre surfaces coplanaires.
+  contenus dans le plan de la surface. Il refuse en outre une surface dont
+  l'étendue dépasse 256 luxels de côté, plutôt que de laisser l'échec remonter du
+  calcul d'éclairage. Une carte que ces clauses refusent produisait déjà des
+  grilles de luxels désalignées entre surfaces coplanaires.
+
+### Corrigé
+- **Deux portails aux sommets différents pouvaient être appariés**, et la
+  traversée à venir aurait donc ouvert sur une cellule qui n'est pas voisine. Leur
+  clé d'appariement réduisait les quatre-vingt-seize bits d'un sommet à
+  soixante-quatre, ce qui rendait l'appariement exact « à collision près » sur des
+  coordonnées de carte régulières par construction. Elle porte désormais les trois
+  mots en entier. Aucune carte bien formée ne change de comportement.
+- **Deux portails d'une même cellule pouvaient s'apparier entre eux**, ce qui
+  aurait fait tourner la traversée sur place. Le cas est refusé au chargement.
 
 ***
 
@@ -96,11 +108,21 @@ signature changes.
   third kind of the container shared by both existing formats.
 
 ### Changed
-- Loading a map will check five properties of each surface's lightmap frame where
-  it checked only one: axis lengths a power of two, even exponent, origin a
-  multiple of that length, axes orthogonal and lying in the surface plane. A map
-  these clauses reject was already producing misaligned luxel grids between
-  coplanar surfaces.
+- Loading a map checks five properties of each surface's lightmap frame where it
+  checked only one: axis lengths a power of two, even exponent, origin a multiple
+  of that length, axes orthogonal and lying in the surface plane. It also rejects
+  a surface extending beyond 256 luxels on a side, rather than letting the failure
+  surface from lighting computation. A map these clauses reject was already
+  producing misaligned luxel grids between coplanar surfaces.
+
+### Fixed
+- **Two portals with different vertices could be matched**, so the upcoming
+  traversal would have opened onto a cell that is not adjacent. Their matching key
+  reduced a vertex's ninety-six bits to sixty-four, making the match exact only
+  "up to a collision" on map coordinates that are regular by construction. It now
+  carries all three words. No well-formed map changes behaviour.
+- **Two portals of the same cell could match each other**, which would have made
+  traversal spin in place. The case is rejected at load time.
 
 ## [0.4.0] — 2026-09-25 — Les données
 
