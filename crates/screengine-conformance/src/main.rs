@@ -16,6 +16,7 @@
 //! `--print` rend une scène et écrit son empreinte, sans rien comparer : c'est
 //! le chemin Rust natif auquel les hôtes comparent la leur.
 
+mod crate_file;
 mod hash;
 
 use std::path::{Path, PathBuf};
@@ -26,7 +27,7 @@ use std::sync::Arc;
 
 use screengine::{
     Affine3, Angle, BYTES_PER_PIXEL, Color, Config, Context, Filter, Frame, Light, MAX_OVERBRIGHT,
-    Quat, Rect, Rows, Texture, Triangle, Vec3, VertexUv, VertexUv2,
+    Mesh, Quat, Rect, Rows, Texture, Triangle, Vec3, VertexUv, VertexUv2,
 };
 
 /// Une façon de rendre une scène qui ne doit pas changer l'image.
@@ -373,6 +374,24 @@ enum Scene {
     /// La géométrie et la lightmap sont celles de `lumiere`, au texel près :
     /// une divergence n'est donc attribuable qu'aux lumières.
     LitDynamic,
+    /// Une caisse **chargée depuis un fichier de maillage**, placée par une
+    /// matrice de modèle.
+    ///
+    /// La seule scène du dépôt dont la géométrie ne soit pas écrite en Rust.
+    /// C'est ce qui fait entrer le décodage dans la comparaison entre cibles :
+    /// la conformance prouvait que le même rendu donne les mêmes bits, pas qu'un
+    /// même fichier décodé sur wasm32 et sur x86_64 donne le même maillage.
+    ///
+    /// Ses **deux groupes de surface** prennent les deux chemins qu'un maillage
+    /// peut prendre : les quatre faces latérales portent un damier, le dessus et
+    /// le dessous n'ont pas de texture et se dessinent à la couleur de leurs
+    /// triangles. Une soumission qui lierait la même texture à tous les
+    /// emplacements rendrait une autre image.
+    ///
+    /// **La rotation n'est pas décorative** : trois faces sont visibles à la
+    /// fois, si bien qu'une matrice de modèle ignorée, ou appliquée après la
+    /// vue, ne rendrait pas cette image.
+    Crate,
 }
 
 /// Un damier de `side` texels de côté, ses cases de `cell`.
@@ -599,7 +618,7 @@ impl View {
 
 impl Scene {
     /// Toutes les scènes, dans l'ordre où `--check` les rejoue.
-    const ALL: [Self; 15] = [
+    const ALL: [Self; 16] = [
         Self::Edge,
         Self::Guard,
         Self::Lateral,
@@ -615,6 +634,7 @@ impl Scene {
         Self::LitDynamic,
         Self::Fog,
         Self::Lights,
+        Self::Crate,
     ];
 
     /// La passe que `--print` utilise, celle des hôtes.
@@ -655,6 +675,7 @@ impl Scene {
             Self::LitDynamic => "lumiere-dynamique",
             Self::Fog => "brouillard",
             Self::Lights => "lumieres",
+            Self::Crate => "maillage",
         }
     }
 
@@ -1022,6 +1043,40 @@ impl Scene {
                     Color::new(0x40, 0x68, 0x40, 0xFF),
                 ],
             ),
+            // La caisse du fichier, à cinq unités devant la caméra et tournée
+            // sur deux axes pour que trois de ses faces soient visibles.
+            //
+            // Assez près pour qu'elle couvre une bonne part de l'image : une
+            // caisse lointaine tiendrait dans quelques milliers de pixels, et
+            // une régression du décodage — un sommet permuté, un indice décalé —
+            // y serait moins nette qu'un motif qui occupe l'écran.
+            //
+            // Les deux rotations se composent dans cet ordre, et l'ordre compte
+            // — la composition de quaternions n'est pas commutative, et
+            // l'échanger déplacerait l'image sans rien casser d'autre.
+            //
+            // L'emplacement des faces latérales reçoit le damier ; celui du
+            // dessus et du dessous ne reçoit rien, et ses triangles sortent à
+            // leur couleur.
+            Self::Crate => {
+                let mesh = Mesh::load(&crate_file::crate_mesh())
+                    .unwrap_or_else(|_| unreachable!("le fichier de la caisse est bien formé"));
+                let degrees = |d: f32| Angle::from_radians(d * core::f32::consts::PI / 180.0);
+                let tilt = Quat::from_axis_angle(Vec3::new(0.0, 1.0, 0.0), degrees(-24.0));
+                let turn = Quat::from_axis_angle(Vec3::new(0.0, 0.0, 1.0), degrees(34.0));
+                let sides = checker(64, 8);
+                context.submit_mesh(
+                    Affine3::from_rotation_translation(
+                        turn.product(tilt),
+                        Vec3::new(5.0, 0.0, 0.0),
+                    ),
+                    &mesh,
+                    |slot| match slot {
+                        0 => Some(&sides),
+                        _ => None,
+                    },
+                )
+            }
         }
     }
 

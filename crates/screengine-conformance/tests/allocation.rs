@@ -20,8 +20,8 @@ use std::cell::Cell;
 use std::sync::Arc;
 
 use screengine::{
-    Affine3, BYTES_PER_PIXEL, Color, Config, Context, Filter, Light, Rows, Texture, Triangle, Vec3,
-    VertexUv, VertexUv2,
+    Affine3, BYTES_PER_PIXEL, Color, Config, Context, Filter, Light, Mesh, Rows, Texture, Triangle,
+    Vec3, VertexUv, VertexUv2,
 };
 
 /// Le quadrilatère de la scène de référence, resoumis à chaque image.
@@ -48,6 +48,69 @@ const TRIANGLES: [Triangle; 2] = [
         color: Color::new(0xA0, 0xE0, 0x30, 0xFF),
     },
 ];
+
+/// Le fichier de maillage que la mesure soumet : le même quadrilatère, chargé.
+///
+/// Les octets s'écrivent ici plutôt que par le constructeur de la scène : ce
+/// binaire de test ne voit pas les modules du binaire de conformance, et un
+/// quadrilatère est assez court pour que la recopie coûte moins qu'une
+/// bibliothèque ouverte pour lui.
+fn quad_mesh() -> Vec<u8> {
+    let mut vertices = Vec::new();
+    for (i, position) in VERTICES.iter().enumerate() {
+        for value in [position.x, position.y, position.z] {
+            vertices.extend_from_slice(&value.to_le_bytes());
+        }
+        for value in [((i & 1) * 64) as f32, ((i >> 1) * 64) as f32] {
+            vertices.extend_from_slice(&value.to_le_bytes());
+        }
+    }
+
+    let mut triangles = Vec::new();
+    for triangle in TRIANGLES {
+        for index in triangle.indices {
+            triangles.extend_from_slice(&index.to_le_bytes());
+        }
+        let color = triangle.color;
+        triangles.extend_from_slice(&[color.r, color.g, color.b, color.a]);
+    }
+
+    let mut groups = Vec::new();
+    for value in [1u32, 0, TRIANGLES.len() as u32, 0] {
+        groups.extend_from_slice(&value.to_le_bytes());
+    }
+
+    let mut names = 3u16.to_le_bytes().to_vec();
+    names.extend_from_slice(b"mur");
+
+    let sections = [
+        (*b"SURF", groups.as_slice()),
+        (*b"TEXN", names.as_slice()),
+        (*b"TRIS", triangles.as_slice()),
+        (*b"VTXS", vertices.as_slice()),
+    ];
+    let first = 20 + 12 * sections.len();
+    let total = first + sections.iter().map(|(_, body)| body.len()).sum::<usize>();
+
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(b"SCG\x1a");
+    bytes.extend_from_slice(b"MESH");
+    bytes.extend_from_slice(&1u32.to_le_bytes());
+    bytes.extend_from_slice(&(total as u32).to_le_bytes());
+    bytes.extend_from_slice(&(sections.len() as u32).to_le_bytes());
+
+    let mut offset = first;
+    for (tag, body) in &sections {
+        bytes.extend_from_slice(tag);
+        bytes.extend_from_slice(&(offset as u32).to_le_bytes());
+        bytes.extend_from_slice(&(body.len() as u32).to_le_bytes());
+        offset += body.len();
+    }
+    for (_, body) in &sections {
+        bytes.extend_from_slice(body);
+    }
+    bytes
+}
 
 /// L'allocateur du système, qui compte au passage.
 struct Counting;
@@ -196,6 +259,51 @@ fn aucune_image_texturee_n_alloue() {
             }
         });
         assert_eq!(seen, 0, "{seen} allocation(s) en {filter:?}");
+    }
+}
+
+/// Aucune image soumise depuis un maillage n'alloue.
+///
+/// Le maillage se charge **hors de la mesure** — un chargement est un appel
+/// nommé, qui a le droit d'allouer — et se soumet **dedans**. C'est là que la
+/// promesse se joue : la soumission lit un tableau de textures qu'un décodeur
+/// naïf recopierait dans un tampon, et parcourt des groupes dont un chemin
+/// distrait ferait une liste intermédiaire.
+///
+/// Avec texture puis sans, comme pour les lots éclairés : les deux chemins ne
+/// touchent pas la même table.
+#[test]
+fn aucune_image_de_maillage_n_alloue() {
+    let (width, height) = (640, 360);
+    let mut context = Context::new(Config {
+        max_width: width,
+        max_height: height,
+        width,
+        height,
+        tile_size: 64,
+        max_triangles: 0,
+    })
+    .expect("configuration valide");
+    let mut pixels = vec![0u8; width as usize * height as usize * BYTES_PER_PIXEL];
+
+    // Hors mesure : le chargement d'une ressource est un appel nommé.
+    let mesh = Mesh::load(&quad_mesh()).expect("maillage valide");
+    let texture = Arc::new(
+        Texture::load(64, 64, &vec![0x80u8; 64 * 64 * BYTES_PER_PIXEL]).expect("texture valide"),
+    );
+
+    for avec_texture in [true, false] {
+        let seen = allocations(|| {
+            for _ in 0..3 {
+                context
+                    .submit_mesh(Affine3::IDENTITY, &mesh, |_| {
+                        avec_texture.then_some(&texture)
+                    })
+                    .expect("maillage soumis");
+                context.frame_end(&mut pixels, width).expect("image rendue");
+            }
+        });
+        assert_eq!(seen, 0, "{seen} allocation(s), texture : {avec_texture}");
     }
 }
 

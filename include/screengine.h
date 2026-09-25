@@ -902,6 +902,36 @@ void scg_mesh_destroy(struct ScgMesh *mesh);
 // writable `uint32_t`.
 int32_t scg_mesh_texture_count(const struct ScgMesh *mesh, uint32_t *out);
 
+// Submits a mesh, one batch per surface group, with a texture per slot.
+//
+// `textures` holds `texture_count` handles in slot order, and `texture_count`
+// must **equal** `scg_mesh_texture_count`, not merely reach it. A null entry
+// means "no texture" for that slot, and the triangle colours from the file
+// decide instead. The array is read in place and never copied, so nothing is
+// allocated during the call.
+//
+// `model` places the mesh in the world; the engine composes its camera itself.
+//
+// **The mesh is submitted whole or not at all.** If it does not fit in the
+// remaining triangle capacity, the call returns `SCG_ERR_INVALID_ARGUMENT` and
+// leaves nothing behind — not even the groups it had already placed. Size the
+// capacity with `scg_mesh_triangle_count` before creating the context.
+//
+// Nothing in the mesh is validated again here: indices and group bounds were
+// checked once, when it was loaded.
+//
+// # Safety
+//
+// `ctx` must be null or a live handle. `model` must point to a readable matrix,
+// `mesh` must be a live handle from `scg_mesh_load`, and `textures` must be null
+// with `texture_count` zero, or cover `texture_count` readable pointers, each
+// null or a live handle from `scg_texture_load`.
+int32_t scg_submit_mesh(struct ScgContext *ctx,
+                        const struct ScgMat4 *model,
+                        const struct ScgMesh *mesh,
+                        const struct ScgTexture *const *textures,
+                        uint32_t texture_count);
+
 // Reads the name of one texture slot, in two steps.
 //
 // Call it once with `buf` null and `cap` zero: it writes the length of the name

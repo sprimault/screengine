@@ -78,19 +78,17 @@ pub(crate) struct Group {
 #[derive(Debug)]
 pub struct Mesh {
     /// Les sommets, que les triangles indexent.
-    // Le premier lecteur est la soumission, à l'étape 4.3 ; le décodage les
-    // produit et les valide dès maintenant, puisque c'est un chargement.
-    #[allow(dead_code)]
     vertices: Vec<VertexUv>,
     /// Les triangles, dans l'ordre du fichier — qui est celui de la soumission,
     /// et donc ce qui départage deux surfaces coplanaires.
     triangles: Vec<Triangle>,
     /// Les groupes, pavant les triangles dans l'ordre.
-    #[allow(dead_code)]
     groups: Vec<Group>,
     /// Les noms d'emplacements de texture, dans l'ordre du fichier.
     names: Vec<String>,
     /// Les deux coins de la boîte englobante, calculée au chargement.
+    // Aucune élimination ne la lit encore : la soumission dessine tous les
+    // groupes, et c'est la traversée par portails qui aura de quoi s'en servir.
     #[allow(dead_code)]
     bounds: [Vec3; 2],
 }
@@ -132,6 +130,28 @@ impl Mesh {
     pub fn texture_count(&self) -> u32 {
         // Même borne : un nom coûte au moins deux octets du fichier.
         self.names.len() as u32
+    }
+
+    /// Les groupes de surface, dans l'ordre du fichier.
+    ///
+    /// Chacun est une soumission : ses triangles sont contigus, le chargement
+    /// l'a vérifié, et le rendu n'a donc rien à rassembler.
+    pub(crate) fn groups(&self) -> &[Group] {
+        &self.groups
+    }
+
+    /// Les sommets, que les indices des triangles atteignent tous.
+    ///
+    /// **Indexables sans contrôle** : le chargement a borné chaque indice, et
+    /// c'est là tout le gain — une revalidation par image ne ferait rougir aucun
+    /// test et coûterait un parcours complet.
+    pub(crate) fn vertices(&self) -> &[VertexUv] {
+        &self.vertices
+    }
+
+    /// Les triangles, dans l'ordre du fichier.
+    pub(crate) fn triangles(&self) -> &[Triangle] {
+        &self.triangles
     }
 
     /// Le nom d'un emplacement, ou `None` au-delà du dernier.

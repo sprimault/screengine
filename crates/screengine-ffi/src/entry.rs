@@ -59,6 +59,16 @@ impl AbiError {
         message: "texture slot beyond those the resource declares",
     };
 
+    /// Le tableau de textures n'a pas le nombre d'emplacements de la ressource.
+    ///
+    /// Une égalité et non un minimum : un tableau plus long est le signe que
+    /// l'hôte s'est trompé de ressource, et le laisser passer ferait dessiner un
+    /// maillage avec l'habillage d'un autre.
+    pub(crate) const TEXTURE_COUNT: Self = Self {
+        code: SCG_ERR_INVALID_ARGUMENT,
+        message: "texture count must equal the number of slots the resource declares",
+    };
+
     /// Le tampon d'un nom ne peut pas porter le nom et son terminateur.
     ///
     /// Rien n'est écrit dans ce cas, `out_len` compris : la mesure a son propre
