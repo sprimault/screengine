@@ -25,6 +25,7 @@ mod scene;
 #[cfg(test)]
 mod testing;
 mod texture;
+mod world;
 
 pub use context::{
     BYTES_PER_PIXEL, Config, Context, Frame, MAX_RESOLUTION, Output, Rows, TILE_SIZES,
