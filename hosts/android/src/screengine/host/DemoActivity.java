@@ -41,8 +41,21 @@ public final class DemoActivity extends Activity implements SurfaceHolder.Callba
     /** Côté de tuile. */
     private static final int TILE = 64;
 
-    /** Côté des damiers, en texels. */
-    private static final int TEXTURE_SIDE = 64;
+    /** Côté du damier des murs, en texels. */
+    private static final int WALL_SIDE = 512;
+
+    /**
+     * Côté du damier du sol et du plafond.
+     *
+     * <p>Les côtés suivent la densité de plaquage de la carte — 256 texels par
+     * unité de monde aux murs, 128 au sol : une case y fait un demi-mètre et un
+     * quart. Un damier plus petit donnerait des cases de quelques centimètres,
+     * que le mipmap ramènerait à un aplat.
+     */
+    private static final int FLOOR_SIDE = 256;
+
+    /** Celui des caisses, dont le maillage a son propre plaquage. */
+    private static final int CRATE_SIDE = 64;
 
     /** Vitesse de déplacement, en unités de monde par seconde. */
     private static final float SPEED = 6.0f;
@@ -263,14 +276,15 @@ public final class DemoActivity extends Activity implements SurfaceHolder.Callba
      * Un damier de {@code cell} texels de case, le même que la suite de
      * conformance, teinte pour teinte.
      *
+     * @param side le côté de la texture, puissance de deux
      * @param cell le côté d'une case
      * @return le handle de texture, ou 0
      */
-    private static long loadChecker(int cell) {
-        byte[] texels = new byte[TEXTURE_SIDE * TEXTURE_SIDE * 4];
-        for (int v = 0; v < TEXTURE_SIDE; v++) {
-            for (int u = 0; u < TEXTURE_SIDE; u++) {
-                int base = (v * TEXTURE_SIDE + u) * 4;
+    private static long loadChecker(int side, int cell) {
+        byte[] texels = new byte[side * side * 4];
+        for (int v = 0; v < side; v++) {
+            for (int u = 0; u < side; u++) {
+                int base = (v * side + u) * 4;
                 boolean edge = u % cell == 0 || v % cell == 0;
                 boolean dark = (u / cell + v / cell) % 2 == 0;
                 if (edge) {
@@ -289,7 +303,7 @@ public final class DemoActivity extends Activity implements SurfaceHolder.Callba
                 texels[base + 3] = (byte) 0xFF;
             }
         }
-        return Screengine.textureLoad(TEXTURE_SIDE, TEXTURE_SIDE, texels);
+        return Screengine.textureLoad(side, side, texels);
     }
 
     /**
@@ -341,7 +355,8 @@ public final class DemoActivity extends Activity implements SurfaceHolder.Callba
         int materials = Screengine.worldMaterialCount(world);
         long[] slots = new long[Math.max(materials, 0)];
         for (int i = 0; i < slots.length; i++) {
-            slots[i] = loadChecker("mur".equals(Screengine.worldMaterialName(world, i)) ? 16 : 8);
+            boolean wall = "mur".equals(Screengine.worldMaterialName(world, i));
+            slots[i] = loadChecker(wall ? WALL_SIDE : FLOOR_SIDE, wall ? 128 : 32);
         }
 
         bytes = readAsset("caisse.mesh");
@@ -351,9 +366,9 @@ public final class DemoActivity extends Activity implements SurfaceHolder.Callba
             release(ctx, world, 0, slots, 0);
             return;
         }
-        // Un damier sur les côtés, rien sur le dessus : les couleurs du fichier
-        // y décident.
-        long[] crateSlots = {loadChecker(8), 0};
+        // Le même damier sur les deux emplacements du maillage.
+        long crateSide = loadChecker(CRATE_SIDE, 8);
+        long[] crateSlots = {crateSide, crateSide};
 
         Bitmap bitmap = Bitmap.createBitmap(WIDTH, HEIGHT, Bitmap.Config.ARGB_8888);
         bitmap.setHasAlpha(false);

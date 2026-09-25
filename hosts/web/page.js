@@ -28,8 +28,21 @@ const HEIGHT = 360;
 /** Côté de tuile. */
 const TILE = 64;
 
-/** Côté des damiers, en texels. */
-const TEXTURE_SIDE = 64;
+/**
+ * Côté du damier des murs, en texels.
+ *
+ * Les côtés suivent la densité de plaquage de la carte — 256 texels par unité
+ * de monde aux murs, 128 au sol : une case y fait un demi-mètre et un quart. Un
+ * damier plus petit donnerait des cases de quelques centimètres, que le mipmap
+ * ramènerait à un aplat.
+ */
+const WALL_SIDE = 512;
+
+/** Celui du sol et du plafond. */
+const FLOOR_SIDE = 256;
+
+/** Celui des caisses, dont le maillage a son propre plaquage. */
+const CRATE_SIDE = 64;
 
 /** Vitesse de déplacement, en unités de monde par seconde. */
 const SPEED = 6.0;
@@ -82,16 +95,17 @@ function makeChecker(side, cell) {
  * Charge une texture dans le moteur et rend son handle.
  *
  * @param {scg.Screengine} engine
+ * @param {number} side
  * @param {Uint8Array} texels
  * @returns {number}
  */
-function loadTexture(engine, texels) {
+function loadTexture(engine, side, texels) {
   const e = engine.exports;
   const desc = engine.alloc(scg.TEXTURE_DESC_SIZE);
   const block = engine.alloc(texels.length);
   const out = engine.alloc(4);
 
-  engine.writeTextureDesc(desc, TEXTURE_SIDE, TEXTURE_SIDE);
+  engine.writeTextureDesc(desc, side, side);
   engine.bytes().set(texels, block);
   if (e.scg_texture_load(desc, block, texels.length, out) !== scg.SCG_OK) {
     throw new Error(`texture refusée : ${engine.lastError(0)}`);
@@ -252,7 +266,8 @@ async function main() {
 
     // Le nom décide du motif, et c'est l'hôte qui en décide : le moteur ne
     // connaît que des emplacements à remplir.
-    textures.push(loadTexture(engine, makeChecker(TEXTURE_SIDE, text === "mur" ? 16 : 8)));
+    const side = text === "mur" ? WALL_SIDE : FLOOR_SIDE;
+    textures.push(loadTexture(engine, side, makeChecker(side, text === "mur" ? 128 : 32)));
   }
   // La vue se construit après les chargements : chacun a pu agrandir la
   // mémoire, ce qui détache toute vue prise avant.
@@ -261,8 +276,7 @@ async function main() {
 
   // Le maillage des caisses, chargé comme la carte : un bloc d'octets que le
   // moteur copie. Ses deux emplacements portent des noms, et l'hôte décide de
-  // ce qu'il met dedans — ici un damier sur les côtés, rien sur le dessus, si
-  // bien que les couleurs du fichier y décident.
+  // ce qu'il met dedans — ici le même damier sur les deux.
   const meshFile = new Uint8Array(await (await fetch("caisse.mesh")).arrayBuffer());
   const meshBlock = engine.alloc(meshFile.length);
   engine.bytes().set(meshFile, meshBlock);
@@ -274,10 +288,10 @@ async function main() {
   engine.free(meshBlock, meshFile.length);
 
   const crateSlots = engine.alloc(8);
-  const crateTexture = loadTexture(engine, makeChecker(TEXTURE_SIDE, 8));
+  const crateTexture = loadTexture(engine, CRATE_SIDE, makeChecker(CRATE_SIDE, 8));
   const crateTable = new DataView(engine.memory.buffer, crateSlots, 8);
   crateTable.setUint32(0, crateTexture, true);
-  crateTable.setUint32(4, 0, true);
+  crateTable.setUint32(4, crateTexture, true);
 
   const pixels = engine.alloc(WIDTH * HEIGHT * scg.BYTES_PER_PIXEL);
   const camera = engine.alloc(scg.CAMERA_SIZE);

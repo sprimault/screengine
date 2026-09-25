@@ -30,11 +30,20 @@ const LENGTH: f32 = 14.0;
 /// couloir qui commencerait au ras de l'objectif ne les éprouverait pas.
 const START: f32 = -2.0;
 
-/// Les texels par unité de monde du plaquage.
+/// Les texels par unité de monde des murs.
 ///
-/// Huit, comme les sols des scènes texturées : une case du damier fait alors une
-/// unité, et la fuite se lit case par case.
-const DENSITY: f32 = 8.0;
+/// **Huit au départ, pour que la case d'un damier fasse une unité** : commode
+/// pour lire la fuite case par case dans une image de référence, et trop
+/// grossier pour toute texture réelle — une texture de 512 s'y étalait sur
+/// soixante-quatre unités, méconnaissable. Les valeurs sont maintenant celles
+/// de l'exemple qui décrit son couloir en Rust, 256 aux murs et 128 au sol, ce
+/// qui situe la scène dans la famille qu'elle imite : ses moteurs tenaient
+/// entre 16 et 64 texels par unité sur des textures de 64 ou 128.
+const WALL_DENSITY: f32 = 256.0;
+
+/// Ceux du sol et du plafond, moitié moins serrés : un pavage se lit de plus
+/// loin qu'un mur, et ce sont les deux plus grandes surfaces de la cellule.
+const FLOOR_DENSITY: f32 = 128.0;
 
 /// Le côté du repère de lightmap, puissance de deux comme le chargement
 /// l'exige.
@@ -71,12 +80,20 @@ fn frame(u: [f32; 3], v: [f32; 3], out: &mut Vec<u8>) {
 
 /// Une surface : son en-tête, ses indices, son repère de texture, celui de sa
 /// lightmap.
+/// La densité vient du matériau et non d'un paramètre : c'est la texture qu'on
+/// mettra derrière qui décide du serrage, et le rang du matériau est ce qui la
+/// désigne.
 fn surface(id: u32, material: u32, indices: &[u32], u: [f32; 3], v: [f32; 3], out: &mut Vec<u8>) {
+    let density = if material == WALLS {
+        WALL_DENSITY
+    } else {
+        FLOOR_DENSITY
+    };
     words(&[id, 0, material, indices.len() as u32], out);
     words(indices, out);
     frame(
-        [u[0] * DENSITY, u[1] * DENSITY, u[2] * DENSITY],
-        [v[0] * DENSITY, v[1] * DENSITY, v[2] * DENSITY],
+        [u[0] * density, u[1] * density, u[2] * density],
+        [v[0] * density, v[1] * density, v[2] * density],
         out,
     );
     frame(

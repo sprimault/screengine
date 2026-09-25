@@ -352,6 +352,11 @@ contrôle : ni `make test`, ni l'intégration continue ne le construisent.
   et le décor rangé dans les ressources de l'APK par `aapt2 link -A`, puisqu'une
   application ne lit pas le dépôt. C'est elle que l'icône lance ; l'activité à
   image fixe reste exportée et se lance par intention explicite.
+- **Les damiers des hôtes suivent la densité de plaquage de la carte**, 256
+  texels par unité de monde aux murs et 128 au sol : 512 et 256 texels de côté,
+  cases de 128 et 32. Un damier de 64, la valeur d'avant, donnait des cases de
+  quelques centimètres que le mipmap ramenait à un aplat dès le deuxième
+  panneau. Le maillage des caisses garde le sien, son plaquage lui étant propre.
 - **Chaque zone tactile est relative à son point de pose.** Une origine fixe au
   centre de la zone a été essayée sur un appareil et ne tient pas en main : le
   pouce ne tombe jamais deux fois au même endroit, et il faudrait dessiner un

@@ -34,8 +34,14 @@ enum { WIDTH = 640, HEIGHT = 360, TILE = 64 };
 /* Facteur d'agrandissement de la fenêtre. */
 enum { SCALE = 2 };
 
-/* Côté des damiers, en texels. */
-enum { TEXTURE_SIDE = 64 };
+/* Côtés des damiers, en texels.
+ *
+ * Ils suivent la densité de plaquage de la carte — 256 texels par unité de
+ * monde aux murs, 128 au sol : une case y fait alors un demi-mètre et un quart.
+ * Un damier plus petit donnerait des cases de quelques centimètres, que le
+ * mipmap ramènerait à un aplat dès le deuxième panneau. Les caisses gardent le
+ * leur, leur maillage ayant son propre plaquage. */
+enum { WALL_SIDE = 512, FLOOR_SIDE = 256, CRATE_SIDE = 64 };
 
 /* Vitesse de déplacement, en unités de monde par seconde. */
 static const float SPEED = 6.0f;
@@ -88,11 +94,11 @@ static uint8_t *read_file(const char *path, size_t *len)
  *
  * Le même motif que la suite de conformance, teinte pour teinte : la
  * démonstration montre le décor de la scène de référence. */
-static void make_checker(uint8_t *pixels, uint32_t cell)
+static void make_checker(uint8_t *pixels, uint32_t side, uint32_t cell)
 {
-    for (uint32_t v = 0; v < TEXTURE_SIDE; v++) {
-        for (uint32_t u = 0; u < TEXTURE_SIDE; u++) {
-            uint8_t *texel = pixels + ((size_t)v * TEXTURE_SIDE + u) * 4;
+    for (uint32_t v = 0; v < side; v++) {
+        for (uint32_t u = 0; u < side; u++) {
+            uint8_t *texel = pixels + ((size_t)v * side + u) * 4;
             int edge = (u % cell) == 0 || (v % cell) == 0;
             int dark = ((u / cell) + (v / cell)) % 2 == 0;
             if (edge) {
@@ -108,23 +114,23 @@ static void make_checker(uint8_t *pixels, uint32_t cell)
 }
 
 /* Charge une texture de damier, ou rend NULL. */
-static ScgTexture *load_checker(uint32_t cell)
+static ScgTexture *load_checker(uint32_t side, uint32_t cell)
 {
-    uint8_t *texels = malloc((size_t)TEXTURE_SIDE * TEXTURE_SIDE * 4);
+    size_t bytes = (size_t)side * side * 4;
+    uint8_t *texels = malloc(bytes);
     if (texels == NULL) {
         return NULL;
     }
-    make_checker(texels, cell);
+    make_checker(texels, side, cell);
 
     ScgTextureDesc desc;
     memset(&desc, 0, sizeof desc);
-    desc.width = TEXTURE_SIDE;
-    desc.height = TEXTURE_SIDE;
+    desc.width = side;
+    desc.height = side;
     desc.format = SCG_TEXTURE_FORMAT_RGBA8;
 
     ScgTexture *texture = NULL;
-    if (scg_texture_load(&desc, texels, (size_t)TEXTURE_SIDE * TEXTURE_SIDE * 4, &texture)
-        != SCG_OK) {
+    if (scg_texture_load(&desc, texels, bytes, &texture) != SCG_OK) {
         texture = NULL;
     }
     free(texels);
@@ -231,7 +237,8 @@ int main(int argc, char **argv)
             fail(NULL, "nom de matériau illisible");
             return 1;
         }
-        slots[i] = load_checker(strcmp(name, "mur") == 0 ? 16 : 8);
+        int wall = strcmp(name, "mur") == 0;
+        slots[i] = load_checker(wall ? WALL_SIDE : FLOOR_SIDE, wall ? 128 : 32);
         if (slots[i] == NULL) {
             fail(NULL, "texture refusée");
             return 1;
@@ -240,8 +247,7 @@ int main(int argc, char **argv)
 
     /* Le maillage des caisses, chargé comme la carte : un bloc d'octets, que le
      * moteur copie. Ses deux emplacements portent des noms, et l'hôte décide de
-     * ce qu'il met dedans — ici un damier sur les côtés, rien sur le dessus, si
-     * bien que les couleurs du fichier y décident. */
+     * ce qu'il met dedans — ici le même damier sur les deux. */
     bytes = read_file(argv[2], &len);
     if (bytes == NULL) {
         fprintf(stderr, "%s : lecture impossible\n", argv[2]);
@@ -254,7 +260,8 @@ int main(int argc, char **argv)
         fail(NULL, "le maillage est refusé");
         return 1;
     }
-    const ScgTexture *crate_slots[2] = { load_checker(8), NULL };
+    const ScgTexture *side = load_checker(CRATE_SIDE, 8);
+    const ScgTexture *crate_slots[2] = { side, side };
     if (crate_slots[0] == NULL) {
         fail(NULL, "texture de caisse refusée");
         return 1;

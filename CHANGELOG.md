@@ -56,6 +56,17 @@ publié, et explique les conventions du dépôt à qui y contribue.
 - Les conventions Rust décrivent les dispositions binaires des deux formats :
   en-tête et table de sections communs, maillage, carte, et ce que le décodeur
   tient pour hostile.
+- **Un exemple de l'étage d'accueil charge la carte du dépôt**, `carte`, à côté
+  de celui qui décrit sa géométrie en Rust. Le chemin Rust lit désormais un
+  fichier comme les quatre hôtes C, C++, wasm et Android ; `Mesh` et `World`
+  sont réexportés. Les textures restent celles de l'hôte, et ce décor-là porte
+  les mêmes que l'autre exemple : **un même fichier change entièrement d'aspect
+  sans qu'un octet bouge**.
+- **Un banc d'essai de la carte**, `benches/carte.rs` : le chargement, ponctuel,
+  et la soumission par image — celle qui transforme toutes les cellules sans
+  élimination. C'est la référence contre laquelle la traversée par portails se
+  mesurera ; sans elle, on ne pourrait dire ni ce qu'elle gagne, ni ce qu'elle
+  coûte là où tout est visible.
 - **L'application Android parcourt le même décor.** Une `SurfaceView`, deux
   zones tactiles — moitié gauche pour avancer, moitié droite pour tourner —, la
   carte et le maillage rangés dans les ressources de l'APK. Le pont JNI gagne le
@@ -114,6 +125,13 @@ publié, et explique les conventions du dépôt à qui y contribue.
   code publié ne change jamais de sens. `SCG_ABI_VERSION` reste à **1**.
 
 ### Modifié
+- **Le décor de référence est plaqué plus finement, et son empreinte change.**
+  `hosts/couloir.world` passe de 8 texels par unité de monde à 256 aux murs et
+  128 au sol, les valeurs de l'exemple qui décrit son couloir en Rust. Huit avait
+  été choisi pour qu'une case de damier fasse une unité, commode pour lire la
+  fuite dans une image de référence : une texture réelle de 512 s'y étalait sur
+  soixante-quatre unités, méconnaissable. Une scène inchangée rend donc
+  autrement, et les damiers des hôtes suivent.
 - Les octets d'une carte et d'un maillage sont copiés par le moteur, comme ceux
   d'une texture : l'hôte peut libérer son bloc dès le retour de l'appel. Le
   contrat laissait le point ouvert pour ces deux formats.
@@ -128,6 +146,17 @@ publié, et explique les conventions du dépôt à qui y contribue.
   first decoder, as the fixed-point formats were frozen before the first fill.
 - The Rust conventions describe both formats' binary layouts: the shared header
   and section table, the mesh, the map, and what the decoder treats as hostile.
+- **An example of the host layer loads the repository's map**, `carte`, beside
+  the one that describes its geometry in Rust. The Rust path now reads a file
+  like the four C, C++, wasm and Android hosts; `Mesh` and `World` are
+  re-exported. Textures remain the host's own, and this one uses the same ones
+  as the other example: **a single file changes appearance entirely without a
+  byte moving**.
+- **A benchmark for maps**, `benches/carte.rs`: loading, which happens once, and
+  submission, which happens every frame and transforms every cell with no
+  culling. It is the reference portal traversal will be measured against;
+  without it we could say neither what it gains, nor what it costs where
+  everything is visible.
 - **The Android application walks through the same decor.** A `SurfaceView`,
   two touch zones — left half to move, right half to turn — and the map and mesh
   stored in the APK's assets. The JNI bridge gains map loading and submission,
@@ -180,6 +209,13 @@ publié, et explique les conventions du dépôt à qui y contribue.
   meaning. `SCG_ABI_VERSION` stays at **1**.
 
 ### Changed
+- **The reference decor is mapped more finely, and its fingerprint changes.**
+  `hosts/couloir.world` goes from 8 texels per world unit to 256 on walls and
+  128 on floors, the values used by the example that describes its corridor in
+  Rust. Eight was chosen so that a checker cell would span one unit, convenient
+  for reading perspective in a reference image: a real 512-texel texture spread
+  over sixty-four units, unrecognisable. An unchanged scene therefore renders
+  differently, and the hosts' checkers follow.
 - A map's and a mesh's bytes are copied by the engine, like a texture's: the
   host may free its block as soon as the call returns. The contract left the
   point open for those two formats.

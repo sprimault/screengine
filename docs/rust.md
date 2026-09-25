@@ -42,6 +42,13 @@ pixels, et une scène chargée, qui donne le coût réel avec la répartition et
 recopie. Harnais maison, `#[bench]` n'existant qu'en nightly et le noyau
 n'admettant aucune dépendance.
 
+**Un fichier par chemin qu'une étape va changer**, et non un fichier qui grossit.
+`carte.rs` mesure le chargement d'une carte et sa soumission par image, prise
+avant que la traversée par portails remplace l'une des deux ; il intègre
+`hosts/couloir.world` par `include_bytes!`, le noyau n'ouvrant aucun fichier et
+un bench qui encoderait sa propre carte ne mesurant qu'un encodeur écrit pour
+lui.
+
 **`make bench` est hors de la liste fixe, et rien n'y échoue.** Une durée dépend
 de la charge de la machine : en faire un contrôle le rendrait rouge pour des
 raisons étrangères au code, et son seuil finirait relevé jusqu'à ne plus rien
@@ -143,6 +150,11 @@ l'hôte gardant sa fenêtre, sa boucle et ses entrées.
 - **Rien n'est atteignable par un seul chemin.** Ce que `screengine-play` permet
   se fait aussi par l'ABI ; le confort est réservé au chemin Rust, jamais la
   capacité. Sans quoi l'ABI cesse d'être le contrat.
+- **L'inverse se vérifie aussi, et s'est raté une fois.** Les hôtes C, C++, wasm
+  et Android ont chargé des fichiers pendant toute une étape sans qu'aucun
+  exemple de `screengine-play` sache le faire : le chemin Rust était devenu le
+  seul à ne pas lire de carte. L'exemple `carte` ferme l'écart. Ce qu'une famille
+  d'hôtes sait faire, un exemple doit le montrer de l'autre côté.
 - **`screengine-play` ajoute du comportement, jamais des données.** Pas de temps
   fixe, entrées, mise à l'échelle : oui. Un type de scène, de maillage, de
   matériau ou de lumière à lui : non, même pour un exemple — il réexporte ceux du

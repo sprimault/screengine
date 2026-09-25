@@ -46,7 +46,8 @@ pub use screengine;
 // données. Deux modèles de scène qui divergeraient seraient la seule façon de
 // le rater.
 pub use screengine::{
-    Affine3, Camera, Color, Filter, Light, Quat, Texture, Triangle, Vec3, VertexUv, VertexUv2,
+    Affine3, Camera, Color, Filter, Light, Mesh, Quat, Texture, Triangle, Vec3, VertexUv,
+    VertexUv2, World,
 };
 pub use texture::load_png;
 pub use winit::event::MouseButton;
