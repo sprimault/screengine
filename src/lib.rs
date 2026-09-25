@@ -31,7 +31,7 @@ pub use context::{
     TRIANGLE_CAPACITY,
 };
 pub use error::{Argument, Error, Malformation, Result};
-pub use format::Mesh;
+pub use format::{Mesh, World};
 pub use light::MAX_OVERBRIGHT;
 pub use light::dynamic::MAX_LIGHTS;
 pub use math::{Affine3, Angle, MAX_TEXEL_COORD, Quat, Vec3};

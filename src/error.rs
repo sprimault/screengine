@@ -221,6 +221,33 @@ pub enum Malformation {
     /// rassembler ses triangles à chaque image, donc un tampon, donc une
     /// allocation par image.
     GroupBounds,
+    /// Un compte qui ne recoupe pas la longueur qui le borne, ou un total qui
+    /// déborde ce qu'un entier peut porter.
+    Count,
+    /// Un bit de drapeau qu'aucune version n'a défini.
+    ///
+    /// Nuls obligatoires, même règle que les champs réservés de l'ABI : c'est
+    /// ce qui permettra d'en employer un sans casser les cartes déjà écrites.
+    Flags,
+    /// Un polygone que le chargement ne peut pas prendre : moins de trois
+    /// sommets, plus que le plafond, plat, qui se recoupe — ou, pour un
+    /// portail, qui n'est pas convexe.
+    ///
+    /// La convexité est exigée du portail et non de la surface parce que le
+    /// portail décide de ce qu'on voit : une projection concave n'a pas
+    /// d'intersection exprimable comme réduction de fenêtre, et l'erreur se
+    /// paierait en trou définitif.
+    Polygon,
+    /// Un repère de plaquage inutilisable : des axes de lightmap dont la
+    /// longueur n'est pas une puissance de deux, ou des coordonnées dérivées
+    /// qui ne sont pas finies.
+    Mapping,
+    /// Trois portails partagent les mêmes sommets.
+    ///
+    /// Deux s'apparient ; à trois, il n'y a pas de réponse à « lequel des
+    /// deux ». Un portail seul, lui, est un mur et non une erreur : une carte
+    /// en cours d'édition en a toujours.
+    Portal,
 }
 
 /// Le résultat d'un appel du noyau.

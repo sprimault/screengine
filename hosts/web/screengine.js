@@ -105,6 +105,11 @@ export const EXPORTS = [
   "scg_mesh_texture_name",
   "scg_mesh_triangle_count",
   "scg_submit_mesh",
+  "scg_world_load",
+  "scg_world_destroy",
+  "scg_world_material_count",
+  "scg_world_material_name",
+  "scg_world_triangle_count",
 ];
 
 /** Taille de `ScgContextConfig`, celle qu'affirme le header. */

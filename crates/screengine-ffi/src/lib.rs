@@ -21,6 +21,7 @@ mod output;
 mod scene;
 mod status;
 mod texture;
+mod world;
 
 use std::alloc::{self, Layout};
 use std::ffi::c_char;
@@ -28,7 +29,9 @@ use std::ptr;
 
 use std::sync::Arc;
 
-use screengine::{Argument, Context, Error as CoreError, Mesh, Texture, Vec3, VertexUv, VertexUv2};
+use screengine::{
+    Argument, Context, Error as CoreError, Mesh, Texture, Vec3, VertexUv, VertexUv2, World,
+};
 
 use entry::AbiError;
 use output::HostRows;
@@ -45,6 +48,7 @@ pub use status::{
     SCG_ERR_UNSUPPORTED_FORMAT_VERSION, SCG_OK,
 };
 pub use texture::ScgTexture;
+pub use world::ScgWorld;
 
 /// ABI version this library implements.
 ///
@@ -1133,28 +1137,9 @@ pub unsafe extern "C" fn scg_mesh_texture_name(
         // SAFETY: précondition de la fonction — le pointeur est nul ou vise un
         // handle vivant.
         let mesh = unsafe { mesh.as_ref() }.ok_or(AbiError::NULL)?;
-        let name = mesh
-            .inner
-            .texture_name(slot)
-            .ok_or(AbiError::TEXTURE_SLOT)?;
-
-        if !buf.is_null() {
-            if cap < name.len() + 1 {
-                return Err(AbiError::NAME_CAPACITY);
-            }
-            // SAFETY: précondition de la fonction — `buf` couvre `cap` octets
-            // inscriptibles, et `cap` vient d'être vérifié plus grand que le nom
-            // et son terminateur. Le nom vit dans la ressource, que `buf` ne
-            // recouvre pas.
-            unsafe {
-                ptr::copy_nonoverlapping(name.as_ptr(), buf.cast::<u8>(), name.len());
-                buf.add(name.len()).write(0);
-            }
-        }
-        // SAFETY: précondition de la fonction — `out_len` vise une `size_t`
-        // inscriptible.
-        unsafe { out_len.write(name.len()) };
-        Ok(())
+        // SAFETY: mêmes préconditions que celles de `write_name`, que cet appel
+        // porte telles quelles.
+        unsafe { write_name(mesh.inner.texture_name(slot), buf, cap, out_len) }
     })
 }
 
@@ -1191,5 +1176,186 @@ unsafe fn mesh_count(mesh: *const ScgMesh, out: *mut u32, count: impl Fn(&Mesh) 
         // inscriptible.
         unsafe { out.write(count(&mesh.inner)) };
         Ok(())
+    })
+}
+
+/// Le corps commun des deux accesseurs scalaires d'une carte.
+///
+/// # Safety
+///
+/// `world` est nul ou un handle vivant, `out` est nul ou vise un `u32`
+/// inscriptible.
+unsafe fn world_count(world: *const ScgWorld, out: *mut u32, count: impl Fn(&World) -> u32) -> i32 {
+    entry::without_context(|| {
+        if out.is_null() {
+            return Err(AbiError::NULL);
+        }
+        // SAFETY: précondition de la fonction — le pointeur est nul ou vise un
+        // handle vivant.
+        let world = unsafe { world.as_ref() }.ok_or(AbiError::NULL)?;
+        // SAFETY: précondition de la fonction — `out` vise un `u32`
+        // inscriptible.
+        unsafe { out.write(count(&world.inner)) };
+        Ok(())
+    })
+}
+
+/// La lecture en deux temps d'un nom, partagée par les deux ressources.
+///
+/// Extraite dès sa seconde occurrence, contrairement à la règle habituelle : ce
+/// n'est pas de la plomberie mais un protocole d'ABI — mesurer, refuser une
+/// capacité trop courte sans rien écrire, terminer par un octet nul — et une
+/// copie qui divergerait d'un mot ferait mentir le header pour l'une des deux
+/// ressources.
+///
+/// # Safety
+///
+/// `buf` est nul avec `cap` nul, ou couvre `cap` octets inscriptibles ; `out_len`
+/// vise une `size_t` inscriptible. Le nom ne recouvre pas `buf`.
+unsafe fn write_name(
+    name: Option<&str>,
+    buf: *mut c_char,
+    cap: usize,
+    out_len: *mut usize,
+) -> Result<(), AbiError> {
+    let name = name.ok_or(AbiError::TEXTURE_SLOT)?;
+    if !buf.is_null() {
+        if cap < name.len() + 1 {
+            return Err(AbiError::NAME_CAPACITY);
+        }
+        // SAFETY: précondition de la fonction — `buf` couvre `cap` octets
+        // inscriptibles, et `cap` vient d'être vérifié plus grand que le nom et
+        // son terminateur. Le nom vit dans la ressource, que `buf` ne recouvre
+        // pas.
+        unsafe {
+            ptr::copy_nonoverlapping(name.as_ptr(), buf.cast::<u8>(), name.len());
+            buf.add(name.len()).write(0);
+        }
+    }
+    // SAFETY: précondition de la fonction — `out_len` vise une `size_t`
+    // inscriptible.
+    unsafe { out_len.write(name.len()) };
+    Ok(())
+}
+
+/// Loads a map from a block of bytes.
+///
+/// Same contract as `scg_mesh_load`, and deliberately so: two resources loaded
+/// from a block have no reason to behave differently, and a binding written for
+/// one reads the same for the other. The engine copies what it keeps, the map
+/// belongs to no context, and the failure is read with `scg_last_error(NULL)`.
+///
+/// Loading derives what the file does not store: portal links, triangles and
+/// texture coordinates. Nothing of it is a cache that could go stale.
+///
+/// # Safety
+///
+/// `bytes` must cover `len` readable bytes, or `len` must be zero. `out` must
+/// point to a writable handle; nothing is written unless the call succeeds.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn scg_world_load(
+    bytes: *const u8,
+    len: usize,
+    out: *mut *mut ScgWorld,
+) -> i32 {
+    entry::without_context(|| {
+        if out.is_null() {
+            return Err(AbiError::NULL);
+        }
+        if bytes.is_null() && len != 0 {
+            return Err(AbiError::NULL);
+        }
+        // SAFETY: précondition de la fonction — `bytes` couvre `len` octets
+        // lisibles, le cas vide étant traité par `slice_of_bytes`.
+        let bytes = unsafe { slice_of_bytes(bytes, len) };
+        let world = World::load(bytes)?;
+        let handle = Box::into_raw(Box::new(ScgWorld { inner: world }));
+        // SAFETY: précondition de la fonction — `out` vise un handle
+        // inscriptible, et rien n'y a été écrit avant ce point.
+        unsafe { out.write(handle) };
+        Ok(())
+    })
+}
+
+/// Releases a map.
+///
+/// `scg_world_destroy(NULL)` does nothing, like `free(NULL)`. Same rule as a
+/// mesh: nothing reads a map once the submission has returned.
+///
+/// # Safety
+///
+/// `world` must be null, or a handle returned by `scg_world_load` and not yet
+/// destroyed.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn scg_world_destroy(world: *mut ScgWorld) {
+    entry::nothing(|| {
+        if world.is_null() {
+            return;
+        }
+        // SAFETY: précondition de la fonction — le handle vient de
+        // `Box::into_raw` dans `scg_world_load` et n'a pas encore été rendu.
+        drop(unsafe { Box::from_raw(world) });
+    });
+}
+
+/// Writes the number of materials the map asks for to `out`.
+///
+/// # Safety
+///
+/// `world` must be a live handle from `scg_world_load`, and `out` must point to
+/// a writable `uint32_t`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn scg_world_material_count(world: *const ScgWorld, out: *mut u32) -> i32 {
+    // SAFETY: précondition de la fonction — `world` est nul ou un handle
+    // vivant, `out` est nul ou inscriptible.
+    unsafe { world_count(world, out, World::material_count) }
+}
+
+/// Writes the number of triangles the map carries to `out`.
+///
+/// All cells together: the map is submitted whole at this stage, with no
+/// culling, so this is what a host sizes `max_triangles` on.
+///
+/// # Safety
+///
+/// `world` must be a live handle from `scg_world_load`, and `out` must point to
+/// a writable `uint32_t`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn scg_world_triangle_count(world: *const ScgWorld, out: *mut u32) -> i32 {
+    // SAFETY: mêmes préconditions que ci-dessus.
+    unsafe { world_count(world, out, World::triangle_count) }
+}
+
+/// Reads the name of one material, in two steps.
+///
+/// Same protocol as `scg_mesh_texture_name`: call once with `buf` null and `cap`
+/// zero to learn the length, then again with a buffer of at least `*out_len + 1`
+/// bytes. A `cap` too small returns `SCG_ERR_INVALID_ARGUMENT` and writes
+/// nothing, `out_len` included; an `index` beyond `scg_world_material_count`
+/// returns the same code.
+///
+/// # Safety
+///
+/// `world` must be a live handle from `scg_world_load`. `buf` must be null with
+/// `cap` zero, or cover `cap` writable bytes. `out_len` must point to a writable
+/// `size_t`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn scg_world_material_name(
+    world: *const ScgWorld,
+    index: u32,
+    buf: *mut c_char,
+    cap: usize,
+    out_len: *mut usize,
+) -> i32 {
+    entry::without_context(|| {
+        if out_len.is_null() || (buf.is_null() && cap != 0) {
+            return Err(AbiError::NULL);
+        }
+        // SAFETY: précondition de la fonction — le pointeur est nul ou vise un
+        // handle vivant.
+        let world = unsafe { world.as_ref() }.ok_or(AbiError::NULL)?;
+        // SAFETY: mêmes préconditions que celles de `write_name`, que cet appel
+        // porte telles quelles.
+        unsafe { write_name(world.inner.material_name(index), buf, cap, out_len) }
     })
 }
