@@ -59,6 +59,15 @@ impl AbiError {
         message: "texture slot beyond those the resource declares",
     };
 
+    /// Un index au-delà de ce que la carte porte.
+    ///
+    /// Une faute dans l'appel et non dans le contenu : le fichier est bon, c'est
+    /// l'index qui sort de ce qu'un compte a rendu.
+    pub(crate) const WORLD_INDEX: Self = Self {
+        code: SCG_ERR_INVALID_ARGUMENT,
+        message: "index beyond what the map declares",
+    };
+
     /// Le tableau de textures n'a pas le nombre d'emplacements de la ressource.
     ///
     /// Une égalité et non un minimum : un tableau plus long est le signe que

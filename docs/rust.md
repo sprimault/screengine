@@ -765,9 +765,38 @@ longueur de la section. C'est ce qui permet à l'étape 8 de remplacer une cellu
 sans toucher aux autres, et au décodeur de refuser un compte démesuré sans avoir
 lu un seul sommet.
 
-Les dispositions des sections `ENTS` et `LGTS` s'écrivent ici avec leur
-décodeur, et pas avant : le contrat d'une section se fige avant sa première
-lecture, non avant celle de sa voisine.
+| Élément | Disposition | Taille |
+|---|---|---|
+| Lumière statique | `id` en `u32`, `x, y, z, radius` en `f32`, puis `r, g, b` en `u8` et un octet nul | 24 |
+| Entité | longueur de l'enregistrement en `u32`, puis `id` et `cell` en `u32`, la longueur de sa classe en `u16` et ses octets UTF-8, `x, y, z` puis `qx, qy, qz, qw` en `f32`, la longueur de ses données en `u32` et ses octets | variable |
+
+**La lumière porte ce que le moteur connaît d'une lumière**, et rien de plus :
+position, rayon, couleur. C'est ce qui permet au calcul de lightmap de l'étape 5
+de n'avoir besoin d'aucun tableau produit par l'hôte — deux hôtes donneraient
+alors deux éclairages pour la même carte, et le projet perdrait « la même image
+sur toutes les cibles ». L'octet nul après la couleur n'est pas un remplissage
+mais l'alpha, réservé et nul, comme dans `ScgLight`.
+
+**L'orientation d'une entité est un quaternion, normalisé au chargement.** Un
+seul angle de lacet suffirait à un décor de cette classe, qui pose des objets
+debout — et se paierait par une version de format le jour où une entité doit
+s'incliner. La normalisation est un calcul dérivé de plus, donc son ordre
+d'opérations est contractuel comme les autres ; un quaternion nul est refusé,
+n'ayant pas de direction à porter.
+
+**La classe est une chaîne, jamais interprétée.** Un entier opaque serait plus
+court et obligerait l'hôte à tenir hors du fichier une table de correspondance —
+ce que le format refuse déjà pour les noms de matériaux. Le moteur ne compare
+cette chaîne à rien : il la transmet.
+
+**La cellule d'une entité est un identifiant**, vérifié existant au chargement,
+jamais un index. Une entité hors cellule n'existe donc pas ; le jour où il en
+faudrait une, zéro est disponible — l'éditeur le réserve déjà à « aucun » — et ce
+serait une version de format de plus.
+
+**Le bloc de données est copié et jamais lu.** Pas de modèle de propriétés typé :
+ce serait un langage de jeu qu'il faudrait faire évoluer avec les jeux, et
+l'invariant du projet l'interdit.
 
 Sont **dérivés au chargement** les liens de portails, les plans, la
 triangulation, les coordonnées de texture et de lightmap, les boîtes

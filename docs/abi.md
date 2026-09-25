@@ -30,7 +30,9 @@ Arrêtés. Ils découlent des invariants du projet et ne se rediscutent pas ici.
   d'un objet du moteur, seulement un pointeur vers un type incomplet.
 - **Les structures qui traversent sont du POD `#[repr(C)]`, en entrée.** Aucune
   structure n'est rendue à l'hôte par valeur ou par pointeur vers la mémoire du
-  moteur, à la seule exception du message de `scg_last_error`.
+  moteur, à la seule exception du message de `scg_last_error`. **Remplir une
+  structure que l'hôte possède n'est ni l'un ni l'autre** : `scg_world_light` le
+  fait, comme `scg_mesh_texture_name` remplit un tampon de l'appelant.
 - **Aucun callback.** Le moteur n'appelle jamais l'hôte. Il n'y a donc ni
   réentrance, ni question de pile traversée dans l'autre sens.
 - **Aucune allocation qui traverse.** Le tampon de sortie appartient à l'hôte. La
@@ -988,6 +990,46 @@ pour `texture` : `scg_world_load`, `scg_world_destroy`,
 `scg_world_triangle_count`, `scg_submit_world`. La symétrie est voulue — deux
 ressources chargées depuis un bloc n'ont aucune raison de se manipuler
 autrement, et une liaison écrite pour l'une se relit pour l'autre.
+
+**Une carte porte en plus ce qu'elle seule a** : des lumières statiques et des
+entités, que sept fonctions donnent à lire.
+
+```c
+int32_t scg_world_light_count(const struct ScgWorld *world, uint32_t *out);
+int32_t scg_world_light(const struct ScgWorld *world, uint32_t index,
+                        struct ScgLight *out);
+int32_t scg_world_entity_count(const struct ScgWorld *world, uint32_t *out);
+int32_t scg_world_entity_ids(const struct ScgWorld *world, uint32_t index,
+                             uint32_t *id, uint32_t *cell);
+int32_t scg_world_entity_pose(const struct ScgWorld *world, uint32_t index,
+                              float *out);
+int32_t scg_world_entity_class(const struct ScgWorld *world, uint32_t index,
+                               char *buf, size_t cap, size_t *out_len);
+int32_t scg_world_entity_data(const struct ScgWorld *world, uint32_t index,
+                              uint8_t *buf, size_t cap, size_t *out_len);
+```
+
+- **`scg_world_light` remplit une structure que l'hôte possède**, et c'est la
+  seule de l'ABI à être écrite par le moteur. Le principe qui l'interdisait vise
+  une structure *rendue par valeur ou par pointeur vers la mémoire du moteur* :
+  écrire dans un tampon de l'appelant est ce que fait déjà
+  `scg_mesh_texture_name`. La forme est celle que l'hôte redonne à
+  `scg_set_lights`, ce qui est tout ce qu'il en fait ; la lui faire reconstruire
+  champ par champ aurait coûté trois appels pour respecter la lettre d'un
+  principe qui dit autre chose. L'octet réservé est écrit nul.
+
+  Écarté : une `ScgEntity` symétrique. Une pose n'a pas de structure publiée à
+  réutiliser, et en inventer une la figerait pour toujours au profit d'un seul
+  accesseur — d'où les sept flottants de `scg_world_entity_pose`, trois de
+  position puis quatre d'un quaternion normalisé.
+- **Les identifiants d'une entité sont ceux de l'éditeur**, jamais des index :
+  `index` désigne un rang dans ce que `scg_world_entity_count` a rendu, `id` et
+  `cell` sont stables d'un chargement à l'autre.
+- **La classe se lit en deux temps**, comme un nom d'emplacement, terminateur
+  compris. **Les octets d'une entité aussi, mais sans terminateur** : ce sont des
+  octets, pas une chaîne, et le moteur les a copiés sans en lire un.
+- **Un `index` au-delà de son compte rend `SCG_ERR_INVALID_ARGUMENT`** et n'écrit
+  rien : le fichier est bon, c'est l'appel qui sort des bornes.
 
 Arrêté :
 

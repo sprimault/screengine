@@ -56,6 +56,12 @@ publié, et explique les conventions du dépôt à qui y contribue.
 - Les conventions Rust décrivent les dispositions binaires des deux formats :
   en-tête et table de sections communs, maillage, carte, et ce que le décodeur
   tient pour hostile.
+- Les lumières statiques et les entités d'une carte se lisent : sept fonctions,
+  dont `scg_world_light`, qui **remplit une `ScgLight` que l'hôte possède** — la
+  forme même qu'il redonne à `scg_set_lights`. Une entité porte son identifiant,
+  celui de sa cellule, une classe que le moteur n'interprète jamais, une pose
+  dont le quaternion est normalisé au chargement, et des octets qu'il copie sans
+  les lire.
 - Le chargement d'une carte : `scg_world_load`, `scg_world_destroy`,
   `scg_world_material_count`, `scg_world_material_name` et
   `scg_world_triangle_count`, symétriques de celles du maillage. La géométrie —
@@ -102,6 +108,11 @@ publié, et explique les conventions du dépôt à qui y contribue.
   first decoder, as the fixed-point formats were frozen before the first fill.
 - The Rust conventions describe both formats' binary layouts: the shared header
   and section table, the mesh, the map, and what the decoder treats as hostile.
+- A map's static lights and entities can be read: seven functions, among them
+  `scg_world_light`, which **fills an `ScgLight` the host owns** — the very shape
+  it hands back to `scg_set_lights`. An entity carries its own identifier, that
+  of its cell, a class the engine never interprets, a pose whose quaternion is
+  normalised at load time, and bytes it copies without reading them.
 - Map loading: `scg_world_load`, `scg_world_destroy`, `scg_world_material_count`,
   `scg_world_material_name` and `scg_world_triangle_count`, mirroring the mesh
   ones. The geometry — self-contained cells, surfaces, portals — is validated at

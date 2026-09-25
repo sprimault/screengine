@@ -1021,6 +1021,98 @@ int32_t scg_world_material_count(const struct ScgWorld *world, uint32_t *out);
 // a writable `uint32_t`.
 int32_t scg_world_triangle_count(const struct ScgWorld *world, uint32_t *out);
 
+// Writes the number of static lights the map carries to `out`.
+//
+// # Safety
+//
+// `world` must be a live handle from `scg_world_load`, and `out` must point to
+// a writable `uint32_t`.
+int32_t scg_world_light_count(const struct ScgWorld *world, uint32_t *out);
+
+// Writes one static light of the map to `out`.
+//
+// **The engine fills a structure you own**, in the very shape you hand back to
+// `scg_set_lights`: a map's lights are meant to be re-submitted, not rebuilt.
+// The reserved byte is written zero, as the contract requires of you.
+//
+// An `index` beyond `scg_world_light_count` returns
+// `SCG_ERR_INVALID_ARGUMENT` and writes nothing.
+//
+// # Safety
+//
+// `world` must be a live handle from `scg_world_load`, and `out` must point to
+// a writable `ScgLight`.
+int32_t scg_world_light(const struct ScgWorld *world, uint32_t index, struct ScgLight *out);
+
+// Writes the number of entities the map carries to `out`.
+//
+// # Safety
+//
+// `world` must be a live handle from `scg_world_load`, and `out` must point to
+// a writable `uint32_t`.
+int32_t scg_world_entity_count(const struct ScgWorld *world, uint32_t *out);
+
+// Writes an entity's own identifier and that of its cell.
+//
+// Both are stable identifiers the editor assigned, never array indices: that is
+// what lets an editor undo and save part of a map without renumbering anything.
+//
+// # Safety
+//
+// `world` must be a live handle from `scg_world_load`, and both `id` and `cell`
+// must point to writable `uint32_t`.
+int32_t scg_world_entity_ids(const struct ScgWorld *world,
+                             uint32_t index,
+                             uint32_t *id,
+                             uint32_t *cell);
+
+// Writes an entity's pose to `out`: three floats of position, then four of a
+// normalised quaternion.
+//
+// Seven floats and not a structure: a pose has no published layout to reuse,
+// and inventing one would freeze it forever for the sake of one accessor.
+//
+// # Safety
+//
+// `world` must be a live handle from `scg_world_load`, and `out` must cover
+// seven writable floats.
+int32_t scg_world_entity_pose(const struct ScgWorld *world, uint32_t index, float *out);
+
+// Reads an entity's class, in two steps.
+//
+// Same protocol as the other names. **The engine never interprets this
+// string**: it carries what the editor wrote, and what it means is the host's
+// business.
+//
+// # Safety
+//
+// `world` must be a live handle from `scg_world_load`. `buf` must be null with
+// `cap` zero, or cover `cap` writable bytes. `out_len` must point to a writable
+// `size_t`.
+int32_t scg_world_entity_class(const struct ScgWorld *world,
+                               uint32_t index,
+                               char *buf,
+                               size_t cap,
+                               size_t *out_len);
+
+// Reads an entity's opaque bytes, in two steps.
+//
+// Same protocol as a name, **without a terminator**: these are bytes, not a
+// string, and the engine copied them without reading one. `out_len` is their
+// length, and a `cap` below it returns `SCG_ERR_INVALID_ARGUMENT` without
+// writing anything.
+//
+// # Safety
+//
+// `world` must be a live handle from `scg_world_load`. `buf` must be null with
+// `cap` zero, or cover `cap` writable bytes. `out_len` must point to a writable
+// `size_t`.
+int32_t scg_world_entity_data(const struct ScgWorld *world,
+                              uint32_t index,
+                              uint8_t *buf,
+                              size_t cap,
+                              size_t *out_len);
+
 // Reads the name of one material, in two steps.
 //
 // Same protocol as `scg_mesh_texture_name`: call once with `buf` null and `cap`

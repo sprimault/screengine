@@ -153,6 +153,12 @@ impl fmt::Display for Error {
                 Malformation::Mapping => f.write_str(
                     "a mapping frame is unusable, or derives coordinates that are not finite",
                 ),
+                Malformation::Light => {
+                    f.write_str("a static light has a radius that is not finite and positive")
+                }
+                Malformation::Pose => {
+                    f.write_str("an orientation is a zero quaternion, which carries no direction")
+                }
                 Malformation::Portal => f.write_str("three portals share the same vertices"),
             },
             Self::Engine(screengine::Error::UnsupportedFormatVersion) => {

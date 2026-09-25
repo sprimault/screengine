@@ -304,6 +304,24 @@ pub struct ScgLight {
 }
 
 impl ScgLight {
+    /// La forme que l'hôte lit d'une lumière de carte.
+    ///
+    /// L'octet réservé est écrit nul, ce que le contrat exige de l'hôte quand
+    /// c'est lui qui remplit la structure : la lumière rendue ici se repasse
+    /// telle quelle à `scg_set_lights`.
+    pub(crate) fn from_core(light: Light) -> Self {
+        Self {
+            x: light.position.x,
+            y: light.position.y,
+            z: light.position.z,
+            radius: light.radius,
+            r: light.color.r,
+            g: light.color.g,
+            b: light.color.b,
+            _reserved: 0,
+        }
+    }
+
     /// La lumière du noyau.
     pub(crate) fn to_core(self) -> Result<Light, AbiError> {
         if self._reserved != 0 {

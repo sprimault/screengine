@@ -1326,6 +1326,221 @@ pub unsafe extern "C" fn scg_world_triangle_count(world: *const ScgWorld, out: *
     unsafe { world_count(world, out, World::triangle_count) }
 }
 
+/// Writes the number of static lights the map carries to `out`.
+///
+/// # Safety
+///
+/// `world` must be a live handle from `scg_world_load`, and `out` must point to
+/// a writable `uint32_t`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn scg_world_light_count(world: *const ScgWorld, out: *mut u32) -> i32 {
+    // SAFETY: mêmes préconditions que les autres comptes d'une carte.
+    unsafe { world_count(world, out, World::light_count) }
+}
+
+/// Writes one static light of the map to `out`.
+///
+/// **The engine fills a structure you own**, in the very shape you hand back to
+/// `scg_set_lights`: a map's lights are meant to be re-submitted, not rebuilt.
+/// The reserved byte is written zero, as the contract requires of you.
+///
+/// An `index` beyond `scg_world_light_count` returns
+/// `SCG_ERR_INVALID_ARGUMENT` and writes nothing.
+///
+/// # Safety
+///
+/// `world` must be a live handle from `scg_world_load`, and `out` must point to
+/// a writable `ScgLight`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn scg_world_light(
+    world: *const ScgWorld,
+    index: u32,
+    out: *mut ScgLight,
+) -> i32 {
+    entry::without_context(|| {
+        if out.is_null() {
+            return Err(AbiError::NULL);
+        }
+        // SAFETY: précondition de la fonction — le pointeur est nul ou vise un
+        // handle vivant.
+        let world = unsafe { world.as_ref() }.ok_or(AbiError::NULL)?;
+        let light = world.inner.light(index).ok_or(AbiError::WORLD_INDEX)?;
+        // SAFETY: précondition de la fonction — `out` vise une `ScgLight`
+        // inscriptible, et rien n'y a été écrit avant ce point.
+        unsafe { out.write(ScgLight::from_core(light)) };
+        Ok(())
+    })
+}
+
+/// Writes the number of entities the map carries to `out`.
+///
+/// # Safety
+///
+/// `world` must be a live handle from `scg_world_load`, and `out` must point to
+/// a writable `uint32_t`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn scg_world_entity_count(world: *const ScgWorld, out: *mut u32) -> i32 {
+    // SAFETY: mêmes préconditions que les autres comptes d'une carte.
+    unsafe { world_count(world, out, World::entity_count) }
+}
+
+/// Writes an entity's own identifier and that of its cell.
+///
+/// Both are stable identifiers the editor assigned, never array indices: that is
+/// what lets an editor undo and save part of a map without renumbering anything.
+///
+/// # Safety
+///
+/// `world` must be a live handle from `scg_world_load`, and both `id` and `cell`
+/// must point to writable `uint32_t`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn scg_world_entity_ids(
+    world: *const ScgWorld,
+    index: u32,
+    id: *mut u32,
+    cell: *mut u32,
+) -> i32 {
+    entry::without_context(|| {
+        if id.is_null() || cell.is_null() {
+            return Err(AbiError::NULL);
+        }
+        // SAFETY: précondition de la fonction — le pointeur est nul ou vise un
+        // handle vivant.
+        let world = unsafe { world.as_ref() }.ok_or(AbiError::NULL)?;
+        let (own, home) = world.inner.entity_ids(index).ok_or(AbiError::WORLD_INDEX)?;
+        // SAFETY: précondition de la fonction — les deux pointeurs visent des
+        // `uint32_t` inscriptibles.
+        unsafe {
+            id.write(own);
+            cell.write(home);
+        }
+        Ok(())
+    })
+}
+
+/// Writes an entity's pose to `out`: three floats of position, then four of a
+/// normalised quaternion.
+///
+/// Seven floats and not a structure: a pose has no published layout to reuse,
+/// and inventing one would freeze it forever for the sake of one accessor.
+///
+/// # Safety
+///
+/// `world` must be a live handle from `scg_world_load`, and `out` must cover
+/// seven writable floats.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn scg_world_entity_pose(
+    world: *const ScgWorld,
+    index: u32,
+    out: *mut f32,
+) -> i32 {
+    entry::without_context(|| {
+        if out.is_null() {
+            return Err(AbiError::NULL);
+        }
+        // SAFETY: précondition de la fonction — le pointeur est nul ou vise un
+        // handle vivant.
+        let world = unsafe { world.as_ref() }.ok_or(AbiError::NULL)?;
+        let (position, orientation) = world
+            .inner
+            .entity_pose(index)
+            .ok_or(AbiError::WORLD_INDEX)?;
+        let pose = [
+            position.x,
+            position.y,
+            position.z,
+            orientation.x,
+            orientation.y,
+            orientation.z,
+            orientation.w,
+        ];
+        // SAFETY: précondition de la fonction — `out` couvre sept flottants
+        // inscriptibles, et le tableau source ne le recouvre pas.
+        unsafe { ptr::copy_nonoverlapping(pose.as_ptr(), out, pose.len()) };
+        Ok(())
+    })
+}
+
+/// Reads an entity's class, in two steps.
+///
+/// Same protocol as the other names. **The engine never interprets this
+/// string**: it carries what the editor wrote, and what it means is the host's
+/// business.
+///
+/// # Safety
+///
+/// `world` must be a live handle from `scg_world_load`. `buf` must be null with
+/// `cap` zero, or cover `cap` writable bytes. `out_len` must point to a writable
+/// `size_t`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn scg_world_entity_class(
+    world: *const ScgWorld,
+    index: u32,
+    buf: *mut c_char,
+    cap: usize,
+    out_len: *mut usize,
+) -> i32 {
+    entry::without_context(|| {
+        if out_len.is_null() || (buf.is_null() && cap != 0) {
+            return Err(AbiError::NULL);
+        }
+        // SAFETY: précondition de la fonction — le pointeur est nul ou vise un
+        // handle vivant.
+        let world = unsafe { world.as_ref() }.ok_or(AbiError::NULL)?;
+        // SAFETY: mêmes préconditions que celles de `write_name`.
+        unsafe { write_name(world.inner.entity_class(index), buf, cap, out_len) }
+    })
+}
+
+/// Reads an entity's opaque bytes, in two steps.
+///
+/// Same protocol as a name, **without a terminator**: these are bytes, not a
+/// string, and the engine copied them without reading one. `out_len` is their
+/// length, and a `cap` below it returns `SCG_ERR_INVALID_ARGUMENT` without
+/// writing anything.
+///
+/// # Safety
+///
+/// `world` must be a live handle from `scg_world_load`. `buf` must be null with
+/// `cap` zero, or cover `cap` writable bytes. `out_len` must point to a writable
+/// `size_t`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn scg_world_entity_data(
+    world: *const ScgWorld,
+    index: u32,
+    buf: *mut u8,
+    cap: usize,
+    out_len: *mut usize,
+) -> i32 {
+    entry::without_context(|| {
+        if out_len.is_null() || (buf.is_null() && cap != 0) {
+            return Err(AbiError::NULL);
+        }
+        // SAFETY: précondition de la fonction — le pointeur est nul ou vise un
+        // handle vivant.
+        let world = unsafe { world.as_ref() }.ok_or(AbiError::NULL)?;
+        let data = world
+            .inner
+            .entity_data(index)
+            .ok_or(AbiError::WORLD_INDEX)?;
+
+        if !buf.is_null() {
+            if cap < data.len() {
+                return Err(AbiError::NAME_CAPACITY);
+            }
+            // SAFETY: précondition de la fonction — `buf` couvre `cap` octets
+            // inscriptibles, et `cap` vient d'être vérifié au moins aussi grand
+            // que le bloc. Celui-ci vit dans la ressource, que `buf` ne recouvre
+            // pas.
+            unsafe { ptr::copy_nonoverlapping(data.as_ptr(), buf, data.len()) };
+        }
+        // SAFETY: précondition de la fonction — `out_len` vise une `size_t`
+        // inscriptible.
+        unsafe { out_len.write(data.len()) };
+        Ok(())
+    })
+}
+
 /// Reads the name of one material, in two steps.
 ///
 /// Same protocol as `scg_mesh_texture_name`: call once with `buf` null and `cap`

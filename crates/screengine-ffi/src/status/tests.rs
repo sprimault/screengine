@@ -157,6 +157,8 @@ fn chaque_malformation_a_son_message() {
         Malformation::Flags,
         Malformation::Polygon,
         Malformation::Mapping,
+        Malformation::Light,
+        Malformation::Pose,
         Malformation::Portal,
     ];
     for (i, a) in malformations.iter().enumerate() {
@@ -186,10 +188,12 @@ fn chaque_malformation_a_son_message() {
         Malformation::Flags => 13,
         Malformation::Polygon => 14,
         Malformation::Mapping => 15,
-        Malformation::Portal => 16,
+        Malformation::Light => 16,
+        Malformation::Pose => 17,
+        Malformation::Portal => 18,
     };
     for (i, a) in malformations.iter().enumerate() {
         assert_eq!(rank(*a), i, "{a:?} n'est pas à sa place");
     }
-    assert_eq!(malformations.len(), 17, "une variante manque à la liste");
+    assert_eq!(malformations.len(), 19, "une variante manque à la liste");
 }

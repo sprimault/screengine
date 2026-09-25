@@ -20,8 +20,8 @@ use super::ears::{MAX_POLYGON, triangulate};
 use super::{Cursor, decode};
 use crate::buffer::{owned, reserved};
 use crate::error::{Error, Malformation, Result};
-use crate::math::{MAX_TEXEL_COORD, Vec3};
-use crate::scene::VertexUv;
+use crate::math::{MAX_TEXEL_COORD, Quat, Vec3};
+use crate::scene::{Color, Light, VertexUv};
 use crate::texture::MAX_TEXTURE_SIZE;
 
 /// Le genre que porte l'en-tête d'une carte.
@@ -35,8 +35,15 @@ const TAGS: [[u8; 4]; 4] = [*b"CELL", *b"ENTS", *b"LGTS", *b"MATS"];
 
 /// Rang de la section des cellules.
 const CELL: usize = 0;
+/// Rang de la section des entités.
+const ENTS: usize = 1;
+/// Rang de la section des lumières statiques.
+const LGTS: usize = 2;
 /// Rang de la section des matériaux.
 const MATS: usize = 3;
+
+/// Taille d'une lumière statique dans le fichier, en octets.
+const LIGHT_LEN: usize = 24;
 
 /// Taille d'un sommet de cellule, en octets.
 const VERTEX_LEN: usize = 12;
@@ -153,6 +160,50 @@ pub(crate) struct Cell {
     portals: Vec<Portal>,
 }
 
+/// Une lumière statique du décor.
+///
+/// **Une section propre, et ce n'est pas une exception à l'invariant du jeu.**
+/// Si les sources étaient des entités opaques, le calcul de lightmap devrait
+/// recevoir un tableau produit par l'hôte, et deux hôtes donneraient deux
+/// éclairages pour la même carte — ce qui retirerait au projet « la même image
+/// sur toutes les cibles ». La lumière est déjà dans le vocabulaire du moteur ;
+/// les points de départ et les objets ramassables restent des entités opaques.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct StaticLight {
+    /// Son identifiant stable, jamais nul.
+    ///
+    /// Sans accesseur : à cette étape, l'hôte lit une lumière pour la repasser
+    /// au moteur, et le calcul de lightmap qui la désignera est interne.
+    #[allow(dead_code)]
+    id: u32,
+    /// Ce que le moteur connaît d'une lumière, et rien de plus.
+    light: Light,
+}
+
+/// Une entité : ce que la carte pose et que le moteur ne comprend pas.
+///
+/// **Un identifiant, une classe jamais interprétée, une pose, une cellule et un
+/// bloc d'octets que le moteur copie et ne lit pas.** Pas de modèle de
+/// propriétés typé : ce serait un langage de jeu qu'il faudrait faire évoluer
+/// avec les jeux.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct Entity {
+    /// Son identifiant stable, jamais nul.
+    #[allow(dead_code)]
+    id: u32,
+    /// L'identifiant de la cellule où elle se trouve, vérifié existant.
+    #[allow(dead_code)]
+    cell: u32,
+    /// Sa classe, que le moteur transmet sans jamais la comparer à rien.
+    class: String,
+    /// Sa position dans le monde.
+    position: Vec3,
+    /// Son orientation, normalisée au chargement.
+    orientation: Quat,
+    /// Ses octets, copiés tels quels.
+    data: Vec<u8>,
+}
+
 /// Une carte chargée depuis un bloc d'octets.
 ///
 /// Immuable, indépendante de tout contexte, comme un maillage. Ses octets sont
@@ -169,6 +220,10 @@ pub struct World {
     material_names: Vec<String>,
     /// Le nombre total de triangles, pour que l'hôte dimensionne son contexte.
     triangle_count: u32,
+    /// Les lumières statiques, dans l'ordre du fichier.
+    lights: Vec<StaticLight>,
+    /// Les entités, dans l'ordre du fichier.
+    entities: Vec<Entity>,
 }
 
 impl World {
@@ -186,11 +241,17 @@ impl World {
                 .ok_or(Error::InvalidFormat(Malformation::Count))?;
         }
 
+        let lights = lights(sections[LGTS])?;
+        let cell_ids: Vec<u32> = cells.iter().map(|cell| cell.id).collect();
+        let entities = entities(sections[ENTS], &cell_ids)?;
+
         Ok(Self {
             cells,
             material_ids,
             material_names,
             triangle_count,
+            lights,
+            entities,
         })
     }
 
@@ -216,6 +277,172 @@ impl World {
     pub(crate) fn cells(&self) -> &[Cell] {
         &self.cells
     }
+
+    /// Combien de lumières statiques la carte porte.
+    pub fn light_count(&self) -> u32 {
+        // Borné : chaque lumière occupe vingt-quatre octets du fichier.
+        self.lights.len() as u32
+    }
+
+    /// Une lumière statique, ou `None` au-delà de la dernière.
+    ///
+    /// Rendue telle que le moteur la reçoit : l'hôte la repasse à son contexte
+    /// sans rien reconstruire, ce qui est tout ce qu'il en fait à cette étape.
+    pub fn light(&self, index: u32) -> Option<Light> {
+        self.lights.get(index as usize).map(|light| light.light)
+    }
+
+    /// Combien d'entités la carte porte.
+    pub fn entity_count(&self) -> u32 {
+        // Borné : chaque entité occupe au moins vingt-deux octets du fichier.
+        self.entities.len() as u32
+    }
+
+    /// L'identifiant d'une entité et celui de sa cellule.
+    pub fn entity_ids(&self, index: u32) -> Option<(u32, u32)> {
+        self.entities
+            .get(index as usize)
+            .map(|entity| (entity.id, entity.cell))
+    }
+
+    /// La classe d'une entité, que le moteur n'interprète jamais.
+    pub fn entity_class(&self, index: u32) -> Option<&str> {
+        self.entities
+            .get(index as usize)
+            .map(|entity| entity.class.as_str())
+    }
+
+    /// La pose d'une entité : sa position et son orientation normalisée.
+    pub fn entity_pose(&self, index: u32) -> Option<(Vec3, Quat)> {
+        self.entities
+            .get(index as usize)
+            .map(|entity| (entity.position, entity.orientation))
+    }
+
+    /// Les octets d'une entité, que le moteur a copiés et ne lit pas.
+    pub fn entity_data(&self, index: u32) -> Option<&[u8]> {
+        self.entities
+            .get(index as usize)
+            .map(|entity| entity.data.as_slice())
+    }
+}
+
+/// Les lumières statiques, de taille fixe.
+fn lights(section: &[u8]) -> Result<Vec<StaticLight>> {
+    let mut cursor = Cursor::new(section);
+    let mut lights = reserved(section.len() / LIGHT_LEN)?;
+    let mut ids = reserved(section.len() / LIGHT_LEN)?;
+
+    while cursor.remaining() != 0 {
+        let id = cursor.u32()?;
+        let x = cursor.f32()?;
+        let y = cursor.f32()?;
+        let z = cursor.f32()?;
+        let radius = cursor.f32()?;
+        let r = cursor.u8()?;
+        let g = cursor.u8()?;
+        let b = cursor.u8()?;
+        let reserved = cursor.u8()?;
+
+        if id == 0 {
+            return Err(Error::InvalidFormat(Malformation::Identifier));
+        }
+        // L'alpha d'une lumière est réservé et nul, comme dans la structure que
+        // l'hôte passe au moteur : c'est ce qui permettra de l'employer sans
+        // casser les cartes déjà écrites.
+        if reserved != 0 {
+            return Err(Error::InvalidFormat(Malformation::Flags));
+        }
+        // Un rayon nul n'éclaire rien et ferait diviser par zéro le jour où
+        // l'étape 5 calcule une atténuation. La comparaison est franche et non
+        // niée : le curseur a déjà refusé les non-finis, donc aucun `NaN` ne
+        // passe ici.
+        if radius <= 0.0 {
+            return Err(Error::InvalidFormat(Malformation::Light));
+        }
+
+        ids.push(id);
+        lights.push(StaticLight {
+            id,
+            light: Light {
+                position: Vec3::new(x, y, z),
+                radius,
+                color: Color::new(r, g, b, 0xFF),
+            },
+        });
+    }
+    unique(&ids)?;
+    Ok(lights)
+}
+
+/// Les entités, chacune un enregistrement longueur-préfixé.
+fn entities(section: &[u8], cells: &[u32]) -> Result<Vec<Entity>> {
+    let mut cursor = Cursor::new(section);
+    let mut entities = Vec::new();
+    let mut ids = Vec::new();
+
+    while cursor.remaining() != 0 {
+        let len = cursor.u32()? as usize;
+        let record = cursor.take(len)?;
+        let entity = entity(record, cells)?;
+
+        entities.try_reserve(1).map_err(|_| Error::OutOfMemory)?;
+        ids.try_reserve(1).map_err(|_| Error::OutOfMemory)?;
+        ids.push(entity.id);
+        entities.push(entity);
+    }
+    unique(&ids)?;
+    Ok(entities)
+}
+
+/// Une entité : ses deux identifiants, sa classe, sa pose, ses octets.
+fn entity(record: &[u8], cells: &[u32]) -> Result<Entity> {
+    let mut cursor = Cursor::new(record);
+    let id = cursor.u32()?;
+    let cell = cursor.u32()?;
+    if id == 0 {
+        return Err(Error::InvalidFormat(Malformation::Identifier));
+    }
+    // Par identifiant et jamais par index : sans cela, l'annulation et la
+    // sauvegarde partielle de l'éditeur deviennent impraticables dès la
+    // première suppression au milieu.
+    if !cells.contains(&cell) {
+        return Err(Error::InvalidFormat(Malformation::Index));
+    }
+
+    let class_len = cursor.u16()? as usize;
+    let class = core::str::from_utf8(cursor.take(class_len)?)
+        .map_err(|_| Error::InvalidFormat(Malformation::NonUtf8))?;
+    let class = owned(class)?;
+
+    let x = cursor.f32()?;
+    let y = cursor.f32()?;
+    let z = cursor.f32()?;
+    let orientation = Quat::new(cursor.f32()?, cursor.f32()?, cursor.f32()?, cursor.f32()?);
+    // Un quaternion nul n'a pas de direction à porter, et `normalize` rendrait
+    // l'identité en silence : une entité posée de travers se retrouverait droite
+    // sans que rien ne le signale.
+    if orientation.dot(orientation) == 0.0 {
+        return Err(Error::InvalidFormat(Malformation::Pose));
+    }
+
+    let data_len = cursor.u32()? as usize;
+    let bytes = cursor.take(data_len)?;
+    let mut data = reserved(data_len)?;
+    data.extend_from_slice(bytes);
+
+    if cursor.remaining() != 0 {
+        return Err(Error::InvalidFormat(Malformation::Count));
+    }
+
+    Ok(Entity {
+        id,
+        cell,
+        class,
+        position: Vec3::new(x, y, z),
+        orientation: orientation.normalize(),
+        data,
+    })
 }
 
 /// La table des matériaux : un identifiant et un nom par entrée.
