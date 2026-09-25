@@ -64,6 +64,10 @@ SCENE_COUNT ?= 9
 # il est poussé à côté des bibliothèques.
 MESH := $(abspath ../../hosts/caisse.mesh)
 
+# Le décor que la démonstration parcourt. Il ne sert qu'à l'APK, où il voyage
+# avec le maillage dans les ressources : une application ne lit pas le dépôt.
+WORLD := $(abspath ../../hosts/couloir.world)
+
 triple_arm64-v8a   := aarch64-linux-android
 triple_armeabi-v7a := armv7-linux-androideabi
 triple_x86_64      := x86_64-linux-android
@@ -159,9 +163,13 @@ dex: $(JAVA_SOURCES)
 # versionné, et une valeur écrite dedans ment dès la publication suivante — elle
 # est restée à 0.0.0 pendant quatre versions, sans que rien ne rapproche les
 # deux. Le manifeste n'en porte donc plus, et il n'y a qu'une source.
+# Les deux fichiers de données passent par `-A` : aapt2 les range sous assets/
+# sans les compiler, et l'application les relit octet pour octet. Ce sont les
+# mêmes que ceux des trois autres hôtes, et rien n'invente sa géométrie.
 apk: native dex manifeste-verif
-	@rm -rf $(OUT)/apk && mkdir -p $(OUT)/apk/lib
-	$(TOOLS)/aapt2 link --manifest AndroidManifest.xml -I $(ANDROID_JAR) \
+	@rm -rf $(OUT)/apk $(OUT)/assets && mkdir -p $(OUT)/apk/lib $(OUT)/assets
+	cp $(WORLD) $(MESH) $(OUT)/assets/
+	$(TOOLS)/aapt2 link --manifest AndroidManifest.xml -I $(ANDROID_JAR) -A $(OUT)/assets \
 	  --min-sdk-version $(ANDROID_API) --version-name $(VERSION) -o $(OUT)/apk/base.apk
 	cp $(OUT)/dex/classes.dex $(OUT)/apk/
 	for abi in $(ABIS); do \

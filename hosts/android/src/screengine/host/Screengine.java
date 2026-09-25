@@ -133,6 +133,21 @@ public final class Screengine {
     static native int frameEndBitmap(long ctx, Bitmap bitmap);
 
     /**
+     * L'image entière dans un bitmap : {@code scg_frame_begin}, chaque tuile,
+     * puis {@code scg_frame_end}, sous un seul verrou.
+     *
+     * <p>La boucle sur les tuiles est du côté C, et c'est un choix d'hôte et non
+     * de moteur : une image en compte une cinquantaine, et les appeler depuis
+     * Java reverrouillerait le bitmap à chaque fois. Un hôte qui répartirait les
+     * tuiles sur ses threads remplacerait cette méthode par les siennes.
+     *
+     * @param ctx contexte vivant
+     * @param bitmap bitmap en {@code ARGB_8888}, dont la mémoire est en R, G, B, A
+     * @return le code de retour
+     */
+    static native int frameBitmap(long ctx, Bitmap bitmap);
+
+    /**
      * {@code scg_last_error}, copié.
      *
      * @param ctx handle, ou 0 pour l'emplacement sans contexte
@@ -237,6 +252,56 @@ public final class Screengine {
      * @return {@link #OK} ou un code négatif
      */
     static native int submitMesh(long ctx, float[] model, long mesh, long[] textures);
+
+    /**
+     * {@code scg_world_load}, le bloc recopié par la couche JNI.
+     *
+     * @param bytes le fichier de carte entier
+     * @return le handle, ou 0 en cas d'échec
+     */
+    static native long worldLoad(byte[] bytes);
+
+    /**
+     * {@code scg_world_destroy}.
+     *
+     * @param world handle rendu par {@link #worldLoad}, ou 0
+     */
+    static native void worldDestroy(long world);
+
+    /**
+     * {@code scg_world_material_count}, rendu en valeur comme celui d'un
+     * maillage.
+     *
+     * @param world handle vivant
+     * @return le nombre de matériaux, ou -1
+     */
+    static native int worldMaterialCount(long world);
+
+    /**
+     * {@code scg_world_material_name}, la lecture en deux temps faite par la
+     * couche JNI.
+     *
+     * @param world handle vivant
+     * @param rank le rang du matériau, sous {@link #worldMaterialCount}
+     * @return le nom, ou {@code null} si le rang n'existe pas
+     */
+    static native String worldMaterialName(long world, int rank);
+
+    /**
+     * {@code scg_submit_world}.
+     *
+     * <p>Une texture par matériau, dans l'ordre que la carte déclare : c'est
+     * l'hôte qui décide ce qu'il charge derrière chaque nom, et le moteur ne
+     * connaît que des emplacements à remplir.
+     *
+     * @param ctx contexte vivant
+     * @param model les seize coefficients de la matrice, par colonnes
+     * @param world handle rendu par {@link #worldLoad}
+     * @param textures un handle par matériau, dans l'ordre, 0 pour « sans
+     *     texture » ; leur nombre doit être exactement celui des matériaux
+     * @return {@link #OK} ou un code négatif
+     */
+    static native int submitWorld(long ctx, float[] model, long world, long[] textures);
 
     /**
      * {@code scg_submit_textured}.

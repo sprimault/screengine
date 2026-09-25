@@ -188,6 +188,47 @@ static jint frame_end_bitmap(JNIEnv *env, jclass cls, jlong ctx, jobject bitmap)
 }
 
 /*
+ * L'image entière dans un Bitmap : début, chaque tuile, fin, sous un seul
+ * verrou.
+ *
+ * Le découpage appartient au moteur et l'appel de chaque tuile à l'hôte ; la
+ * boucle est ici plutôt que côté Java parce qu'une image en compte une
+ * cinquantaine, et qu'appeler chacune depuis Java verrouillerait et
+ * déverrouillerait le bitmap autant de fois. Un hôte qui répartirait les tuiles
+ * sur ses threads remplacerait cette boucle, et rien d'autre.
+ *
+ * Le verrou est pris avant scg_frame_begin : un échec entre les deux laisserait
+ * l'image ouverte, et le contexte refuserait tout jusqu'à la fin des temps.
+ */
+static jint frame_bitmap(JNIEnv *env, jclass cls, jlong ctx, jobject bitmap)
+{
+    (void)cls;
+    AndroidBitmapInfo info;
+    void *pixels = NULL;
+
+    if (AndroidBitmap_getInfo(env, bitmap, &info) != ANDROID_BITMAP_RESULT_SUCCESS
+        || info.format != ANDROID_BITMAP_FORMAT_RGBA_8888 || info.stride % 4 != 0) {
+        return SCG_ERR_INVALID_ARGUMENT;
+    }
+    if (AndroidBitmap_lockPixels(env, bitmap, &pixels) != ANDROID_BITMAP_RESULT_SUCCESS) {
+        return SCG_ERR_INVALID_STATE;
+    }
+
+    ScgContext *handle = (ScgContext *)(intptr_t)ctx;
+    uint32_t stride = info.stride / 4;
+    uint32_t tiles = 0;
+    int32_t code = scg_frame_begin(handle, &tiles);
+    for (uint32_t i = 0; code == SCG_OK && i < tiles; i++) {
+        code = scg_frame_tile(handle, i, pixels, stride);
+    }
+    if (code == SCG_OK) {
+        code = scg_frame_end(handle, pixels, stride);
+    }
+    AndroidBitmap_unlockPixels(env, bitmap);
+    return code;
+}
+
+/*
  * scg_last_error, copié aussitôt dans une chaîne Java. NewStringUTF lit de
  * l'UTF-8 modifié, identique à l'UTF-8 pour les messages ASCII du moteur ; un
  * message qui en sortirait devrait passer par un tableau d'octets.
@@ -378,6 +419,104 @@ static jint submit_mesh(JNIEnv *env, jclass cls, jlong ctx, jfloatArray model, j
         }
         code = scg_submit_mesh((ScgContext *)(intptr_t)ctx, &matrix,
                                (const ScgMesh *)(intptr_t)mesh, slots, (uint32_t)count);
+    }
+    free(handles);
+    free(slots);
+    return code;
+}
+
+/* scg_world_load, le bloc recopié comme celui d'un maillage. */
+static jlong world_load(JNIEnv *env, jclass cls, jbyteArray bytes)
+{
+    (void)cls;
+    if (bytes == NULL) {
+        return 0;
+    }
+
+    jsize len = (*env)->GetArrayLength(env, bytes);
+    uint8_t *block = calloc(len ? (size_t)len : 1, 1);
+    ScgWorld *world = NULL;
+    if (block != NULL) {
+        (*env)->GetByteArrayRegion(env, bytes, 0, len, (jbyte *)block);
+        if (scg_world_load(block, (size_t)len, &world) != SCG_OK) {
+            world = NULL;
+        }
+    }
+    free(block);
+    return (jlong)(intptr_t)world;
+}
+
+/* scg_world_destroy. */
+static void world_destroy(JNIEnv *env, jclass cls, jlong world)
+{
+    (void)env;
+    (void)cls;
+    scg_world_destroy((ScgWorld *)(intptr_t)world);
+}
+
+/* scg_world_material_count, rendu en valeur, -1 sur refus. */
+static jint world_material_count(JNIEnv *env, jclass cls, jlong world)
+{
+    (void)env;
+    (void)cls;
+    uint32_t count = 0;
+    if (scg_world_material_count((const ScgWorld *)(intptr_t)world, &count) != SCG_OK) {
+        return -1;
+    }
+    return (jint)count;
+}
+
+/*
+ * scg_world_material_name, même lecture en deux temps que les emplacements d'un
+ * maillage. Deuxième occurrence du protocole dans ce fichier : à la troisième,
+ * elle s'extrait en un utilitaire qui prendrait la fonction de mesure.
+ */
+static jstring world_material_name(JNIEnv *env, jclass cls, jlong world, jint rank)
+{
+    (void)cls;
+    const ScgWorld *handle = (const ScgWorld *)(intptr_t)world;
+    size_t len = 0;
+    if (scg_world_material_name(handle, (uint32_t)rank, NULL, 0, &len) != SCG_OK) {
+        return NULL;
+    }
+    char *buffer = calloc(len + 1, 1);
+    if (buffer == NULL) {
+        return NULL;
+    }
+    jstring name = NULL;
+    if (scg_world_material_name(handle, (uint32_t)rank, buffer, len + 1, &len) == SCG_OK) {
+        name = (*env)->NewStringUTF(env, buffer);
+    }
+    free(buffer);
+    return name;
+}
+
+/* scg_submit_world, les textures recomposées comme celles d'un maillage. */
+static jint submit_world(JNIEnv *env, jclass cls, jlong ctx, jfloatArray model, jlong world,
+                         jlongArray textures)
+{
+    (void)cls;
+    if (model == NULL || textures == NULL) {
+        return SCG_ERR_NULL;
+    }
+    if ((*env)->GetArrayLength(env, model) != 16) {
+        return SCG_ERR_INVALID_ARGUMENT;
+    }
+
+    jsize count = (*env)->GetArrayLength(env, textures);
+    jlong *handles = calloc(count ? (size_t)count : 1, sizeof *handles);
+    const ScgTexture **slots = calloc(count ? (size_t)count : 1, sizeof *slots);
+    int32_t code = SCG_ERR_OUT_OF_MEMORY;
+
+    if (handles != NULL && slots != NULL) {
+        ScgMat4 matrix;
+        (*env)->GetFloatArrayRegion(env, model, 0, 16, matrix.m);
+        (*env)->GetLongArrayRegion(env, textures, 0, count, handles);
+        for (jsize i = 0; i < count; i++) {
+            slots[i] = (const ScgTexture *)(intptr_t)handles[i];
+        }
+        code = scg_submit_world((ScgContext *)(intptr_t)ctx, &matrix,
+                                (const ScgWorld *)(intptr_t)world, slots, (uint32_t)count);
     }
     free(handles);
     free(slots);
@@ -673,6 +812,7 @@ static const JNINativeMethod METHODS[] = {
     {"submit", "(J[F[F[I[B)I", (void *)submit},
     {"frameEnd", "(JLjava/nio/ByteBuffer;II)I", (void *)frame_end},
     {"frameEndBitmap", "(JLandroid/graphics/Bitmap;)I", (void *)frame_end_bitmap},
+    {"frameBitmap", "(JLandroid/graphics/Bitmap;)I", (void *)frame_bitmap},
     {"lastError", "(J)Ljava/lang/String;", (void *)last_error},
     {"bufferAlloc", "(J)J", (void *)buffer_alloc},
     {"bufferFree", "(JJ)V", (void *)buffer_free},
@@ -684,6 +824,11 @@ static const JNINativeMethod METHODS[] = {
     {"meshTextureCount", "(J)I", (void *)mesh_texture_count},
     {"meshTextureName", "(JI)Ljava/lang/String;", (void *)mesh_texture_name},
     {"submitMesh", "(J[FJ[J)I", (void *)submit_mesh},
+    {"worldLoad", "([B)J", (void *)world_load},
+    {"worldDestroy", "(J)V", (void *)world_destroy},
+    {"worldMaterialCount", "(J)I", (void *)world_material_count},
+    {"worldMaterialName", "(JI)Ljava/lang/String;", (void *)world_material_name},
+    {"submitWorld", "(J[FJ[J)I", (void *)submit_world},
     {"submitTextured", "(J[F[F[I[BJ)I", (void *)submit_textured},
     {"submitLit", "(J[F[F[I[BJJ)I", (void *)submit_lit},
     {"setResolution", "(JII)I", (void *)set_resolution},

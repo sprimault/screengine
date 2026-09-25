@@ -347,6 +347,29 @@ contrôle : ni `make test`, ni l'intégration continue ne le construisent.
   moteur et celle de SDL3, pour la raison déjà donnée plus haut.
 - **Vus sous Windows** avec SDL3 3.4.16. **À vérifier** : les deux démonstrations
   sous Linux, où SDL3 vient du gestionnaire de paquets.
+- **Android a la sienne, `DemoActivity`** : une `SurfaceView`, deux zones
+  tactiles — moitié gauche pour avancer et reculer, moitié droite pour tourner —,
+  et le décor rangé dans les ressources de l'APK par `aapt2 link -A`, puisqu'une
+  application ne lit pas le dépôt. C'est elle que l'icône lance ; l'activité à
+  image fixe reste exportée et se lance par intention explicite.
+- **Chaque zone tactile est relative à son point de pose.** Une origine fixe au
+  centre de la zone a été essayée sur un appareil et ne tient pas en main : le
+  pouce ne tombe jamais deux fois au même endroit, et il faudrait dessiner un
+  repère. Le manche relatif s'en passe.
+- **La cadence affichée est celle de l'écran**, `unlockCanvasAndPost` attendant
+  le balayage : elle est plafonnée et ne dit rien du coût d'une image. Le temps
+  passé dans le moteur est mesuré et affiché à côté, et c'est lui qui se compare
+  d'une étape à l'autre.
+- **Le pont JNI rend l'image par tuiles sous un seul verrou du bitmap.**
+  `frameBitmap` enchaîne `scg_frame_begin`, les tuiles et `scg_frame_end` côté
+  C : appeler chaque tuile depuis Java verrouillerait et déverrouillerait le
+  bitmap une cinquantaine de fois par image. Le verrou est pris avant
+  `scg_frame_begin`, sans quoi un échec entre les deux laisserait l'image
+  ouverte et le contexte refuserait tout ensuite.
+- **L'APK se construit là où le SDK est installé**, et s'installe par `adb`
+  depuis le poste où l'appareil est branché. **À vérifier** : aucun contrôle
+  n'éprouve la démonstration Android en continu — celui du pont JNI tourne sur
+  un émulateur sans fenêtre.
 
 ## Header
 

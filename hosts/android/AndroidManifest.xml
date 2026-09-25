@@ -10,11 +10,23 @@
     <uses-sdk android:minSdkVersion="21" android:targetSdkVersion="36" />
 
     <application android:label="Screengine" android:hasCode="true">
-        <activity android:name=".MainActivity" android:exported="true">
+        <!--
+          La démonstration est ce que l'icône lance : c'est elle qu'on ouvre pour
+          voir le moteur. L'activité à image fixe reste exportée et se lance par
+          intention explicite, faute de quoi il n'y aurait plus aucun moyen de la
+          voir sur un appareil.
+
+          orientation paysage : l'image est en 16:9, et le couloir vu en portrait
+          tiendrait dans un bandeau au milieu de l'écran.
+        -->
+        <activity android:name=".DemoActivity" android:exported="true"
+            android:screenOrientation="landscape"
+            android:theme="@android:style/Theme.NoTitleBar.Fullscreen">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+        <activity android:name=".MainActivity" android:exported="true" />
     </application>
 </manifest>

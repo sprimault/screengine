@@ -56,6 +56,11 @@ publié, et explique les conventions du dépôt à qui y contribue.
 - Les conventions Rust décrivent les dispositions binaires des deux formats :
   en-tête et table de sections communs, maillage, carte, et ce que le décodeur
   tient pour hostile.
+- **L'application Android parcourt le même décor.** Une `SurfaceView`, deux
+  zones tactiles — moitié gauche pour avancer, moitié droite pour tourner —, la
+  carte et le maillage rangés dans les ressources de l'APK. Le pont JNI gagne le
+  chargement et la soumission d'une carte, et une méthode qui rend l'image par
+  tuiles sous un seul verrou du bitmap.
 - **Deux démonstrations de bureau, en C et en C++.** Elles chargent la carte et
   le maillage versionnés, dessinent par tuiles dans une fenêtre SDL3 et s'y
   déplacent au clavier — le même décor que la page web, dans l'autre chemin vers
@@ -123,6 +128,10 @@ publié, et explique les conventions du dépôt à qui y contribue.
   first decoder, as the fixed-point formats were frozen before the first fill.
 - The Rust conventions describe both formats' binary layouts: the shared header
   and section table, the mesh, the map, and what the decoder treats as hostile.
+- **The Android application walks through the same decor.** A `SurfaceView`,
+  two touch zones — left half to move, right half to turn — and the map and mesh
+  stored in the APK's assets. The JNI bridge gains map loading and submission,
+  and a method that renders a frame tile by tile under a single bitmap lock.
 - **Two desktop demonstrations, in C and in C++.** They load the versioned map
   and mesh, draw them by tiles into an SDL3 window and move around with the
   keyboard — the same decor as the web page, along the other path into the
