@@ -216,6 +216,11 @@ enum Mode {
     /// source de vérité, un test le compare à ce qu'écrit ce mode, et un
     /// fichier périmé échoue franchement.
     Mesh(PathBuf),
+    /// Écrit le fichier de carte que les hôtes de démonstration parcourent.
+    ///
+    /// Même règle que le maillage. Le couloir est celui de la scène `carte`,
+    /// ce qui évite d'inventer un décor par hôte.
+    World(PathBuf),
 }
 
 /// Les scènes que la suite sait rendre.
@@ -1386,7 +1391,7 @@ fn dump(scene: Scene, dir: &Path) -> Result<String, String> {
 /// régression au lieu de la signaler.
 fn parse_mode(args: &[String]) -> Result<Mode, String> {
     let usage = "usage : screengine-conformance --check | --update | --print <scène> | \
-                 --dump <répertoire> | --mesh <fichier>";
+                 --dump <répertoire> | --mesh <fichier> | --world <fichier>";
     match args {
         [only] if only == "--check" => Ok(Mode::Check),
         [only] if only == "--update" => Ok(Mode::Update),
@@ -1395,7 +1400,22 @@ fn parse_mode(args: &[String]) -> Result<Mode, String> {
             .ok_or_else(|| format!("scène inconnue : {name}")),
         [dump, dir] if dump == "--dump" => Ok(Mode::Dump(PathBuf::from(dir))),
         [mesh, path] if mesh == "--mesh" => Ok(Mode::Mesh(PathBuf::from(path))),
+        [world, path] if world == "--world" => Ok(Mode::World(PathBuf::from(path))),
         _ => Err(usage.to_string()),
+    }
+}
+
+/// Écrit un fichier de données, ou dit pourquoi il n'a pas pu l'être.
+fn write_data(path: &Path, bytes: &[u8]) -> ExitCode {
+    match fs::write(path, bytes) {
+        Ok(()) => {
+            println!("{} écrit", path.display());
+            ExitCode::SUCCESS
+        }
+        Err(error) => {
+            eprintln!("{} : {error}", path.display());
+            ExitCode::FAILURE
+        }
     }
 }
 
@@ -1419,18 +1439,8 @@ fn main() -> ExitCode {
             dir = into;
             dump
         }
-        Mode::Mesh(path) => {
-            return match fs::write(&path, mesh_file::bytes()) {
-                Ok(()) => {
-                    println!("{} écrit", path.display());
-                    ExitCode::SUCCESS
-                }
-                Err(error) => {
-                    eprintln!("{} : {error}", path.display());
-                    ExitCode::FAILURE
-                }
-            };
-        }
+        Mode::Mesh(path) => return write_data(&path, &mesh_file::bytes()),
+        Mode::World(path) => return write_data(&path, &world_file::bytes()),
         Mode::Print(scene) => {
             // L'empreinte de la première vue, et non celle de la scène : un
             // hôte hache une image, pas une suite d'images, et c'est à cette

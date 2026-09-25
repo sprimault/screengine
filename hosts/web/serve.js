@@ -16,11 +16,20 @@ import { readFile } from "node:fs/promises";
 import { extname, resolve, sep } from "node:path";
 import process from "node:process";
 
-/** Les seuls types servis : ce que la page charge. */
+/**
+ * Les seuls types servis : ce que la page charge.
+ *
+ * Une extension absente de cette table n'est pas servie, et le `fetch` rend
+ * alors le corps d'une 404 — que le moteur refuse comme un fichier tronqué,
+ * sans rapport apparent avec le serveur. Vu en ouvrant la page, et nulle part
+ * ailleurs : aucun test n'y passe.
+ */
 const TYPES = {
   ".html": "text/html; charset=utf-8",
   ".js": "text/javascript; charset=utf-8",
   ".wasm": "application/wasm",
+  ".mesh": "application/octet-stream",
+  ".world": "application/octet-stream",
 };
 
 /** Le répertoire servi, et rien au-dessus. */

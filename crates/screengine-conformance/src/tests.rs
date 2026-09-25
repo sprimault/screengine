@@ -450,6 +450,51 @@ fn le_fichier_de_maillage_versionne_est_a_jour() {
     );
 }
 
+/// Le fichier de carte versionné est exactement celui que la conformance
+/// engendre.
+///
+/// Même règle que pour le maillage : le décor que les hôtes de démonstration
+/// parcourent n'est pas la source de vérité, et un fichier périmé échoue ici
+/// plutôt que de leur faire afficher autre chose que la scène de référence.
+#[test]
+fn le_fichier_de_carte_versionne_est_a_jour() {
+    const VERSIONED: &[u8] = include_bytes!("../../../hosts/couloir.world");
+    let engendre = world_file::bytes();
+
+    assert_eq!(
+        VERSIONED.len(),
+        engendre.len(),
+        "hosts/couloir.world fait {} octets, la conformance en écrit {} — \
+         relancer `make mesh`",
+        VERSIONED.len(),
+        engendre.len()
+    );
+    let ecart = VERSIONED
+        .iter()
+        .zip(&engendre)
+        .position(|(versionne, engendre)| versionne != engendre);
+    assert_eq!(
+        ecart, None,
+        "hosts/couloir.world diverge à l'octet {ecart:?} — relancer `make mesh`"
+    );
+}
+
+/// Le fichier de carte versionné se décode, et porte le couloir.
+#[test]
+fn le_fichier_de_carte_versionne_porte_le_couloir() {
+    const VERSIONED: &[u8] = include_bytes!("../../../hosts/couloir.world");
+    let world = World::load(VERSIONED).expect("le fichier versionné se décode");
+
+    assert_eq!(world.material_count(), 2);
+    assert_eq!(world.material_name(0), Some("mur"));
+    assert_eq!(world.material_name(1), Some("sol"));
+    assert_eq!(
+        world.triangle_count(),
+        16,
+        "deux cellules de quatre surfaces, deux triangles chacune"
+    );
+}
+
 /// Le fichier versionné se décode, et rend ce que la scène rend.
 ///
 /// C'est ce qui relie le fichier à l'image : le contrôle précédent dit qu'il est

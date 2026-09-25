@@ -16,6 +16,8 @@ WASM    := $(TARGET)/wasm32-unknown-unknown/$(PROFILE)/screengine.wasm
 HEADER  := $(abspath ../../include/screengine.h)
 # Le maillage versionné que les quatre hôtes chargent.
 MESH    := $(abspath ../../hosts/caisse.mesh)
+# Le décor que la page de démonstration parcourt.
+WORLD   := $(abspath ../../hosts/couloir.world)
 NODE    ?= node
 PORT    ?= 8080
 
@@ -36,6 +38,9 @@ all: $(WASM)
 	@mkdir -p $(OUT)
 	cp $(SOURCES) $(OUT)/
 	cp $(WASM) $(OUT)/
+	# Le décor que la page parcourt : `fetch` ne lit que ce qui est servi, et
+	# c'est OUT que `make web` sert.
+	cp $(WORLD) $(OUT)/
 
 # Écrit l'empreinte sur la sortie standard, les échecs sur la sortie d'erreur.
 run: all
