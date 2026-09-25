@@ -45,13 +45,13 @@ ces hôtes, écrit en Rust pour qui fait un jeu, et le moteur ignore son existen
 
 ## État
 
-**Étape 3 franchie, publiée en 0.3.0 : la lumière et l'image.** Lightmaps
-fournies par l'hôte et échantillonnées par un second jeu de coordonnées au
-sommet, jusqu'à huit lumières dynamiques dont l'atténuation se calcule par
-sommet, brouillard par la distance, résolution interne modifiable sans recréer
-le contexte, et une courbe de sortie — gain par canal, décalage, gamma —
-appliquée pendant la recopie de tuile. Les quatre hôtes de référence rendent la
-même image au bit près. Les données et le format de carte sont l'étape 4.
+**Étape 4 franchie, publiée en 0.4.0 : les données.** Deux formats de fichier
+versionnés — maillages et cartes —, chargés depuis un bloc d'octets que l'hôte
+lit : cellules non convexes, surfaces triangulées au chargement, portails
+appariés au bit près, lumières statiques et entités décodées, identifiants
+stables partout. Cinq hôtes parcourent le même décor dans une fenêtre : C, C++,
+navigateur, Android, et l'étage d'accueil Rust. **Toutes les cellules sont
+dessinées, sans aucune élimination** — la traversée par portails est l'étape 5.
 
 La feuille de route compte dix étapes, publiées à chacune.
 

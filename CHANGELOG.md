@@ -46,6 +46,27 @@ publié, et explique les conventions du dépôt à qui y contribue.
 
 ## [Non publié]
 
+## [0.4.0] — 2026-09-25 — Les données
+
+**Ce qu'un hôte de la 0.3.1 doit reprendre : rien.** `SCG_ABI_VERSION` reste à
+**1**, aucune signature publiée ne change, et les douze points d'entrée de
+l'étape s'ajoutent sans toucher aux précédents. **Une scène inchangée rend
+exactement la même image** : les huit empreintes de conformance existantes ne
+bougent pas.
+
+**Les deux formats de fichier naissent en `version_format` 1.** Rien à migrer,
+et c'est le numéro qu'un chargeur doit vérifier — une carte ou un maillage d'une
+version inconnue est refusé par `SCG_ERR_UNSUPPORTED_FORMAT_VERSION` plutôt que
+lu de travers.
+
+**Ce que cette version ne fait pas encore.** `scg_submit_world` dessine **toutes
+les cellules, sans aucune élimination** : les portails sont appariés au
+chargement mais rien ne les traverse, et une carte de mille cellules coûte mille
+cellules par image. Le moteur ne calcule toujours aucune lightmap. Les entités
+sont décodées et rendues à l'hôte, qui en fait ce qu'il veut : rien ne les anime,
+rien ne les place. Il n'y a pas d'éditeur, et une carte s'écrit aujourd'hui en
+produisant ses octets par programme.
+
 ### Ajouté
 - Le contrat d'ABI décrit les douze points d'entrée du chargement de maillages
   et de cartes : leurs signatures, la liaison des textures à la soumission et
@@ -137,6 +158,23 @@ publié, et explique les conventions du dépôt à qui y contribue.
   contrat laissait le point ouvert pour ces deux formats.
 
 ***
+
+**What a host on 0.3.1 must revisit: nothing.** `SCG_ABI_VERSION` stays at
+**1**, no published signature changes, and the step's twelve entry points are
+added without touching the earlier ones. **An unchanged scene renders exactly
+the same image**: the eight existing conformance fingerprints do not move.
+
+**Both file formats are born at `version_format` 1.** Nothing to migrate, and
+this is the number a loader must check — a map or mesh from an unknown version
+is refused with `SCG_ERR_UNSUPPORTED_FORMAT_VERSION` rather than read wrongly.
+
+**What this version does not do yet.** `scg_submit_world` draws **every cell,
+with no culling whatsoever**: portals are matched at load time but nothing
+traverses them, and a thousand-cell map costs a thousand cells per frame. The
+engine still computes no lightmap. Entities are decoded and handed to the host,
+which does as it pleases with them: nothing animates them, nothing places them.
+There is no editor, and a map is written today by producing its bytes
+programmatically.
 
 ### Added
 - The ABI contract describes the twelve entry points for loading meshes and
