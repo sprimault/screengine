@@ -170,6 +170,117 @@ fn build(sections: &[([u8; 4], &[u8])], kind: &[u8; 4], version: u32) -> Vec<u8>
     bytes
 }
 
+/// Lit le message d'un contexte, où vont les refus d'une soumission.
+fn context_error(ctx: *const ScgContext) -> String {
+    // SAFETY: `ctx` est un handle vivant, et le pointeur rendu reste valide
+    // jusqu'au prochain appel — la copie a lieu avant.
+    let text = unsafe { CStr::from_ptr(scg_last_error(ctx)) };
+    text.to_str().expect("UTF-8 valide").to_owned()
+}
+
+/// Une configuration de contexte qui passe.
+fn config() -> ScgContextConfig {
+    ScgContextConfig {
+        max_width: 64,
+        max_height: 64,
+        width: 64,
+        height: 64,
+        tile_size: 32,
+        max_triangles: 0,
+        reserved1: 0,
+        reserved2: 0,
+    }
+}
+
+/// La matrice identité, par colonnes.
+fn identity() -> ScgMat4 {
+    ScgMat4 {
+        m: [
+            1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
+        ],
+    }
+}
+
+/// Une carte se soumet à travers la frontière, avec un matériau sans texture.
+#[test]
+fn soumet_une_carte() {
+    let mut ctx = ptr::null_mut();
+    let config = config();
+    // SAFETY: les deux pointeurs visent des valeurs locales vivantes.
+    assert_eq!(unsafe { scg_create(&config, &mut ctx) }, SCG_OK);
+
+    let world = load(&one_cell_world());
+    let slots: [*const ScgTexture; 2] = [ptr::null(), ptr::null()];
+    let model = identity();
+    // SAFETY: contexte et carte vivants, matrice et tableau locaux, le compte
+    // étant celui des matériaux de la carte.
+    let code = unsafe { scg_submit_world(ctx, &model, world, slots.as_ptr(), 2) };
+    assert_eq!(code, SCG_OK, "soumission refusée : {}", context_error(ctx));
+
+    // SAFETY: handles vivants, détruits une seule fois.
+    unsafe {
+        scg_world_destroy(world);
+        scg_destroy(ctx);
+    }
+}
+
+/// Un compte de textures qui n'est pas celui des matériaux est refusé.
+#[test]
+fn refuse_un_compte_de_textures_qui_n_est_pas_celui_des_materiaux() {
+    let mut ctx = ptr::null_mut();
+    let config = config();
+    // SAFETY: les deux pointeurs visent des valeurs locales vivantes.
+    assert_eq!(unsafe { scg_create(&config, &mut ctx) }, SCG_OK);
+
+    let world = load(&one_cell_world());
+    let slots: [*const ScgTexture; 2] = [ptr::null(), ptr::null()];
+    let model = identity();
+    // SAFETY: contexte et carte vivants ; seul le compte annoncé est faux.
+    let code = unsafe { scg_submit_world(ctx, &model, world, slots.as_ptr(), 1) };
+    assert_eq!(code, SCG_ERR_INVALID_ARGUMENT);
+    assert!(context_error(ctx).contains("texture count"));
+
+    // SAFETY: handles vivants, détruits une seule fois.
+    unsafe {
+        scg_world_destroy(world);
+        scg_destroy(ctx);
+    }
+}
+
+/// Les pointeurs nuls de la soumission d'une carte sont refusés.
+#[test]
+fn refuse_les_pointeurs_nuls_de_la_soumission_d_une_carte() {
+    let mut ctx = ptr::null_mut();
+    let config = config();
+    // SAFETY: les deux pointeurs visent des valeurs locales vivantes.
+    assert_eq!(unsafe { scg_create(&config, &mut ctx) }, SCG_OK);
+
+    let world = load(&one_cell_world());
+    let slots: [*const ScgTexture; 2] = [ptr::null(), ptr::null()];
+    let model = identity();
+    // SAFETY: chaque appel passe un pointeur nul refusé avant lecture.
+    unsafe {
+        assert_eq!(
+            scg_submit_world(ptr::null_mut(), &model, world, slots.as_ptr(), 2),
+            SCG_ERR_NULL
+        );
+        assert_eq!(
+            scg_submit_world(ctx, ptr::null(), world, slots.as_ptr(), 2),
+            SCG_ERR_NULL
+        );
+        assert_eq!(
+            scg_submit_world(ctx, &model, ptr::null(), slots.as_ptr(), 2),
+            SCG_ERR_NULL
+        );
+        assert_eq!(
+            scg_submit_world(ctx, &model, world, ptr::null(), 2),
+            SCG_ERR_NULL
+        );
+        scg_world_destroy(world);
+        scg_destroy(ctx);
+    }
+}
+
 /// Une carte peuplée rend sa lumière dans la structure que l'hôte lui donne.
 ///
 /// **La structure est celle que l'hôte repasse à `scg_set_lights`** : c'est tout

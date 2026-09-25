@@ -1021,6 +1021,34 @@ int32_t scg_world_material_count(const struct ScgWorld *world, uint32_t *out);
 // a writable `uint32_t`.
 int32_t scg_world_triangle_count(const struct ScgWorld *world, uint32_t *out);
 
+// Submits a whole map, one batch per surface.
+//
+// `textures` holds `texture_count` handles in material order — the order
+// `scg_world_material_name` walks — and `texture_count` must **equal**
+// `scg_world_material_count`. A null entry means "no texture" for that
+// material. The array is read in place and never copied.
+//
+// **Every cell, no culling.** This is the raw path: portal traversal comes
+// later and will replace it, which is also how it will be checked — a scene
+// where everything is visible must render the same image either way. There is
+// no starting cell, because a parameter that does nothing yet is a parameter
+// whose meaning would change.
+//
+// **The map is submitted whole or not at all**, like a mesh: size the capacity
+// with `scg_world_triangle_count` before creating the context.
+//
+// # Safety
+//
+// `ctx` must be null or a live handle. `model` must point to a readable matrix,
+// `world` must be a live handle from `scg_world_load`, and `textures` must be
+// null with `texture_count` zero, or cover `texture_count` readable pointers,
+// each null or a live handle from `scg_texture_load`.
+int32_t scg_submit_world(struct ScgContext *ctx,
+                         const struct ScgMat4 *model,
+                         const struct ScgWorld *world,
+                         const struct ScgTexture *const *textures,
+                         uint32_t texture_count);
+
 // Writes the number of static lights the map carries to `out`.
 //
 // # Safety

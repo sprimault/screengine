@@ -26,9 +26,9 @@ use std::sync::Arc;
 
 use screengine::{
     Affine3, Angle, BYTES_PER_PIXEL, Color, Config, Context, Filter, Frame, Light, MAX_OVERBRIGHT,
-    Mesh, Quat, Rect, Rows, Texture, Triangle, Vec3, VertexUv, VertexUv2,
+    Mesh, Quat, Rect, Rows, Texture, Triangle, Vec3, VertexUv, VertexUv2, World,
 };
-use screengine_conformance::mesh_file;
+use screengine_conformance::{mesh_file, world_file};
 
 /// Une façon de rendre une scène qui ne doit pas changer l'image.
 ///
@@ -398,6 +398,23 @@ enum Scene {
     /// fois, si bien qu'une matrice de modèle ignorée, ou appliquée après la
     /// vue, ne rendrait pas cette image.
     MeshFile,
+    /// Un couloir de deux cellules, **chargé depuis un fichier de carte**.
+    ///
+    /// Ce que l'étape 1 demandait à voir et que rien ne rendait encore : la
+    /// caméra à l'intérieur d'une géométrie fermée, les murs qui débordent de
+    /// l'écran et le sol qui fuit vers l'horizon. La différence est qu'ici la
+    /// géométrie vient d'un fichier, et que tout ce qui la compose — les
+    /// triangles, les coordonnées de texture — s'en dérive au chargement.
+    ///
+    /// **Deux cellules et non une** : c'est le seul moyen de montrer que la
+    /// soumission dessine toutes les cellules, sans élimination. La traversée
+    /// par portails remplacera ce chemin et se validera contre cette image
+    /// même — une scène où tout est visible doit rendre la même des deux côtés.
+    ///
+    /// **Deux matériaux** : les murs et le sol reçoivent des textures
+    /// différentes, si bien qu'une soumission qui lierait la même à tous les
+    /// matériaux rendrait une autre image.
+    WorldFile,
 }
 
 /// La matrice qui place la caisse : deux rotations composées, puis cinq unités
@@ -647,7 +664,7 @@ impl View {
 
 impl Scene {
     /// Toutes les scènes, dans l'ordre où `--check` les rejoue.
-    const ALL: [Self; 16] = [
+    const ALL: [Self; 17] = [
         Self::Edge,
         Self::Guard,
         Self::Lateral,
@@ -664,6 +681,7 @@ impl Scene {
         Self::Fog,
         Self::Lights,
         Self::MeshFile,
+        Self::WorldFile,
     ];
 
     /// La passe que `--print` utilise, celle des hôtes.
@@ -705,6 +723,7 @@ impl Scene {
             Self::Fog => "brouillard",
             Self::Lights => "lumieres",
             Self::MeshFile => "maillage",
+            Self::WorldFile => "carte",
         }
     }
 
@@ -1099,6 +1118,21 @@ impl Scene {
                 context.submit_mesh(CRATE_MODEL, &mesh, |slot| match slot {
                     0 => Some(&sides),
                     _ => None,
+                })
+            }
+            // Le couloir du fichier, posé tel quel : la caméra est à l'origine
+            // et regarde le +X, donc elle est déjà dedans.
+            Self::WorldFile => {
+                let world = World::load(&world_file::bytes())
+                    .unwrap_or_else(|_| unreachable!("le fichier du couloir est bien formé"));
+                // Deux damiers de pas différents : celui des murs a des cases
+                // deux fois plus grandes, si bien qu'une texture liée au mauvais
+                // matériau se voit sans qu'on ait à comparer des teintes.
+                let walls = checker(64, 16);
+                let floor = checker(64, 8);
+                context.submit_world(Affine3::IDENTITY, &world, |material| match material {
+                    0 => Some(&walls),
+                    _ => Some(&floor),
                 })
             }
         }

@@ -117,6 +117,7 @@ export const EXPORTS = [
   "scg_world_entity_pose",
   "scg_world_entity_class",
   "scg_world_entity_data",
+  "scg_submit_world",
 ];
 
 /** Taille de `ScgContextConfig`, celle qu'affirme le header. */
