@@ -234,8 +234,11 @@ jobs:
           attendu=$(for scene in $(make -s print-HOST_SCENES); do
             cat "crates/screengine-conformance/references/$scene"
           done)
+          # Le maillage versionné en troisième argument : une des scènes le
+          # charge depuis un fichier, et l'hôte n'en fabrique aucun.
           obtenu=$(node hosts/web/test.js \
-            "$PAQUET/lib/screengine.wasm" "$PAQUET/include/screengine.h" | tr -d '\r')
+            "$PAQUET/lib/screengine.wasm" "$PAQUET/include/screengine.h" \
+            hosts/caisse.mesh | tr -d '\r')
           if [ "$obtenu" != "$attendu" ]; then
             echo "archive wasm : $obtenu, référence $attendu" >&2
             exit 1
@@ -298,8 +301,10 @@ jobs:
             readelf -d "$PAQUET/lib/libscreengine.so" | grep -q 'SONAME.*\[libscreengine.so\]'
             readelf -d essai/cpp.exe | grep -q 'NEEDED.*\[libscreengine.so\]'
           fi
+          # Le maillage en argument, pour la même raison que du côté wasm :
+          # l'hôte lit les fichiers, et une des scènes en charge un.
           for hote in c cpp; do
-            obtenu=$(./essai/$hote.exe | tr -d '\r')
+            obtenu=$(./essai/$hote.exe hosts/caisse.mesh | tr -d '\r')
             if [ "$obtenu" != "$attendu" ]; then
               echo "archive, hôte $hote : $obtenu, référence $attendu" >&2
               exit 1
