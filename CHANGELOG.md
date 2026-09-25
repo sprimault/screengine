@@ -56,6 +56,11 @@ publié, et explique les conventions du dépôt à qui y contribue.
 - Les conventions Rust décrivent les dispositions binaires des deux formats :
   en-tête et table de sections communs, maillage, carte, et ce que le décodeur
   tient pour hostile.
+- `scg_submit_world` dessine une carte entière, un lot par surface, avec une
+  texture par matériau. **Toutes les cellules, aucune élimination** : c'est le
+  chemin brut que la traversée par portails remplacera, et contre lequel elle se
+  validera. Une scène de conformance rend désormais un couloir de deux cellules
+  chargé depuis un fichier.
 - Les lumières statiques et les entités d'une carte se lisent : sept fonctions,
   dont `scg_world_light`, qui **remplit une `ScgLight` que l'hôte possède** — la
   forme même qu'il redonne à `scg_set_lights`. Une entité porte son identifiant,
@@ -108,6 +113,10 @@ publié, et explique les conventions du dépôt à qui y contribue.
   first decoder, as the fixed-point formats were frozen before the first fill.
 - The Rust conventions describe both formats' binary layouts: the shared header
   and section table, the mesh, the map, and what the decoder treats as hostile.
+- `scg_submit_world` draws a whole map, one batch per surface, with a texture per
+  material. **Every cell, no culling**: this is the raw path that portal traversal
+  will replace, and against which it will be checked. A conformance scene now
+  renders a two-cell corridor loaded from a file.
 - A map's static lights and entities can be read: seven functions, among them
   `scg_world_light`, which **fills an `ScgLight` the host owns** — the very shape
   it hands back to `scg_set_lights`. An entity carries its own identifier, that

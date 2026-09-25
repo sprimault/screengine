@@ -1326,6 +1326,71 @@ pub unsafe extern "C" fn scg_world_triangle_count(world: *const ScgWorld, out: *
     unsafe { world_count(world, out, World::triangle_count) }
 }
 
+/// Submits a whole map, one batch per surface.
+///
+/// `textures` holds `texture_count` handles in material order — the order
+/// `scg_world_material_name` walks — and `texture_count` must **equal**
+/// `scg_world_material_count`. A null entry means "no texture" for that
+/// material. The array is read in place and never copied.
+///
+/// **Every cell, no culling.** This is the raw path: portal traversal comes
+/// later and will replace it, which is also how it will be checked — a scene
+/// where everything is visible must render the same image either way. There is
+/// no starting cell, because a parameter that does nothing yet is a parameter
+/// whose meaning would change.
+///
+/// **The map is submitted whole or not at all**, like a mesh: size the capacity
+/// with `scg_world_triangle_count` before creating the context.
+///
+/// # Safety
+///
+/// `ctx` must be null or a live handle. `model` must point to a readable matrix,
+/// `world` must be a live handle from `scg_world_load`, and `textures` must be
+/// null with `texture_count` zero, or cover `texture_count` readable pointers,
+/// each null or a live handle from `scg_texture_load`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn scg_submit_world(
+    ctx: *mut ScgContext,
+    model: *const ScgMat4,
+    world: *const ScgWorld,
+    textures: *const *const ScgTexture,
+    texture_count: u32,
+) -> i32 {
+    let submit = |mut core: entry::Core<'_>| {
+        // SAFETY: précondition de la fonction — chaque pointeur est nul ou vise
+        // une valeur lisible.
+        let model = unsafe { model.as_ref() }.ok_or(AbiError::NULL)?;
+        let model = model.to_core()?;
+        // SAFETY: précondition de la fonction — `world` est un handle vivant.
+        let world = unsafe { world.as_ref() }.ok_or(AbiError::NULL)?;
+        if textures.is_null() && texture_count != 0 {
+            return Err(AbiError::NULL);
+        }
+        if texture_count != world.inner.material_count() {
+            return Err(AbiError::TEXTURE_COUNT);
+        }
+        // SAFETY: précondition de la fonction — le tableau couvre son nombre
+        // d'éléments, le cas vide étant traité par `slice_of`.
+        let slots = unsafe { slice_of(textures, texture_count) };
+
+        core.exclusive()?
+            .submit_world(model, &world.inner, |material| {
+                // SAFETY: précondition de la fonction — chaque entrée du tableau
+                // est nulle ou un handle vivant. Le compte ayant été vérifié
+                // égal et le rang venant du chargement, `get` ne rend jamais
+                // `None` ici.
+                slots
+                    .get(material as usize)
+                    .and_then(|handle| unsafe { handle.as_ref() })
+                    .map(|texture| &texture.inner)
+            })
+            .map_err(AbiError::from)
+    };
+
+    // SAFETY: précondition de la fonction — `ctx` est nul ou un handle vivant.
+    unsafe { entry::with_context(ctx, submit) }
+}
+
 /// Writes the number of static lights the map carries to `out`.
 ///
 /// # Safety

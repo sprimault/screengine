@@ -327,6 +327,133 @@ fn un_maillage_refuse_ne_laisse_pas_sa_texture() {
 // portent pas cet emprunt, qui l'éprouve — voir `tests/mesh.rs` de
 // `screengine-ffi`.
 
+/// Une carte minimale : une cellule, un carré au sol, un matériau.
+fn one_surface_world() -> World {
+    let mut surface = Vec::new();
+    for value in [11u32, 0, 1, 4] {
+        surface.extend_from_slice(&value.to_le_bytes());
+    }
+    // L'ordre décide de l'enroulement, donc de la face visible : écrit à
+    // l'endroit, le carré disparaîtrait au découpage et l'image serait noire.
+    for index in [0u32, 3, 2, 1] {
+        surface.extend_from_slice(&index.to_le_bytes());
+    }
+    // Deux repères unitaires : le plaquage et la lightmap, dont les axes
+    // doivent être de longueur puissance de deux.
+    for _ in 0..2 {
+        for value in [0.0f32, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0] {
+            surface.extend_from_slice(&value.to_le_bytes());
+        }
+    }
+
+    let mut body = Vec::new();
+    for value in [7u32, 0, 4, 1, 0] {
+        body.extend_from_slice(&value.to_le_bytes());
+    }
+    for (x, y, z) in [
+        (10.0f32, -2.0f32, -2.0f32),
+        (10.0, 2.0, -2.0),
+        (10.0, 2.0, 2.0),
+        (10.0, -2.0, 2.0),
+    ] {
+        for value in [x, y, z] {
+            body.extend_from_slice(&value.to_le_bytes());
+        }
+    }
+    body.extend_from_slice(&surface);
+
+    let mut cells = (body.len() as u32).to_le_bytes().to_vec();
+    cells.extend_from_slice(&body);
+
+    let mut mats = 1u32.to_le_bytes().to_vec();
+    mats.extend_from_slice(&3u16.to_le_bytes());
+    mats.extend_from_slice(b"mur");
+
+    let sections = [(*b"CELL", cells.as_slice()), (*b"MATS", mats.as_slice())];
+    let first = 20 + 12 * sections.len();
+    let total = first + sections.iter().map(|(_, body)| body.len()).sum::<usize>();
+
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(b"SCG\x1a");
+    bytes.extend_from_slice(b"WRLD");
+    bytes.extend_from_slice(&1u32.to_le_bytes());
+    bytes.extend_from_slice(&(total as u32).to_le_bytes());
+    bytes.extend_from_slice(&(sections.len() as u32).to_le_bytes());
+
+    let mut offset = first;
+    for (tag, body) in &sections {
+        bytes.extend_from_slice(tag);
+        bytes.extend_from_slice(&(offset as u32).to_le_bytes());
+        bytes.extend_from_slice(&(body.len() as u32).to_le_bytes());
+        offset += body.len();
+    }
+    for (_, body) in &sections {
+        bytes.extend_from_slice(body);
+    }
+
+    World::load(&bytes).expect("carte valide")
+}
+
+/// Une carte soumise dessine toutes ses surfaces.
+///
+/// La géométrie est celle du carré des autres tests, et l'image doit donc être
+/// celle d'un lot texturé ordinaire : le chemin de la carte n'ajoute ni
+/// transformation, ni arrondi, ni ordre.
+#[test]
+fn une_carte_rend_ses_surfaces() {
+    let world = one_surface_world();
+    let texture = plain_texture(0x80, 0x40, 0x20);
+
+    let mut par_carte = small_ctx();
+    par_carte
+        .submit_world(Affine3::IDENTITY, &world, |_| Some(&texture))
+        .expect("capacité");
+
+    let pixels = pixels_of(&mut par_carte);
+    let mut vierge = small_ctx();
+    assert_ne!(pixels, pixels_of(&mut vierge), "la carte n'a rien peint");
+}
+
+/// Une carte dont un matériau n'a pas de texture sort à sa couleur, qui est le
+/// blanc du décor.
+#[test]
+fn une_carte_sans_texture_sort_en_blanc() {
+    let world = one_surface_world();
+    let mut ctx = small_ctx();
+    ctx.submit_world(Affine3::IDENTITY, &world, |_| None)
+        .expect("capacité");
+
+    let pixels = pixels_of(&mut ctx);
+    let center = (32 * 64 + 32) * BYTES_PER_PIXEL;
+    assert_eq!(
+        &pixels[center..center + 3],
+        &[0xFF, 0xFF, 0xFF],
+        "le décor sans texture n'est pas blanc"
+    );
+}
+
+/// Une carte qui déborde la capacité ne laisse rien dans l'image.
+#[test]
+fn une_carte_qui_deborde_la_capacite_ne_laisse_rien() {
+    let world = one_surface_world();
+    let mut ctx = Context::new(Config {
+        max_width: 64,
+        max_height: 64,
+        width: 64,
+        height: 64,
+        tile_size: 32,
+        // Le carré donne deux triangles : un seul ne suffit pas.
+        max_triangles: 1,
+    })
+    .expect("configuration saine");
+
+    assert_eq!(
+        ctx.submit_world(Affine3::IDENTITY, &world, |_| None),
+        Err(Error::InvalidArgument(Argument::TriangleCapacity))
+    );
+    assert_eq!(ctx.triangles.len(), 0);
+}
+
 /// Le même maillage se soumet deux fois dans une image, avec deux matrices.
 ///
 /// C'est ce qu'un décor fait de ses accessoires, et cela vérifie qu'une

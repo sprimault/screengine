@@ -101,13 +101,19 @@ pub(crate) struct Surface {
     /// Ses drapeaux, dont les bits non définis sont nuls.
     #[allow(dead_code)]
     flags: u32,
-    /// L'identifiant du matériau qui l'habille.
-    #[allow(dead_code)]
-    material: u32,
+    /// Le rang du matériau qui l'habille, dans la table de la carte.
+    ///
+    /// **Un rang et non l'identifiant que le fichier porte** : la soumission lie
+    /// les textures dans l'ordre des matériaux, et résoudre l'identifiant à
+    /// chaque image ferait payer une recherche par surface et par image. La
+    /// résolution a lieu au chargement, comme toute valeur dérivée ; les
+    /// identifiants restent dans la table, où l'interrogation de la scène les
+    /// retrouvera.
+    pub(crate) material: u32,
     /// Son premier triangle dans la cellule.
-    first_triangle: u32,
+    pub(crate) first_triangle: u32,
     /// Combien de triangles sa découpe a produits.
-    triangle_count: u32,
+    pub(crate) triangle_count: u32,
     /// Son repère de lightmap, vérifié aligné sur une grille de puissance de
     /// deux.
     // Lu par le calcul de lightmap, à l'étape 5. Le chargement le vérifie dès
@@ -151,11 +157,11 @@ pub(crate) struct Cell {
     /// Un sommet partagé par deux murs porte deux coordonnées de texture, et
     /// c'est le repère de chaque surface qui les décide : le fichier garde un
     /// sommet, le rendu en voit deux.
-    vertices: Vec<VertexUv>,
+    pub(crate) vertices: Vec<VertexUv>,
     /// Les triangles de toutes ses surfaces, dans l'ordre des surfaces.
-    triangles: Vec<[u32; 3]>,
+    pub(crate) triangles: Vec<[u32; 3]>,
     /// Ses surfaces.
-    surfaces: Vec<Surface>,
+    pub(crate) surfaces: Vec<Surface>,
     /// Ses portails.
     portals: Vec<Portal>,
 }
@@ -613,9 +619,14 @@ fn surface(
     if flags & !SURFACE_FLAGS != 0 {
         return Err(Error::InvalidFormat(Malformation::Flags));
     }
-    if !materials.contains(&material) {
-        return Err(Error::InvalidFormat(Malformation::Index));
-    }
+    // L'identifiant se résout en rang ici, une fois : c'est ce que la
+    // soumission lira, et une recherche par surface et par image serait
+    // invisible — elle ne ferait rougir aucun test et ne changerait aucune
+    // empreinte.
+    let material = materials
+        .iter()
+        .position(|known| *known == material)
+        .ok_or(Error::InvalidFormat(Malformation::Index))? as u32;
     if index_count > MAX_POLYGON {
         return Err(Error::InvalidFormat(Malformation::Polygon));
     }

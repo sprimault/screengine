@@ -11,7 +11,7 @@ use core::sync::atomic::{AtomicBool, AtomicU8, AtomicU32, Ordering};
 
 use crate::buffer::reserved;
 use crate::error::{Argument, Error, Result};
-use crate::format::Mesh;
+use crate::format::{Mesh, World};
 use crate::light::MAX_OVERBRIGHT;
 use crate::light::dynamic::{self, MAX_LIGHTS};
 use crate::light::fog::Fog;
@@ -852,6 +852,57 @@ impl Context {
                 self.lighting.truncate(lights);
                 self.textures.truncate(textures);
                 return result;
+            }
+        }
+        Ok(())
+    }
+
+    /// Soumet une carte entière, un lot par surface.
+    ///
+    /// `texture` rend la texture d'un matériau, par son rang dans la table de la
+    /// carte, ou `None` pour « sans texture ». Même forme que pour un maillage,
+    /// et pour la même raison : la table de l'hôte se lit sur place.
+    ///
+    /// **Toutes les cellules, aucune élimination.** C'est ce que la traversée
+    /// par portails remplacera — et ce contre quoi elle se validera : une scène
+    /// où tout est visible devra rendre la même image des deux côtés. Rien ici
+    /// ne prend de cellule de départ, un paramètre qui ne servirait pas encore
+    /// étant un paramètre dont le sens changerait.
+    ///
+    /// **Refusée en entier ou pas du tout**, comme un maillage, et par le même
+    /// mécanisme.
+    pub fn submit_world<'t, F>(&mut self, model: Affine3, world: &World, texture: F) -> Result<()>
+    where
+        F: Fn(u32) -> Option<&'t Arc<Texture>>,
+    {
+        let (mark, textures) = (self.triangles.len(), self.textures.len());
+        let lights = self.lighting.len();
+
+        for cell in world.cells() {
+            for surface in &cell.surfaces {
+                let first = surface.first_triangle as usize;
+                let result = self.submit_each_uv(
+                    model,
+                    surface.triangle_count as usize,
+                    texture(surface.material),
+                    |i| {
+                        let triangle = cell.triangles[first + i];
+                        let mut corners = [VertexUv::untextured(Vec3::ZERO); 3];
+                        for (corner, &index) in corners.iter_mut().zip(&triangle) {
+                            *corner = cell.vertices[index as usize];
+                        }
+                        // Le décor sort en blanc : la couleur du sommet
+                        // n'existe pas dans une carte, où c'est le matériau qui
+                        // habille, et la lightmap qui éclairera.
+                        Ok((corners, Color::new(0xFF, 0xFF, 0xFF, 0xFF)))
+                    },
+                );
+                if result.is_err() {
+                    self.triangles.truncate(mark);
+                    self.lighting.truncate(lights);
+                    self.textures.truncate(textures);
+                    return result;
+                }
             }
         }
         Ok(())
