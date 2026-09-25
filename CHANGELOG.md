@@ -46,6 +46,62 @@ publié, et explique les conventions du dépôt à qui y contribue.
 
 ## [Non publié]
 
+**Ce qu'un auteur de liaison doit reprendre : la façon de juger un code de
+retour.** L'étape 5 rend les deux premiers **codes positifs** du projet — un
+succès accompagné d'un statut, que l'ABI avait réservés sans les employer. Une
+liaison qui teste « différent de `0` » traitera désormais un succès en échec : le
+critère est `code < 0`, et un statut inconnu se traite comme `SCG_OK`.
+`SCG_ABI_VERSION` reste à **1**, et aucune signature publiée ne change.
+
+### Ajouté
+- Le contrat d'ABI décrit les quatorze points d'entrée de l'étape 5 : la
+  traversée par portails, le suivi de la cellule de la caméra, et le calcul des
+  lightmaps avec la reprise de son cache. **Aucun n'est encore exposé** — le
+  contrat se fige avant le premier code, comme celui d'un format se fige avant
+  son premier décodeur. Ce que la traversée refuse, sa borne de profondeur et ce
+  qu'elle rend en l'atteignant y figurent, ainsi que la raison pour laquelle la
+  plage d'erreurs réservée au monde reste vide.
+- Les conventions Rust décrivent la fenêtre de portail — un rectangle de pixels
+  entiers qui borne la boucle de remplissage et jamais les valeurs, si bien que
+  l'image ne dépend pas d'elle —, le calcul des lightmaps d'une cellule et la
+  disposition de son cache, troisième genre du conteneur commun aux deux formats
+  existants.
+
+### Modifié
+- Le chargement d'une carte vérifiera cinq propriétés du repère de lightmap de
+  chaque surface, là où il n'en vérifiait qu'une : longueur des axes en puissance
+  de deux, exposant pair, origine multiple de cette longueur, axes orthogonaux et
+  contenus dans le plan de la surface. Une carte que ces clauses refusent
+  produisait déjà des grilles de luxels désalignées entre surfaces coplanaires.
+
+***
+
+**What a binding author must revisit: how a return code is judged.** Step 5
+returns the project's first two **positive codes** — a success carrying a status,
+which the ABI had reserved without ever using. A binding that tests "not `0`"
+will now treat a success as a failure: the test is `code < 0`, and an unknown
+status is handled as `SCG_OK`. `SCG_ABI_VERSION` stays at **1**, and no published
+signature changes.
+
+### Added
+- The ABI contract describes step 5's fourteen entry points: portal traversal,
+  tracking the camera's cell, and computing lightmaps with cache restore. **None
+  is exposed yet** — a contract is frozen before the first code, just as a file
+  format's is frozen before its first decoder. What traversal refuses, its depth
+  bound and what it returns on reaching it are all written down, along with why
+  the error range reserved for the world stays empty.
+- The Rust conventions describe the portal window — a rectangle of whole pixels
+  that bounds the fill loop and never the values, so that the image does not
+  depend on it —, the per-cell lightmap computation, and its cache layout, a
+  third kind of the container shared by both existing formats.
+
+### Changed
+- Loading a map will check five properties of each surface's lightmap frame where
+  it checked only one: axis lengths a power of two, even exponent, origin a
+  multiple of that length, axes orthogonal and lying in the surface plane. A map
+  these clauses reject was already producing misaligned luxel grids between
+  coplanar surfaces.
+
 ## [0.4.0] — 2026-09-25 — Les données
 
 **Ce qu'un hôte de la 0.3.1 doit reprendre : rien.** `SCG_ABI_VERSION` reste à

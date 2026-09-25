@@ -112,13 +112,19 @@ src/
   texture/    étape 2   mipmaps, filtrage
   light/      étape 3   lightmaps, brouillard, post-traitement de tuile
   format/     étape 4   maillage et carte, versionnés
-  world/      étape 5   cellules, portails, traversée
+  world/      étape 5   cellules, portails, traversée, calcul des lightmaps
   collide/    étape 7   balayage de boîte contre les cellules
 ```
 
 **`raster/simd/` est le seul endroit du noyau qui autorise `unsafe`**, et le
 scalaire qui lui sert de référence reste dans `raster/` : les fondre supprimerait
 la référence.
+
+**Le calcul des lightmaps est dans `world/` et non dans `light/`**, dont il
+partage pourtant le sujet : son unité est la cellule, il lit la carte et la
+traversée de portails lui donne son ensemble d'occulteurs. `light/` porte ce qui
+s'applique pendant une image — échantillonnage, brouillard, post-traitement de
+tuile —, et le calcul n'y met jamais les pieds.
 
 **Le sens des dépendances ne s'inverse jamais.** Rien dans `screengine` n'importe
 `screengine-ffi`. Si le noyau en avait besoin, c'est que de la logique serait
@@ -509,6 +515,7 @@ la création du contexte rend une erreur plutôt que de déborder en silence.
 | Index de brouillard | exposant et mantisse de la profondeur, par `leading_zeros`, table de 2048 entrées | indexer linéairement une profondeur 0.32 est inutilisable : tout le monde visible vit sous 2²⁶. La table se remplit **linéairement en distance** — un brouillard linéaire en `near/w`, pourtant gratuit, atteint 56 % à un dixième de sa rampe et cesse d'être un indice de profondeur. L'index se prend comme celui du mipmap, et le reste de quantification se trame par la même table ordonnée, transposée pour ne pas se corréler avec celle des texels |
 | Atténuation d'une lumière dynamique | `(1 − d²/r²)²` en `f32`, **par sommet**, portée par un plan comme les autres attributs | l'atténuation a besoin d'une distance, et il n'existe aucune distance du côté entier du pipeline : la racine inverse du noyau vit avant la projection. Le carré s'annule en `r` **avec une dérivée nulle**, donc sans l'anneau visible que `1 − d²/r²` seule dessine à son bord. Aucune racine n'est appelée |
 | Courbe de sortie | table de **256 entrées de huit bits par canal**, `(x·gain)^(1/gamma)` saturé puis quantifié, remplie au réglage | le pixel ne paie que trois lectures, et rien du calcul qui les a produites — lequel emploie le `f64` et l'`exp2` du noyau, ce que seul un calcul hors image peut se permettre. L'état neutre est la **vacuité de la table**, et non un réglage d'identité : la recopie se monomorphise sur ce choix, si bien qu'une scène sans courbe ne teste rien par pixel. Le gain sature avant le gamma, pour ne pas écrêter deux fois |
+| Fenêtre de portail | rectangle de **pixels entiers**, obtenu par min/max des sommets 28.4 du portail projeté puis arrondi **vers l'extérieur** | elle ne borne que la boucle, jamais les valeurs : l'image est identique avec ou sans elle, exactement comme elle l'est indépendamment des tuiles. C'est ce qui fait qu'une fenêtre n'a besoin d'aucun format nouveau — elle est de la même nature qu'un rectangle de tuile, et les cinq configurations de conformance l'éprouvent déjà |
 
 - **Tout s'évalue en coordonnées globales.** Une fonction de bord ou un attribut
   en un pixel se calcule à partir des sommets et de la position du pixel dans
@@ -527,6 +534,61 @@ la création du contexte rend une erreur plutôt que de déborder en silence.
   plus large, il ferait diviser là où la profondeur n'a pas de sens ; plus
   étroit, il trouerait le triangle. Il ne dépend que des sommets et de la
   ligne, donc pas de la tuile.
+- **La fenêtre d'un portail se construit sans un seul arrondi nouveau.** Le
+  portail est convexe, vérifié au chargement, donc un éventail depuis son premier
+  sommet est licite sans découpe ; chaque triangle de l'éventail passe par le
+  chemin flottant existant — projection, clipping par les cinq plans, passage en
+  sous-pixels —, et la fenêtre est le min/max des sommets rendus. La boîte d'une
+  union étant l'union des boîtes, le résultat est rigoureusement la boîte du
+  portail, sans qu'aucun morceau ait à être recollé.
+
+  Deux conséquences qu'il faut dire, parce qu'elles sont l'argument du choix : le
+  découpage par les cinq plans garantit que tout sommet rendu est dans la bande de
+  garde, donc que le passage en 28.4 est exact et tient dans ±2¹⁶ — aucune
+  saturation ne sert de bornage ; et **l'ordre de l'éventail n'a pas
+  d'importance**, min et max sur des entiers étant commutatifs. C'est le seul
+  calcul dérivé du projet dont l'ordre d'opérations ne soit pas contractuel, et
+  c'est une propriété, pas une chance.
+
+  **Jamais de pincement des sommets** pour les ramener dans la bande de garde
+  avant le passage en sous-pixels : tirer un sommet lointain sur ±4096 tire les
+  arêtes vers l'intérieur et peut mordre dans l'image. Le découpage par les plans,
+  lui, préserve exactement l'intersection.
+
+  Le passage des sous-pixels au rectangle de pixels **inclut tout pixel que le
+  polygone touche**, par `div_euclid` pour que le négatif tombe du bon côté, et
+  non « tout pixel dont le centre est dedans ». La dilatation est d'au plus un
+  pixel et ferme une classe entière de trous : le portail partage ses arêtes avec
+  les triangles du mur qui l'entoure, la règle top-left départage les centres
+  tombant dessus, et une fenêtre au centre près pourrait exclure un centre que la
+  géométrie exclut aussi. Un trou est définitif, un pixel dilaté est gratuit.
+- **Deux fenêtres, qui ne se confondent pas.** Celle de **propagation** décide des
+  cellules visitées et de la profondeur atteinte : elle est par chemin, vit sur la
+  pile de traversée, et ne s'agrège jamais. Celle de **bornage** est ce que le
+  remplissage reçoit : elle est par cellule, union des fenêtres par lesquelles la
+  cellule a été atteinte, ce qui garde une seule soumission par cellule.
+
+  Agréger la première ferait dégénérer la fenêtre à la taille de la cellule dès
+  que deux ouvertures écartées y mènent, et perdrait l'élimination fine que le
+  z-buffer nous permet précisément de garder. Unir la seconde ne peut que
+  sur-dessiner, jamais trouer, et un sur-dessin de boîte coûte quelques
+  millièmes d'image : ce qui est rédhibitoire pour l'une est gratuit pour l'autre.
+- **Réduire la fenêtre par le portail découpé, et non par sa boîte brute.**
+  `box(P ∩ W)` vaut le même rectangle que `box(P) ∩ W` dans presque tous les cas,
+  et un facteur deux et demi sur un grand portail oblique vu à travers une porte
+  étroite. Ce n'est pas le remplissage que cela gagne, c'est le liseré où naissent
+  les faux portails — donc les cellules ramenées pour rien. Une passe sur les
+  arêtes, en `i64`, hors de toute boucle de pixels, sans tampon : on n'en calcule
+  que les extrema, jamais le polygone découpé, ce qui coupe la cascade d'arrondis
+  qu'un clipping entier réinjecté dans un autre clipping entraînerait.
+- **Ne jamais replier la fenêtre dans la boîte englobante du triangle.** C'est la
+  simplification qui se présentera d'elle-même — plus de table de fenêtres, des
+  répartitions resserrées gratuitement — et elle change l'image : `x0` et `x1`
+  bornent le span, dont dépendent les extrémités des segments de perspective, et
+  un segment rabattu sur une fenêtre texturerait la même surface autrement selon
+  la traversée. Les bornes verticales, elles, sont de purs bornages de boucle et
+  se replieraient sans dommage : l'asymétrie est réelle et c'est pour cela qu'elle
+  est écrite.
 - **Le niveau de mipmap se choisit par segment de 16 pixels**, sur la même grille,
   à partir de la dérivée entière des coordonnées de texture ; le logarithme se
   prend par `leading_zeros`.
@@ -596,10 +658,12 @@ la création du contexte rend une erreur plutôt que de déborder en silence.
 
 ## Formats de fichier
 
-Deux formats : le maillage et la carte. Ils partagent un en-tête, une table de
-sections et un décodeur, dans `src/format/`. `abi.md` n'en voit rien — il ne
-connaît qu'un bloc d'octets et un handle opaque —, et c'est ici que les
-dispositions font foi.
+Deux formats de source : le maillage et la carte. Un troisième genre du même
+conteneur porte le cache de lightmaps, décrit plus bas dans « Lightmaps
+calculées » : il n'est pas une source, et c'est la seule différence. Tous trois
+partagent un en-tête, une table de sections et un décodeur, dans `src/format/`.
+`abi.md` n'en voit rien — il ne connaît qu'un bloc d'octets et un handle opaque —,
+et c'est ici que les dispositions font foi.
 
 **Les dispositions sont figées avant le premier décodeur**, pour la même raison
 que les formats de virgule fixe l'ont été avant le premier remplissage : ce qui
@@ -812,10 +876,19 @@ l'invariant du projet l'interdit.
 
 Sont **dérivés au chargement** les liens de portails, les plans, la
 triangulation, les coordonnées de texture et de lightmap, les boîtes
-englobantes, les étendues en luxels et les tables d'identifiants. Est dérivée
-**sur appel explicite de l'hôte** la lightmap elle-même, et elle seule : un
-calcul d'éclairage au chargement ferait de l'ouverture d'une carte une opération
-de plusieurs secondes. Aucune place n'est réservée à une visibilité précalculée
+englobantes, les étendues en luxels et les tables d'identifiants. Aucun n'est
+optionnel, et chacun sert un appel nommé : les plans de portail décident du sens
+de traversée, ceux de surface portent la normale du calcul d'éclairage, les
+boîtes englobantes de cellule sélectionnent les lumières, les étendues en luxels
+dimensionnent un atlas, et les tables d'identifiants servent toute désignation
+par identifiant — la cellule de départ d'une traversée, celle dont on calcule les
+lightmaps, celle qu'une entrée de cache nomme. Une table `(identifiant, index)`
+triée, interrogée par dichotomie : aucune allocation par image, aucun ordre
+d'itération de table de hachage.
+
+Est dérivée **sur appel explicite de l'hôte** la lightmap elle-même, et elle
+seule : un calcul d'éclairage au chargement ferait de l'ouverture d'une carte une
+opération de plusieurs secondes. Aucune place n'est réservée à une visibilité précalculée
 — elle n'existe pas dans ce moteur, et lui en réserver une en ferait la source de
 vérité que le projet refuse.
 
@@ -846,10 +919,34 @@ reconstruire le repère par moindres carrés à chaque opération, et deux édit
 le reconstruiraient différemment : le repère est la source, les coordonnées la
 dérivée.
 
-**Le chargement vérifie que les axes du repère de lightmap ont une longueur
-puissance de deux et que son origine en est un multiple.** C'est ce qui aligne
-exactement les grilles de deux surfaces coplanaires adjacentes, donc ce qui
-évite une marche d'éclairage à leur jointure — vérifié plutôt que conventionnel.
+**Le repère de lightmap se vérifie au chargement sur cinq points**, et chacun
+répond à un besoin distinct — c'est pourquoi aucun ne remplace un autre :
+
+- **la longueur au carré de chaque axe est une puissance de deux**, ce qui rend son
+  inverse exact : la reconstruction d'un luxel vers un point du monde se fait alors
+  par deux multiplications et trois additions, sans division et donc sans arrondi
+  à rendre déterministe ;
+- **son exposant est pair**, donc la longueur elle-même est une puissance de deux.
+  Le pas de la grille en unités de monde étant cette longueur, le seul contrôle du
+  carré laisserait passer un axe de longueur `√2` — deux surfaces coplanaires
+  adjacentes aux pas `2` et `√2` ne partagent alors plus leur grille, et c'est la
+  marche d'éclairage à la jointure que ce contrôle existe pour interdire ;
+- **l'origine est un multiple de cette longueur**, sans quoi les grilles alignées
+  en pas restent décalées en phase ;
+- **les deux axes sont orthogonaux**, faute de quoi la reconstruction demande
+  l'inverse d'une 2×2 quelconque, donc une division ;
+- **ils sont contenus dans le plan de la surface**, faute de quoi la grille de
+  luxels ne recouvre pas ce qu'elle éclaire.
+
+Ce sont des contrôles et non une disposition : `version_format` ne bouge pas, et
+une carte que ces clauses refusent était déjà fausse.
+
+**L'étendue en luxels d'une surface est plafonnée, et le refus tombe au
+chargement.** Un grand mur à pas de lightmap fin produit un atlas qui ne tient
+pas ; le vérifier dans le même passage que le repère le fait découvrir à
+l'ouverture de la carte, une fois, plutôt qu'au calcul, trois appels plus tard et
+pour une seule cellule.
+
 L'unité de lightmap est la surface ; l'atlas par cellule est un cache assemblé
 au calcul, jamais dans le fichier, où il figerait une disposition que le premier
 déplacement de sommet invalide.
@@ -873,6 +970,20 @@ l'éditeur qui écrit les mêmes octets des deux côtés, et c'est une clause du
 format. L'appariement passe par un tri lexicographique de clés canoniques — les
 sommets triés par bits, les deux portails ayant des enroulements inverses — et
 non par une table de hachage, dont l'ordre d'itération n'est pas contractuel.
+
+**La clé d'un sommet porte ses trois mots de trente-deux bits, jamais un condensé
+de ceux-ci.** Quatre-vingt-seize bits ne tiennent pas dans un mot de soixante-quatre,
+et les réduire donne un appariement exact « à collision près » : deux portails de
+sommets différents peuvent alors porter la même clé et s'apparier en silence, sur
+des coordonnées de carte qui sont régulières par construction. La conséquence
+n'est pas un refus mais une traversée qui ouvre sur une cellule non voisine —
+défaut de la classe « image fausse, aucune erreur », et de ceux qui ne se
+rattrapent pas par un correctif local.
+
+**Deux portails de la même cellule ne s'apparient pas**, et un portail dont les
+sommets ne sont pas sur la frontière de sa cellule est refusé : sans ces deux
+contrôles, un lien peut ramener sur la cellule courante et la traversée tourne sur
+place.
 **Un portail non apparié est un mur, pas une erreur** : une carte en cours
 d'édition en a toujours. **Trois portails sur la même clé sont une erreur** : il
 n'y a pas de réponse à « lequel des deux ».
@@ -935,6 +1046,186 @@ d'arithmétique dessus avant le contrôle de finitude** : la charge utile d'un N
 signalant peut être normalisée par un passage en registre, et la divergence
 serait silencieuse entre cibles. Le refus des non-finis au chargement ferme le
 cas.
+
+## Lightmaps calculées
+
+Le noyau calcule les lightmaps d'une **cellule**, sur appel explicite de l'hôte,
+jamais pendant une image et jamais au chargement. Elles restent un **cache
+dérivable** : la carte est la source, et ce qui suit est ce que deux cibles
+doivent produire au bit près.
+
+### Ce que la géométrie doit garantir
+
+**La reconstruction d'un luxel vers un point du monde est exacte, sans division.**
+Le luxel `(i, j)` s'évalue en `origine + (min_u + i)·u/|u|² + (min_v + j)·v/|v|²`.
+Les cinq contrôles du repère de lightmap, plus haut, sont exactement ce qui rend
+cette expression exacte : `|u|²` puissance de deux rend son inverse exact, et
+l'orthogonalité évite l'inverse d'une 2×2 quelconque. Sans eux il faudrait une
+division par pixel de lightmap, donc un arrondi de plus à rendre contractuel.
+
+**Le point d'échantillonnage est décalé le long de la normale du plan d'une
+puissance de deux en unités de monde.** La surface est de toute façon exclue de
+ses propres occulteurs ; le décalage sert à ce qu'aucun sous-normal n'entre dans
+un calcul, même clause que la racine inverse du noyau. Sur armv7, le SIMD avancé
+n'a que la sémantique du zéro forcé là où le VFP scalaire traite les sous-normaux :
+c'est architectural, et c'est aussi la raison pour laquelle **le calcul des
+lightmaps reste scalaire et sort du périmètre de l'étape 9.**
+
+**Le rayon se teste contre le polygone de la surface, jamais contre sa
+triangulation.** C'est la règle top-left transposée, et le piège est de la même
+famille : un rayon qui passe exactement par une arête interne de la découpe
+d'oreilles peut être manqué par les deux triangles, et la lumière traverse alors
+le mur par un trou d'épingle. Invisible à l'arrêt, visible en mouchetures sur une
+lightmap cuite, et le calculateur entier serait déjà construit dessus. Donc : le
+plan, puis un test d'appartenance en deux dimensions dans le repère de la surface,
+avec une règle de bord écrite.
+
+**L'ensemble d'occulteurs est la cellule, ses voisines à un portail, et les
+portails du bord de cet ensemble rendus opaques.** Une cellule est fermée : tout
+rayon qui en sort traverse une surface ou un portail. En fermant le bord, la
+région devient étanche et **rien d'extérieur ne peut contribuer** — ce qui est
+précisément ce qui rend suffisante l'empreinte du cache décrite plus bas.
+Conséquence assumée, et il faut l'écrire parce qu'elle se verra : **la lumière ne
+tourne pas deux coins.** Un portail apparié n'occulte jamais ; « non solide » est
+une notion de collision et n'entre pas ici, une grille projette son ombre.
+
+**La sélection des lumières est géométrique, jamais par appartenance à une
+cellule.** Pré-rejet par intersection de la sphère de la lumière avec la boîte
+englobante de la cellule, puis `|v|² < r²` par luxel. Les lumières statiques
+n'ont pas de champ de cellule, et un test d'appartenance à une cellule non
+convexe est un comptage de traversées — un calcul de plus à rendre déterministe
+pour un résultat que la géométrie donne gratuitement.
+
+### L'atténuation, et le terme qui s'y ajoute
+
+**L'atténuation est celle de l'étape 3, `(1 − d²/r²)²`**, et elle ne se
+rediscute pas : le même mur éclairé par la même lampe doit rendre la même chose
+cuit et dynamique, sans quoi basculer une source d'un mode à l'autre déplacerait
+la scène.
+
+**S'y ajoute un terme de Lambert, `max(0, N̂·L̂)`, et c'est un arbitrage.** Sans
+lui, sol, mur et plafond autour d'une lampe sont également clairs, l'angle
+disparaît et la cuisson perd son objet. Il ne coûte rien à l'ABI — la normale est
+celle du plan de la surface, déjà dérivée au chargement —, contrairement à la
+normale par sommet que l'étape 3 avait refusée et que l'étape 6 tranchera. Il
+rapporte en outre le rejet le plus payant du calcul : `N̂·L̂ ≤ 0` rend le luxel noir
+sans lancer un rayon. La normalisation passe par la table de racine inverse du
+noyau : aucune libm, aucune approximation matérielle.
+
+**Conséquence assumée jusqu'à l'étape 6** : une lampe cuite et la même lampe
+dynamique ne rendent pas la même chose, la seconde ignorant l'orientation faute
+de normale. Les deux usages diffèrent — le décor statique d'un côté, une source
+portée de l'autre —, et l'écart se referme quand la normale par sommet arrive.
+
+**L'ordre des opérations est figé.** Accumulation en `f32`, lumières dans l'ordre
+de la section des lumières statiques, `total += canal × atténuation`, jamais de
+`mul_add`. Suréchantillonnage **fixé à 2×2** à des décalages d'un quart de luxel,
+sommés dans un ordre écrit, moyennés par une division par quatre — exacte. Puis
+`v × 255 + 0,5`, borné par des comparaisons écrites, converti par `as`. **Le
+nombre d'échantillons n'est pas un réglage** : configurable, il changerait
+l'image, devrait entrer dans l'ABI et dans l'empreinte du cache. Le jour où il
+faut le changer, c'est une constante de plus dans la révision du calcul.
+
+**Les luxels hors du polygone se calculent comme les autres**, à leur position de
+grille, sans test d'appartenance et sans autre dilatation que la gouttière de
+l'atlas. Écartée : la dilatation par propagation, dont l'ordre de parcours
+deviendrait contractuel pour un demi-luxel de gain. **À surveiller** : c'est le
+coin sombre classique, et si la première capture le montre, la réponse est la
+densité, pas l'algorithme.
+
+### L'atlas d'une cellule
+
+**C'est une texture ordinaire dont les sous-rectangles sont des puissances de deux
+alignées sur leur propre taille.** Chaque surface reçoit un rectangle dont chaque
+côté est la plus petite puissance de deux contenant son étendue plus une gouttière
+d'un luxel, remplie par recopie du bord, et il est placé à un multiple de sa
+propre taille.
+
+C'est cet alignement qui rend l'atlas **exact au mipmap** : aucune réduction
+2×2 ne traverse la frontière d'un sous-rectangle, si bien que la chaîne de
+l'atlas est identique, texel pour texel, à celle que des textures par surface
+auraient donnée. Le rangement en atlas devient alors un choix de mémoire sans
+effet sur l'image. Écartée : une gouttière dimensionnée pour une chaîne complète,
+qui coûterait la moitié du côté du rectangle en luxels de garde ; écartée aussi,
+une chaîne tronquée, qui ne supprime pas le saignement mais le borne.
+
+**Le rangement entre dans l'image par les coordonnées, donc il est
+contractuel** : placement par classe de taille décroissante, à égalité par rang de
+surface dans la cellule, premier emplacement libre balayé en lignes à
+l'alignement du rectangle.
+
+**Les coordonnées de lightmap se coupent en deux.** Le chargement dérive, par
+sommet, des coordonnées **locales à la surface** ; la soumission y ajoute
+l'origine du rectangle dans l'atlas, plus la gouttière et le demi-luxel. Une
+addition dans la lecture d'un sommet, aucune allocation, et la carte reste
+indépendante d'un rangement que le premier déplacement de sommet change. Le
+demi-luxel n'est pas décoratif : le bilinéaire du rasteriseur retranche déjà un
+demi-texel, et le centre du luxel `(0, 0)` est en `(0,5 ; 0,5)`.
+
+**Un `Texture` par surface est écarté**, et c'est la table des textures du
+contexte qui l'écarte : un balayage linéaire par lot et un plafond d'entrées, pour
+des milliers de surfaces dont le contenu tient dans un seul atlas par cellule.
+
+### Le cache de lightmaps
+
+**Troisième genre du conteneur commun**, `LMAP`, avec le même en-tête et la même
+table de sections que le maillage et la carte, et le même décodeur — déjà durci
+contre un bloc hostile, déjà éprouvé par la troncature exhaustive et la mutation
+aléatoire. Un format propre redemanderait ce durcissement et cette batterie de
+tests, et c'est le genre de seconde implémentation dont l'oubli est silencieux.
+
+**Un bloc pour le niveau, un enregistrement par cellule.** L'hôte range un fichier
+à côté de sa carte, plutôt que N fichiers et une convention de nommage que le
+moteur devrait décrire. Ce que le découpage par cellule apporterait vraiment —
+l'acceptation partielle — vient de l'empreinte portée par chaque enregistrement.
+
+Deux sections. La première porte les enregistrements de cellule,
+longueur-préfixés comme les cellules d'une carte, **triés par identifiant, uniques
+et pavant la section** : le moteur est le seul écrivain, la canonicité est donc
+gratuite et rend deux caches comparables octet pour octet. Chacun porte
+l'identifiant de la cellule, son empreinte, les côtés de son atlas, la position et
+la longueur de ses luxels dans la seconde section, et le rectangle de chaque
+surface avec son identifiant. La seconde porte les niveaux zéro des atlas bout à
+bout, quatre octets par luxel dans l'ordre mémoire des pixels de sortie, alpha à
+255 — c'est ce que le constructeur de texture attend, et l'hôte n'a jamais deux
+ordres à tenir.
+
+**Les mipmaps ne sont pas dans le cache** : ce serait le cache d'un cache, un tiers
+d'octets de plus pour une valeur exactement dérivable. Ils se construisent à la
+fin de l'appel qui calcule ou qui reprend.
+
+**Ni somme de contrôle, ni compression**, pour les raisons déjà tranchées sur les
+deux autres formats : une somme ne protège de rien face à un bloc hostile, et
+l'intégrité de transport appartient à l'archive de l'hôte.
+
+**L'empreinte est un FNV-1a 64 bits par cellule**, calculée sur des octets écrits
+en petit-boutiste, tout par `to_bits` et sans une seule opération flottante, dans
+cet ordre :
+
+1. **la révision du calcul**, une constante du noyau incrémentée à *tout*
+   changement de ce que ce document décrit — densité, nombre d'échantillons, forme
+   de l'atténuation, terme de Lambert, portée de l'ensemble d'occulteurs,
+   quantification. C'est le champ qu'on oublie, et son absence laisse un cache
+   valide produire une image que la version suivante ne produit plus ;
+2. **la cellule** : son identifiant, ses drapeaux, ses sommets dans l'ordre du
+   fichier, puis chaque surface avec ses drapeaux, ses indices et les neuf
+   flottants de son **repère de lightmap**, puis chaque portail avec ses points et
+   l'identifiant de la cellule liée ou zéro ;
+3. **chaque cellule voisine par portail apparié**, par identifiant croissant, par
+   la même fonction : elles occultent et elles éclairent, donc elles comptent. Et
+   comme l'ensemble d'occulteurs s'arrête là, cette empreinte est **prouvée
+   suffisante** ;
+4. **les lumières retenues**, celles dont la sphère coupe la boîte englobante de la
+   cellule, dans l'ordre de leur section.
+
+N'entrent pas : le repère de **texture**, le matériau, les entités, les noms.
+Clause à écrire pour qu'on s'y fie : **réhabiller un décor ou déplacer un objet ne
+périme aucune lightmap.** Écarté : hacher toutes les lumières de la carte, ce qui
+ferait périmer le niveau entier au premier réglage d'une torche à l'autre bout.
+
+**Une entrée dont l'empreinte ne concorde pas est écartée sans erreur**, et la
+cellule reste sans lightmap ; le compte des entrées reprises le dit à l'hôte. Le
+reste du contrat de reprise est dans [`abi.md`](abi.md).
 
 ## Documentation et commentaires
 
