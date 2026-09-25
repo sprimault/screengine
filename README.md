@@ -44,13 +44,12 @@ for those making a game, and the engine does not know it exists.
 
 ## Status
 
-**Step 3 cleared, released as 0.3.0: light and image.** Lightmaps supplied by
-the host and sampled through a second set of vertex coordinates, up to eight
-dynamic lights whose falloff is computed per vertex, distance fog, an internal
-resolution that changes without recreating the context, and an output curve —
-per-channel gain, offset, gamma — applied while a tile is copied out. All four
-reference hosts render the same image, bit for bit. Data and the map format are
-step 4.
+**Step 4 cleared, released as 0.4.0: data.** Two versioned file formats — meshes
+and maps — loaded from a block of bytes the host reads: non-convex cells,
+surfaces triangulated at load time, portals matched bit for bit, static lights
+and entities decoded, stable identifiers throughout. Five hosts walk through the
+same decor in a window: C, C++, the browser, Android, and the Rust host layer.
+**Every cell is drawn, with no culling whatsoever** — portal traversal is step 5.
 
 The roadmap has ten steps, each one published.
 

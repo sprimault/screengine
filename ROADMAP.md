@@ -205,6 +205,8 @@ composants du moteur : la bibliothèque continue de n'avoir ni fenêtre, ni
 entrées, ni fichiers, et c'est ce qui la rend intégrable dans une application
 qui a déjà les siennes.
 
+**Franchie, publiée en 0.4.0.**
+
 ## 5 — Le monde
 
 Cellules 3D fermées, portails polygonaux plans et convexes, traversée avec
