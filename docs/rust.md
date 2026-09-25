@@ -712,6 +712,12 @@ recouvrement, et c'est vérifié.** Une soumission vaut pour un groupe ; un grou
 dispersé imposerait de rassembler ses triangles à chaque image, donc un tampon,
 donc une allocation par image.
 
+**Un groupe nomme toujours son emplacement de texture**, son indice étant sous le
+compte des noms comme tout autre indice. Il n'y a donc pas de valeur pour « sans
+texture » dans le fichier, et un maillage qui porte des triangles déclare au
+moins un nom : « sans texture » se dit à la soumission, par un handle nul, ce qui
+garde à l'hôte le choix de ne rien charger pour un emplacement.
+
 Pas de second jeu de coordonnées : une lightmap se calcule par cellule, et un
 accessoire mobile n'est pas une cellule. Le jour où un décor statique se livrera
 en maillage, ce sera une version de format de plus. **Ce format cassera de toute
@@ -842,7 +848,12 @@ tables sans rien changer d'autre déplace les empreintes.
 
 Corollaire général : **toute valeur dérivée au chargement entre dans le rendu**,
 donc son ordre d'opérations est contractuel. Une boîte englobante par minimum et
-maximum est exacte et sans piège ; un centre par moyenne ne le serait pas.
+maximum est exacte et sans piège d'arrondi ; un centre par moyenne ne le serait
+pas. Elle en garde un autre, qui n'est pas dans l'arrondi : **`f32::min` ne
+spécifie pas le signe qu'il rend de `min(-0,0, 0,0)`**, si bien que deux cibles
+donneraient deux boîtes pour le même maillage. Les coordonnées étant finies — le
+refus des non-finis à la lecture le garantit —, une comparaison suffit et rend
+les mêmes bits partout.
 
 Enfin, les `f32` se lisent par `from_bits` sur les octets lus, et **rien ne fait
 d'arithmétique dessus avant le contrôle de finitude** : la charge utile d'un NaN

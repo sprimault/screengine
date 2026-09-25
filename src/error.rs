@@ -196,6 +196,31 @@ pub enum Malformation {
     /// `NaN` signalant peut être normalisée par un passage en registre, et la
     /// divergence entre deux cibles serait silencieuse.
     NonFinite,
+    /// Une chaîne du fichier n'est pas de l'UTF-8 valide.
+    NonUtf8,
+    /// Un indice au-delà de ce qu'il désigne : un sommet, un emplacement de
+    /// texture.
+    ///
+    /// Vérifié une fois au chargement, jamais ensuite. Un tableau reçu de
+    /// l'hôte n'est pas validé et doit l'être ; une ressource chargée porte
+    /// l'invariant dans son type, et le revérifier par image coûterait un
+    /// parcours complet sans faire rougir aucun test.
+    Index,
+    /// Un identifiant nul, que l'éditeur réserve à « aucun », ou deux fois le
+    /// même dans sa famille.
+    ///
+    /// L'unicité se lit sur une table triée, en une passe adjacente. Le tri se
+    /// vérifie, il ne se suppose pas : une recherche dichotomique sur une table
+    /// non triée ne plante pas, elle rend la mauvaise surface — un défaut
+    /// « image fausse, aucune erreur ».
+    Identifier,
+    /// Les groupes de surface ne pavent pas les triangles : un trou, un
+    /// recouvrement, ou un total qui n'est pas leur nombre.
+    ///
+    /// Une soumission vaut pour un groupe. Un groupe dispersé imposerait de
+    /// rassembler ses triangles à chaque image, donc un tampon, donc une
+    /// allocation par image.
+    GroupBounds,
 }
 
 /// Le résultat d'un appel du noyau.

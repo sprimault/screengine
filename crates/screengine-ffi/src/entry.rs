@@ -49,6 +49,26 @@ impl AbiError {
         message: "reserved fields must be zero",
     };
 
+    /// L'emplacement de texture demandé n'existe pas dans la ressource.
+    ///
+    /// Une faute dans l'appel et non dans le contenu : le fichier est bon, c'est
+    /// l'indice qui sort de ce que la ressource déclare. Un code de la plage des
+    /// données enverrait l'hôte chercher un mauvais fichier.
+    pub(crate) const TEXTURE_SLOT: Self = Self {
+        code: SCG_ERR_INVALID_ARGUMENT,
+        message: "texture slot beyond those the resource declares",
+    };
+
+    /// Le tampon d'un nom ne peut pas porter le nom et son terminateur.
+    ///
+    /// Rien n'est écrit dans ce cas, `out_len` compris : la mesure a son propre
+    /// appel — tampon nul, capacité nulle —, et remplir un paramètre de sortie
+    /// sur un chemin d'erreur serait la seule exception de toute l'ABI.
+    pub(crate) const NAME_CAPACITY: Self = Self {
+        code: SCG_ERR_INVALID_ARGUMENT,
+        message: "name buffer too short: measure the name first with a null buffer and zero capacity",
+    };
+
     /// Une coordonnée de sommet n'est pas un nombre fini.
     ///
     /// Le noyau ferait disparaître le triangle sans erreur, ce qui est le bon

@@ -14,11 +14,12 @@ sortie.** Chaque décision garde ci-dessous l'option écartée et pourquoi. Un s
 point reste marqué **À trancher** : la dépréciation, qui attend le gel de l'ABI
 en 1.0.
 
-**Les points d'entrée de l'étape 4 sont spécifiés ici mais ne sont pas encore
-exposés**, et leur section le redit. Le contrat d'un format se fige avant son
-premier décodeur, comme les formats de virgule fixe se sont figés avant le
-premier remplissage : ce qui s'écrit après s'écrit contre ce qui a déjà été
-codé.
+**De l'étape 4, seul le chargement d'un maillage est exposé** : les cinq
+fonctions `scg_mesh_*`. Sa soumission et les six fonctions du monde sont
+spécifiées ci-dessous et ne le sont pas encore, et leur section le redit. Le
+contrat d'un format se fige avant son premier décodeur, comme les formats de
+virgule fixe se sont figés avant le premier remplissage : ce qui s'écrit après
+s'écrit contre ce qui a déjà été codé.
 
 ## Principes
 
@@ -961,9 +962,10 @@ Huit fonctions ajoutées, trois structures nouvelles, aucune constante :
 
 ### Étape 4
 
-**Aucun de ces points d'entrée n'est encore exposé.** Ce qui suit est le contrat
-auquel ils se conformeront, figé avant le premier décodeur pour la raison dite en
-tête de document. Les dispositions binaires elles-mêmes sont dans `docs/rust.md`,
+**Les cinq fonctions `scg_mesh_*` sont exposées ; `scg_submit_mesh` et les six
+fonctions du monde ne le sont pas encore.** Ce qui suit est le contrat auquel
+elles se conforment, figé avant le premier décodeur pour la raison dite en tête
+de document. Les dispositions binaires elles-mêmes sont dans `docs/rust.md`,
 section « Formats de fichier » : elles n'appartiennent pas à l'ABI, qui ne voit
 qu'un bloc d'octets.
 
@@ -1016,7 +1018,16 @@ Arrêté :
   `SCG_ERR_INVALID_ARGUMENT`.
 - **Le nom se lit en deux temps** : `buf` nul avec `cap` à zéro rend la longueur
   nécessaire dans `out_len`, puis un second appel remplit. Le tampon rendu est
-  terminé par un octet nul, et `out_len` ne le compte pas.
+  terminé par un octet nul, et `out_len` ne le compte pas. `out_len` est
+  obligatoire dans les deux temps.
+
+  **Un `cap` non nul mais trop court rend `SCG_ERR_INVALID_ARGUMENT` et n'écrit
+  rien, `out_len` compris.** L'appel de mesure est le seul chemin vers la
+  longueur. Écarté : remplir quand même `out_len`, ce qui épargnerait un appel à
+  une liaison qui aurait deviné trop court — ce serait le seul paramètre de
+  sortie de toute l'ABI écrit sur un chemin d'erreur, et une liaison finirait par
+  en dépendre. Un `slot` au-delà du compte rend le même code : le fichier est
+  bon, c'est l'indice qui ne l'est pas.
 - **Le compte de triangles existe** parce que l'hôte doit dimensionner
   `max_triangles` à la création du contexte, avant d'avoir soumis quoi que ce
   soit. Sans lui, la seule façon de connaître ce nombre serait d'essayer.
@@ -1046,7 +1057,7 @@ noms ne le sont pas.
 | 1 | ✓ début d'image et rendu d'une tuile (voir « Rendu par tuiles »), caméra et projection, soumission de triangles avec une matrice |
 | 2 | ✓ chargement d'une texture, mipmaps engendrés au chargement, niveau de qualité du filtrage par `scg_set_filter` |
 | 3 | ✓ soumission d'un lot éclairé, réglage du sur-éclairement, du brouillard, des lumières dynamiques, de la résolution interne et de la courbe de sortie |
-| 4 | chargement d'un maillage et d'une carte depuis un bloc d'octets, libération — contrat écrit ci-dessus, pas encore exposé |
+| 4 | ✓ chargement d'un maillage depuis un bloc d'octets, libération, ses deux comptes et ses noms d'emplacements ; sa soumission et la carte restent à exposer, contrat écrit ci-dessus |
 | 5 | rendu du monde depuis la caméra, calcul des lightmaps d'une cellule et reprise d'un cache |
 | 6 | interpolation entre trames, sprites orientés caméra |
 | 7 | module de collision, utilisable sans contexte de rendu |

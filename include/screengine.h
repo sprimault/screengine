@@ -107,6 +107,12 @@
 // thread.
 typedef struct ScgContext ScgContext;
 
+// An opaque handle to a loaded mesh.
+//
+// Created by `scg_mesh_load`, released by `scg_mesh_destroy`. It belongs to no
+// context: the same mesh may be submitted to several, from several threads.
+typedef struct ScgMesh ScgMesh;
+
 // An opaque handle to a loaded texture.
 //
 // Created by `scg_texture_load`, released by `scg_texture_destroy`. It belongs
@@ -849,6 +855,89 @@ int32_t scg_submit_lit(struct ScgContext *ctx,
                        uint32_t triangle_count,
                        const struct ScgTexture *texture,
                        const struct ScgTexture *lightmap);
+
+// Loads a mesh from a block of bytes.
+//
+// The engine copies what it keeps: the host may free `bytes` as soon as the
+// call returns, and no lifetime crosses the boundary. `len` must be exactly the
+// length the file declares in its header — a longer or shorter block is
+// rejected, tail bytes included.
+//
+// The mesh belongs to no context, so the failure is read with
+// `scg_last_error(NULL)`. Two codes say different things to the host:
+// `SCG_ERR_INVALID_FORMAT` means the content is bad, to report as a bad asset;
+// `SCG_ERR_UNSUPPORTED_FORMAT_VERSION` means this library cannot read that
+// version, so take a newer one or export the data again.
+//
+// An empty mesh is a valid file, not an error.
+//
+// # Safety
+//
+// `bytes` must cover `len` readable bytes, or `len` must be zero. `out` must
+// point to a writable handle; nothing is written unless the call succeeds.
+int32_t scg_mesh_load(const uint8_t *bytes, size_t len, struct ScgMesh **out);
+
+// Releases a mesh.
+//
+// `scg_mesh_destroy(NULL)` does nothing, like `free(NULL)`. Destroying a mesh
+// during a frame is harmless, but **not for the same reason as a texture**:
+// nothing reads a mesh once the submission has returned, whereas the engine
+// holds a reference to a texture until the frame ends. Do not assume the two
+// follow one rule.
+//
+// # Safety
+//
+// `mesh` must be null, or a handle returned by `scg_mesh_load` and not yet
+// destroyed.
+void scg_mesh_destroy(struct ScgMesh *mesh);
+
+// Writes the number of texture slots the mesh asks for to `out`.
+//
+// Slots are numbered from zero. Read each name with `scg_mesh_texture_name`,
+// load what you want with your own files, and pass the handles in slot order.
+//
+// # Safety
+//
+// `mesh` must be a live handle from `scg_mesh_load`, and `out` must point to a
+// writable `uint32_t`.
+int32_t scg_mesh_texture_count(const struct ScgMesh *mesh, uint32_t *out);
+
+// Reads the name of one texture slot, in two steps.
+//
+// Call it once with `buf` null and `cap` zero: it writes the length of the name
+// to `out_len`, not counting the terminator. Call it again with a buffer of at
+// least `*out_len + 1` bytes: it writes the name and a null terminator.
+//
+// A `cap` too small for the name and its terminator returns
+// `SCG_ERR_INVALID_ARGUMENT` and **writes nothing**, `out_len` included — the
+// measuring call is how you learn the length. A `slot` beyond
+// `scg_mesh_texture_count` returns `SCG_ERR_INVALID_ARGUMENT` too: the file is
+// fine, the index is not. `out_len` is required in both steps.
+//
+// The name is what the file calls the slot, never a path: the engine opens
+// nothing, and the host decides what it loads for that slot.
+//
+// # Safety
+//
+// `mesh` must be a live handle from `scg_mesh_load`. `buf` must be null with
+// `cap` zero, or cover `cap` writable bytes. `out_len` must point to a writable
+// `size_t`.
+int32_t scg_mesh_texture_name(const struct ScgMesh *mesh,
+                              uint32_t slot,
+                              char *buf,
+                              size_t cap,
+                              size_t *out_len);
+
+// Writes the number of triangles the mesh carries to `out`.
+//
+// It is what a host needs to size `max_triangles` before creating the context
+// it will submit to: without it, the only way to know is to try.
+//
+// # Safety
+//
+// `mesh` must be a live handle from `scg_mesh_load`, and `out` must point to a
+// writable `uint32_t`.
+int32_t scg_mesh_triangle_count(const struct ScgMesh *mesh, uint32_t *out);
 
 #ifdef __cplusplus
 }  // extern "C"

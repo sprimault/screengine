@@ -99,6 +99,11 @@ export const EXPORTS = [
   "scg_set_fog",
   "scg_clear_fog",
   "scg_set_lights",
+  "scg_mesh_load",
+  "scg_mesh_destroy",
+  "scg_mesh_texture_count",
+  "scg_mesh_texture_name",
+  "scg_mesh_triangle_count",
 ];
 
 /** Taille de `ScgContextConfig`, celle qu'affirme le header. */
