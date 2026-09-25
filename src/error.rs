@@ -242,6 +242,16 @@ pub enum Malformation {
     /// longueur n'est pas une puissance de deux, ou des coordonnées dérivées
     /// qui ne sont pas finies.
     Mapping,
+    /// Une lumière statique inutilisable : un rayon nul, négatif ou non fini.
+    ///
+    /// Un rayon nul n'éclaire rien et ferait diviser par zéro le calcul
+    /// d'atténuation.
+    Light,
+    /// Une orientation qui n'a pas de direction à porter.
+    ///
+    /// Un quaternion nul se normaliserait en l'identité sans rien signaler, et
+    /// une entité posée de travers se retrouverait droite.
+    Pose,
     /// Trois portails partagent les mêmes sommets.
     ///
     /// Deux s'apparient ; à trois, il n'y a pas de réponse à « lequel des

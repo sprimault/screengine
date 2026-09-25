@@ -205,6 +205,12 @@ pub(crate) fn message_of(error: Error) -> &'static str {
         Error::InvalidFormat(Malformation::Mapping) => {
             "malformed data file: a mapping frame is unusable, or the coordinates it derives are not finite"
         }
+        Error::InvalidFormat(Malformation::Light) => {
+            "malformed data file: a static light has a radius that is not finite and positive"
+        }
+        Error::InvalidFormat(Malformation::Pose) => {
+            "malformed data file: an orientation is a zero quaternion, which carries no direction"
+        }
         Error::InvalidFormat(Malformation::Portal) => {
             "malformed data file: three portals share the same vertices"
         }

@@ -110,6 +110,13 @@ export const EXPORTS = [
   "scg_world_material_count",
   "scg_world_material_name",
   "scg_world_triangle_count",
+  "scg_world_light_count",
+  "scg_world_light",
+  "scg_world_entity_count",
+  "scg_world_entity_ids",
+  "scg_world_entity_pose",
+  "scg_world_entity_class",
+  "scg_world_entity_data",
 ];
 
 /** Taille de `ScgContextConfig`, celle qu'affirme le header. */

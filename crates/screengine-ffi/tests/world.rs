@@ -67,6 +67,74 @@ fn one_cell_world() -> Vec<u8> {
     file(&cells, &mats, b"WRLD", 1)
 }
 
+/// Une carte d'une cellule, une lumière et une entité.
+fn peopled_world() -> Vec<u8> {
+    let mut light = words(&[41]);
+    light.extend_from_slice(&floats(&[4.0, 5.0, 6.0, 8.0]));
+    light.extend_from_slice(&[0xF0, 0x80, 0x40, 0]);
+
+    let mut body = words(&[31, 7]);
+    body.extend_from_slice(&6u16.to_le_bytes());
+    body.extend_from_slice(b"depart");
+    body.extend_from_slice(&floats(&[1.0, 2.0, 3.0, 0.0, 0.0, 0.0, 2.0]));
+    body.extend_from_slice(&words(&[2]));
+    body.extend_from_slice(&[0xDE, 0xAD]);
+    let mut entity = words(&[body.len() as u32]);
+    entity.extend_from_slice(&body);
+
+    let cells = one_cell_world_cells();
+    let mut mats = words(&[1]);
+    mats.extend_from_slice(&3u16.to_le_bytes());
+    mats.extend_from_slice(b"mur");
+
+    sections(&cells, &entity, &light, &mats, b"WRLD", 1)
+}
+
+/// La section des cellules de la carte d'épreuve.
+fn one_cell_world_cells() -> Vec<u8> {
+    let mut surface = words(&[11, 0, 1, 4]);
+    surface.extend_from_slice(&words(&[0, 1, 2, 3]));
+    surface.extend_from_slice(&unit_frame());
+    surface.extend_from_slice(&unit_frame());
+
+    let mut body = words(&[7, 0, 4, 1, 0]);
+    for point in [
+        [0.0, 0.0, 0.0],
+        [4.0, 0.0, 0.0],
+        [4.0, 4.0, 0.0],
+        [0.0, 4.0, 0.0],
+    ] {
+        body.extend_from_slice(&floats(&point));
+    }
+    body.extend_from_slice(&surface);
+
+    let mut cells = words(&[body.len() as u32]);
+    cells.extend_from_slice(&body);
+    cells
+}
+
+/// Un fichier de carte, ses quatre sections.
+fn sections(
+    cells: &[u8],
+    ents: &[u8],
+    lgts: &[u8],
+    mats: &[u8],
+    kind: &[u8; 4],
+    version: u32,
+) -> Vec<u8> {
+    let sections: Vec<([u8; 4], &[u8])> = [
+        (*b"CELL", cells),
+        (*b"ENTS", ents),
+        (*b"LGTS", lgts),
+        (*b"MATS", mats),
+    ]
+    .into_iter()
+    .filter(|(_, body)| !body.is_empty())
+    .collect();
+
+    build(&sections, kind, version)
+}
+
 /// Un fichier de carte : en-tête, table de sections, sections.
 fn file(cells: &[u8], mats: &[u8], kind: &[u8; 4], version: u32) -> Vec<u8> {
     let sections: Vec<([u8; 4], &[u8])> = [(*b"CELL", cells), (*b"MATS", mats)]
@@ -74,6 +142,11 @@ fn file(cells: &[u8], mats: &[u8], kind: &[u8; 4], version: u32) -> Vec<u8> {
         .filter(|(_, body)| !body.is_empty())
         .collect();
 
+    build(&sections, kind, version)
+}
+
+/// Assemble l'en-tête, la table et les sections.
+fn build(sections: &[([u8; 4], &[u8])], kind: &[u8; 4], version: u32) -> Vec<u8> {
     let first = 20 + 12 * sections.len();
     let total = first + sections.iter().map(|(_, body)| body.len()).sum::<usize>();
 
@@ -85,16 +158,205 @@ fn file(cells: &[u8], mats: &[u8], kind: &[u8; 4], version: u32) -> Vec<u8> {
     bytes.extend_from_slice(&(sections.len() as u32).to_le_bytes());
 
     let mut offset = first;
-    for (tag, body) in &sections {
+    for (tag, body) in sections {
         bytes.extend_from_slice(tag);
         bytes.extend_from_slice(&(offset as u32).to_le_bytes());
         bytes.extend_from_slice(&(body.len() as u32).to_le_bytes());
         offset += body.len();
     }
-    for (_, body) in &sections {
+    for (_, body) in sections {
         bytes.extend_from_slice(body);
     }
     bytes
+}
+
+/// Une carte peuplée rend sa lumière dans la structure que l'hôte lui donne.
+///
+/// **La structure est celle que l'hôte repasse à `scg_set_lights`** : c'est tout
+/// ce qu'il en fait à cette étape, et la lui faire reconstruire champ par champ
+/// n'aurait servi qu'à respecter la lettre d'un principe qui vise la mémoire du
+/// moteur, pas un tampon de l'appelant.
+#[test]
+fn rend_une_lumiere_dans_la_structure_de_l_hote() {
+    let world = load(&peopled_world());
+    let mut count = 0;
+    let mut light = ScgLight {
+        x: 0.0,
+        y: 0.0,
+        z: 0.0,
+        radius: 0.0,
+        r: 0,
+        g: 0,
+        b: 0,
+        _reserved: 0xFF,
+    };
+
+    // SAFETY: handle vivant, paramètres de sortie locaux.
+    unsafe {
+        assert_eq!(scg_world_light_count(world, &mut count), SCG_OK);
+        assert_eq!(scg_world_light(world, 0, &mut light), SCG_OK);
+    }
+    assert_eq!(count, 1);
+    assert_eq!((light.x, light.y, light.z), (4.0, 5.0, 6.0));
+    assert_eq!(light.radius, 8.0);
+    assert_eq!((light.r, light.g, light.b), (0xF0, 0x80, 0x40));
+    assert_eq!(
+        light._reserved, 0,
+        "l'octet réservé est écrit nul, ce que le contrat exige de l'hôte"
+    );
+
+    // SAFETY: handle vivant, détruit une seule fois.
+    unsafe { scg_world_destroy(world) };
+}
+
+/// Une carte peuplée rend son entité : identifiants, pose, classe, octets.
+#[test]
+fn rend_une_entite_par_ses_accesseurs() {
+    let world = load(&peopled_world());
+    let mut count = 0;
+    let mut id = 0;
+    let mut cell = 0;
+    let mut pose = [0.0f32; 7];
+    let mut len = 0;
+
+    // SAFETY: handle vivant, paramètres de sortie locaux, `pose` couvrant sept
+    // flottants.
+    unsafe {
+        assert_eq!(scg_world_entity_count(world, &mut count), SCG_OK);
+        assert_eq!(scg_world_entity_ids(world, 0, &mut id, &mut cell), SCG_OK);
+        assert_eq!(scg_world_entity_pose(world, 0, pose.as_mut_ptr()), SCG_OK);
+    }
+    assert_eq!(count, 1);
+    assert_eq!((id, cell), (31, 7));
+    assert_eq!(&pose[..3], &[1.0, 2.0, 3.0]);
+    assert_eq!(
+        &pose[3..],
+        &[0.0, 0.0, 0.0, 1.0],
+        "le quaternion est normalisé au chargement"
+    );
+
+    // La classe, en deux temps.
+    // SAFETY: handle vivant ; le tampon nul avec une capacité nulle mesure.
+    let code = unsafe { scg_world_entity_class(world, 0, ptr::null_mut(), 0, &mut len) };
+    assert_eq!(code, SCG_OK);
+    assert_eq!(len, 6);
+    let mut class = vec![0u8; len + 1];
+    // SAFETY: handle vivant, tampon couvrant ce que la mesure demande.
+    let code = unsafe {
+        scg_world_entity_class(world, 0, class.as_mut_ptr().cast(), class.len(), &mut len)
+    };
+    assert_eq!(code, SCG_OK);
+    assert_eq!(&class[..len], b"depart");
+
+    // Les octets opaques, en deux temps aussi, mais sans terminateur.
+    // SAFETY: mêmes préconditions.
+    let code = unsafe { scg_world_entity_data(world, 0, ptr::null_mut(), 0, &mut len) };
+    assert_eq!(code, SCG_OK);
+    assert_eq!(len, 2);
+    let mut data = vec![0u8; len];
+    // SAFETY: handle vivant, tampon de la longueur mesurée.
+    let code = unsafe { scg_world_entity_data(world, 0, data.as_mut_ptr(), data.len(), &mut len) };
+    assert_eq!(code, SCG_OK);
+    assert_eq!(data, vec![0xDE, 0xAD]);
+
+    // SAFETY: handle vivant, détruit une seule fois.
+    unsafe { scg_world_destroy(world) };
+}
+
+/// Un index au-delà de ce que la carte porte est une faute d'appel.
+#[test]
+fn refuse_un_index_au_dela_de_la_carte() {
+    let world = load(&peopled_world());
+    let mut light = ScgLight {
+        x: 0.0,
+        y: 0.0,
+        z: 0.0,
+        radius: 0.0,
+        r: 0,
+        g: 0,
+        b: 0,
+        _reserved: 0,
+    };
+    let mut id = 0;
+    let mut cell = 0;
+    let mut pose = [0.0f32; 7];
+    let mut len = usize::MAX;
+
+    // SAFETY: handle vivant, paramètres de sortie locaux.
+    unsafe {
+        assert_eq!(
+            scg_world_light(world, 1, &mut light),
+            SCG_ERR_INVALID_ARGUMENT
+        );
+        assert_eq!(
+            scg_world_entity_ids(world, 1, &mut id, &mut cell),
+            SCG_ERR_INVALID_ARGUMENT
+        );
+        assert_eq!(
+            scg_world_entity_pose(world, 1, pose.as_mut_ptr()),
+            SCG_ERR_INVALID_ARGUMENT
+        );
+        assert_eq!(
+            scg_world_entity_class(world, 1, ptr::null_mut(), 0, &mut len),
+            SCG_ERR_INVALID_ARGUMENT
+        );
+        assert_eq!(
+            scg_world_entity_data(world, 1, ptr::null_mut(), 0, &mut len),
+            SCG_ERR_INVALID_ARGUMENT
+        );
+        scg_world_destroy(world);
+    }
+    assert_eq!(len, usize::MAX, "rien n'est écrit sur un index refusé");
+}
+
+/// Un tampon d'octets plus court que les données est refusé sans rien écrire.
+#[test]
+fn refuse_un_tampon_de_donnees_trop_court() {
+    let world = load(&peopled_world());
+    let mut buf = [0xaau8; 4];
+    let mut len = usize::MAX;
+    // SAFETY: handle vivant, tampon local couvrant la capacité annoncée.
+    let code = unsafe { scg_world_entity_data(world, 0, buf.as_mut_ptr(), 1, &mut len) };
+    assert_eq!(code, SCG_ERR_INVALID_ARGUMENT);
+    assert_eq!(len, usize::MAX);
+    assert_eq!(buf, [0xaa; 4]);
+    // SAFETY: handle vivant, détruit une seule fois.
+    unsafe { scg_world_destroy(world) };
+}
+
+/// Les pointeurs nuls des accesseurs de lumières et d'entités sont refusés.
+#[test]
+fn refuse_les_pointeurs_nuls_des_accesseurs_peuples() {
+    let world = load(&peopled_world());
+    let mut id = 0;
+    let mut len = 0;
+    // SAFETY: handle vivant ; chaque pointeur nul est refusé avant lecture.
+    unsafe {
+        assert_eq!(scg_world_light(world, 0, ptr::null_mut()), SCG_ERR_NULL);
+        assert_eq!(
+            scg_world_entity_ids(world, 0, ptr::null_mut(), &mut id),
+            SCG_ERR_NULL
+        );
+        assert_eq!(
+            scg_world_entity_ids(world, 0, &mut id, ptr::null_mut()),
+            SCG_ERR_NULL
+        );
+        assert_eq!(
+            scg_world_entity_pose(world, 0, ptr::null_mut()),
+            SCG_ERR_NULL
+        );
+        assert_eq!(
+            scg_world_entity_class(world, 0, ptr::null_mut(), 0, ptr::null_mut()),
+            SCG_ERR_NULL
+        );
+        assert_eq!(
+            scg_world_entity_data(world, 0, ptr::null_mut(), 8, &mut len),
+            SCG_ERR_NULL
+        );
+        assert_eq!(scg_world_entity_count(ptr::null(), &mut id), SCG_ERR_NULL);
+        assert_eq!(scg_world_light_count(ptr::null(), &mut id), SCG_ERR_NULL);
+        scg_world_destroy(world);
+    }
 }
 
 /// Charge une carte, ou échoue en disant pourquoi.

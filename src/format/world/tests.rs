@@ -771,23 +771,326 @@ fn un_nom_de_materiau_invalide_est_refuse() {
     );
 }
 
-/// Les sections d'entités et de lumières sont des genres connus, et un fichier
-/// qui en porte n'est pas refusé.
-///
-/// Leur contenu arrive avec leurs accesseurs : ce qui compte ici est qu'un
-/// fichier complet ne devienne pas illisible entre deux lots.
-#[test]
-fn les_sections_d_entites_et_de_lumieres_sont_admises() {
-    let cell = cell_bytes(
+/// Une lumière statique : identifiant, position, rayon, couleur.
+fn light_bytes(id: u32, position: [f32; 3], radius: f32, color: [u8; 3]) -> Vec<u8> {
+    let mut bytes = words(&[id]);
+    bytes.extend_from_slice(&floats(&[position[0], position[1], position[2], radius]));
+    bytes.extend_from_slice(&color);
+    bytes.push(0);
+    bytes
+}
+
+/// Une entité, longueur-préfixée.
+fn entity_bytes(
+    id: u32,
+    cell: u32,
+    class: &str,
+    position: [f32; 3],
+    orientation: [f32; 4],
+    data: &[u8],
+) -> Vec<u8> {
+    let mut body = words(&[id, cell]);
+    body.extend_from_slice(&(class.len() as u16).to_le_bytes());
+    body.extend_from_slice(class.as_bytes());
+    body.extend_from_slice(&floats(&position));
+    body.extend_from_slice(&floats(&orientation));
+    body.extend_from_slice(&words(&[data.len() as u32]));
+    body.extend_from_slice(data);
+
+    let mut bytes = words(&[body.len() as u32]);
+    bytes.extend_from_slice(&body);
+    bytes
+}
+
+/// La cellule des cartes peuplées, celle où les entités se trouvent.
+fn one_cell() -> Vec<u8> {
+    cell_bytes(
         7,
         0,
         &SQUARE,
         &[surface_bytes(11, 0, 1, &[0, 1, 2, 3])],
         &[],
+    )
+}
+
+/// Une carte d'une cellule, une lumière et une entité.
+fn peopled() -> Vec<u8> {
+    file(
+        &one_cell(),
+        &entity_bytes(
+            31,
+            7,
+            "depart",
+            [1.0, 2.0, 3.0],
+            [0.0, 0.0, 0.0, 2.0],
+            &[0xDE, 0xAD],
+        ),
+        &light_bytes(41, [4.0, 5.0, 6.0], 8.0, [0xF0, 0x80, 0x40]),
+        &material(1, "mur"),
+    )
+}
+
+/// Une carte peuplée rend ses lumières et ses entités.
+#[test]
+fn une_carte_rend_ses_lumieres_et_ses_entites() {
+    let world = World::load(&peopled()).expect("carte valide");
+
+    assert_eq!(world.light_count(), 1);
+    let light = world.light(0).expect("la lumière existe");
+    assert_eq!(light.position, Vec3::new(4.0, 5.0, 6.0));
+    assert_eq!(light.radius, 8.0);
+    assert_eq!(light.color, Color::new(0xF0, 0x80, 0x40, 0xFF));
+    assert!(world.light(1).is_none());
+
+    assert_eq!(world.entity_count(), 1);
+    assert_eq!(world.entity_ids(0), Some((31, 7)));
+    assert_eq!(world.entity_class(0), Some("depart"));
+    assert_eq!(world.entity_data(0), Some(&[0xDE, 0xAD][..]));
+    assert!(world.entity_ids(1).is_none());
+}
+
+/// L'orientation d'une entité est normalisée au chargement.
+///
+/// Le fichier porte `(0, 0, 0, 2)`, qui n'est pas unitaire : laissée telle
+/// quelle, elle ferait tourner l'objet autrement selon l'échelle que l'éditeur a
+/// écrite.
+#[test]
+fn l_orientation_d_une_entite_est_normalisee() {
+    let world = World::load(&peopled()).expect("carte valide");
+    let (position, orientation) = world.entity_pose(0).expect("la pose existe");
+
+    assert_eq!(position, Vec3::new(1.0, 2.0, 3.0));
+    assert_eq!(orientation.w, 1.0);
+    assert_eq!(
+        (orientation.x, orientation.y, orientation.z),
+        (0.0, 0.0, 0.0)
     );
-    let bytes = file(&cell, &[1, 2, 3, 4], &[5, 6, 7, 8], &material(1, "mur"));
+}
+
+/// Une orientation nulle est refusée plutôt que redressée en silence.
+#[test]
+fn une_orientation_nulle_est_refusee() {
+    let bytes = file(
+        &one_cell(),
+        &entity_bytes(31, 7, "depart", [0.0; 3], [0.0; 4], &[]),
+        &[],
+        &material(1, "mur"),
+    );
+    assert_eq!(
+        World::load(&bytes).unwrap_err(),
+        refused(Malformation::Pose)
+    );
+}
+
+/// Une entité qui désigne une cellule inexistante est refusée.
+///
+/// Par identifiant et jamais par index : c'est ce qui permet à un éditeur de
+/// supprimer une cellule du milieu sans renuméroter le reste.
+#[test]
+fn une_entite_sans_cellule_est_refusee() {
+    for cell in [0, 8] {
+        let bytes = file(
+            &one_cell(),
+            &entity_bytes(31, cell, "depart", [0.0; 3], [0.0, 0.0, 0.0, 1.0], &[]),
+            &[],
+            &material(1, "mur"),
+        );
+        assert_eq!(
+            World::load(&bytes).unwrap_err(),
+            refused(Malformation::Index),
+            "cellule {cell}"
+        );
+    }
+}
+
+/// Un rayon de lumière nul, négatif ou non fini est refusé.
+#[test]
+fn un_rayon_de_lumiere_invalide_est_refuse() {
+    for radius in [0.0, -1.0] {
+        let bytes = file(
+            &one_cell(),
+            &[],
+            &light_bytes(41, [0.0; 3], radius, [0xFF; 3]),
+            &material(1, "mur"),
+        );
+        assert_eq!(
+            World::load(&bytes).unwrap_err(),
+            refused(Malformation::Light),
+            "rayon {radius}"
+        );
+    }
+
+    // Un rayon non fini est refusé plus tôt, par le curseur : aucun flottant du
+    // fichier n'a de non-fini légitime.
+    let bytes = file(
+        &one_cell(),
+        &[],
+        &light_bytes(41, [0.0; 3], f32::INFINITY, [0xFF; 3]),
+        &material(1, "mur"),
+    );
+    assert_eq!(
+        World::load(&bytes).unwrap_err(),
+        refused(Malformation::NonFinite)
+    );
+}
+
+/// L'octet réservé d'une lumière est nul, comme dans la structure de l'ABI.
+#[test]
+fn l_octet_reserve_d_une_lumiere_est_nul() {
+    let mut light = light_bytes(41, [0.0; 3], 1.0, [0xFF; 3]);
+    *light.last_mut().expect("l'octet réservé") = 1;
+    let bytes = file(&one_cell(), &[], &light, &material(1, "mur"));
+    assert_eq!(
+        World::load(&bytes).unwrap_err(),
+        refused(Malformation::Flags)
+    );
+}
+
+/// Deux lumières ou deux entités du même identifiant sont refusées.
+#[test]
+fn les_identifiants_de_lumiere_et_d_entite_sont_uniques() {
+    let mut lights = light_bytes(41, [0.0; 3], 1.0, [0xFF; 3]);
+    lights.extend_from_slice(&light_bytes(41, [1.0; 3], 2.0, [0xFF; 3]));
+    let bytes = file(&one_cell(), &[], &lights, &material(1, "mur"));
+    assert_eq!(
+        World::load(&bytes).unwrap_err(),
+        refused(Malformation::Identifier),
+        "deux lumières"
+    );
+
+    let mut entities = entity_bytes(31, 7, "a", [0.0; 3], [0.0, 0.0, 0.0, 1.0], &[]);
+    entities.extend_from_slice(&entity_bytes(
+        31,
+        7,
+        "b",
+        [0.0; 3],
+        [0.0, 0.0, 0.0, 1.0],
+        &[],
+    ));
+    let bytes = file(&one_cell(), &entities, &[], &material(1, "mur"));
+    assert_eq!(
+        World::load(&bytes).unwrap_err(),
+        refused(Malformation::Identifier),
+        "deux entités"
+    );
+}
+
+/// Une classe qui n'est pas de l'UTF-8 valide est refusée.
+#[test]
+fn une_classe_qui_n_est_pas_de_l_utf8_est_refusee() {
+    let mut body = words(&[31, 7]);
+    body.extend_from_slice(&2u16.to_le_bytes());
+    body.extend_from_slice(&[0xff, 0xfe]);
+    body.extend_from_slice(&floats(&[0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0]));
+    body.extend_from_slice(&words(&[0]));
+
+    let mut entity = words(&[body.len() as u32]);
+    entity.extend_from_slice(&body);
+    let bytes = file(&one_cell(), &entity, &[], &material(1, "mur"));
+    assert_eq!(
+        World::load(&bytes).unwrap_err(),
+        refused(Malformation::NonUtf8)
+    );
+}
+
+/// Une classe vide et des données vides sont légitimes.
+#[test]
+fn une_entite_sans_classe_ni_donnees_est_legitime() {
+    let bytes = file(
+        &one_cell(),
+        &entity_bytes(31, 7, "", [0.0; 3], [0.0, 0.0, 0.0, 1.0], &[]),
+        &[],
+        &material(1, "mur"),
+    );
     let world = World::load(&bytes).expect("carte valide");
+    assert_eq!(world.entity_class(0), Some(""));
+    assert_eq!(world.entity_data(0), Some(&[][..]));
+}
+
+/// Des octets laissés au bout d'un enregistrement d'entité sont refusés.
+#[test]
+fn des_octets_laisses_dans_une_entite_sont_refuses() {
+    let mut entity = entity_bytes(31, 7, "a", [0.0; 3], [0.0, 0.0, 0.0, 1.0], &[]);
+    let len = u32::from_le_bytes(entity[..4].try_into().expect("la longueur"));
+    entity[..4].copy_from_slice(&(len + 4).to_le_bytes());
+    entity.extend_from_slice(&[0, 0, 0, 0]);
+
+    let bytes = file(&one_cell(), &entity, &[], &material(1, "mur"));
+    assert_eq!(
+        World::load(&bytes).unwrap_err(),
+        refused(Malformation::Count)
+    );
+}
+
+/// Une longueur de données démesurée est refusée sans allouer dessus.
+#[test]
+fn une_longueur_de_donnees_demesuree_est_refusee() {
+    let mut body = words(&[31, 7]);
+    body.extend_from_slice(&1u16.to_le_bytes());
+    body.extend_from_slice(b"a");
+    body.extend_from_slice(&floats(&[0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0]));
+    body.extend_from_slice(&words(&[u32::MAX]));
+
+    let mut entity = words(&[body.len() as u32]);
+    entity.extend_from_slice(&body);
+    let bytes = file(&one_cell(), &entity, &[], &material(1, "mur"));
+    assert_eq!(
+        World::load(&bytes).unwrap_err(),
+        refused(Malformation::Truncated)
+    );
+}
+
+/// Une carte peuplée résiste à la troncature et aux mutations.
+///
+/// Le même filet que pour la géométrie, sur le fichier qui porte les quatre
+/// sections : c'est le seul qui les éprouve ensemble.
+#[test]
+fn une_carte_peuplee_resiste_aux_mutations() {
+    const SEED: u64 = 0x4c47_5453_2026_0925;
+    let original = peopled();
+    for len in 0..original.len() {
+        match World::load(&original[..len]) {
+            Ok(_) => panic!("tronqué à {len} octets, et accepté"),
+            Err(error) => assert!(
+                matches!(
+                    error,
+                    Error::InvalidFormat(_) | Error::UnsupportedFormatVersion
+                ),
+                "à {len} octets : {error:?}"
+            ),
+        }
+    }
+
+    let mut rng = Rng::new(SEED);
+    for round in 0..8192 {
+        let mut bytes = original.clone();
+        for _ in 0..2 {
+            let at = (rng.next() % bytes.len() as u64) as usize;
+            bytes[at] ^= (rng.next() % 255 + 1) as u8;
+        }
+        if let Err(error) = World::load(&bytes) {
+            assert!(
+                matches!(
+                    error,
+                    Error::InvalidFormat(_) | Error::UnsupportedFormatVersion
+                ),
+                "graine {SEED:#x}, tour {round} : {error:?}"
+            );
+        }
+    }
+}
+
+/// Une carte qui porte ses quatre sections se charge entière.
+///
+/// Le seul test qui les éprouve ensemble : les autres n'en peuplent qu'une à la
+/// fois, et une section qui n'aurait pas sa place dans la table ne se verrait
+/// nulle part ailleurs.
+#[test]
+fn les_sections_d_entites_et_de_lumieres_sont_admises() {
+    let world = World::load(&peopled()).expect("carte valide");
     assert_eq!(world.triangle_count(), 2);
+    assert_eq!(world.light_count(), 1);
+    assert_eq!(world.entity_count(), 1);
 }
 
 /// Une section de genre inconnu refuse toujours le fichier.
