@@ -278,6 +278,11 @@ et un cycle de retour lent depuis un poste Windows.
      travers la couche JNI et l'ART, sur un tampon direct dont la base est
      décalée d'un octet.
 
+  **Le maillage est poussé sur l'appareil** avec les bibliothèques, et chaque
+  palier reçoit son chemin : les deux premiers le lisent depuis le dépôt, les
+  autres depuis `/data/local/tmp`. C'est le seul fichier que ces hôtes ouvrent,
+  et c'est ce qui éprouve le chargement d'une ressource à travers le pont JNI.
+
   L'APK n'est pas lancé par le test, mais construit par lui.
 - **`hosts/android/Dockerfile`** fournit tout cela sous Linux avec KVM : chaîne
   Rust, NDK, SDK, émulateur x86_64 et `qemu-user`. L'image se nomme
@@ -341,6 +346,14 @@ Dans l'ordre où les causes se rencontrent :
 - **Le header est en LF**, déclaré dans `.gitattributes` : une conversion en CRLF
   sur un clone Windows ferait échouer `make header-verif` sans qu'une ligne de
   code ait bougé.
+- **`hosts/caisse.mesh` suit le même modèle**, pour les données : un maillage
+  versionné que les quatre hôtes chargent, engendré par la conformance et
+  réécrit par **`make mesh`**. Un test de la conformance le compare octet pour
+  octet à ce que le générateur écrit, si bien qu'un fichier périmé échoue là,
+  franchement, au lieu de faire diverger quatre empreintes sans dire pourquoi.
+  Il est déclaré binaire dans `.gitattributes`. Aucun hôte ne réécrit sa
+  disposition : leur faire poser ces octets dans quatre langages serait la même
+  liste à quatre endroits.
 - **Sa documentation est en anglais.** Ce qu'un auteur de liaison ne peut pas
   ignorer y figure, fonction par fonction.
 

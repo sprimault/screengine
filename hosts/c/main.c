@@ -940,10 +940,165 @@ static uint64_t render_lit(int *ok, uint32_t overbright)
     return hash;
 }
 
-/* Toutes les vérifications, puis les empreintes sur la sortie standard, une
- * par ligne et dans l'ordre que le Makefile attend. */
-int main(void)
+/* La matrice qui place la caisse, recopiée de la suite de conformance,
+ * coefficient pour coefficient.
+ *
+ * Elle y est écrite en littéraux pour cette raison précise : les tables
+ * trigonométriques du moteur ne traversent pas l'ABI, et un hôte qui
+ * recalculerait ces valeurs avec sa propre bibliothèque mathématique
+ * n'obtiendrait pas les mêmes bits, donc pas la même empreinte. */
+static const ScgMat4 CRATE_MODEL = {
+    {  0.64f,  0.48f, 0.6f, 0.0f,
+      -0.6f,   0.8f,  0.0f, 0.0f,
+      -0.48f, -0.36f, 0.8f, 0.0f,
+       5.0f,   0.0f,  0.0f, 1.0f }
+};
+
+/* Lit un fichier entier dans un tampon alloué, ou rend NULL.
+ *
+ * L'hôte lit les fichiers, jamais le moteur : c'est toute la raison pour
+ * laquelle le chargement prend un bloc d'octets et pas un chemin. */
+static uint8_t *read_file(const char *path, size_t *len)
 {
+    FILE *file = fopen(path, "rb");
+    if (file == NULL) {
+        return NULL;
+    }
+    if (fseek(file, 0, SEEK_END) != 0) {
+        fclose(file);
+        return NULL;
+    }
+    long size = ftell(file);
+    if (size < 0 || fseek(file, 0, SEEK_SET) != 0) {
+        fclose(file);
+        return NULL;
+    }
+    uint8_t *bytes = malloc((size_t)size);
+    if (bytes == NULL) {
+        fclose(file);
+        return NULL;
+    }
+    size_t read = fread(bytes, 1, (size_t)size, file);
+    fclose(file);
+    if (read != (size_t)size) {
+        free(bytes);
+        return NULL;
+    }
+    *len = read;
+    return bytes;
+}
+
+/* La caisse du fichier de maillage, rendue avec le damier sur ses faces
+ * latérales et rien sur ses deux autres.
+ *
+ * C'est le seul chemin de cet hôte qui lise un fichier, et c'est l'objet du
+ * contrôle : que le bloc d'octets versionné traverse la frontière et rende la
+ * même image qu'au chemin Rust. Les comptes et les noms se vérifient au
+ * passage, parce qu'un décodeur qui les rendrait faux rendrait quand même une
+ * image — une autre. */
+static uint64_t render_mesh(int *ok, const char *path)
+{
+    ScgContextConfig config = scene_config();
+    ScgContext *ctx = NULL;
+    ScgMesh *mesh = NULL;
+    ScgTexture *sides = NULL;
+    uint8_t *pixels = malloc((size_t)STRIDE * HEIGHT * 4);
+    uint8_t *texels = malloc((size_t)FLOOR_SIDE * FLOOR_SIDE * 4);
+    size_t len = 0;
+    uint8_t *bytes = read_file(path, &len);
+    uint64_t hash = 0;
+
+    *ok = 0;
+    if (pixels == NULL || texels == NULL || bytes == NULL) {
+        check(0, "lecture du fichier de maillage et allocation des tampons");
+        free(pixels);
+        free(texels);
+        free(bytes);
+        return 0;
+    }
+    make_checker(texels);
+
+    int32_t loaded = scg_mesh_load(bytes, len, &mesh);
+    check(loaded == SCG_OK, "le fichier de maillage se charge");
+    /* Le bloc est libéré avant toute soumission : le moteur copie ce qu'il
+     * garde, et un hôte qui devrait le conserver l'apprendrait ici. */
+    free(bytes);
+    bytes = NULL;
+
+    ScgTextureDesc desc;
+    memset(&desc, 0, sizeof desc);
+    desc.width = FLOOR_SIDE;
+    desc.height = FLOOR_SIDE;
+    desc.format = SCG_TEXTURE_FORMAT_RGBA8;
+    int32_t textured = scg_texture_load(&desc, texels, (size_t)FLOOR_SIDE * FLOOR_SIDE * 4, &sides);
+    check(textured == SCG_OK, "le damier des faces se charge");
+
+    check(scg_create(&config, &ctx) == SCG_OK, "création du contexte du maillage");
+
+    if (loaded == SCG_OK && textured == SCG_OK && ctx != NULL) {
+        uint32_t triangles = 0;
+        uint32_t slots = 0;
+        check(scg_mesh_triangle_count(mesh, &triangles) == SCG_OK && triangles == 12,
+              "le maillage porte douze triangles");
+        check(scg_mesh_texture_count(mesh, &slots) == SCG_OK && slots == 2,
+              "le maillage reclame deux emplacements");
+
+        /* Le nom en deux temps : mesure, puis remplissage. Un hôte qui
+         * devinerait la longueur se tromperait le jour où elle change. */
+        size_t needed = 0;
+        char name[32];
+        int32_t measured = scg_mesh_texture_name(mesh, 0, NULL, 0, &needed);
+        check(measured == SCG_OK && needed == 4, "la mesure du nom rend sa longueur");
+        if (measured == SCG_OK && needed + 1 <= sizeof name) {
+            check(scg_mesh_texture_name(mesh, 0, name, sizeof name, &needed) == SCG_OK
+                      && strcmp(name, "cote") == 0,
+                  "le premier emplacement s'appelle cote");
+        }
+        check(scg_mesh_texture_name(mesh, slots, NULL, 0, &needed) == SCG_ERR_INVALID_ARGUMENT,
+              "un emplacement au-dela du dernier est refuse");
+
+        const ScgTexture *bound[2] = { sides, NULL };
+        check(scg_submit_mesh(ctx, &CRATE_MODEL, mesh, bound, 1) == SCG_ERR_INVALID_ARGUMENT,
+              "un compte d'emplacements faux est refuse");
+
+        int32_t code = scg_submit_mesh(ctx, &CRATE_MODEL, mesh, bound, 2);
+        check(code == SCG_OK, "la caisse est acceptee");
+
+        /* Détruit avant le rendu : plus rien ne lit un maillage une fois la
+         * soumission revenue — ce qui n'est pas la raison qui protège une
+         * texture, et le header le dit. */
+        scg_mesh_destroy(mesh);
+        mesh = NULL;
+        scg_texture_destroy(sides);
+        sides = NULL;
+
+        code = scg_frame_end(ctx, pixels, STRIDE);
+        check(code == SCG_OK, "l'image de la caisse se rend");
+        *ok = code == SCG_OK;
+        hash = fingerprint(pixels, WIDTH, HEIGHT, STRIDE);
+    }
+
+    scg_mesh_destroy(mesh);
+    scg_texture_destroy(sides);
+    scg_destroy(ctx);
+    free(pixels);
+    free(texels);
+    return hash;
+}
+
+/* Toutes les vérifications, puis les empreintes sur la sortie standard, une
+ * par ligne et dans l'ordre que le Makefile attend.
+ *
+ * `argv[1]` est le chemin du fichier de maillage : l'hôte lit les fichiers, le
+ * moteur jamais, et le chemin vient du Makefile plutôt que d'être écrit ici —
+ * un hôte lancé depuis un autre répertoire ne le trouverait pas. */
+int main(int argc, char **argv)
+{
+    if (argc != 2) {
+        fprintf(stderr, "usage : %s <fichier de maillage>\n", argv[0]);
+        return 2;
+    }
+
     check(scg_abi_version() == SCG_ABI_VERSION, "la bibliothèque liée est celle du header");
 
     check_refusals();
@@ -985,8 +1140,11 @@ int main(void)
     int lights_ok = 0;
     uint64_t lights = render_lights(&lights_ok);
 
+    int mesh_ok = 0;
+    uint64_t mesh = render_mesh(&mesh_ok, argv[1]);
+
     if (failures > 0 || !ok || !textured_ok || !bilinear_ok || !graded_ok || !lit_ok
-        || !overbright_ok || !fog_ok || !lights_ok) {
+        || !overbright_ok || !fog_ok || !lights_ok || !mesh_ok) {
         fprintf(stderr, "%d vérification(s) en échec\n", failures);
         return 1;
     }
@@ -998,5 +1156,6 @@ int main(void)
     printf("%016llx\n", (unsigned long long)overbright);
     printf("%016llx\n", (unsigned long long)fog);
     printf("%016llx\n", (unsigned long long)lights);
+    printf("%016llx\n", (unsigned long long)mesh);
     return 0;
 }

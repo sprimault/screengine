@@ -1082,11 +1082,128 @@ function checkTiles(engine, expected) {
   engine.free(pixels, len);
 }
 
+/**
+ * La matrice qui place la caisse, recopiée de la suite de conformance.
+ *
+ * Elle y est écrite en littéraux pour cette raison : les tables
+ * trigonométriques du moteur ne traversent pas l'ABI, et un hôte qui
+ * recalculerait ces coefficients n'obtiendrait pas les mêmes bits.
+ */
+const CRATE_MODEL = [
+  0.64, 0.48, 0.6, 0,
+  -0.6, 0.8, 0, 0,
+  -0.48, -0.36, 0.8, 0,
+  5, 0, 0, 1,
+];
+
+/**
+ * Rend la caisse du fichier de maillage, ou `null` en cas d'échec.
+ *
+ * Le bloc d'octets passe par `scg_buffer_alloc` comme tout ce qui entre dans le
+ * moteur sur wasm : l'hôte ne peut pas lui donner un pointeur arbitraire, et
+ * c'est la précondition que cette scène éprouve en plus des autres.
+ *
+ * @param {scg.Screengine} engine
+ * @param {Uint8Array} meshBytes le fichier versionné, lu par l'appelant
+ * @returns {bigint | null}
+ */
+function renderMesh(engine, meshBytes) {
+  const e = engine.exports;
+  const out = engine.alloc(4);
+  const block = engine.alloc(meshBytes.length);
+  engine.bytes().set(meshBytes, block);
+
+  const loaded = e.scg_mesh_load(block, meshBytes.length, out);
+  check(loaded === scg.SCG_OK, "le fichier de maillage se charge");
+  if (loaded !== scg.SCG_OK) {
+    return null;
+  }
+  const mesh = engine.readU32(out);
+  // Le bloc est libéré avant toute soumission : le moteur copie ce qu'il garde.
+  engine.free(block, meshBytes.length);
+
+  check(
+    e.scg_mesh_triangle_count(mesh, out) === scg.SCG_OK && engine.readU32(out) === 12,
+    "le maillage porte douze triangles",
+  );
+  check(
+    e.scg_mesh_texture_count(mesh, out) === scg.SCG_OK && engine.readU32(out) === 2,
+    "le maillage réclame deux emplacements",
+  );
+
+  // Le nom en deux temps, et la mesure est le seul chemin vers la longueur :
+  // un tampon trop court est refusé sans rien écrire.
+  const lenOut = engine.alloc(4);
+  check(
+    e.scg_mesh_texture_name(mesh, 0, 0, 0, lenOut) === scg.SCG_OK && engine.readU32(lenOut) === 4,
+    "la mesure du nom rend sa longueur",
+  );
+  const nameLen = engine.readU32(lenOut);
+  const nameBuf = engine.alloc(nameLen + 1);
+  check(
+    e.scg_mesh_texture_name(mesh, 0, nameBuf, 1, lenOut) === scg.SCG_ERR_INVALID_ARGUMENT,
+    "un tampon trop court est refusé",
+  );
+  check(
+    e.scg_mesh_texture_name(mesh, 0, nameBuf, nameLen + 1, lenOut) === scg.SCG_OK,
+    "le nom se lit",
+  );
+  const name = new TextDecoder().decode(engine.bytes().subarray(nameBuf, nameBuf + nameLen));
+  check(name === "cote", `le premier emplacement s'appelle cote, et non ${name}`);
+
+  const texels = makeChecker();
+  const desc = engine.alloc(scg.TEXTURE_DESC_SIZE);
+  const texelBlock = engine.alloc(texels.length);
+  engine.writeTextureDesc(desc, FLOOR_SIDE, FLOOR_SIDE);
+  engine.bytes().set(texels, texelBlock);
+  check(
+    e.scg_texture_load(desc, texelBlock, texels.length, out) === scg.SCG_OK,
+    "le damier des faces se charge",
+  );
+  const texture = engine.readU32(out);
+
+  const config = engine.alloc(scg.CONFIG_SIZE);
+  engine.writeConfig(config, sceneConfig());
+  if (e.scg_create(config, out) !== scg.SCG_OK) {
+    check(false, "création du contexte du maillage");
+    return null;
+  }
+  const ctx = engine.readU32(out);
+
+  // Le tableau d'emplacements : deux pointeurs, le second nul — « sans
+  // texture », et les couleurs du fichier décident.
+  const slots = engine.alloc(8);
+  const view = new DataView(engine.memory.buffer, slots, 8);
+  view.setUint32(0, texture, true);
+  view.setUint32(4, 0, true);
+
+  const model = engine.alloc(scg.MAT4_SIZE);
+  engine.writeMat4(model, CRATE_MODEL);
+  check(
+    e.scg_submit_mesh(ctx, model, mesh, slots, 1) === scg.SCG_ERR_INVALID_ARGUMENT,
+    "un compte d'emplacements faux est refusé",
+  );
+  check(e.scg_submit_mesh(ctx, model, mesh, slots, 2) === scg.SCG_OK, "la caisse est acceptée");
+
+  e.scg_mesh_destroy(mesh);
+  e.scg_texture_destroy(texture);
+
+  const pixels = engine.alloc(STRIDE * HEIGHT * scg.BYTES_PER_PIXEL);
+  const code = e.scg_frame_end(ctx, pixels, STRIDE);
+  check(code === scg.SCG_OK, "l'image de la caisse se rend");
+  const hash = code === scg.SCG_OK
+    ? engine.fingerprint(pixels, WIDTH, HEIGHT, STRIDE)
+    : null;
+
+  e.scg_destroy(ctx);
+  return hash;
+}
+
 /** Toutes les vérifications, puis l'empreinte sur la sortie standard. */
 async function main() {
-  const [wasmPath, headerPath] = process.argv.slice(2);
-  if (!wasmPath || !headerPath) {
-    process.stderr.write("usage : node test.js <module.wasm> <screengine.h>\n");
+  const [wasmPath, headerPath, meshPath] = process.argv.slice(2);
+  if (!wasmPath || !headerPath || !meshPath) {
+    process.stderr.write("usage : node test.js <module.wasm> <screengine.h> <caisse.mesh>\n");
     return 2;
   }
 
@@ -1118,6 +1235,7 @@ async function main() {
   const overbright = renderLit(engine, 2);
   const fog = renderFog(engine);
   const lights = renderLights(engine);
+  const mesh = renderMesh(engine, new Uint8Array(await readFile(meshPath)));
   if (
     failures > 0 ||
     textured === null ||
@@ -1126,14 +1244,15 @@ async function main() {
     lit === null ||
     overbright === null ||
     fog === null ||
-    lights === null
+    lights === null ||
+    mesh === null
   ) {
     process.stderr.write(`${failures} vérification(s) en échec\n`);
     return 1;
   }
 
   process.stdout.write(
-    `${hash}\n${textured}\n${bilinear}\n${graded}\n${lit}\n${overbright}\n${fog}\n${lights}\n`,
+    `${hash}\n${textured}\n${bilinear}\n${graded}\n${lit}\n${overbright}\n${fog}\n${lights}\n${mesh}\n`,
   );
   return 0;
 }

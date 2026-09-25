@@ -16,7 +16,6 @@
 //! `--print` rend une scène et écrit son empreinte, sans rien comparer : c'est
 //! le chemin Rust natif auquel les hôtes comparent la leur.
 
-mod crate_file;
 mod hash;
 
 use std::path::{Path, PathBuf};
@@ -29,6 +28,7 @@ use screengine::{
     Affine3, Angle, BYTES_PER_PIXEL, Color, Config, Context, Filter, Frame, Light, MAX_OVERBRIGHT,
     Mesh, Quat, Rect, Rows, Texture, Triangle, Vec3, VertexUv, VertexUv2,
 };
+use screengine_conformance::mesh_file;
 
 /// Une façon de rendre une scène qui ne doit pas changer l'image.
 ///
@@ -210,6 +210,12 @@ enum Mode {
     /// vu l'image, c'est graver un fond noir ou un mur retourné et s'en
     /// apercevoir à l'étape qui s'en sert.
     Dump(PathBuf),
+    /// Écrit le fichier de maillage que les hôtes chargent.
+    ///
+    /// Le pendant de `make header` : le fichier versionné n'est jamais la
+    /// source de vérité, un test le compare à ce qu'écrit ce mode, et un
+    /// fichier périmé échoue franchement.
+    Mesh(PathBuf),
 }
 
 /// Les scènes que la suite sait rendre.
@@ -391,8 +397,31 @@ enum Scene {
     /// **La rotation n'est pas décorative** : trois faces sont visibles à la
     /// fois, si bien qu'une matrice de modèle ignorée, ou appliquée après la
     /// vue, ne rendrait pas cette image.
-    Crate,
+    MeshFile,
 }
+
+/// La matrice qui place la caisse : deux rotations composées, puis cinq unités
+/// devant la caméra.
+///
+/// **Écrite en douze littéraux et non tirée d'un quaternion**, et c'est la
+/// contrainte des hôtes qui le décide : les tables trigonométriques du noyau ne
+/// traversent pas l'ABI, si bien qu'un hôte qui recalculerait ces coefficients
+/// avec sa bibliothèque mathématique n'obtiendrait pas les mêmes bits — donc
+/// pas la même empreinte. Écrits, ils se recopient dans les quatre langages
+/// comme les sommets et les teintes des autres scènes.
+///
+/// Les valeurs sortent de deux rotations de triangle 3-4-5, autour de Z puis de
+/// Y : la matrice est orthonormale exactement, et chaque coefficient a une
+/// écriture décimale courte que les quatre langages convertissent en les mêmes
+/// bits. Par colonnes, comme [`Affine3`].
+const CRATE_MODEL: Affine3 = Affine3 {
+    m: [
+        0.64, 0.48, 0.6, //
+        -0.6, 0.8, 0.0, //
+        -0.48, -0.36, 0.8, //
+        5.0, 0.0, 0.0,
+    ],
+};
 
 /// Un damier de `side` texels de côté, ses cases de `cell`.
 ///
@@ -634,7 +663,7 @@ impl Scene {
         Self::LitDynamic,
         Self::Fog,
         Self::Lights,
-        Self::Crate,
+        Self::MeshFile,
     ];
 
     /// La passe que `--print` utilise, celle des hôtes.
@@ -675,7 +704,7 @@ impl Scene {
             Self::LitDynamic => "lumiere-dynamique",
             Self::Fog => "brouillard",
             Self::Lights => "lumieres",
-            Self::Crate => "maillage",
+            Self::MeshFile => "maillage",
         }
     }
 
@@ -1058,24 +1087,19 @@ impl Scene {
             // L'emplacement des faces latérales reçoit le damier ; celui du
             // dessus et du dessous ne reçoit rien, et ses triangles sortent à
             // leur couleur.
-            Self::Crate => {
-                let mesh = Mesh::load(&crate_file::crate_mesh())
+            Self::MeshFile => {
+                // Les octets viennent du générateur et non du fichier
+                // versionné : le chemin Rust reste indépendant du système de
+                // fichiers, et c'est un test qui répond de ce que le fichier
+                // porte. Les hôtes, eux, lisent le fichier — c'est ce qui rend
+                // leur empreinte comparable à celle-ci.
+                let mesh = Mesh::load(&mesh_file::bytes())
                     .unwrap_or_else(|_| unreachable!("le fichier de la caisse est bien formé"));
-                let degrees = |d: f32| Angle::from_radians(d * core::f32::consts::PI / 180.0);
-                let tilt = Quat::from_axis_angle(Vec3::new(0.0, 1.0, 0.0), degrees(-24.0));
-                let turn = Quat::from_axis_angle(Vec3::new(0.0, 0.0, 1.0), degrees(34.0));
                 let sides = checker(64, 8);
-                context.submit_mesh(
-                    Affine3::from_rotation_translation(
-                        turn.product(tilt),
-                        Vec3::new(5.0, 0.0, 0.0),
-                    ),
-                    &mesh,
-                    |slot| match slot {
-                        0 => Some(&sides),
-                        _ => None,
-                    },
-                )
+                context.submit_mesh(CRATE_MODEL, &mesh, |slot| match slot {
+                    0 => Some(&sides),
+                    _ => None,
+                })
             }
         }
     }
@@ -1327,8 +1351,8 @@ fn dump(scene: Scene, dir: &Path) -> Result<String, String> {
 /// place de l'appelant : réécrire des références par défaut effacerait une
 /// régression au lieu de la signaler.
 fn parse_mode(args: &[String]) -> Result<Mode, String> {
-    let usage =
-        "usage : screengine-conformance --check | --update | --print <scène> | --dump <répertoire>";
+    let usage = "usage : screengine-conformance --check | --update | --print <scène> | \
+                 --dump <répertoire> | --mesh <fichier>";
     match args {
         [only] if only == "--check" => Ok(Mode::Check),
         [only] if only == "--update" => Ok(Mode::Update),
@@ -1336,6 +1360,7 @@ fn parse_mode(args: &[String]) -> Result<Mode, String> {
             .map(Mode::Print)
             .ok_or_else(|| format!("scène inconnue : {name}")),
         [dump, dir] if dump == "--dump" => Ok(Mode::Dump(PathBuf::from(dir))),
+        [mesh, path] if mesh == "--mesh" => Ok(Mode::Mesh(PathBuf::from(path))),
         _ => Err(usage.to_string()),
     }
 }
@@ -1359,6 +1384,18 @@ fn main() -> ExitCode {
         Mode::Dump(into) => {
             dir = into;
             dump
+        }
+        Mode::Mesh(path) => {
+            return match fs::write(&path, mesh_file::bytes()) {
+                Ok(()) => {
+                    println!("{} écrit", path.display());
+                    ExitCode::SUCCESS
+                }
+                Err(error) => {
+                    eprintln!("{} : {error}", path.display());
+                    ExitCode::FAILURE
+                }
+            };
         }
         Mode::Print(scene) => {
             // L'empreinte de la première vue, et non celle de la scène : un

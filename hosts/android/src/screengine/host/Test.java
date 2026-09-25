@@ -707,9 +707,88 @@ public final class Test {
     }
 
     /**
+     * La matrice qui place la caisse, recopiée de la suite de conformance.
+     *
+     * <p>Elle y est écrite en littéraux : les tables trigonométriques du moteur
+     * ne traversent pas l'ABI, et un hôte qui recalculerait ces coefficients
+     * n'obtiendrait pas les mêmes bits, donc pas la même empreinte.
+     */
+    private static final float[] CRATE_MODEL = {
+        0.64f, 0.48f, 0.6f, 0f,
+        -0.6f, 0.8f, 0f, 0f,
+        -0.48f, -0.36f, 0.8f, 0f,
+        5f, 0f, 0f, 1f,
+    };
+
+    /**
+     * Rend la caisse du fichier de maillage, ou {@code null} si le rendu a
+     * échoué.
+     *
+     * <p>Le seul chemin de cet hôte qui lise un fichier, et le seul où le pont
+     * JNI porte un bloc d'octets vers une ressource. Les comptes et les noms se
+     * vérifient au passage : un décodeur qui les rendrait faux rendrait quand
+     * même une image, une autre.
+     *
+     * @param path le fichier de maillage, poussé à côté des bibliothèques
+     * @return l'empreinte
+     */
+    private static String renderMesh(String path) {
+        byte[] bytes;
+        try {
+            bytes = java.nio.file.Files.readAllBytes(java.nio.file.Paths.get(path));
+        } catch (java.io.IOException error) {
+            check(false, "le fichier de maillage se lit : " + error);
+            return null;
+        }
+
+        long mesh = Screengine.meshLoad(bytes);
+        check(mesh != 0, "le fichier de maillage se charge");
+        if (mesh == 0) {
+            return null;
+        }
+        check(Screengine.meshTriangleCount(mesh) == 12, "le maillage porte douze triangles");
+        check(Screengine.meshTextureCount(mesh) == 2, "le maillage réclame deux emplacements");
+        check("cote".equals(Screengine.meshTextureName(mesh, 0)),
+                "le premier emplacement s'appelle cote");
+        check("chapeau".equals(Screengine.meshTextureName(mesh, 1)),
+                "le second emplacement s'appelle chapeau");
+        check(Screengine.meshTextureName(mesh, 2) == null,
+                "un emplacement au-delà du dernier ne rend rien");
+
+        long texture = Screengine.textureLoad(FLOOR_SIDE, FLOOR_SIDE, makeChecker());
+        check(texture != 0, "le damier des faces se charge");
+
+        long[] out = {0};
+        if (texture == 0 || Screengine.create(sceneConfig(), out) != Screengine.OK) {
+            check(false, "création du contexte du maillage");
+            Screengine.meshDestroy(mesh);
+            return null;
+        }
+
+        // Zéro vaut « sans texture » : les couleurs du fichier décident alors.
+        long[] slots = {texture, 0};
+        check(Screengine.submitMesh(out[0], CRATE_MODEL, mesh, new long[] {texture})
+                == Screengine.ERR_INVALID_ARGUMENT, "un compte d'emplacements faux est refusé");
+        check(Screengine.submitMesh(out[0], CRATE_MODEL, mesh, slots) == Screengine.OK,
+                "la caisse est acceptée");
+
+        Screengine.meshDestroy(mesh);
+        Screengine.textureDestroy(texture);
+
+        int body = STRIDE * HEIGHT * Screengine.BYTES_PER_PIXEL;
+        ByteBuffer block = ByteBuffer.allocateDirect(body);
+        int code = Screengine.frameEnd(out[0], block, 0, STRIDE);
+        check(code == Screengine.OK, "l'image de la caisse se rend");
+
+        String hash = fingerprint(block, 0, STRIDE);
+        Screengine.destroy(out[0]);
+        return code == Screengine.OK ? hash : null;
+    }
+
+    /**
      * Toutes les vérifications, puis l'empreinte sur la sortie standard.
      *
-     * @param args le répertoire des bibliothèques
+     * @param args le répertoire des bibliothèques, qui porte aussi le maillage
      */
     public static void main(String[] args) {
         if (args.length != 1) {
@@ -734,10 +813,11 @@ public final class Test {
         String overbright = renderLit(2);
         String fog = renderFog();
         String lights = renderLights();
+        String mesh = renderMesh(args[0] + "/caisse.mesh");
 
         if (failures > 0 || hash == null || textured == null || bilinear == null
                 || graded == null || lit == null || overbright == null || fog == null
-                || lights == null) {
+                || lights == null || mesh == null) {
             System.err.println(failures + " vérification(s) en échec");
             System.exit(1);
         }
@@ -749,6 +829,7 @@ public final class Test {
         System.out.println(overbright);
         System.out.println(fog);
         System.out.println(lights);
+        System.out.println(mesh);
         System.exit(0);
     }
 }

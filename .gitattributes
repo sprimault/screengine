@@ -30,6 +30,10 @@ Makefile text eol=lf
 # `text=auto` ferait dépendre le contrôle d'une détection au lieu d'une
 # déclaration.
 crates/screengine-conformance/references/* binary
+# Le maillage que les quatre hôtes chargent, comparé octet pour octet à ce que
+# la conformance réengendre : une conversion le ferait diverger sans qu'une
+# ligne de code ait bougé, exactement comme pour le header.
+*.mesh binary
 *.png binary
 *.webp binary
 *.bin binary

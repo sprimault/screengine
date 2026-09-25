@@ -58,7 +58,7 @@ android_build = for cible in $(CIBLES_ANDROID); do \
 
 .PHONY: build lib lib-wasm lib-android run example web test native-libs fmt fmt-fix lint lint-doc-tests \
         lint-android-versions nostd msrv bench \
-        conform conform-update conform-images header header-verif audit deny doc hosts host-c host-cpp host-web \
+        conform conform-update conform-images mesh header header-verif audit deny doc hosts host-c host-cpp host-web \
         host-android clean tools
 
 build:
@@ -161,7 +161,8 @@ HOST_OUT = $(abspath $(SORTIE))/host-$(host_dir_$*)
 #
 # Une scène ajoutée ici est une scène à écrire dans les quatre hôtes, et c'est
 # voulu : c'est ce qui rend leur comparaison possible.
-HOST_SCENES := arete texture texture-bilineaire gamma lumiere lumiere-surbrillance brouillard lumieres
+#   maillage              la caisse chargée depuis hosts/caisse.mesh
+HOST_SCENES := arete texture texture-bilineaire gamma lumiere lumiere-surbrillance brouillard lumieres maillage
 
 # Sans l'outillage de l'hôte, la cible saute et dit pourquoi. En intégration
 # continue (CI défini), le même saut est une erreur : un contrôle qui ne tourne
@@ -319,6 +320,14 @@ conform-update:
 # référence nouvelle ou de la mettre à jour, on regarde.
 conform-images:
 	cargo run -p screengine-conformance --release -- --dump $(SORTIE)/conformance-images
+
+# Réécrit le maillage que les quatre hôtes chargent. Le pendant de `make
+# header` : le fichier versionné n'est jamais la source de vérité, et c'est un
+# test de la conformance — donc `make test` — qui le compare octet pour octet à
+# ce que ce mode écrit. Un fichier périmé échoue là, franchement, plutôt que de
+# faire diverger quatre empreintes sans dire pourquoi.
+mesh:
+	cargo run -p screengine-conformance --release -- --mesh hosts/caisse.mesh
 
 # Le header est généré et versionné : généré parce qu'écrit à la main il
 # divergerait des signatures, versionné parce qu'un intégrateur doit pouvoir le

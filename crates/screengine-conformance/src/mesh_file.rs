@@ -1,14 +1,20 @@
 // Copyright 2026 Stéphane Primault <sprimault@users.noreply.github.com>
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
-//! Le fichier de maillage que la scène chargée rend.
+//! Le fichier de maillage que la scène chargée rend, et que les quatre hôtes
+//! chargent.
 //!
 //! **La disposition est écrite ici à la main**, octet par octet, comme elle
-//! l'est dans les tests du noyau et dans ceux de la frontière. Les trois
-//! écritures sont voulues et ne se factorisent pas : elles vivent dans trois
-//! crates, et un constructeur commun ferait éprouver le décodeur, la frontière
-//! et le rendu avec les octets d'un seul écrivain — ce qui prouverait qu'ils
-//! s'accordent, jamais que l'un d'eux est juste.
+//! l'est dans les tests du noyau et dans ceux de la frontière. Ces écritures
+//! sont voulues et ne se factorisent pas : elles vivent dans des crates qui ne
+//! se voient pas, et un constructeur commun ferait éprouver le décodeur, la
+//! frontière et le rendu avec les octets d'un seul écrivain — ce qui prouverait
+//! qu'ils s'accordent, jamais que l'un d'eux est juste.
+//!
+//! **Les hôtes, eux, ne réécrivent pas la disposition** : ils lisent le fichier
+//! versionné que ce module engendre. Leur faire écrire ces octets dans quatre
+//! langages serait la même liste à quatre endroits, et ce qu'une liste recopiée
+//! coûte quand elle diverge est connu du projet.
 //!
 //! Ce que le fichier porte est fixé par `docs/rust.md`, section « Formats de
 //! fichier ».
@@ -21,7 +27,7 @@ const HALF: f32 = 1.0;
 /// Les coordonnées d'une face vont de zéro à cette valeur : le damier s'y
 /// applique une fois par face, sans répétition, ce qui rend un décalage d'un
 /// texel visible sur l'arête plutôt que noyé dans une redite.
-pub const SIDE_TEXELS: f32 = 64.0;
+const SIDE_TEXELS: f32 = 64.0;
 
 /// L'identifiant du groupe des faces latérales, tel que l'éditeur l'aurait
 /// attribué.
@@ -118,7 +124,7 @@ fn corners(face: &Face) -> [([f32; 3], (f32, f32)); 4] {
 /// zéro ; le dessus et le dessous forment le second et réclament le premier
 /// emplacement, auquel la scène ne lie aucune texture — c'est ainsi qu'un groupe
 /// se dessine à la couleur de ses triangles.
-pub fn crate_mesh() -> Vec<u8> {
+pub fn bytes() -> Vec<u8> {
     let faces: Vec<&Face> = SIDES.iter().chain(CAPS.iter()).collect();
 
     let mut vertices = Vec::new();

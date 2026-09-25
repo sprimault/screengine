@@ -259,6 +259,131 @@ static void texture_destroy(JNIEnv *env, jclass cls, jlong texture)
  * scg_submit_textured : mêmes tableaux que `submit`, les sommets portant cinq
  * `float` au lieu de trois.
  */
+/*
+ * scg_mesh_load, le bloc recopié depuis le tableau Java.
+ *
+ * Le fichier vient du système de fichiers de l'appareil, lu côté Java : le
+ * moteur n'ouvre rien, et c'est ce que ce chemin éprouve à travers le pont.
+ */
+static jlong mesh_load(JNIEnv *env, jclass cls, jbyteArray bytes)
+{
+    (void)cls;
+    if (bytes == NULL) {
+        return 0;
+    }
+
+    jsize len = (*env)->GetArrayLength(env, bytes);
+    uint8_t *block = calloc(len ? (size_t)len : 1, 1);
+    ScgMesh *mesh = NULL;
+    if (block != NULL) {
+        (*env)->GetByteArrayRegion(env, bytes, 0, len, (jbyte *)block);
+        if (scg_mesh_load(block, (size_t)len, &mesh) != SCG_OK) {
+            mesh = NULL;
+        }
+    }
+    free(block);
+    return (jlong)(intptr_t)mesh;
+}
+
+/* scg_mesh_destroy. Un handle nul ne fait rien, comme `free`. */
+static void mesh_destroy(JNIEnv *env, jclass cls, jlong mesh)
+{
+    (void)env;
+    (void)cls;
+    scg_mesh_destroy((ScgMesh *)(intptr_t)mesh);
+}
+
+/* scg_mesh_triangle_count, rendu en valeur plutôt que par paramètre de sortie :
+ * Java n'a pas de pointeur, et une erreur y rend -1. */
+static jint mesh_triangle_count(JNIEnv *env, jclass cls, jlong mesh)
+{
+    (void)env;
+    (void)cls;
+    uint32_t count = 0;
+    if (scg_mesh_triangle_count((const ScgMesh *)(intptr_t)mesh, &count) != SCG_OK) {
+        return -1;
+    }
+    return (jint)count;
+}
+
+/* scg_mesh_texture_count, même convention. */
+static jint mesh_texture_count(JNIEnv *env, jclass cls, jlong mesh)
+{
+    (void)env;
+    (void)cls;
+    uint32_t count = 0;
+    if (scg_mesh_texture_count((const ScgMesh *)(intptr_t)mesh, &count) != SCG_OK) {
+        return -1;
+    }
+    return (jint)count;
+}
+
+/*
+ * scg_mesh_texture_name, la lecture en deux temps faite ici.
+ *
+ * C'est la couche C qui mesure puis remplit, parce que c'est elle qui connaît
+ * le protocole ; Java reçoit une chaîne, ou nul. Le tampon vit sur le tas le
+ * temps de l'appel : un nom d'emplacement tient en quelques octets, et une
+ * borne écrite ici serait un plafond de plus à tenir.
+ */
+static jstring mesh_texture_name(JNIEnv *env, jclass cls, jlong mesh, jint slot)
+{
+    (void)cls;
+    const ScgMesh *handle = (const ScgMesh *)(intptr_t)mesh;
+    size_t len = 0;
+    if (scg_mesh_texture_name(handle, (uint32_t)slot, NULL, 0, &len) != SCG_OK) {
+        return NULL;
+    }
+    char *buffer = calloc(len + 1, 1);
+    if (buffer == NULL) {
+        return NULL;
+    }
+    jstring name = NULL;
+    if (scg_mesh_texture_name(handle, (uint32_t)slot, buffer, len + 1, &len) == SCG_OK) {
+        name = (*env)->NewStringUTF(env, buffer);
+    }
+    free(buffer);
+    return name;
+}
+
+/*
+ * scg_submit_mesh, le tableau d'emplacements recomposé depuis des `long`.
+ *
+ * Un zéro y vaut « sans texture », comme un pointeur nul de l'autre côté : Java
+ * n'a pas de pointeur nul typé, et un tableau de handles est ce qui traverse le
+ * plus simplement.
+ */
+static jint submit_mesh(JNIEnv *env, jclass cls, jlong ctx, jfloatArray model, jlong mesh,
+                        jlongArray textures)
+{
+    (void)cls;
+    if (model == NULL || textures == NULL) {
+        return SCG_ERR_NULL;
+    }
+    if ((*env)->GetArrayLength(env, model) != 16) {
+        return SCG_ERR_INVALID_ARGUMENT;
+    }
+
+    jsize count = (*env)->GetArrayLength(env, textures);
+    jlong *handles = calloc(count ? (size_t)count : 1, sizeof *handles);
+    const ScgTexture **slots = calloc(count ? (size_t)count : 1, sizeof *slots);
+    int32_t code = SCG_ERR_OUT_OF_MEMORY;
+
+    if (handles != NULL && slots != NULL) {
+        ScgMat4 matrix;
+        (*env)->GetFloatArrayRegion(env, model, 0, 16, matrix.m);
+        (*env)->GetLongArrayRegion(env, textures, 0, count, handles);
+        for (jsize i = 0; i < count; i++) {
+            slots[i] = (const ScgTexture *)(intptr_t)handles[i];
+        }
+        code = scg_submit_mesh((ScgContext *)(intptr_t)ctx, &matrix,
+                               (const ScgMesh *)(intptr_t)mesh, slots, (uint32_t)count);
+    }
+    free(handles);
+    free(slots);
+    return code;
+}
+
 static jint submit_textured(JNIEnv *env, jclass cls, jlong ctx, jfloatArray model,
                             jfloatArray vertices, jintArray indices, jbyteArray colors,
                             jlong texture)
@@ -553,6 +678,12 @@ static const JNINativeMethod METHODS[] = {
     {"bufferFree", "(JJ)V", (void *)buffer_free},
     {"textureLoad", "(II[B)J", (void *)texture_load},
     {"textureDestroy", "(J)V", (void *)texture_destroy},
+    {"meshLoad", "([B)J", (void *)mesh_load},
+    {"meshDestroy", "(J)V", (void *)mesh_destroy},
+    {"meshTriangleCount", "(J)I", (void *)mesh_triangle_count},
+    {"meshTextureCount", "(J)I", (void *)mesh_texture_count},
+    {"meshTextureName", "(JI)Ljava/lang/String;", (void *)mesh_texture_name},
+    {"submitMesh", "(J[FJ[J)I", (void *)submit_mesh},
     {"submitTextured", "(J[F[F[I[BJ)I", (void *)submit_textured},
     {"submitLit", "(J[F[F[I[BJJ)I", (void *)submit_lit},
     {"setResolution", "(JII)I", (void *)set_resolution},
