@@ -193,6 +193,21 @@ pub(crate) fn message_of(error: Error) -> &'static str {
         Error::InvalidFormat(Malformation::GroupBounds) => {
             "malformed data file: surface groups must pave the triangles in order, with no gap and no overlap"
         }
+        Error::InvalidFormat(Malformation::Count) => {
+            "malformed data file: a count does not match the length that bounds it"
+        }
+        Error::InvalidFormat(Malformation::Flags) => {
+            "malformed data file: undefined flag bits must be zero"
+        }
+        Error::InvalidFormat(Malformation::Polygon) => {
+            "malformed data file: a polygon is degenerate, too large, or not convex where convexity is required"
+        }
+        Error::InvalidFormat(Malformation::Mapping) => {
+            "malformed data file: a mapping frame is unusable, or the coordinates it derives are not finite"
+        }
+        Error::InvalidFormat(Malformation::Portal) => {
+            "malformed data file: three portals share the same vertices"
+        }
         Error::UnsupportedFormatVersion => {
             "unsupported data format version: take a newer library, or export the data again"
         }

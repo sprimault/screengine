@@ -14,9 +14,10 @@ sortie.** Chaque décision garde ci-dessous l'option écartée et pourquoi. Un s
 point reste marqué **À trancher** : la dépréciation, qui attend le gel de l'ABI
 en 1.0.
 
-**De l'étape 4, le maillage est exposé** : les cinq fonctions `scg_mesh_*` et
-`scg_submit_mesh`. Les six fonctions du monde sont spécifiées ci-dessous et ne
-le sont pas encore, et leur section le redit. Le
+**De l'étape 4, le maillage est exposé** — les cinq fonctions `scg_mesh_*` et
+`scg_submit_mesh` — **et le chargement d'une carte avec lui** : les cinq
+fonctions `scg_world_*`. Seule `scg_submit_world` reste à exposer, et sa section
+le redit. Le
 contrat d'un format se fige avant son premier décodeur, comme les formats de
 virgule fixe se sont figés avant le premier remplissage : ce qui s'écrit après
 s'écrit contre ce qui a déjà été codé.
@@ -962,9 +963,9 @@ Huit fonctions ajoutées, trois structures nouvelles, aucune constante :
 
 ### Étape 4
 
-**Les six fonctions du maillage sont exposées ; les six du monde ne le sont pas
-encore.** Ce qui suit est le contrat auquel elles se conforment, figé avant le
-premier décodeur pour la raison dite en tête de document. Les dispositions binaires elles-mêmes sont dans `docs/rust.md`,
+**Onze des douze fonctions sont exposées ; seule `scg_submit_world` reste.** Ce
+qui suit est le contrat auquel elles se conforment, figé avant le premier
+décodeur pour la raison dite en tête de document. Les dispositions binaires elles-mêmes sont dans `docs/rust.md`,
 section « Formats de fichier » : elles n'appartiennent pas à l'ABI, qui ne voit
 qu'un bloc d'octets.
 
@@ -1063,7 +1064,7 @@ noms ne le sont pas.
 | 1 | ✓ début d'image et rendu d'une tuile (voir « Rendu par tuiles »), caméra et projection, soumission de triangles avec une matrice |
 | 2 | ✓ chargement d'une texture, mipmaps engendrés au chargement, niveau de qualité du filtrage par `scg_set_filter` |
 | 3 | ✓ soumission d'un lot éclairé, réglage du sur-éclairement, du brouillard, des lumières dynamiques, de la résolution interne et de la courbe de sortie |
-| 4 | ✓ chargement d'un maillage depuis un bloc d'octets, libération, ses deux comptes, ses noms d'emplacements et sa soumission ; la carte reste à exposer, contrat écrit ci-dessus |
+| 4 | ✓ chargement d'un maillage et d'une carte depuis un bloc d'octets, libération, leurs comptes, leurs noms et la soumission du maillage ; seule la soumission de la carte reste à exposer |
 | 5 | rendu du monde depuis la caméra, calcul des lightmaps d'une cellule et reprise d'un cache |
 | 6 | interpolation entre trames, sprites orientés caméra |
 | 7 | module de collision, utilisable sans contexte de rendu |

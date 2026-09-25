@@ -120,6 +120,12 @@ typedef struct ScgMesh ScgMesh;
 // threads, and the engine keeps it alive for as long as a frame references it.
 typedef struct ScgTexture ScgTexture;
 
+// An opaque handle to a loaded map.
+//
+// Created by `scg_world_load`, released by `scg_world_destroy`. It belongs to
+// no context: the same map may be submitted to several, from several threads.
+typedef struct ScgWorld ScgWorld;
+
 // Configuration passed to `scg_create`.
 //
 // Zero the whole structure before filling it in. The reserved fields must be
@@ -968,6 +974,71 @@ int32_t scg_mesh_texture_name(const struct ScgMesh *mesh,
 // `mesh` must be a live handle from `scg_mesh_load`, and `out` must point to a
 // writable `uint32_t`.
 int32_t scg_mesh_triangle_count(const struct ScgMesh *mesh, uint32_t *out);
+
+// Loads a map from a block of bytes.
+//
+// Same contract as `scg_mesh_load`, and deliberately so: two resources loaded
+// from a block have no reason to behave differently, and a binding written for
+// one reads the same for the other. The engine copies what it keeps, the map
+// belongs to no context, and the failure is read with `scg_last_error(NULL)`.
+//
+// Loading derives what the file does not store: portal links, triangles and
+// texture coordinates. Nothing of it is a cache that could go stale.
+//
+// # Safety
+//
+// `bytes` must cover `len` readable bytes, or `len` must be zero. `out` must
+// point to a writable handle; nothing is written unless the call succeeds.
+int32_t scg_world_load(const uint8_t *bytes, size_t len, struct ScgWorld **out);
+
+// Releases a map.
+//
+// `scg_world_destroy(NULL)` does nothing, like `free(NULL)`. Same rule as a
+// mesh: nothing reads a map once the submission has returned.
+//
+// # Safety
+//
+// `world` must be null, or a handle returned by `scg_world_load` and not yet
+// destroyed.
+void scg_world_destroy(struct ScgWorld *world);
+
+// Writes the number of materials the map asks for to `out`.
+//
+// # Safety
+//
+// `world` must be a live handle from `scg_world_load`, and `out` must point to
+// a writable `uint32_t`.
+int32_t scg_world_material_count(const struct ScgWorld *world, uint32_t *out);
+
+// Writes the number of triangles the map carries to `out`.
+//
+// All cells together: the map is submitted whole at this stage, with no
+// culling, so this is what a host sizes `max_triangles` on.
+//
+// # Safety
+//
+// `world` must be a live handle from `scg_world_load`, and `out` must point to
+// a writable `uint32_t`.
+int32_t scg_world_triangle_count(const struct ScgWorld *world, uint32_t *out);
+
+// Reads the name of one material, in two steps.
+//
+// Same protocol as `scg_mesh_texture_name`: call once with `buf` null and `cap`
+// zero to learn the length, then again with a buffer of at least `*out_len + 1`
+// bytes. A `cap` too small returns `SCG_ERR_INVALID_ARGUMENT` and writes
+// nothing, `out_len` included; an `index` beyond `scg_world_material_count`
+// returns the same code.
+//
+// # Safety
+//
+// `world` must be a live handle from `scg_world_load`. `buf` must be null with
+// `cap` zero, or cover `cap` writable bytes. `out_len` must point to a writable
+// `size_t`.
+int32_t scg_world_material_name(const struct ScgWorld *world,
+                                uint32_t index,
+                                char *buf,
+                                size_t cap,
+                                size_t *out_len);
 
 #ifdef __cplusplus
 }  // extern "C"

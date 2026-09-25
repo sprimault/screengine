@@ -143,6 +143,17 @@ impl fmt::Display for Error {
                 Malformation::GroupBounds => f.write_str(
                     "surface groups must pave the triangles in order, with no gap and no overlap",
                 ),
+                Malformation::Count => {
+                    f.write_str("a count does not match the length that bounds it")
+                }
+                Malformation::Flags => f.write_str("undefined flag bits must be zero"),
+                Malformation::Polygon => f.write_str(
+                    "a polygon is degenerate, too large, or not convex where convexity is required",
+                ),
+                Malformation::Mapping => f.write_str(
+                    "a mapping frame is unusable, or derives coordinates that are not finite",
+                ),
+                Malformation::Portal => f.write_str("three portals share the same vertices"),
             },
             Self::Engine(screengine::Error::UnsupportedFormatVersion) => {
                 f.write_str("unsupported data format version: export the data again")

@@ -735,6 +735,40 @@ Quatre sections : `CELL`, `ENTS`, `LGTS`, `MATS`. Sont **source** la table de
 matériaux, les cellules avec leurs sommets, surfaces et portails, les lumières
 statiques et les entités. Rien d'autre.
 
+| Élément | Disposition | Taille |
+|---|---|---|
+| Entrée de matériau | `id` en `u32`, puis la longueur du nom en `u16` et ses octets UTF-8 | variable |
+| Cellule | longueur de l'enregistrement en `u32`, puis `id`, `flags`, `vertex_count`, `surface_count`, `portal_count` en `u32`, puis les trois tableaux dans cet ordre | variable |
+| Sommet de cellule | `x, y, z` en `f32` | 12 |
+| Surface | `id`, `flags`, `material`, `index_count` en `u32`, puis ses indices en `u32`, puis le repère de texture et celui de lightmap | variable |
+| Repère | origine, axe `u`, axe `v`, chacun `x, y, z` en `f32` | 36 |
+| Portail | `id`, `index_count` en `u32`, puis ses indices en `u32` | variable |
+
+**Tous les indices sont en `u32`**, y compris ceux d'une surface, qu'une cellule
+borne pourtant bien en deçà de 65 536. Ce n'est pas l'argument du maillage —
+là-bas, un décor fusionné atteint vraiment le plafond d'un `u16` — mais la
+symétrie : deux largeurs d'indice dans le même dépôt donneraient deux chemins de
+décodage à écrire et à éprouver, pour quelques kilooctets par carte.
+
+**La cellule porte des `flags` dont aucun bit n'est défini**, nuls obligatoires
+comme ceux de la surface. Un drapeau de cellule est de ceux que l'étape 5
+réclamera — c'est écrit plus bas — et l'ajouter après coup ferait migrer toutes
+les cartes pour un mot de quatre octets.
+
+**Le portail n'en porte pas**, et n'a pas de matériau : il n'est pas dessiné. Le
+jour où il lui en faudrait, ce serait une version de format de plus, et c'est le
+bon prix — un champ réservé qu'on ne sait pas remplir est un pari sur sa forme.
+
+**L'enregistrement de cellule est longueur-préfixé**, et sa longueur borne tout
+ce qu'il contient : les trois comptes se recoupent avec elle, jamais avec la
+longueur de la section. C'est ce qui permet à l'étape 8 de remplacer une cellule
+sans toucher aux autres, et au décodeur de refuser un compte démesuré sans avoir
+lu un seul sommet.
+
+Les dispositions des sections `ENTS` et `LGTS` s'écrivent ici avec leur
+décodeur, et pas avant : le contrat d'une section se fige avant sa première
+lecture, non avant celle de sa voisine.
+
 Sont **dérivés au chargement** les liens de portails, les plans, la
 triangulation, les coordonnées de texture et de lightmap, les boîtes
 englobantes, les étendues en luxels et les tables d'identifiants. Est dérivée

@@ -56,6 +56,13 @@ publié, et explique les conventions du dépôt à qui y contribue.
 - Les conventions Rust décrivent les dispositions binaires des deux formats :
   en-tête et table de sections communs, maillage, carte, et ce que le décodeur
   tient pour hostile.
+- Le chargement d'une carte : `scg_world_load`, `scg_world_destroy`,
+  `scg_world_material_count`, `scg_world_material_name` et
+  `scg_world_triangle_count`, symétriques de celles du maillage. La géométrie —
+  cellules autonomes, surfaces, portails — est validée au chargement, et ce que
+  le fichier ne porte pas s'en dérive : triangulation des surfaces, coordonnées
+  de texture tirées des repères de plaquage, appariement des portails au bit
+  près. **Rien ne se dessine encore** : `scg_submit_world` n'est pas exposée.
 - Les quatre hôtes chargent le même maillage versionné et rendent son empreinte :
   C, C++, wasm et Android éprouvent désormais le décodage d'un fichier, et non
   plus seulement une géométrie écrite dans leur propre langage. Le pont JNI gagne
@@ -95,6 +102,13 @@ publié, et explique les conventions du dépôt à qui y contribue.
   first decoder, as the fixed-point formats were frozen before the first fill.
 - The Rust conventions describe both formats' binary layouts: the shared header
   and section table, the mesh, the map, and what the decoder treats as hostile.
+- Map loading: `scg_world_load`, `scg_world_destroy`, `scg_world_material_count`,
+  `scg_world_material_name` and `scg_world_triangle_count`, mirroring the mesh
+  ones. The geometry — self-contained cells, surfaces, portals — is validated at
+  load time, and what the file does not carry is derived from it: surfaces are
+  triangulated, texture coordinates come from the mapping frames, and portals are
+  matched bit for bit. **Nothing is drawn yet**: `scg_submit_world` is not
+  exposed.
 - All four hosts load the same versioned mesh and render its fingerprint: C, C++,
   wasm and Android now exercise decoding a file, not only geometry written in
   their own language. The JNI bridge gains the mesh entry points.

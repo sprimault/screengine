@@ -16,10 +16,13 @@
 //! ne vient d'un nombre déclaré.
 
 mod cursor;
+mod ears;
 mod mesh;
+mod world;
 
 pub(crate) use cursor::Cursor;
 pub use mesh::Mesh;
+pub use world::World;
 
 use crate::error::{Error, Malformation, Result};
 
