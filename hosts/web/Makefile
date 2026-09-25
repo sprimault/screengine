@@ -14,6 +14,8 @@ OUT     ?= ../../.tmp/host-web
 TARGET  := $(or $(CARGO_TARGET_DIR),../../target)
 WASM    := $(TARGET)/wasm32-unknown-unknown/$(PROFILE)/screengine.wasm
 HEADER  := $(abspath ../../include/screengine.h)
+# Le maillage versionné que les quatre hôtes chargent.
+MESH    := $(abspath ../../hosts/caisse.mesh)
 NODE    ?= node
 PORT    ?= 8080
 
@@ -37,7 +39,7 @@ all: $(WASM)
 
 # Écrit l'empreinte sur la sortie standard, les échecs sur la sortie d'erreur.
 run: all
-	@$(NODE) $(OUT)/test.js $(OUT)/screengine.wasm $(HEADER)
+	@$(NODE) $(OUT)/test.js $(OUT)/screengine.wasm $(HEADER) $(MESH)
 
 serve: all
 	$(NODE) $(OUT)/serve.js $(OUT) $(PORT)

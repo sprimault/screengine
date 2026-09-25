@@ -56,6 +56,10 @@ publié, et explique les conventions du dépôt à qui y contribue.
 - Les conventions Rust décrivent les dispositions binaires des deux formats :
   en-tête et table de sections communs, maillage, carte, et ce que le décodeur
   tient pour hostile.
+- Les quatre hôtes chargent le même maillage versionné et rendent son empreinte :
+  C, C++, wasm et Android éprouvent désormais le décodage d'un fichier, et non
+  plus seulement une géométrie écrite dans leur propre langage. Le pont JNI gagne
+  les points d'entrée du maillage.
 - `scg_submit_mesh` dessine un maillage, un lot par groupe de surface, avec une
   texture par emplacement — une entrée nulle laissant les couleurs du fichier
   décider. La matrice de modèle place la ressource, et le maillage est **soumis
@@ -91,6 +95,9 @@ publié, et explique les conventions du dépôt à qui y contribue.
   first decoder, as the fixed-point formats were frozen before the first fill.
 - The Rust conventions describe both formats' binary layouts: the shared header
   and section table, the mesh, the map, and what the decoder treats as hostile.
+- All four hosts load the same versioned mesh and render its fingerprint: C, C++,
+  wasm and Android now exercise decoding a file, not only geometry written in
+  their own language. The JNI bridge gains the mesh entry points.
 - `scg_submit_mesh` draws a mesh, one batch per surface group, with a texture per
   slot — a null entry leaves the colours from the file to decide. The model
   matrix places the resource, and the mesh is **submitted whole or not at all**:

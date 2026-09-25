@@ -415,3 +415,53 @@ fn le_bilineaire_fabrique_des_couleurs_que_le_tramage_ne_peut_pas() {
          le filtrage n'interpole pas"
     );
 }
+
+/// Le fichier de maillage versionné est exactement celui que la conformance
+/// engendre.
+///
+/// Sur le modèle de `make header-verif` : le binaire que les quatre hôtes
+/// chargent n'est jamais la source de vérité. Sans ce contrôle, un changement de
+/// format laisserait les hôtes charger un fichier périmé — et leurs empreintes
+/// diverger sans qu'on sache si la faute est au décodeur, au rendu ou au
+/// fichier.
+///
+/// `include_bytes!` plutôt qu'une lecture : le fichier absent échoue à la
+/// compilation, et le test ne dépend pas du répertoire courant.
+#[test]
+fn le_fichier_de_maillage_versionne_est_a_jour() {
+    const VERSIONED: &[u8] = include_bytes!("../../../hosts/caisse.mesh");
+    let engendre = mesh_file::bytes();
+
+    assert_eq!(
+        VERSIONED.len(),
+        engendre.len(),
+        "hosts/caisse.mesh fait {} octets, la conformance en écrit {} — \
+         relancer `make mesh`",
+        VERSIONED.len(),
+        engendre.len()
+    );
+    let ecart = VERSIONED
+        .iter()
+        .zip(&engendre)
+        .position(|(versionne, engendre)| versionne != engendre);
+    assert_eq!(
+        ecart, None,
+        "hosts/caisse.mesh diverge à l'octet {ecart:?} — relancer `make mesh`"
+    );
+}
+
+/// Le fichier versionné se décode, et rend ce que la scène rend.
+///
+/// C'est ce qui relie le fichier à l'image : le contrôle précédent dit qu'il est
+/// à jour, celui-ci dit qu'il porte bien la caisse — sans quoi un générateur
+/// changé des deux côtés passerait.
+#[test]
+fn le_fichier_de_maillage_versionne_porte_la_caisse() {
+    const VERSIONED: &[u8] = include_bytes!("../../../hosts/caisse.mesh");
+    let mesh = Mesh::load(VERSIONED).expect("le fichier versionné se décode");
+
+    assert_eq!(mesh.triangle_count(), 12, "six faces de deux triangles");
+    assert_eq!(mesh.texture_count(), 2);
+    assert_eq!(mesh.texture_name(0), Some("cote"));
+    assert_eq!(mesh.texture_name(1), Some("chapeau"));
+}

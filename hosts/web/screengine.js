@@ -422,6 +422,23 @@ export class Screengine {
   }
 
   /**
+   * Écrit une `ScgMat4` quelconque, seize flottants par colonnes.
+   *
+   * Les valeurs sont écrites telles quelles : une matrice dont les
+   * coefficients seraient recalculés ici ne rendrait pas les mêmes bits que le
+   * chemin Rust, donc pas la même empreinte.
+   *
+   * @param {number} ptr adresse d'au moins `MAT4_SIZE` octets
+   * @param {number[]} m les seize coefficients, par colonnes
+   */
+  writeMat4(ptr, m) {
+    const view = new DataView(this.memory.buffer, ptr, MAT4_SIZE);
+    for (let i = 0; i < 16; i++) {
+      view.setFloat32(i * 4, m[i], true);
+    }
+  }
+
+  /**
    * Lit un `uint32_t` petit-boutiste.
    *
    * @param {number} ptr

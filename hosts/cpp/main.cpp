@@ -19,6 +19,8 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <fstream>
+#include <iterator>
 #include <memory>
 #include <string>
 #include <thread>
@@ -824,8 +826,120 @@ void check_float_environment(uint64_t expected)
 } // namespace
 
 /// Toutes les vérifications, puis l'empreinte sur la sortie standard.
-int main()
+/// La matrice qui place la caisse, recopiée de la suite de conformance.
+///
+/// Écrite en littéraux des deux côtés : les tables trigonométriques du moteur
+/// ne traversent pas l'ABI, et un hôte qui recalculerait ces coefficients
+/// n'obtiendrait pas les mêmes bits, donc pas la même empreinte.
+constexpr ScgMat4 CRATE_MODEL = {
+    {  0.64f,  0.48f, 0.6f, 0.0f,
+      -0.6f,   0.8f,  0.0f, 0.0f,
+      -0.48f, -0.36f, 0.8f, 0.0f,
+       5.0f,   0.0f,  0.0f, 1.0f }
+};
+
+/// Lit un fichier entier, ou rend un vecteur vide.
+///
+/// L'hôte lit les fichiers, jamais le moteur : c'est pour cela que le
+/// chargement prend un bloc d'octets et non un chemin.
+std::vector<uint8_t> read_file(const char *path)
 {
+    // Un flux et non `fopen` : MSVC refuse ce dernier en avertissement traité
+    // comme erreur, et un `_CRT_SECURE_NO_WARNINGS` pour un hôte de
+    // démonstration serait du bruit dans la ligne de compilation.
+    std::ifstream file(path, std::ios::binary);
+    if (!file) {
+        return {};
+    }
+    return std::vector<uint8_t>(std::istreambuf_iterator<char>(file),
+                                std::istreambuf_iterator<char>());
+}
+
+/// Rend la caisse du fichier de maillage et hache son image.
+///
+/// Le seul chemin de cet hôte qui lise un fichier : ce qu'il éprouve est que le
+/// bloc versionné traverse la frontière et rende la même image qu'au chemin
+/// Rust. Les comptes et les noms se vérifient au passage — un décodeur qui les
+/// rendrait faux rendrait quand même une image, une autre.
+uint64_t render_mesh(bool &ok, const char *path)
+{
+    ok = false;
+    const std::vector<uint8_t> bytes = read_file(path);
+    check(!bytes.empty(), "le fichier de maillage se lit");
+    if (bytes.empty()) {
+        return 0;
+    }
+
+    ScgMesh *raw = nullptr;
+    check(scg_mesh_load(bytes.data(), bytes.size(), &raw) == SCG_OK,
+          "le fichier de maillage se charge");
+    if (raw == nullptr) {
+        return 0;
+    }
+    std::unique_ptr<ScgMesh, decltype(&scg_mesh_destroy)> mesh(raw, &scg_mesh_destroy);
+
+    const std::vector<uint8_t> texels = make_checker();
+    ScgTextureDesc desc{};
+    desc.width = FLOOR_SIDE;
+    desc.height = FLOOR_SIDE;
+    desc.format = SCG_TEXTURE_FORMAT_RGBA8;
+    ScgTexture *sides = nullptr;
+    check(scg_texture_load(&desc, texels.data(), texels.size(), &sides) == SCG_OK,
+          "le damier des faces se charge");
+
+    ScgContextConfig config = scene_config();
+    ScgContext *ctx = nullptr;
+    check(scg_create(&config, &ctx) == SCG_OK, "création du contexte du maillage");
+    if (ctx == nullptr || sides == nullptr) {
+        scg_texture_destroy(sides);
+        return 0;
+    }
+
+    uint32_t triangles = 0;
+    uint32_t slots = 0;
+    check(scg_mesh_triangle_count(mesh.get(), &triangles) == SCG_OK && triangles == 12,
+          "le maillage porte douze triangles");
+    check(scg_mesh_texture_count(mesh.get(), &slots) == SCG_OK && slots == 2,
+          "le maillage réclame deux emplacements");
+
+    // Le nom en deux temps, comme le header le décrit : mesure, puis
+    // remplissage. Un tampon plus court que nécessaire est refusé sans rien
+    // écrire, et c'est ce qui fait de la mesure le seul chemin vers la longueur.
+    size_t needed = 0;
+    check(scg_mesh_texture_name(mesh.get(), 1, nullptr, 0, &needed) == SCG_OK && needed == 7,
+          "la mesure du second nom rend sa longueur");
+    std::string name(needed + 1, '\0');
+    check(scg_mesh_texture_name(mesh.get(), 1, name.data(), 1, &needed) == SCG_ERR_INVALID_ARGUMENT,
+          "un tampon trop court est refusé");
+    check(scg_mesh_texture_name(mesh.get(), 1, name.data(), name.size(), &needed) == SCG_OK
+              && std::strcmp(name.c_str(), "chapeau") == 0,
+          "le second emplacement s'appelle chapeau");
+
+    const ScgTexture *bound[2] = { sides, nullptr };
+    check(scg_submit_mesh(ctx, &CRATE_MODEL, mesh.get(), bound, 2) == SCG_OK,
+          "la caisse est acceptée");
+
+    // Détruits avant le rendu : le maillage parce que plus rien ne le lit une
+    // fois la soumission revenue, la texture parce que le contexte en garde sa
+    // propre référence — deux raisons différentes pour un même geste.
+    mesh.reset();
+    scg_texture_destroy(sides);
+
+    std::vector<uint8_t> pixels(static_cast<size_t>(STRIDE) * HEIGHT * 4, 0);
+    const int32_t code = scg_frame_end(ctx, pixels.data(), STRIDE);
+    check(code == SCG_OK, "l'image de la caisse se rend");
+    ok = code == SCG_OK;
+    const uint64_t hash = fingerprint(pixels.data(), WIDTH, HEIGHT, STRIDE);
+    scg_destroy(ctx);
+    return hash;
+}
+
+int main(int argc, char **argv)
+{
+    if (argc != 2) {
+        std::fprintf(stderr, "usage : %s <fichier de maillage>\n", argv[0]);
+        return 2;
+    }
     check(scg_abi_version() == SCG_ABI_VERSION, "la bibliothèque chargée est celle du header");
     check(loaded_dynamically(), "scg_abi_version vient de la bibliothèque dynamique");
 
@@ -868,8 +982,11 @@ int main()
     bool lights_ok = false;
     const uint64_t lights = render_lights(lights_ok);
 
+    bool mesh_ok = false;
+    const uint64_t mesh = render_mesh(mesh_ok, argv[1]);
+
     if (failures > 0 || !ok || !textured_ok || !bilinear_ok || !graded_ok || !lit_ok
-        || !overbright_ok || !fog_ok || !lights_ok) {
+        || !overbright_ok || !fog_ok || !lights_ok || !mesh_ok) {
         std::fprintf(stderr, "%d vérification(s) en échec\n", failures);
         return 1;
     }
@@ -881,5 +998,6 @@ int main()
     std::printf("%016llx\n", static_cast<unsigned long long>(overbright));
     std::printf("%016llx\n", static_cast<unsigned long long>(fog));
     std::printf("%016llx\n", static_cast<unsigned long long>(lights));
+    std::printf("%016llx\n", static_cast<unsigned long long>(mesh));
     return 0;
 }

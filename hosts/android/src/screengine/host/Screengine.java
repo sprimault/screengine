@@ -177,6 +177,68 @@ public final class Screengine {
     static native void textureDestroy(long texture);
 
     /**
+     * {@code scg_mesh_load}, le bloc recopié par la couche JNI.
+     *
+     * L'hôte lit le fichier, jamais le moteur : ce que la frontière reçoit est
+     * un bloc d'octets, et elle en garde sa propre copie.
+     *
+     * @param bytes le fichier de maillage entier
+     * @return le handle, ou 0 en cas d'échec
+     */
+    static native long meshLoad(byte[] bytes);
+
+    /**
+     * {@code scg_mesh_destroy}.
+     *
+     * @param mesh handle rendu par {@link #meshLoad}, ou 0
+     */
+    static native void meshDestroy(long mesh);
+
+    /**
+     * {@code scg_mesh_triangle_count}, rendu en valeur.
+     *
+     * Java n'a pas de pointeur : le paramètre de sortie de l'ABI devient la
+     * valeur de retour, et un refus rend -1.
+     *
+     * @param mesh handle vivant
+     * @return le nombre de triangles, ou -1
+     */
+    static native int meshTriangleCount(long mesh);
+
+    /**
+     * {@code scg_mesh_texture_count}, même convention.
+     *
+     * @param mesh handle vivant
+     * @return le nombre d'emplacements, ou -1
+     */
+    static native int meshTextureCount(long mesh);
+
+    /**
+     * {@code scg_mesh_texture_name}, la lecture en deux temps faite par la
+     * couche JNI.
+     *
+     * Elle seule connaît le protocole — mesurer, puis remplir ; Java reçoit une
+     * chaîne ou {@code null}.
+     *
+     * @param mesh handle vivant
+     * @param slot l'emplacement, sous {@link #meshTextureCount}
+     * @return le nom, ou {@code null} si l'emplacement n'existe pas
+     */
+    static native String meshTextureName(long mesh, int slot);
+
+    /**
+     * {@code scg_submit_mesh}.
+     *
+     * @param ctx contexte vivant
+     * @param model les seize coefficients de la matrice, par colonnes
+     * @param mesh handle rendu par {@link #meshLoad}
+     * @param textures un handle par emplacement, dans l'ordre, 0 pour « sans
+     *     texture » ; leur nombre doit être exactement celui des emplacements
+     * @return {@link #OK} ou un code négatif
+     */
+    static native int submitMesh(long ctx, float[] model, long mesh, long[] textures);
+
+    /**
      * {@code scg_submit_textured}.
      *
      * Mêmes tableaux que {@link #submit}, les sommets portant cinq flottants
