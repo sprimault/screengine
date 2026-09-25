@@ -139,6 +139,50 @@ function trackKeys() {
 }
 
 /**
+ * Où sont posées les caisses : abscisse, ordonnée, et l'angle qui les tourne.
+ *
+ * Le décor et les accessoires sont deux ressources différentes, chargées
+ * séparément et soumises séparément : la carte porte les murs, le maillage ce
+ * qu'on y pose. C'est ce que l'étape des données a construit, et un couloir vide
+ * n'en montrerait que la moitié.
+ */
+const CRATES = [
+  [6.0, -1.2, 0.4],
+  [11.0, 1.4, -0.7],
+  [17.0, -0.6, 1.1],
+];
+
+/**
+ * L'échelle des caisses.
+ *
+ * **Le maillage fait deux unités de côté**, et le couloir six de large : posée
+ * telle quelle, une caisse en occupe le tiers. Le fichier ne se redimensionne
+ * pas — c'est celui de la scène de conformance, et son empreinte est figée —,
+ * donc l'échelle va dans la matrice de modèle, qui est faite pour ça.
+ */
+const CRATE_SCALE = 0.5;
+
+/** La cote du centre d'une caisse : sa demi-hauteur au-dessus du sol, à -1,5. */
+const CRATE_Z = -1.0;
+
+/**
+ * La matrice d'une caisse : une rotation autour de la verticale mise à
+ * l'échelle, puis une translation. Par colonnes, comme l'ABI l'attend.
+ *
+ * Les coefficients viennent de `Math`, et c'est permis ici : une démonstration
+ * n'est comparée à aucune empreinte, là où une scène de conformance exige les
+ * mêmes bits sur les quatre cibles.
+ *
+ * @param {number[]} placement abscisse, ordonnée, angle
+ * @returns {number[]} les seize coefficients
+ */
+function crateModel([x, y, angle]) {
+  const c = Math.cos(angle) * CRATE_SCALE;
+  const s = Math.sin(angle) * CRATE_SCALE;
+  return [c, s, 0, 0, -s, c, 0, 0, 0, 0, CRATE_SCALE, 0, x, y, CRATE_Z, 1];
+}
+
+/**
  * Le quaternion d'une rotation de `angle` autour de l'axe vertical.
  *
  * Écrit ici plutôt que demandé au moteur : ses tables trigonométriques ne
@@ -215,9 +259,30 @@ async function main() {
   const table = new DataView(engine.memory.buffer, slots, materials * 4);
   textures.forEach((texture, i) => table.setUint32(i * 4, texture, true));
 
+  // Le maillage des caisses, chargé comme la carte : un bloc d'octets que le
+  // moteur copie. Ses deux emplacements portent des noms, et l'hôte décide de
+  // ce qu'il met dedans — ici un damier sur les côtés, rien sur le dessus, si
+  // bien que les couleurs du fichier y décident.
+  const meshFile = new Uint8Array(await (await fetch("caisse.mesh")).arrayBuffer());
+  const meshBlock = engine.alloc(meshFile.length);
+  engine.bytes().set(meshFile, meshBlock);
+  if (e.scg_mesh_load(meshBlock, meshFile.length, out) !== scg.SCG_OK) {
+    status(`maillage refusé : ${engine.lastError(0)}`);
+    return;
+  }
+  const mesh = engine.readU32(out);
+  engine.free(meshBlock, meshFile.length);
+
+  const crateSlots = engine.alloc(8);
+  const crateTexture = loadTexture(engine, makeChecker(TEXTURE_SIDE, 8));
+  const crateTable = new DataView(engine.memory.buffer, crateSlots, 8);
+  crateTable.setUint32(0, crateTexture, true);
+  crateTable.setUint32(4, 0, true);
+
   const pixels = engine.alloc(WIDTH * HEIGHT * scg.BYTES_PER_PIXEL);
   const camera = engine.alloc(scg.CAMERA_SIZE);
   const model = engine.alloc(scg.MAT4_SIZE);
+  const crateModelPtr = engine.alloc(scg.MAT4_SIZE);
   engine.writeIdentity(model);
 
   const canvas = document.getElementById("image");
@@ -265,6 +330,16 @@ async function main() {
     if (e.scg_submit_world(ctx, model, world, slots, materials) !== scg.SCG_OK) {
       status(engine.lastError(ctx));
       return;
+    }
+
+    // Les caisses par-dessus, chacune avec sa matrice : la même ressource
+    // dessinée trois fois, ce qu'un décor fait de ses accessoires.
+    for (const placement of CRATES) {
+      engine.writeMat4(crateModelPtr, crateModel(placement));
+      if (e.scg_submit_mesh(ctx, crateModelPtr, mesh, crateSlots, 2) !== scg.SCG_OK) {
+        status(engine.lastError(ctx));
+        return;
+      }
     }
 
     // Par tuiles, comme un hôte qui voudrait les répartir : le web n'a qu'un

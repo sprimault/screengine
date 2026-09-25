@@ -20,6 +20,12 @@ INCLUDE := ../../include
 # depuis un répertoire de sortie qui n'est pas celui du dépôt.
 MESH    ?= ../../hosts/caisse.mesh
 
+# Le décor que l'hôte de démonstration parcourt, et la racine de SDL3, que
+# `makefile.local` porte : une dépendance système ne s'installe pas au même
+# endroit d'un poste à l'autre, et le projet n'en impose aucun.
+WORLD   ?= ../../hosts/couloir.world
+SDL3    ?=
+
 ifeq ($(OS),Windows_NT)
 
 LIB := $(TARGET)/$(PROFILE)/screengine.lib
@@ -36,6 +42,23 @@ why-not:
 $(EXE): main.c $(LIB) $(INCLUDE)/screengine.h build.cmd
 	@mkdir -p $(OUT)
 	./build.cmd "$$(cygpath -w $@)" "$$(cygpath -w $(OUT))" "$$(cygpath -w $(LIB))" "$$(cygpath -w $(INCLUDE))" main.c
+
+DEMO := $(OUT)/screengine-demo.exe
+
+why-not-demo:
+	@if [ -z "$(SDL3)" ]; then \
+	  echo "SDL3 introuvable : definir SDL3 dans makefile.local"; \
+	elif [ ! -f "$(SDL3)/lib/x64/SDL3.lib" ]; then \
+	  echo "$(SDL3)/lib/x64/SDL3.lib introuvable"; \
+	fi
+
+$(DEMO): demo.c $(LIB) $(INCLUDE)/screengine.h build-demo.cmd
+	@mkdir -p $(OUT)
+	./build-demo.cmd "$$(cygpath -w $@)" "$$(cygpath -w $(OUT))" "$$(cygpath -w $(LIB))" \
+	  "$$(cygpath -w $(INCLUDE))" demo.c "$$(cygpath -w $(SDL3))"
+	# La DLL à côté de l'exécutable : c'est le seul emplacement de recherche qui
+	# ne dépende ni du PATH ni du répertoire courant.
+	cp "$(SDL3)/lib/x64/SDL3.dll" $(OUT)/
 
 else
 
@@ -55,11 +78,31 @@ $(EXE): main.c $(LIB) $(INCLUDE)/screengine.h
 	@mkdir -p $(OUT)
 	$(CC) -std=c11 -Wall -Wextra -Werror -O2 -I$(INCLUDE) main.c $(LIB) $(LIBS) -o $@
 
+DEMO := $(OUT)/screengine-demo
+
+# SDL3 se trouve ici par pkg-config, la convention de la plateforme, plutôt que
+# par un chemin que `makefile.local` porterait comme sous Windows.
+why-not-demo:
+	@pkg-config --exists sdl3 2>/dev/null || echo "sdl3 introuvable par pkg-config"
+
+$(DEMO): demo.c $(LIB) $(INCLUDE)/screengine.h
+	@mkdir -p $(OUT)
+	$(CC) -std=c11 -Wall -Wextra -O2 -I$(INCLUDE) $$(pkg-config --cflags sdl3) demo.c \
+	  $(LIB) $$(pkg-config --libs sdl3) $(LIBS) -o $@
+
 endif
 
-.PHONY: all run why-not
+.PHONY: all run why-not why-not-demo demo demo-run
 
 all: $(EXE)
+
+# L'hôte de démonstration : il ouvre une fenêtre, donc il ne fait partie
+# d'aucun contrôle — `make test` ne le construit pas, et rien ne le lance en
+# intégration continue.
+demo: $(DEMO)
+
+demo-run: $(DEMO)
+	@$(DEMO) "$(WORLD)" "$(MESH)"
 
 # Écrit l'empreinte sur la sortie standard, les échecs sur la sortie d'erreur.
 run: $(EXE)

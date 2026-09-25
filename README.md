@@ -153,6 +153,8 @@ make conform   # replays the reference scenes and compares hashes
 make lint
 make nostd     # proof that the core builds without std
 make web       # serves the wasm host page on http://127.0.0.1:8080/
+make demo-c    # walks through a decor in a window, from the C host
+make demo-cpp  # the same, from the C++ host
 ```
 
 The core is `no_std` and has no dependencies. A fresh clone builds with nothing
@@ -161,7 +163,9 @@ installed beyond a Rust toolchain; only `screengine-play` carries dependencies,
 
 The wasm host needs Node and the `wasm32-unknown-unknown` target, which
 `make tools` installs; the Android host needs the NDK, SDK, emulator and
-`qemu-user`, which `hosts/android/Dockerfile` brings together on Linux with KVM. iOS
+`qemu-user`, which `hosts/android/Dockerfile` brings together on Linux with KVM;
+the two desktop demonstrations need SDL3, and say what is missing rather than
+failing to compile. iOS
 waits until the rest is stable — see the roadmap.
 [`docs/construction.md`](docs/construction.md) carries the full matrix (in
 French).

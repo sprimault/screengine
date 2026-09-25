@@ -153,6 +153,8 @@ make conform   # rejoue les scènes de référence et compare les empreintes
 make lint
 make nostd     # preuve que le noyau compile sans std
 make web       # sert la page de l'hôte wasm sur http://127.0.0.1:8080/
+make demo-c    # parcourt un décor dans une fenêtre, depuis l'hôte C
+make demo-cpp  # le même, depuis l'hôte C++
 ```
 
 Le noyau est `no_std` et n'a aucune dépendance. Un dépôt fraîchement cloné
@@ -161,6 +163,8 @@ porte des dépendances : `winit`, `softbuffer` et `png`.
 
 L'hôte wasm demande Node et la cible `wasm32-unknown-unknown`, que
 `make tools` installe ; l'hôte Android demande NDK, SDK, émulateur et
-`qemu-user`, que `hosts/android/Dockerfile` réunit sous Linux avec KVM. iOS attend que le reste soit stable — voir la feuille de
+`qemu-user`, que `hosts/android/Dockerfile` réunit sous Linux avec KVM ; les
+deux démonstrations de bureau demandent SDL3, et disent ce qui manque plutôt que
+d'échouer à la compilation. iOS attend que le reste soit stable — voir la feuille de
 route. [`docs/construction.md`](docs/construction.md) porte la
 matrice complète.

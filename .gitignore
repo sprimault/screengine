@@ -9,6 +9,12 @@
 /.tmp/
 /makefile.local
 
+# SDL3, décompressé à la main pour les hôtes de démonstration C et C++. Une
+# dépendance système ne se versionne pas ; ici plutôt que sous /.tmp/ parce que
+# `make clean` efface celui-ci, et qu'on ne retélécharge pas une archive à
+# chaque nettoyage. `makefile.local` en porte le chemin.
+/.sdl3/
+
 # Hôtes — tout ce qui en sort est reconstruit
 /hosts/web/pkg/
 /hosts/c/*.exe
