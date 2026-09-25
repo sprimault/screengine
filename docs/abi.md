@@ -7,18 +7,23 @@ Un auteur de liaison qui ne lit pas le français trouve l'essentiel dans
 `include/screengine.h`, dont la documentation est en anglais : ce qui ne peut pas
 être ignoré à l'appel y figure, fonction par fonction.
 
-**État : l'étape 3 est publiée — les sept points d'entrée de l'étape 0, le rendu
-par tuiles, les textures avec leur niveau de filtrage, et la lumière :
-lightmaps, lumières dynamiques, brouillard, résolution interne et courbe de
-sortie.** Chaque décision garde ci-dessous l'option écartée et pourquoi. Un seul
-point reste marqué **À trancher** : la dépréciation, qui attend le gel de l'ABI
-en 1.0.
+**État : l'étape 4 est publiée en 0.4.0** — les sept points d'entrée de l'étape 0,
+le rendu par tuiles, les textures avec leur niveau de filtrage, la lumière
+(lightmaps fournies par l'hôte, lumières dynamiques, brouillard, résolution
+interne, courbe de sortie), et les deux formats de données avec leurs
+accesseurs. Chaque décision garde ci-dessous l'option écartée et pourquoi. Un
+seul point reste marqué **À trancher** : la dépréciation, qui attend le gel de
+l'ABI en 1.0.
 
-**L'étape 4 est exposée entière** : les six fonctions du maillage, les six de la
-carte et les sept accesseurs de ses lumières et de ses entités. Le
-contrat d'un format se fige avant son premier décodeur, comme les formats de
-virgule fixe se sont figés avant le premier remplissage : ce qui s'écrit après
-s'écrit contre ce qui a déjà été codé.
+**L'étape 5 est exposée entière** : la traversée par portails, le suivi de la
+cellule de la caméra, et le calcul des lightmaps avec son cache. Le contrat se
+fige avant le premier code, comme celui d'un format se fige avant son premier
+décodeur et comme les formats de virgule fixe se sont figés avant le premier
+remplissage : ce qui s'écrit après s'écrit contre ce qui a déjà été codé.
+
+**Elle rend les deux premiers codes positifs du projet**, ce que la section
+« Codes de retour » avait réservé sans l'employer. Une liaison qui juge un appel
+par « différent de `0` » se trompe désormais : le critère est « négatif ».
 
 ## Principes
 
@@ -132,10 +137,29 @@ côté, à la manière d'`errno`. Un indicateur en bande finit toujours par deve
 une valeur légitime, et rien ne garantit qu'un emplacement d'erreur soit
 préservé en cas de succès — une liaison ne sait alors pas quand le lire.
 
-**Un code positif est un succès accompagné d'un statut.** Aucun n'est rendu en
-v1. C'est écrit maintenant parce que ça ne coûte rien maintenant : une liaison
-qui teste « différent de `0` » au lieu de « négatif » se trompera le jour où un
-appel devra dire « incomplet ».
+**Un code positif est un succès accompagné d'un statut.** La clause a été écrite
+à l'étape 0 sans qu'aucun code ne l'emploie, et l'étape 5 en rend deux : la
+traversée dit « incomplet » quand elle atteint sa borne de profondeur, et « sans
+cellule » quand on ne lui en donne pas. C'est le jour que la clause annonçait.
+
+Arrêté, et c'est la convention entière :
+
+- **espace plat à partir de `1`, aucune catégorie.** La règle arithmétique des
+  plages sert à dégrader un code inconnu vers un traitement ; un statut n'a rien
+  vers quoi dégrader, puisque l'ignorer est toujours correct.
+- **jamais un masque de bits.** Le retour est un `int32_t` qui dit une chose.
+  Quand deux statuts s'appliquent, l'appel rend **le plus actionnable** et le
+  message nomme les deux. Cet ordre est contractuel : le code rendu fait partie
+  de la sortie d'une scène de conformance.
+- **un statut n'est jamais collant.** Il décrit l'appel qui vient de rendre, pas
+  un état du contexte, et rien ne se lit ensuite pour le retrouver.
+- **une liaison juge par le signe.** `code < 0` est un échec, `code == 0` un
+  succès sans rien à signaler, `code > 0` un succès dont l'hôte peut ne rien
+  faire. Un statut inconnu se traite donc comme `SCG_OK`.
+
+Les hôtes du dépôt comparaient `!= SCG_OK` en trente-neuf endroits, et auraient
+tous traité le premier statut en échec. Ils passent par un prédicat, et c'est
+volontairement visible : ce sont eux qu'un auteur de liaison recopie.
 
 Arrêté :
 
@@ -153,6 +177,7 @@ ce dont une liaison a besoin pour traiter celui qu'elle ne connaît pas.
 
 | Plage | Domaine | Codes proposés |
 |---|---|---|
+| `1` et au-delà | statuts (étape 5) | `1` `SCG_STATUS_INCOMPLETE`, `2` `SCG_STATUS_NO_CELL` |
 | `0` | succès | `SCG_OK` |
 | `-1` à `-99` | généraux | `-1` `SCG_ERR_NULL`, `-2` `SCG_ERR_INVALID_ARGUMENT`, `-3` `SCG_ERR_OUT_OF_MEMORY`, `-4` `SCG_ERR_INVALID_STATE`, `-5` `SCG_ERR_PANIC`, `-6` `SCG_ERR_FAULTED` |
 | `-100` à `-199` | données (étape 4) | `-100` `SCG_ERR_UNKNOWN_RESOURCE`, `-101` `SCG_ERR_INVALID_FORMAT`, `-102` `SCG_ERR_UNSUPPORTED_FORMAT_VERSION` |
@@ -194,6 +219,37 @@ se déclencherait jamais.
 troncature ne se distingue pas d'un en-tête qui ment sur sa longueur ; aucun hôte
 ne peut agir différemment sur les deux, et un quatrième code obligerait à figer
 l'ordre des contrôles du décodeur dans le contrat.
+
+**La plage du monde reste vide, et l'étape 5 ne l'ouvre pas.** Elle n'avait
+besoin d'aucun code propre, et chacun de ses cas est tombé dans un code déjà
+défini — ce qui est le signe que les plages sont bien tracées, pas le signe d'un
+oubli :
+
+- une cellule inconnue par identifiant est **`SCG_ERR_UNKNOWN_RESOURCE`**, défini
+  à l'étape 4 pour « une recherche par identifiant stable qui ne trouve rien » et
+  qu'aucun appel ne rendait encore. L'étape 5 lui donne ses premiers appelants ;
+- un bloc de cache de lightmaps malformé est **`SCG_ERR_INVALID_FORMAT`**, et
+  d'une version non lue **`SCG_ERR_UNSUPPORTED_FORMAT_VERSION`** : c'est un bloc
+  de données comme un autre, venu du stockage de l'hôte, donc hostile par
+  hypothèse ;
+- un calcul de lightmaps demandé pendant une image est **`SCG_ERR_INVALID_STATE`**,
+  dont c'est la définition littérale — il alloue, ce qui est interdit entre le
+  début et la fin d'une image ;
+- une capacité de triangles insuffisante pour ce que la traversée ramène est
+  **`SCG_ERR_INVALID_ARGUMENT`**, par symétrie exacte avec les autres
+  dépassements de capacité ;
+- un cache dont l'empreinte ne concorde plus **n'est pas une erreur du tout**,
+  voir « Le cache de lightmaps ».
+
+Écarté : un `SCG_ERR_STALE_CACHE`, qui aurait fait refuser le bloc entier pour
+une seule cellule périmée — donc tout recuire pour un mur déplacé, l'inverse de
+ce que l'étape 8 existe pour rendre possible. Écarté aussi : un code pour un
+atlas de lightmap démesuré, que le **chargement** refuse désormais, dans le même
+passage qui vérifie déjà le repère de lightmap ; l'hôte l'apprend en ouvrant la
+carte et non trois appels plus tard.
+
+Une plage vide ne coûte rien, un code publié garde son sens pour toujours, et
+ajouter un code plus tard n'incrémente pas `SCG_ABI_VERSION`.
 
 **La plage est une règle arithmétique, pas une convention de rédaction** : la
 catégorie d'un code est `(-code) / 100`. Une liaison qui rencontre un code
@@ -1095,6 +1151,196 @@ Arrêté :
   types opaques nouveaux, trois codes d'erreur déjà réservés. Aucune signature
   publiée, aucune structure, aucune précondition ne bouge.
 
+### Étape 5
+
+**Quatorze fonctions, un type opaque, sept constantes, aucun code d'erreur
+nouveau et deux statuts.** Aucune signature publiée, aucune structure, aucune
+précondition ne bouge : `SCG_ABI_VERSION` reste à **1**.
+
+La traversée et le calcul des lightmaps sont deux chantiers indépendants — le
+second a besoin des cellules, pas de la traversée — et ils sont exposés ensemble
+parce que la soumission les touche tous les deux.
+
+```c
+/* la traversée, et le chemin brut qu'elle ne remplace pas */
+int32_t scg_submit_world_lit(ScgContext *ctx, const ScgMat4 *model,
+                             const ScgWorld *world,
+                             const ScgTexture *const *textures, uint32_t texture_count,
+                             const ScgLighting *lighting);
+int32_t scg_submit_world_visible(ScgContext *ctx, const ScgMat4 *model,
+                                 const ScgWorld *world,
+                                 const ScgTexture *const *textures, uint32_t texture_count,
+                                 const ScgLighting *lighting,
+                                 uint32_t cell_id);
+
+/* la cellule de la caméra : trouvée une fois, suivie ensuite */
+int32_t scg_world_locate(const ScgWorld *world, const float position[3], uint32_t *out);
+int32_t scg_world_track(const ScgWorld *world, uint32_t from_cell,
+                        const float from[3], const float to[3], uint32_t *out);
+
+/* ce que la carte doit dire de ses cellules pour piloter le calcul */
+int32_t scg_world_cell_count(const ScgWorld *world, uint32_t *out);
+int32_t scg_world_cell_id(const ScgWorld *world, uint32_t index, uint32_t *out);
+int32_t scg_world_cell_luxel_count(const ScgWorld *world, uint32_t cell_id, uint32_t *out);
+
+/* les lightmaps calculées, et leur cache */
+int32_t scg_lighting_create(const ScgWorld *world, ScgLighting **out);
+void    scg_lighting_destroy(ScgLighting *lighting);
+int32_t scg_lighting_build(ScgLighting *lighting, uint32_t cell_id);
+int32_t scg_lighting_state(const ScgLighting *lighting, uint32_t cell_id, uint32_t *out);
+int32_t scg_lighting_save(const ScgLighting *lighting, uint8_t *buf, size_t cap,
+                          size_t *out_len);
+int32_t scg_lighting_restore(ScgLighting *lighting, const uint8_t *bytes, size_t len,
+                             uint32_t *out_accepted);
+```
+
+Constantes : `SCG_STATUS_INCOMPLETE` (1), `SCG_STATUS_NO_CELL` (2),
+`SCG_LIGHTMAP_ABSENT` (0), `SCG_LIGHTMAP_READY` (1), `SCG_LIGHTMAP_STALE` (2),
+`SCG_TRAVERSAL_DEPTH` (64) et `SCG_MAX_LIGHTMAP_SIZE` (1024).
+
+#### La traversée
+
+- **Elle ajoute sa fonction, elle ne remplace rien.** `scg_submit_world` reste,
+  non dépréciée : c'est le chemin brut contre lequel la traversée se valide, et
+  sur un décor où tout est visible les deux doivent rendre **la même empreinte**.
+  Cette égalité n'est pas une commodité de test, c'est un théorème sur une carte
+  bien formée — cellules fermées, disjointes, murs dessinés —, et c'est le seul
+  contrôle qui attrape une fenêtre trop étroite. Il n'attrape pas une fenêtre trop
+  large, et c'est normal : une fenêtre trop large ne change pas l'image.
+- **`scg_submit_world_lit` existe pour que cette égalité soit vérifiable
+  éclairée.** Sans elle, le chemin brut rendrait un décor non éclairé et le
+  chemin traversé un décor éclairé : les deux empreintes différeraient pour une
+  raison étrangère à la traversée.
+- **La cellule de départ est un paramètre, jamais un état du contexte.** Le
+  moteur ne retient ni la cellule de la caméra, ni le monde : l'hôte garde l'une
+  et passe l'autre à chaque appel, exactement comme il le fait déjà pour la carte.
+  Écarté : une cellule courante dans le contexte, qui aurait demandé au moteur de
+  connaître le monde entre deux appels — donc de retenir une ressource dont le
+  contrat dit qu'elle ne lui appartient pas — et fait du suivi de caméra un état
+  de jeu logé dans le moteur.
+- **`cell_id` à `0` vaut « aucune cellule ».** Le format réserve déjà `0` à
+  « aucun ». L'appel ne dessine alors rien — fond, alpha et post-traitement
+  s'écrivent comme pour une scène vide —, ne consomme aucune capacité, et rend
+  **`SCG_STATUS_NO_CELL`**. C'est une clause, pas un défaut : un hôte peut
+  légitimement poser sa caméra dans un interstice d'une carte en cours d'édition.
+
+  Écarté : se rabattre sur le rendu brut de toutes les cellules — jamais de trou,
+  mais une falaise de performance qui masque une caméra passée à travers un mur.
+  Écarté : garder la dernière cellule connue, qui est rendre une image plausible
+  depuis une cellule fausse. Écarté : un code négatif, qui refuserait une
+  situation que l'hôte a le droit de produire.
+- **Un identifiant de cellule qui n'existe pas rend `SCG_ERR_UNKNOWN_RESOURCE`**,
+  et rien n'est dessiné. `0` n'est pas un identifiant inconnu, c'est l'absence.
+- **La profondeur de traversée est bornée à `SCG_TRAVERSAL_DEPTH`, et cette
+  valeur ne se configure pas.** L'atteindre tronque l'image ; une borne réglable
+  ferait donc dépendre l'image d'un champ de configuration, et la conformance ne
+  pourrait plus la suivre. L'image reste fonction de la carte, de la caméra, de la
+  résolution et de rien d'autre.
+
+  Quand la borne est atteinte, l'appel rend **`SCG_STATUS_INCOMPLETE`** : la
+  cellule du fond est dessinée entière, seuls ses portails ne sont pas dépliés, si
+  bien que ce qui manque commence une cellule plus loin que la borne. Écarté : la
+  troncature silencieuse, qui est une image trouée sans erreur. Écarté : un code
+  négatif, une profondeur de 64 étant une condition de décor et non une faute
+  d'appel — et l'hôte n'a aucun levier, la borne n'étant pas réglable. Écarté :
+  soumettre à la borne tout ce qui reste accessible sans le traverser, ce qui
+  convertit une condition de décor en coût non borné à l'instant même où le moteur
+  cherchait à le borner.
+- **Une cellule visitée est soumise une fois, dans l'ordre du fichier.** La
+  traversée détermine d'abord ce qui est visible, puis une seconde passe soumet.
+  Trois raisons, dont la deuxième décide : le total soumis reste inférieur ou égal
+  à ce que rend `scg_world_triangle_count`, qui demeure donc un dimensionnement
+  valide de `max_triangles` ; l'ordre du fichier départage deux surfaces
+  coplanaires, et en ordre de traversée cet ordre deviendrait fonction de la
+  position de la caméra ; et l'égalité avec le chemin brut est alors vraie par
+  construction plutôt que par chance.
+- **Deux cellules superposées peuvent contenir le même point.** `scg_world_locate`
+  rend alors la **première dans l'ordre du fichier**. Ce n'est pas une erreur,
+  c'est un arbitrage, et il est écrit ici pour que deux constructions ne le
+  tranchent pas différemment.
+- **`scg_world_locate` et `scg_world_track` ne prennent pas de contexte** et ne
+  dessinent rien : ce sont des interrogations de la carte, appelables depuis
+  n'importe quel thread, dont l'erreur se lit par `scg_last_error(NULL)`.
+  `scg_world_track` transporte la cellule quand le segment franchit un portail
+  apparié, et rend `0` quand il sort par un portail non apparié ou par une
+  surface. Le moteur ne se relocalise jamais de lui-même : c'est l'hôte qui
+  rappelle `scg_world_locate`.
+
+  Écarté : chercher la cellule à chaque image. La localisation est en O(surfaces)
+  et c'est un appel nommé ; le suivi est local à une cellule et se paie par
+  déplacement.
+
+#### Les lightmaps calculées
+
+- **Elles vivent dans un handle propre, `ScgLighting`, créé depuis une carte.**
+  Trois raisons : l'hôte doit pouvoir sortir le cache et le rendre, et deux
+  handles mettent « source » et « cache dérivable » dans le type ; `ScgWorld` est
+  documentée immuable et partageable en lecture entre contextes et entre threads,
+  qu'un appel qui la mute lui retirerait après coup ; et l'étape 7 charge une
+  carte pour la collision sans allouer un seul luxel.
+
+  Le handle garde la carte vivante de son côté, sans que l'hôte ait à ordonner
+  ses destructions. Écarté : repasser le `ScgWorld` à chaque appel, qui fait de
+  « la même carte » une précondition que rien ne vérifie.
+- **Un appel par cellule, désignée par son identifiant, synchrone.** Par
+  identifiant parce que le cache en stocke et que l'étape 8 nommera la cellule
+  qu'elle vient de modifier : deux façons de désigner une cellule, dont l'une
+  périme à la première suppression au milieu, c'est ce que la règle des
+  identifiants stables interdit.
+
+  Écarté : un découpage en tranches avec curseur de reprise. La cellule *est* le
+  grain, et le problème que les tranches résolvent est déjà résolu autrement :
+  l'appel ne prenant pas de contexte, il vit sur un thread de l'hôte comme un
+  chargement de texture, et l'hôte peut même paralléliser entre cellules. Une
+  barre de progression se fait avec `scg_world_cell_luxel_count`, dont la valeur
+  est dérivée au chargement.
+- **Le calcul alloue, donc il est refusé pendant une image** par
+  `SCG_ERR_INVALID_STATE`, et les chaînes de mipmaps se construisent à la fin de
+  l'appel qui calcule ou qui reprend un cache — jamais au premier affichage.
+- **`scg_lighting_state` rend l'état d'une cellule** : absente, prête, ou périmée
+  parce que la cellule a changé depuis le calcul. C'est un accesseur scalaire,
+  comme tous ceux de l'étape 4 ; il n'y a pas de structure rendue à l'hôte.
+- **Une soumission éclairée dont la cellule n'a pas d'atlas retombe sur le
+  chemin non éclairé**, surface par surface, sans erreur. Écarté : refuser la
+  soumission, qui rendrait un niveau partiellement rallumé inaffichable au moment
+  précis où un éditeur a besoin de le voir.
+- **`lighting` peut être nul** dans les deux soumissions : le décor rend alors ce
+  que `scg_submit_world` rend aujourd'hui.
+
+#### Le cache de lightmaps
+
+- **Il se rend en deux temps, dans le tampon de l'hôte** : `buf` nul avec `cap` à
+  zéro écrit la longueur nécessaire dans `out_len`, un second appel remplit. Un
+  `cap` non nul mais trop court rend `SCG_ERR_INVALID_ARGUMENT` sans rien écrire,
+  `out_len` compris — le patron exact des noms de matériaux et des octets d'une
+  entité. La longueur est connue analytiquement : l'appel de mesure ne sérialise
+  rien.
+
+  Écarté : rendre un bloc que le moteur alloue. Cela marche, et cela créerait un
+  second contrat de propriété pour une seule fonction — un hôte qui oublie de
+  libérer y perd un mégaoctet au lieu d'une chaîne. Sur wasm, c'est l'hôte qui
+  appelle `scg_buffer_alloc`, comme pour tout le reste.
+- **Le bloc porte son propre en-tête versionné**, et c'est un format de données
+  au même titre que les deux autres : sa disposition est dans
+  [`rust.md`](rust.md), l'ABI n'en voyant qu'un bloc d'octets.
+- **Une entrée dont l'empreinte ne concorde plus est écartée, et ce n'est pas une
+  erreur.** `scg_lighting_restore` rend `SCG_OK` et écrit dans `out_accepted` le
+  nombre d'entrées reprises ; les cellules écartées restent absentes, et
+  `scg_lighting_state` dit lesquelles. Un cache partiellement périmé est le cas
+  normal d'un éditeur.
+
+  Écarté : refuser le bloc entier, donc tout recuire pour un mur déplacé. Écarté :
+  garder l'entrée et rendre un éclairage périmé, la seule option que le projet
+  refuse par principe. Écarté : un statut positif pour « accepté partiellement »,
+  alors que `out_accepted` le dit exactement et qu'un statut se perd.
+- **Une entrée qui désigne une cellule absente de la carte est écartée de même**,
+  sans erreur : un hôte qui a supprimé une salle et gardé son ancien cache est un
+  hôte normal.
+- **Une cellule modifiée périme la sienne et celles de ses voisines immédiates.**
+  L'empreinte l'attrape, mais la clause est écrite pour qu'un hôte qui ne
+  recalcule que la cellule éditée comprenne pourquoi sa voisine passe à
+  « périmée » : la lumière qui passait par la porte était calculée là-bas.
+
 ### Étapes suivantes
 
 Prévisionnel. Ce qui doit être exposé est arrêté par la feuille de route ; les
@@ -1106,7 +1352,7 @@ noms ne le sont pas.
 | 2 | ✓ chargement d'une texture, mipmaps engendrés au chargement, niveau de qualité du filtrage par `scg_set_filter` |
 | 3 | ✓ soumission d'un lot éclairé, réglage du sur-éclairement, du brouillard, des lumières dynamiques, de la résolution interne et de la courbe de sortie |
 | 4 | ✓ chargement d'un maillage et d'une carte depuis un bloc d'octets, libération, leurs comptes, leurs noms, leurs soumissions, et les lumières et entités d'une carte |
-| 5 | rendu du monde depuis la caméra, calcul des lightmaps d'une cellule et reprise d'un cache |
+| 5 | ✓ rendu du monde depuis la caméra, suivi de sa cellule, calcul des lightmaps d'une cellule et reprise d'un cache |
 | 6 | interpolation entre trames, sprites orientés caméra |
 | 7 | module de collision, utilisable sans contexte de rendu |
 | 8 | tracé de lignes et de points, interrogation de la scène, modification d'une cellule par identifiant |
@@ -1114,10 +1360,15 @@ noms ne le sont pas.
 ## Ce qu'un auteur de liaison doit savoir
 
 - **Vérifier la version au chargement**, par égalité, avant tout autre appel.
+- **Juger un appel par le signe de son code, jamais par `!= 0`.** Un code positif
+  est un succès accompagné d'un statut, et un statut qu'une liaison ne connaît pas
+  se traite comme `SCG_OK` — l'ignorer est toujours correct. Les hôtes du dépôt
+  ont dû être corrigés sur ce point à l'étape 5, en trente-neuf endroits.
 - **Copier le message de `scg_last_error` immédiatement.** Le prochain appel sur
   le même contexte l'invalide.
 - **Ramener un code inconnu à sa catégorie**, `(-code) / 100`, plutôt que de le
-  traiter en erreur générique.
+  traiter en erreur générique. Cela vaut pour les négatifs seuls : les statuts
+  n'ont pas de catégorie.
 - **Mettre une structure de configuration entièrement à zéro avant de la
   remplir.** Ses champs `_reserved` doivent être nuls, et c'est ce qui permettra
   d'en utiliser un sans casser les liaisons déjà écrites.

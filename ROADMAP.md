@@ -284,6 +284,23 @@ son empreinte : une divergence est une variante fausse, jamais une différence
 acceptable. Aucune intrinsèque fusionnée, relâchée ou approximative : c'est là,
 et non dans l'arithmétique ordinaire, que le déterminisme se perd.
 
+**Le calcul des lightmaps de l'étape 5 reste scalaire et n'entre pas ici.** Sur
+armv7, le SIMD avancé n'a que la sémantique du zéro forcé là où le VFP scalaire
+traite les sous-normaux : c'est architectural, et une variante vectorielle y
+rendrait d'autres luxels.
+
+**C'est aussi ici que la fenêtre de traversée peut passer du rectangle à
+l'octogone** — la boîte axiale plus la même tournée de 45°, huit demi-plans à
+normales figées. L'intersection de deux octogones de cette famille en est un, par
+huit minimums et maximums entiers sans division ; les coordonnées obliques
+s'écrivent dans le format existant des fonctions de bord ; et le nombre de plans
+reste **fermé à huit quelle que soit la profondeur de la chaîne**, ce qu'aucune
+autre forme ne donne. Cela supprime le seul mauvais cas du rectangle, un portail
+allongé vu avec du roulis. Ici et non à l'étape 5, pour deux raisons : il faut
+toucher la boucle de lignes du remplissage, là où un rectangle ne demande rien, et
+il **ne déplace aucune empreinte** — donc il peut arriver à tout moment, sans mise
+à jour de références.
+
 **Volontairement tardive.** Optimiser avant que le pipeline soit figé revient à
 écrire trois fois le même code.
 
