@@ -66,6 +66,11 @@ critère est `code < 0`, et un statut inconnu se traite comme `SCG_OK`.
   l'image ne dépend pas d'elle —, le calcul des lightmaps d'une cellule et la
   disposition de son cache, troisième genre du conteneur commun aux deux formats
   existants.
+- **Le noyau réduit une fenêtre par un portail projeté**, ce sur quoi la traversée
+  s'appuiera : découpage du portail en éventail, passage par le chemin de
+  projection existant sans y ajouter une seule opération flottante, puis boîte du
+  portail **découpé par la fenêtre reçue**. `Rect` gagne son intersection et son
+  rectangle vide. Rien n'appelle encore cette réduction, et l'image ne change pas.
 
 ### Modifié
 - Le chargement d'une carte vérifie cinq propriétés du repère de lightmap de
@@ -106,6 +111,11 @@ signature changes.
   that bounds the fill loop and never the values, so that the image does not
   depend on it —, the per-cell lightmap computation, and its cache layout, a
   third kind of the container shared by both existing formats.
+- **The core reduces a window by a projected portal**, which traversal will build
+  on: the portal is fanned into triangles, run through the existing projection
+  path without adding a single floating-point operation, then bounded **after
+  being clipped by the incoming window**. `Rect` gains its intersection and its
+  empty value. Nothing calls this reduction yet, and the image does not change.
 
 ### Changed
 - Loading a map checks five properties of each surface's lightmap frame where it

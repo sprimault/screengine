@@ -33,6 +33,51 @@ pub struct Rect {
     pub height: u32,
 }
 
+impl Rect {
+    /// Le rectangle vide, que le remplissage traverse sans rien écrire.
+    pub const EMPTY: Self = Self {
+        x: 0,
+        y: 0,
+        width: 0,
+        height: 0,
+    };
+
+    /// L'intersection de deux rectangles, vide quand ils ne se croisent pas.
+    ///
+    /// Par comparaisons écrites plutôt que par `min` et `max`, comme partout
+    /// ici, et sans soustraction qui puisse déborder : les bords se comparent
+    /// avant d'être retranchés, alors qu'une largeur calculée d'abord passerait
+    /// par un `u32` négatif.
+    pub fn intersect(self, other: Self) -> Self {
+        let x0 = if self.x > other.x { self.x } else { other.x };
+        let y0 = if self.y > other.y { self.y } else { other.y };
+        let right = self.x + self.width;
+        let other_right = other.x + other.width;
+        let x1 = if right < other_right {
+            right
+        } else {
+            other_right
+        };
+        let bottom = self.y + self.height;
+        let other_bottom = other.y + other.height;
+        let y1 = if bottom < other_bottom {
+            bottom
+        } else {
+            other_bottom
+        };
+
+        if x1 <= x0 || y1 <= y0 {
+            return Self::EMPTY;
+        }
+        Self {
+            x: x0,
+            y: y0,
+            width: x1 - x0,
+            height: y1 - y0,
+        }
+    }
+}
+
 /// Où le remplissage écrit ses pixels.
 ///
 /// Un puits plutôt qu'une tranche, et ce n'est pas de l'abstraction gratuite :
