@@ -237,24 +237,45 @@ puisque le chemin brut ne peut en avoir.
 
 ## 6 — Animation et sprites
 
-Interpolation entre trames, sprites orientés caméra, ordre géré par le z-buffer
-plutôt que par un tri.
+Interpolation entre trames, quadrilatères que le moteur oriente sur la caméra,
+ordre géré par le z-buffer plutôt que par un tri.
 
-**Les sprites apportent deux façons d'écrire un pixel que le moteur n'a pas
-encore** : le texel transparent, qu'on n'écrit pas, et la surface **modulée**,
-qui multiplie ce qui est déjà dans le tampon au lieu de l'écraser. La première
-est ce qu'un sprite réclame par définition ; la seconde vient avec, parce
-qu'elle ne coûte qu'un mode de plus au même endroit du remplissage.
+**Deux façons d'écrire un pixel que le moteur n'a pas encore** : le texel
+transparent, qu'on n'écrit pas, et la surface **modulée**, qui multiplie ce qui
+est déjà dans le tampon au lieu de l'écraser. La première est ce qu'un sprite
+réclame par définition ; la seconde vient avec, parce qu'elle ne coûte qu'un mode
+de plus au même endroit du remplissage.
+
+**Ce que l'étape ajoute est ce que l'hôte ne peut pas faire sans calculer.** Un
+quadrilatère à orientation libre — une affiche, un impact, une tache au sol — se
+soumet déjà par les fonctions texturées, et ce qui lui manque n'est pas une
+primitive mais les deux façons d'écrire un pixel ci-dessus. Ce que l'hôte ne peut
+pas faire, c'est l'orienter sur la caméra : il devrait pour cela réinverser la
+pose qu'il vient lui-même de passer, donc normaliser un quaternion par sa propre
+bibliothèque mathématique, et deux liaisons ne rendraient plus la même image. Le
+moteur le construit donc, **autour de l'axe vertical ou plein face**, et les deux
+servent : un personnage debout vu d'en haut se couche avec le second, une lueur
+veut le premier.
+
+**L'orientation apparente d'un personnage se porte par la trame choisie**, jamais
+par la géométrie : l'hôte prend la vue qui correspond à l'angle sous lequel on le
+regarde. Incliner le quadrilatère le ferait voir par la tranche, donc
+disparaître, dès qu'il marche vers la caméra — c'est pourquoi cette étape a
+besoin des trames autant que des quadrilatères, et pourquoi les deux y sont.
 
 **Le cas d'usage à ne pas perdre de vue est l'ombre d'un objet mobile** : une
 tache sombre posée au sol sous un ennemi, modulée avec le décor. Ce n'est pas
 une ombre portée au sens du hors périmètre — rien n'est calculé par test de
 visibilité, et c'est le jeu qui décide où la tache va. Le moteur ne fournit
-que la primitive : un polygone qui assombrit au lieu de recouvrir.
+que la primitive : un polygone qui assombrit au lieu de recouvrir. Elle est
+orientée par le sol, et n'a donc rien à demander à ce qui précède.
 
 **C'est ici que se tranche la normale par sommet**, laissée ouverte à l'étape 3
-faute d'un cas qui la réclame : un objet animé qui traverse les lumières d'une
-salle est ce cas, là où une malle posée au sol se lit par sa silhouette.
+faute d'un cas qui la réclame : un **maillage animé** qui traverse les lumières
+d'une salle est ce cas, là où une malle posée au sol se lit par sa silhouette.
+C'est son seul demandeur — un quadrilatère orienté caméra n'en est pas un, sa
+normale étant la direction de vue : l'éclairage d'un sprite immobile changerait
+quand le joueur en fait le tour.
 
 ## 7 — Collision
 

@@ -16,6 +16,10 @@ des lightmaps, cache compris. Chaque décision garde ci-dessous l'option écart�
 pourquoi. Un seul point reste marqué **À trancher** : la dépréciation, qui attend
 le gel de l'ABI en 1.0.
 
+**La section « Étape 6 » décrit un contrat figé dont rien n'est encore exposé.**
+Le contrat précède son code sur ce projet, et cette section est donc la seule du
+document à ne pas décrire la bibliothèque telle qu'elle est aujourd'hui.
+
 `SCG_ABI_VERSION` reste à **1** : aucune signature publiée n'a changé, l'étape 5
 n'ayant fait qu'ajouter des fonctions. Ce qui change pour une liaison est ailleurs,
 et c'est le premier point des notes de la 0.5.0 : les deux premiers **codes de
@@ -635,9 +639,11 @@ int32_t scg_frame_end(ScgContext *ctx, uint8_t *pixels, uint32_t stride);
 
 - `SCG_ABI_VERSION` est une constante du header ; `scg_abi_version()` rend celle
   de la bibliothèque chargée. C'est un entier, pas un numéro SemVer.
-- **Ajouter une fonction ou un code d'erreur ne l'incrémente pas. Tout le reste
-  l'incrémente** : une signature, une structure, le sens d'un paramètre ou d'un
-  code, une précondition.
+- **Ajouter une fonction, un code d'erreur ou une constante ne l'incrémente pas.
+  Tout le reste l'incrémente** : une signature, une structure, le sens d'un
+  paramètre ou d'un code, une précondition. La constante est nommée parce que
+  l'étape 2 en tirait déjà l'argument pour le filtrage sans que la clause la
+  mentionne, et que l'étape 6 en ajoute quatre.
 - **Une liaison vérifie l'égalité au chargement** et refuse une bibliothèque dont
   la version diffère de celle du header contre lequel elle a été écrite. Puisque
   seule une rupture incrémente, une version différente est une rupture, dans un
@@ -1353,6 +1359,277 @@ statut que la profondeur, pour la même raison : l'image est complète de ce qui
   recalcule que la cellule éditée comprenne pourquoi sa voisine passe à
   « périmée » : la lumière qui passait par la porte était calculée là-bas.
 
+### Étape 6
+
+**Cinq fonctions, deux structures, quatre constantes, aucun code d'erreur
+nouveau et aucun statut.** Aucune signature publiée, aucune structure, aucune
+précondition ne bouge : `SCG_ABI_VERSION` reste à **1**.
+
+**Aucune de ces fonctions n'est encore exposée.** Le contrat se fige avant son
+premier appelant, pour la raison dite en tête de document ; ce qui change pour un
+hôte, en revanche, c'est `version_format` du maillage, qui passe à **2**, et les
+maillages de version 1 sont refusés.
+
+```c
+/* la modulation : le seul mode d'écriture qui demande une fonction */
+int32_t scg_submit_blended(ScgContext *ctx, const ScgMat4 *model,
+                           const ScgVertexUv *vertices, uint32_t vertex_count,
+                           const ScgTriangle *triangles, uint32_t triangle_count,
+                           const ScgTexture *texture, uint32_t blend);
+
+/* les quadrilatères que le moteur oriente */
+int32_t scg_submit_sprites(ScgContext *ctx, const ScgMat4 *model,
+                           const ScgSprite *sprites, uint32_t sprite_count,
+                           const ScgTexture *texture, uint32_t orientation);
+
+/* l'éclairage qui tient compte de l'orientation de la surface */
+int32_t scg_submit_shaded(ScgContext *ctx, const ScgMat4 *model,
+                          const ScgVertexUvN *vertices, uint32_t vertex_count,
+                          const ScgTriangle *triangles, uint32_t triangle_count,
+                          const ScgTexture *texture);
+
+/* les maillages animés */
+int32_t scg_mesh_frame_count(const ScgMesh *mesh, uint32_t *out);
+int32_t scg_submit_mesh_frame(ScgContext *ctx, const ScgMat4 *model,
+                              const ScgMesh *mesh,
+                              const ScgTexture *const *textures,
+                              uint32_t texture_count,
+                              uint32_t frame_a, uint32_t frame_b, float t);
+```
+
+```c
+typedef struct ScgVertexUvN { float x, y, z, u, v, nx, ny, nz; } ScgVertexUvN;
+
+typedef struct ScgSprite {
+    float    x, y, z;
+    float    half_width;
+    float    half_height;
+    float    u0, v0, u1, v1;
+    uint32_t roll;
+    uint8_t  r, g, b, a;
+} ScgSprite;
+```
+
+Constantes : `SCG_TEXTURE_FORMAT_RGBA8_MASKED` (2), `SCG_BLEND_MODULATE` (1),
+`SCG_SPRITE_AXIAL` (1) et `SCG_SPRITE_FACING` (2).
+
+#### Zéro ne vaut défaut que pour un réglage de contexte
+
+Clause générale, écrite ici parce que l'étape en ajoute trois d'un coup et que la
+règle se devinait jusqu'à présent sans être énoncée.
+
+- **Un réglage de contexte a zéro pour défaut** : `scg_set_filter` prend
+  `SCG_FILTER_DITHER` à 0, parce qu'un contexte qu'on ne configure pas doit
+  rendre ce que le moteur rend par défaut.
+- **Une description commence à 1, et zéro est refusé** : `ScgTextureDesc.format`
+  le fait depuis l'étape 2, pour qu'une description laissée à zéro soit refusée
+  plutôt qu'interprétée.
+- **Un mode passé à une soumission est une description.** `blend` et
+  `orientation` commencent donc à 1, et zéro rend `SCG_ERR_INVALID_ARGUMENT`. Un
+  hôte qui laisse le champ à zéro se trompe, et il vaut mieux qu'il l'apprenne au
+  premier appel que sur une image rendue autrement qu'il ne croit.
+- **Une valeur inconnue est refusée, jamais rabattue sur le défaut**, dans les
+  trois cas. C'est ce qui rend l'ajout d'un mode compatible : une liaison écrite
+  contre une version ultérieure reçoit une erreur au lieu d'une image fausse.
+
+#### Le texel transparent
+
+- **La transparence est une propriété de la texture, jamais du dessin.** Elle se
+  déclare par un format de plus, `SCG_TEXTURE_FORMAT_RGBA8_MASKED` : même
+  disposition d'octets que `RGBA8`, l'alpha de chaque texel étant ramené au
+  chargement à 0 ou 255. Un texel dont l'alpha est nul n'est pas écrit — ni sa
+  couleur, ni sa profondeur.
+
+  **C'est au chargement que la décision doit être prise, parce que c'est là que
+  la chaîne de mipmaps se construit.** Un masque décidé au dessin obligerait à
+  tenir deux chaînes, ou à en tenir une fausse : la réduction d'un format masqué
+  pondère le RGB par l'alpha, pour qu'un texel transparent ne teinte pas ses
+  voisins, et moyenne l'alpha en couverture.
+- **Le RGB est dilaté au chargement dans les zones transparentes**, par
+  propagation depuis les texels opaques voisins. Sans cela, le bilinéaire mêle au
+  bord d'un sprite la couleur que l'hôte a laissée sous ses texels invisibles, et
+  cerne la silhouette d'un liseré. C'est payé une fois, jamais par pixel, et cela
+  évite d'avoir à écrire dans le contrat que ces texels doivent porter une
+  couleur plausible — une précondition qu'aucun hôte ne lirait.
+- **L'alpha se lit au plus proche, quel que soit le niveau de filtrage.** Le
+  tramage et le bilinéaire règlent l'échantillonnage de la couleur ; le test de
+  transparence est binaire et n'a pas de valeur intermédiaire à prendre. C'est la
+  même forme de clause que « une lightmap se lit toujours en bilinéaire, quel que
+  soit ce réglage ».
+- **Aucune fonction nouvelle.** Tous les chemins de soumission qui prennent une
+  texture en héritent : `scg_submit_textured`, `scg_submit_lit`,
+  `scg_submit_mesh`, les deux soumissions de monde et les deux fonctions de cette
+  étape.
+- **La transparence est binaire, et ce n'est pas une facilité.** C'est elle qui
+  laisse vraie la promesse « l'ordre est géré par le z-buffer plutôt que par un
+  tri » : deux surfaces masquées qui se croisent se résolvent par la profondeur,
+  dans n'importe quel ordre de soumission. Un mélange fractionnaire exigerait au
+  contraire un tri par profondeur, c'est-à-dire précisément ce que le z-buffer a
+  supprimé à l'étape 1.
+
+  Écarté : rendre signifiant l'alpha de `SCG_TEXTURE_FORMAT_RGBA8`. Les hôtes qui
+  le laissent à zéro verraient leurs textures disparaître, sous une signature
+  inchangée et sans qu'aucune version ne les prévienne. Écartée : une couleur
+  clé, que « couleurs directes » exclut — tout RGB y est légitime — et dont la
+  moyenne d'un mipmap n'aurait aucun sens.
+
+#### La surface modulée
+
+- **Elle multiplie le tampon au lieu de l'écraser**, par canal, et
+  `scg_submit_blended` est la seule fonction que l'étape ajoute pour un mode
+  d'écriture. `blend` vaut `SCG_BLEND_MODULATE` ; zéro et toute valeur inconnue
+  rendent `SCG_ERR_INVALID_ARGUMENT`.
+
+  **Une fonction et non un réglage de contexte** : un réglage est lu par les
+  tuiles, donc il vaut pour l'image entière, ce qui est l'inverse du besoin — une
+  scène porte son décor et ses taches d'ombre dans la même image. Et un réglage
+  lu à la soumission serait un mode caché, dont la valeur à l'instant de l'appel
+  déciderait de l'image. Écarté aussi : un champ de `ScgTriangle`, publiée, qui
+  ne peut plus en gagner ; recycler son octet `a` changerait le sens d'un champ
+  publié, donc incrémenterait `SCG_ABI_VERSION`.
+
+  Un paramètre plutôt qu'une fonction par mode, pour qu'un mode additif puisse
+  arriver en constante sans fonction nouvelle.
+- **255 est le neutre**, comme pour une lightmap : un texel modulant blanc laisse
+  le tampon intact, un texel noir l'éteint. La forme entière est dans
+  [`rust.md`](rust.md) ; ce qu'un hôte doit en savoir tient en une phrase : une
+  surface modulée assombrit ou ne fait rien, **elle n'éclaircit jamais**.
+- **Elle teste la profondeur sans l'écrire, et le test n'est pas strict.** Les
+  deux moitiés se règlent séparément et chacune a sa raison. Le test non strict
+  parce qu'une tache est coplanaire au sol qu'elle marque, et que le test strict
+  la perdrait à égalité. L'absence d'écriture parce qu'une surface modulée
+  n'occulte rien : si elle écrivait la profondeur, deux taches superposées ne se
+  multiplieraient plus qu'une fois, dans un ordre qui dépendrait de la
+  répartition en tuiles.
+- **Le décor se soumet donc avant ses taches.** C'est la seule contrainte que le
+  z-buffer ne supprime pas, et elle ne demande aucune garantie nouvelle : l'ordre
+  de soumission est déjà contractuel, et déjà indépendant des tuiles et des
+  threads.
+
+  Écarté : un biais de profondeur. La profondeur est `near/w` en 0.32, si bien
+  qu'un biais constant vaut des millimètres de près et des dizaines de mètres au
+  loin : la constante serait choisie contre l'échelle d'une scène et fausse dans
+  la suivante. Écarté : laisser l'hôte décaler sa géométrie, ce qu'il peut déjà
+  faire et qui ne lui donne aucune primitive.
+- **La modulation a lieu dans la tuile, en couleurs directes**, donc avant le
+  brouillard et la courbe de sortie, qui restent à la recopie. L'inverse rendrait
+  une tache visible à travers un brouillard plein.
+
+#### Les quadrilatères orientés
+
+- **L'hôte donne un centre et deux demi-extensions ; le moteur construit le
+  quadrilatère.** C'est la seule chose de cette étape que l'hôte ne peut pas
+  faire sans calculer : l'orienter exige la base de la caméra, qu'il devrait
+  obtenir en réinversant la pose qu'il vient lui-même de passer, donc en
+  normalisant un quaternion par sa propre bibliothèque mathématique. C'est
+  l'argument déjà écrit contre la modèle-vue, un cran plus loin, et sa conclusion
+  est la même : deux liaisons ne rendraient plus la même image.
+
+  Écarté : quatre sommets pré-orientés, que l'hôte peut de toute façon soumettre
+  par `scg_submit_textured` s'il veut un quadrilatère à orientation libre — une
+  affiche, un impact, une tache au sol. Ce chemin-là existe et ne bouge pas.
+- **Les demi-extensions sont en unités du monde, jamais en pixels.** En pixels,
+  la taille d'un sprite dépendrait de la résolution interne, qui est un
+  paramètre que l'hôte change en cours de partie.
+- **`model` place le centre, et lui seul.** Sa partie linéaire n'oriente pas le
+  quadrilatère — c'est la caméra qui l'oriente, par définition. Le paramètre
+  reste pour la symétrie de la famille des soumissions.
+- **Deux orientations, et les deux servent.** `SCG_SPRITE_AXIAL` fait tourner le
+  quadrilatère autour du Z du monde seulement ; `SCG_SPRITE_FACING` le met plein
+  face. Un personnage debout regardé d'en haut **se couche** avec le second, ce
+  qui est une image fausse, et **s'aplatit** avec le premier, ce qui n'est qu'une
+  silhouette perdue ; une lueur ou une étincelle veut au contraire le second.
+
+  L'axial dégénère quand la caméra est à la verticale exacte : le quadrilatère
+  disparaît, sans erreur, comme un triangle qui ne se projette pas. C'est une
+  donnée, pas un cas d'erreur.
+- **Le roulis est un angle binaire**, `roll`, où 2³² vaut un tour : il tourne le
+  quadrilatère dans son propre plan, après l'orientation et avant la projection.
+  Zéro est son neutre, et c'est le format d'angle du noyau — l'hôte n'a aucune
+  trigonométrie à faire. Il vaut pour les deux orientations.
+- **Le rectangle de texture est porté par le sprite**, `u0, v0` à `u1, v1`, **en
+  texels et borné à 16384 en valeur absolue** comme toute coordonnée depuis
+  l'étape 2. C'est ce qui permet à une planche de vues de servir tous les sprites
+  d'un lot sans changer de texture.
+- **Un sprite ne crée pas de forme de sommet.** En aval il ne produit que des
+  sommets texturés : le rasteriseur en a exactement trois formes et n'en gagne
+  pas une quatrième. `ScgSprite` est une structure de **description**, comme
+  `ScgTextureDesc`.
+- **Quarante-quatre octets, décalages 0 à 40**, identiques sur les quatre cibles
+  et sans un octet de bourrage : que des champs de quatre octets, puis quatre
+  octets de couleur. La couleur a le même sens que celle d'un `ScgTriangle`, dont
+  le sprite hérite le remplissage.
+- **Les sprites se soumettent par tableau et compte**, une seule traversée de
+  frontière, comme tout le reste. Un sprite consomme deux triangles préparés
+  avant découpe.
+
+#### Les maillages animés
+
+- **Les trames vivent dans le maillage**, et `version_format` passe à **2**. Un
+  maillage de version 1 est refusé par `SCG_ERR_UNSUPPORTED_FORMAT_VERSION`, qui
+  dit à l'hôte quoi faire : réexporter. Il n'y a pas de convertisseur, parce qu'il
+  devrait inventer les normales.
+
+  **Une seule cassure pour les deux raisons**, trames et normale par sommet : deux
+  incréments, ce seraient deux migrations à écrire, deux états à éprouver et deux
+  annonces en tête de notes. Écartée : une ressource d'animation séparée, qui
+  porterait un compte de sommets à tenir accordé avec le maillage qu'elle anime,
+  sans que rien ne puisse le vérifier au chargement — c'est l'argument des liens
+  de portails.
+- **`scg_mesh_frame_count` existe pour la raison de `scg_mesh_triangle_count`** :
+  sans lui, la seule façon de connaître ce nombre serait d'essayer. Un maillage
+  statique en rend 1.
+- **Deux indices de trame explicites, et un facteur.** Deux indices et non « la
+  trame et la suivante » : un hôte boucle de la dernière à la première, ou mêle
+  deux trames non adjacentes, sans que le moteur connaisse la moindre notion de
+  séquence ou de clip — rien du jeu ne traverse.
+- **`t` hors de `[0, 1]` est refusé, jamais ramené dans l'intervalle**, et `NaN`
+  est testé nommément avant les comparaisons de bornes. Un bornage silencieux
+  rendrait une pose extrapolée sans le dire, et extrapoler est une décision de
+  jeu. Un indice au-delà du compte rend `SCG_ERR_INVALID_ARGUMENT` et ne dessine
+  rien : le fichier est bon, c'est l'appel qui sort des bornes.
+- **`scg_submit_mesh` reste, non dépréciée**, et rend la trame 0. Elle est le
+  chemin contre lequel le chemin animé se valide : **`frame_a == frame_b` doit
+  rendre la même empreinte qu'elle**, pour tout `t`. Cette égalité n'est pas une
+  commodité de test, c'est ce qui contraint l'écriture de l'interpolation — voir
+  [`rust.md`](rust.md) —, exactement comme l'égalité entre la traversée et le
+  chemin brut à l'étape 5.
+- **Les coordonnées de texture ne s'interpolent pas** : elles sont par sommet et
+  constantes sur toutes les trames. Seule la géométrie bouge, ce qui garde une
+  trame contiguë en mémoire et laisse le contrôle de borne des coordonnées au
+  chargement, une fois.
+
+#### La normale par sommet
+
+- **Elle arrive, et pour un seul demandeur : le maillage animé.** L'étape 3
+  l'avait laissée ouverte faute d'un cas qui la réclame ; un personnage qui passe
+  devant une torche s'éclaircit uniformément sans elle, et l'argument « les objets
+  se lisent par leur silhouette » tombe précisément là — une silhouette animée ne
+  dit rien du volume.
+- **`ScgVertexUvN` étend `ScgVertexUv`, pas `ScgVertexUv2`** : un accessoire
+  mobile n'a pas de lightmap, une lightmap se calculant par cellule. Trente-deux
+  octets, décalages 0 à 28, identiques sur les quatre cibles, sans bourrage. Une
+  structure nouvelle et une fonction nouvelle, ce que la règle d'extension
+  prévoit ; aucune structure publiée ne bouge.
+- **`scg_submit_shaded` est au chemin direct ce que la trame est au chemin
+  maillage.** Le maillage animé porte ses normales dans le fichier et n'a besoin
+  d'aucune structure ; celle-ci existe pour l'hôte qui anime lui-même, au titre
+  de « deux chemins vers le moteur, aucun de seconde classe ».
+- **La normale n'est pas exigée unitaire, le moteur la normalise**, comme le
+  quaternion d'une caméra. Il le faut de toute façon : une normale interpolée
+  entre deux trames n'est plus unitaire. Ce qui est vérifié à la réception est la
+  **finitude**, et un composant non fini refuse le lot entier comme une
+  coordonnée. Une normale de longueur négligeable donne un sommet noir, ce qui se
+  voit.
+- **L'éclairage par normale ne change rien aux lightmaps.** Ce qui se referme est
+  le seul terme angulaire d'une lumière **dynamique** ; l'occultation reste
+  l'affaire de la cuisson, et une lampe cuite et la même lampe dynamique ne
+  rendront jamais exactement la même chose — voir [`rust.md`](rust.md).
+- **Un quadrilatère orienté caméra n'a pas de normale**, et n'en prend pas : la
+  sienne serait la direction de vue, si bien que l'éclairage d'un sprite immobile
+  changerait quand le joueur en fait le tour. Il garde l'atténuation par la
+  distance seule.
+
 ### Étapes suivantes
 
 Prévisionnel. Ce qui doit être exposé est arrêté par la feuille de route ; les
@@ -1365,7 +1642,7 @@ noms ne le sont pas.
 | 3 | ✓ soumission d'un lot éclairé, réglage du sur-éclairement, du brouillard, des lumières dynamiques, de la résolution interne et de la courbe de sortie |
 | 4 | ✓ chargement d'un maillage et d'une carte depuis un bloc d'octets, libération, leurs comptes, leurs noms, leurs soumissions, et les lumières et entités d'une carte |
 | 5 | ✓ rendu du monde depuis la caméra, suivi de sa cellule, calcul des lightmaps d'une cellule et reprise d'un cache |
-| 6 | interpolation entre trames, sprites orientés caméra |
+| 6 | contrat figé, rien d'exposé : modes d'écriture de pixel, quadrilatères orientés, trames, normale par sommet — voir « Étape 6 » |
 | 7 | module de collision, utilisable sans contexte de rendu |
 | 8 | tracé de lignes et de points, interrogation de la scène, modification d'une cellule par identifiant |
 
@@ -1381,6 +1658,10 @@ noms ne le sont pas.
 - **Ramener un code inconnu à sa catégorie**, `(-code) / 100`, plutôt que de le
   traiter en erreur générique. Cela vaut pour les négatifs seuls : les statuts
   n'ont pas de catégorie.
+- **Ne jamais laisser un mode à zéro.** Zéro ne vaut défaut que pour un réglage
+  de contexte ; un mode passé à une soumission commence à 1, et zéro y est
+  refusé. La règle complète est dans « Zéro ne vaut défaut que pour un réglage de
+  contexte ».
 - **Mettre une structure de configuration entièrement à zéro avant de la
   remplir.** Ses champs `_reserved` doivent être nuls, et c'est ce qui permettra
   d'en utiliser un sans casser les liaisons déjà écrites.

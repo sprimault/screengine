@@ -116,6 +116,12 @@ src/
   collide/    étape 7   balayage de boîte contre les cellules
 ```
 
+**L'étape 6 n'ouvre aucun domaine**, et c'est volontaire : la transparence tombe
+dans `texture/`, la modulation dans `light/` et `raster/`, les trames dans
+`format/`, et la construction d'un quadrilatère orienté est une soumission de
+plus. Un répertoire par étape serait un rangement, et un rangement n'est pas une
+contrainte de compilation.
+
 **`raster/simd/` est le seul endroit du noyau qui autorise `unsafe`**, et le
 scalaire qui lui sert de référence reste dans `raster/` : les fondre supprimerait
 la référence.
@@ -394,6 +400,35 @@ aux fonctions de bord.
   comparaison avec lui est fausse, et un refus écrit `x <= seuil` le laisserait
   passer.
 
+- **L'interpolation entre trames s'écrit en trois cas, tranchés une fois par
+  lot** et jamais par sommet : `frame_a == frame_b` ou `t == 0` lit la première
+  trame telle quelle, `t == 1` lit la seconde, sinon `a + (b − a)·t` par
+  composante, dans l'ordre x, y, z. Ce que ces cas achètent est l'exactitude aux
+  deux bornes **et** quand les deux trames sont la même, pour tout `t` :
+  `a + (b − a)·t` n'est pas exacte en `t = 1`, `(1 − t)·a + t·b` ne l'est pas
+  quand `a == b`, et aucune écriture ne l'est aux trois à la fois. C'est la
+  dernière propriété qui fait de l'égalité d'empreinte avec `scg_submit_mesh` —
+  voir [`abi.md`](abi.md) — une conséquence de l'écriture plutôt qu'une chance.
+  La normale passe par le même lerp, puis se renormalise : une normale interpolée
+  n'est plus unitaire.
+- **L'atténuation d'une lumière dynamique se calcule dans cet ordre**, qui est
+  contractuel parce qu'il est celui de la cuisson :
+  1. une fois par lot — les positions des lumières en espace de vue, la
+     réciproque du rayon au carré, et la matrice des cofacteurs de la partie
+     linéaire ;
+  2. par sommet — `n_vue = cofacteurs · n`, puis `n̂ = n_vue · rsqrt(n_vue·n_vue)`
+     par la table du noyau ;
+  3. par sommet et par lumière — `offset = position − point`, **dans ce sens**,
+     le produit scalaire du terme de Lambert en dépendant ; `square =
+     offset·offset` ; rejet si `square ≥ r²` ; rejet sur le signe de `n̂·offset`,
+     avant la racine inverse et pour le même prix ; puis `direction = offset ·
+     rsqrt(square)`, `lambert = n̂·direction`, `falloff = 1 − square·réciproque`,
+     `weight = falloff · falloff · lambert`, et `total[c] += couleur[c] · weight`.
+
+  Jamais de `mul_add`, saturation après la somme, comparaisons écrites. Le sens
+  d'`offset` était l'inverse tant que seul son carré servait : sans normale, le
+  signe ne se voyait pas.
+
 ### Repère et transformations
 
 - **Monde en main droite, Z en haut.** La vue de dessus de l'éditeur est
@@ -511,6 +546,10 @@ la création du contexte rend une erreur plutôt que de déborder en silence.
 | Coordonnées de lightmap | **le format des coordonnées de texture, à l'identique** : `lu·z` et `lv·z` interpolés par équation de plan, `i32` 16.16 après division | un second jeu `u, v` par sommet, et non une application affine des premières : celle-ci serait impossible sur un lot **sans** texture, où les coordonnées valent zéro partout — or un mur uni éclairé est le premier cas de l'étape. La division est partagée : la réciproque dépend de la profondeur seule, pas de l'attribut, et une seconde série coûterait cinq divisions `u64` de plus par segment |
 | Combinaison texel × lightmap | `(t·l + t) >> 8` par canal, `l` sur 8 bits où **255 est le neutre** | **pas `(t·l + 128) >> 8`**, qui est la forme de la ligne au-dessus et ne vaut que pour des poids sommant à 256 : sur un facteur en 255 elle rend le blanc à 254 sous pleine lumière, un assombrissement de 1/256 sur toute surface éclairée. `t·(l+1) >> 8` rend le texel intact à `l = 255`, zéro à `l = 0`, sans division ni table. Écart à l'idéal au plus d'une unité, toujours éclaircissant, nul là où il se verrait |
 | Sur-éclairement | décalage de contexte `k ∈ {0, 1, 2}` dans la combinaison : `min(255, t·(l+1) >> (8 − k))` | sans lui, toute surface éclairée est plus sombre que sa texture et la scène entière est terne. Dans la combinaison et non dans le post-traitement : appliqué après coup, un doublement ne rendrait que des valeurs paires, et éclaircirait aussi ce qui n'est pas éclairé. Un décalage plutôt qu'un facteur quelconque, pour que l'expression reste exacte et sans division. Saturation **écrite**, jamais laissée à une conversion |
+| Surface modulée | `(d·(s+1)) >> 8` par canal, `d` le pixel déjà écrit dans la tuile, `s` le texel modulant sur 8 bits où **255 est le neutre** | c'est la combinaison texel × lightmap avec le tampon à la place du texel et le sur-éclairement forcé à zéro : une tache assombrit ou ne fait rien, elle n'éclaircit jamais. On étend l'utilitaire existant, on n'en écrit pas un second. `(d·s + 128) >> 8` est faux ici pour la raison déjà donnée deux lignes plus haut — 254 sous facteur blanc —, et ce deux-cent-cinquante-sixième de voile dessinerait le rectangle du quadrilatère sur son bord neutre, précisément là où la tache doit disparaître |
+| Transparence binaire | alpha ramené à 0 ou 255 **au chargement**, seuil à 128 ; l'alpha du niveau choisi se lit **au plus proche**, quel que soit le filtrage | un test binaire n'a pas de valeur intermédiaire à prendre, et le tramage n'y remplacerait qu'un bord franc par du bruit. La réduction d'un mipmap masqué pondère le RGB par l'alpha — un texel transparent ne teinte pas ses voisins — et moyenne l'alpha en couverture. Le RGB est **dilaté** dans les zones transparentes avant que la chaîne se construise : sans cela le bilinéaire mêle au bord la couleur laissée sous les texels invisibles, et cerne la silhouette d'un liseré |
+| Terme de Lambert d'une lumière dynamique | `max(0, n̂·l̂)` en `f32`, par sommet, **dans l'ordre de la cuisson** | c'est cet ordre, et non un ordre plus commode, qui rend les deux modes comparables. La normale passe en espace de vue par la **matrice des cofacteurs** de la partie linéaire, jamais par l'inverse-transposée : les deux diffèrent d'un facteur que la renormalisation efface, donc aucune division, et une échelle non uniforme reste juste sans imposer de précondition nouvelle à l'hôte. Le rejet se fait sur le **signe** du produit scalaire, avant la racine inverse : même signe, donc gratuit |
+| Roulis d'un quadrilatère orienté | angle binaire `u32`, sinus et cosinus par la table du noyau, appliqué aux deux demi-extensions dans le plan du quadrilatère | même format d'angle que le reste du noyau, donc aucune trigonométrie chez l'hôte et aucune libm. Après l'orientation, avant la projection : c'est une rotation dans le plan du quadrilatère, elle vaut pour les deux modes d'orientation |
 | Facteur de brouillard | `u16` valant `f ∈ [0, 256]`, **256 = brouillard plein** | neuf bits et non huit, pour que le mélange soit exact **aux deux bouts** : une surface non embrumée doit sortir identique au rendu sans brouillard, et un décalage d'un seul niveau entre la géométrie lointaine et le fond effacé *est* la couture d'horizon. Mélange à deux voies dans `0x00FF00FF`, sans retenue entre elles — chaque voie vaut au plus `255·256 + 255`, soit 65 535, **et la marge est donc nulle** : l'arrondi porte aussi le tramage, qui monte jusqu'à 255, et non le seul demi de l'arrondi au plus proche. Rien ne peut s'ajouter à ce mélange sans élargir l'accumulateur | 
 | Index de brouillard | exposant et mantisse de la profondeur, par `leading_zeros`, table de 2048 entrées | indexer linéairement une profondeur 0.32 est inutilisable : tout le monde visible vit sous 2²⁶. La table se remplit **linéairement en distance** — un brouillard linéaire en `near/w`, pourtant gratuit, atteint 56 % à un dixième de sa rampe et cesse d'être un indice de profondeur. L'index se prend comme celui du mipmap, et le reste de quantification se trame par la même table ordonnée, transposée pour ne pas se corréler avec celle des texels |
 | Atténuation d'une lumière dynamique | `(1 − d²/r²)²` en `f32`, **par sommet**, portée par un plan comme les autres attributs | l'atténuation a besoin d'une distance, et il n'existe aucune distance du côté entier du pipeline : la racine inverse du noyau vit avant la projection. Le carré s'annule en `r` **avec une dérivée nulle**, donc sans l'anneau visible que `1 − d²/r²` seule dessine à son bord. Aucune racine n'est appelée |
@@ -760,22 +799,57 @@ C'est déjà la règle générale du projet, et c'est ici qu'elle se joue.
 
 ### Maillage
 
-Quatre sections : `SURF`, `TEXN`, `TRIS`, `VTXS`.
+Cinq sections : `FRMS`, `SURF`, `TEXN`, `TRIS`, `VTXS`. **`version_format` vaut
+2** depuis l'étape 6, et la version 1 est refusée — pas de convertisseur, il
+devrait inventer les normales, et la migration est un réexport.
 
 | Élément | Disposition | Taille |
 |---|---|---|
-| Sommet | `x, y, z, u, v` en `f32` | 20 |
+| Sommet | `u, v` en `f32` | 8 |
+| Pose de sommet | `x, y, z` puis `nx, ny, nz` en `f32` | 24 |
 | Triangle | `i0, i1, i2` en `u32`, puis `r, g, b, a` en `u8` | 16 |
 | Groupe de surface | `id`, `first_triangle`, `triangle_count`, `texture_slot` en `u32` | 16 |
 | Nom d'emplacement | longueur en `u16`, puis les octets UTF-8, sans remplissage | variable |
 
-Un seul format de sommet, pas de masque d'attributs : le rasteriseur a
-exactement trois formes de sommet et n'en aura pas de quatrième sans une fonction
-de soumission de plus. Les cinq champs sont ceux de `ScgVertexUv`, dans le même
+**Ce qui anime est séparé de ce qui n'anime pas**, et c'est la disposition
+entière. `VTXS` ne garde que les coordonnées de texture, d'où `vertex_count` se
+dérive ; `FRMS` porte `frame_count` en `u32`, puis `frame_count × vertex_count`
+poses **rangées par trame**, si bien qu'une trame est une tranche contiguë. Les
+deux comptes se recoupent avec la longueur de la section en arithmétique
+vérifiée, comme tout compte du format. Un maillage statique déclare une seule
+trame, et le décodeur n'a **pas deux chemins à tenir**.
+
+Dispersée, une trame imposerait de rassembler ses sommets à chaque image, donc un
+tampon, donc une allocation par image : c'est l'argument déjà écrit pour le pavage
+des groupes de triangles.
+
+**Les coordonnées de texture n'animent pas.** La topologie et le plaquage ne
+bougent pas entre deux trames, seule la géométrie bouge. C'est ce qui garde la
+tranche contiguë, laisse la passe d'interpolation purement positionnelle, et
+maintient le contrôle de borne des coordonnées là où il est : au chargement, une
+fois.
+
+Un seul format de sommet, pas de masque d'attributs : le rasteriseur a exactement
+trois formes de sommet et n'en aura pas de quatrième sans une fonction de
+soumission de plus. Les champs sont ceux qu'assemble `ScgVertexUvN`, dans le même
 ordre, **par convergence et non par dépendance** — le décodeur vit dans le noyau
 et ne peut pas voir les types de la couche C, et lier une disposition de fichier
 qui cassera à une structure publiée qui ne change plus ferait gouverner la
 promesse forte par la faible.
+
+**La normale est stockée, jamais dérivée**, et c'est l'inverse du choix fait pour
+la boîte englobante quelques lignes plus bas. La raison est que les deux ne sont
+pas de même nature : une boîte est une **fonction** des sommets, une normale
+porte une **intention de lissage** que seul l'outil d'export connaît. Une normale
+dérivée arrondit les arêtes vives d'une caisse, et la contourner demanderait des
+sommets dupliqués — donc, de toute façon, une normale par sommet écrite. Et deux
+poses interpolées ne redonnent pas la normale dérivée de la pose interpolée : par
+trame, il n'y a pas le choix.
+
+Écartée : une normale quantifiée sur un index de table de directions. Un second
+chemin de décodage, et un moirage visible sur une rotation lente, pour onze
+octets par sommet et par trame. Écartée : une section de trames optionnelle, que
+« une section de genre inconnu refuse le fichier » interdit de toute façon.
 
 Indices en `u32` et non `u16` : un second chemin de décodage et un plafond de
 65 536 sommets qu'un décor fusionné atteint, contre six octets par triangle.
@@ -796,8 +870,12 @@ garde à l'hôte le choix de ne rien charger pour un emplacement.
 
 Pas de second jeu de coordonnées : une lightmap se calcule par cellule, et un
 accessoire mobile n'est pas une cellule. Le jour où un décor statique se livrera
-en maillage, ce sera une version de format de plus. **Ce format cassera de toute
-façon à l'étape 6**, qui tranche la normale par sommet, et c'est prévu.
+en maillage, ce sera une version de format de plus.
+
+**Les deux cassures de l'étape 6 tiennent dans un seul incrément**, trames et
+normale par sommet. Deux incréments, ce seraient deux migrations à écrire, deux
+états à éprouver et deux annonces en tête de notes de version — et la seconde
+n'apporterait rien que la première ne puisse porter.
 
 La boîte englobante se calcule au chargement et ne se stocke pas. C'est
 l'argument des liens de portails transposé : une boîte stockée est une occasion
@@ -1172,10 +1250,27 @@ rapporte en outre le rejet le plus payant du calcul : `N̂·L̂ ≤ 0` rend le l
 sans lancer un rayon. La normalisation passe par la table de racine inverse du
 noyau : aucune libm, aucune approximation matérielle.
 
-**Conséquence assumée jusqu'à l'étape 6** : une lampe cuite et la même lampe
-dynamique ne rendent pas la même chose, la seconde ignorant l'orientation faute
-de normale. Les deux usages diffèrent — le décor statique d'un côté, une source
-portée de l'autre —, et l'écart se referme quand la normale par sommet arrive.
+**Une lampe cuite et la même lampe dynamique ne rendent pas la même chose**, et
+la normale par sommet de l'étape 6 **ne referme pas cet écart, elle le
+resserre.** Ce qui part est le seul terme angulaire. Ce qui reste ne peut pas
+partir :
+
+- **l'occultation**, et c'est le résidu dominant : la lumière dynamique ne
+  connaît aucun occulteur, quand la cuite s'arrête aux murs. Rien ne lance de
+  rayon par image, et c'est structurel ;
+- **la granularité** : par sommet, interpolé en espace écran, contre par luxel
+  avec un suréchantillonnage 2×2, un rabattement sur le contour et une
+  gouttière ;
+- **les derniers bits** : la cuisson divise par le rayon là où le dynamique
+  multiplie par une réciproque calculée une fois, et elle accumule des canaux en
+  0–255 quand le dynamique les a normalisés d'entrée. Même entrée, quelques ulp
+  d'écart.
+
+**Ce dernier point est assumé plutôt que corrigé.** Aligner les deux
+arithmétiques est possible et déplacerait les empreintes de lightmaps, pour des
+bits qu'aucune image ne montre. L'égalité promise est donc celle de la valeur
+visible : le même mur, **sans obstacle**, éclairé par la même lampe, rend la même
+chose à ses sommets.
 
 **L'ordre des opérations est figé.** Accumulation en `f32`, lumières dans l'ordre
 de la section des lumières statiques, `total += canal × atténuation`, jamais de

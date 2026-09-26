@@ -46,6 +46,16 @@ publié, et explique les conventions du dépôt à qui y contribue.
 
 ## [Non publié]
 
+### Modifié
+- Le contrat d'ABI fige l'étape 6 avant son premier code : les deux façons
+  d'écrire un pixel — le texel transparent et la surface modulée —, les
+  quadrilatères que le moteur oriente sur la caméra, les maillages animés par
+  trames et la normale par sommet. **Rien n'en est encore exposé**, et
+  `version_format` du maillage n'a pas encore bougé. Ce qu'un auteur de liaison
+  doit en retenir dès maintenant : un mode passé à une soumission commence à 1 et
+  zéro y est refusé, là où zéro vaut défaut pour un réglage de contexte — la
+  règle valait déjà sans avoir été écrite.
+
 ### Corrigé
 - La table des textures d'une image était dimensionnée sur la capacité de
   triangles, alors qu'un lot éclairé y prend deux entrées : la sienne et celle
@@ -55,6 +65,16 @@ publié, et explique les conventions du dépôt à qui y contribue.
   exactement.
 
 ***
+
+### Changed
+- The ABI contract freezes step 6 ahead of its first code: the two ways of
+  writing a pixel — the transparent texel and the modulated surface —, the
+  quadrilaterals the engine orients towards the camera, frame-animated meshes and
+  the per-vertex normal. **None of it is exposed yet**, and the mesh
+  `version_format` has not moved. What a binding author should take from it now:
+  a mode passed to a submission starts at 1 and zero is refused there, whereas
+  zero means default for a context setting — a rule that already held without
+  having been written down.
 
 ### Fixed
 - A frame's texture table was sized on the triangle capacity, although a lit
