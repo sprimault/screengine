@@ -11,4 +11,5 @@
 //! périmé échoue franchement au lieu de dériver.
 
 pub mod mesh_file;
+pub mod rooms_file;
 pub mod world_file;
