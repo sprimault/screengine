@@ -88,6 +88,17 @@ pub enum Argument {
     TriangleCapacity,
     /// Un indice de triangle au-delà du tableau de sommets du lot.
     VertexIndex,
+    /// Un indice de trame au-delà de ce que le maillage porte.
+    ///
+    /// Le fichier est bon, c'est l'appel qui sort des bornes : même forme que
+    /// tout indice d'accesseur, et rien n'est dessiné.
+    FrameIndex,
+    /// Un facteur d'interpolation non fini, ou hors de `[0, 1]`.
+    ///
+    /// **Refusé et jamais ramené dans l'intervalle.** Un bornage silencieux
+    /// rendrait une pose extrapolée sans le dire, et extrapoler est une
+    /// décision de jeu — le moteur n'en prend aucune.
+    FrameFactor,
     /// Une coordonnée de sommet non finie dans un lot soumis.
     ///
     /// Distincte d'un sommet simplement démesuré, qui fait disparaître son

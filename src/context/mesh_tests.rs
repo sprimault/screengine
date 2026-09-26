@@ -13,8 +13,8 @@ use alloc::vec::Vec;
 use super::*;
 use crate::math::Quat;
 use crate::testing::{
-    group_bytes as group, mesh_file as file, name_bytes as name, triangle_bytes as triangle,
-    vertex_bytes as vertex,
+    frames_bytes, group_bytes as group, mesh_file as file, mesh_sections as sections,
+    name_bytes as name, pose_bytes, triangle_bytes as triangle, vertex_bytes as vertex,
 };
 
 /// Un contexte de 64×64, celui des autres tests de rendu.
@@ -667,4 +667,144 @@ fn une_cellule_cuite_change_l_image() {
         brut, eclaire,
         "la lightmap n'a rien changé : le chemin éclairé n'est pas pris"
     );
+}
+
+/// Le même carré en deux trames : la seconde est décalée sur `y`.
+///
+/// Un décalage franc et sur un seul axe, pour que la pose moyenne soit lisible
+/// sans calcul — et que l'écart entre les deux se voie à l'image.
+fn deux_trames() -> Mesh {
+    let mut poses = Vec::new();
+    for (x, y, z, _, _) in CORNERS {
+        poses.extend_from_slice(&pose_bytes([x, y, z], [0.0, 0.0, 1.0]));
+    }
+    for (x, y, z, _, _) in CORNERS {
+        poses.extend_from_slice(&pose_bytes([x, y + 2.0, z], [0.0, 0.0, 1.0]));
+    }
+    let mut uvs = Vec::new();
+    for (_, _, _, u, v) in CORNERS {
+        for value in [u, v] {
+            uvs.extend_from_slice(&value.to_le_bytes());
+        }
+    }
+    Mesh::load(&sections(
+        &frames_bytes(2, &poses),
+        &group(1, 0, 1, 0),
+        &name("mur"),
+        &triangle(QUAD[0][0], QUAD[0][1], QUAD[0][2], TINT),
+        &uvs,
+    ))
+    .expect("maillage valide")
+}
+
+/// **Deux trames identiques rendent exactement ce que le chemin non animé
+/// rend, pour tout facteur.**
+///
+/// C'est le théorème contre lequel le chemin animé se valide, comme la
+/// traversée par portails se valide contre le chemin brut. Il contraint
+/// l'écriture de l'interpolation : `a + (b − a)·t` n'est pas exacte en `t = 1`
+/// et `(1 − t)·a + t·b` ne l'est pas quand `a == b`, si bien qu'aucune écriture
+/// ne vaut aux trois bornes — d'où les cas tranchés une fois par lot.
+#[test]
+fn deux_trames_identiques_rendent_le_chemin_non_anime() {
+    let mesh = one_group();
+    let mut temoin_ctx = small_ctx();
+    temoin_ctx
+        .submit_mesh(Affine3::IDENTITY, &mesh, |_| None)
+        .expect("capacité");
+    let temoin = pixels_of(&mut temoin_ctx);
+
+    for t in [0.0, 0.25, 0.5, 0.75, 1.0] {
+        let mut ctx = small_ctx();
+        ctx.submit_mesh_frame(Affine3::IDENTITY, &mesh, |_| None, 0, 0, t)
+            .expect("capacité");
+        assert_eq!(pixels_of(&mut ctx), temoin, "facteur {t}");
+    }
+}
+
+/// Aux deux bornes, le chemin animé rend exactement sa trame.
+///
+/// L'exactitude en `t = 1` est celle qu'une écriture naïve perd : `a + (b − a)`
+/// ne rend pas `b` au bit près en flottant.
+#[test]
+fn les_bornes_rendent_exactement_leur_trame() {
+    let mesh = deux_trames();
+    let rendu = |a: u32, b: u32, t: f32| {
+        let mut ctx = small_ctx();
+        ctx.submit_mesh_frame(Affine3::IDENTITY, &mesh, |_| None, a, b, t)
+            .expect("capacité");
+        pixels_of(&mut ctx)
+    };
+
+    assert_eq!(rendu(0, 1, 0.0), rendu(0, 0, 0.5), "en zéro, la première");
+    assert_eq!(rendu(0, 1, 1.0), rendu(1, 1, 0.5), "en un, la seconde");
+    assert_ne!(
+        rendu(0, 1, 0.0),
+        rendu(0, 1, 1.0),
+        "les deux trames ne diffèrent pas : le cas ne mesure rien"
+    );
+    assert_ne!(
+        rendu(0, 1, 0.5),
+        rendu(0, 1, 0.0),
+        "la pose moyenne est celle de la première trame"
+    );
+}
+
+/// Le mélange n'est **pas** exact en `t = 1`, et c'est la seule raison pour
+/// laquelle ce cas se tranche avant lui.
+///
+/// Mesuré plutôt que supposé, et sur des valeurs où la soustraction perd
+/// vraiment ses bits : entre deux poses d'échelles très différentes, `q − p`
+/// s'arrondit, et `p + (q − p)` ne revient pas sur `q`. À l'image l'écart
+/// disparaîtrait dans la quantification en sous-pixels — d'où ce test sur le
+/// mélange lui-même.
+///
+/// Les deux autres cas, eux, sont exacts sans rien faire : deux poses
+/// identiques donnent `q − p = 0`, et `t = 0` annule le terme. Ce test le
+/// vérifie aussi, pour qu'on ne les croie pas nécessaires.
+#[test]
+fn le_melange_n_est_pas_exact_a_la_borne_haute() {
+    let loin = Vec3::new(1.0e8, 1.0e8, 1.0e8);
+    let pres = Vec3::new(1.0, 1.0, 1.0);
+    assert_ne!(
+        blend(loin, pres, 1.0),
+        pres,
+        "la borne haute serait exacte : le cas tranché ne servirait à rien"
+    );
+
+    assert_eq!(blend(loin, pres, 0.0), loin, "la borne basse est exacte");
+    assert_eq!(
+        blend(pres, pres, 0.37),
+        pres,
+        "deux poses identiques sont exactes pour tout facteur"
+    );
+}
+
+/// Un indice de trame hors bornes et un facteur hors de `[0, 1]` sont refusés,
+/// et rien n'est posé.
+///
+/// Le facteur n'est **jamais ramené** dans l'intervalle : un bornage silencieux
+/// rendrait une pose extrapolée sans le dire, et extrapoler est une décision de
+/// jeu. `NaN` se teste nommément, avant les comparaisons de bornes, qui sont
+/// fausses dans les deux sens et le laisseraient passer.
+#[test]
+fn une_trame_ou_un_facteur_hors_bornes_sont_refuses() {
+    let mesh = one_group();
+    let mut ctx = small_ctx();
+
+    for (a, b, t, attendu) in [
+        (1, 0, 0.5, Argument::FrameIndex),
+        (0, 1, 0.5, Argument::FrameIndex),
+        (0, 0, -0.001, Argument::FrameFactor),
+        (0, 0, 1.001, Argument::FrameFactor),
+        (0, 0, f32::NAN, Argument::FrameFactor),
+        (0, 0, f32::INFINITY, Argument::FrameFactor),
+    ] {
+        assert_eq!(
+            ctx.submit_mesh_frame(Affine3::IDENTITY, &mesh, |_| None, a, b, t),
+            Err(Error::InvalidArgument(attendu)),
+            "trames {a}/{b}, facteur {t}"
+        );
+    }
+    assert_eq!(ctx.triangles.len(), 0, "un refus a laissé un triangle");
 }

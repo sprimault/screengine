@@ -181,6 +181,12 @@ pub(crate) fn message_of(error: Error) -> &'static str {
         Error::InvalidArgument(Argument::TextureCapacity) => {
             "too many distinct textures in one frame for the capacity reserved at creation"
         }
+        Error::InvalidArgument(Argument::FrameIndex) => {
+            "frame index beyond what the mesh carries: see scg_mesh_frame_count"
+        }
+        Error::InvalidArgument(Argument::FrameFactor) => {
+            "interpolation factor must be finite and within [0, 1]: it is never clamped, since extrapolating is the game's decision"
+        }
         Error::InvalidArgument(Argument::TextureCoordinate) => {
             "texture coordinate is not finite, or beyond 16384 texels"
         }

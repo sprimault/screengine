@@ -47,6 +47,14 @@ publié, et explique les conventions du dépôt à qui y contribue.
 ## [Non publié]
 
 ### Ajouté
+- `scg_submit_mesh_frame` : un maillage soumis **entre deux de ses trames**.
+  Deux indices explicites et non « la trame et la suivante » — un hôte boucle de
+  la dernière à la première, ou mêle deux trames non adjacentes, sans que le
+  moteur connaisse la moindre notion de séquence. Le facteur hors de `[0, 1]` est
+  **refusé et jamais ramené** : un bornage silencieux rendrait une pose
+  extrapolée sans le dire, et extrapoler est une décision de jeu. **Avec
+  `frame_a == frame_b`, l'image est exactement celle de `scg_submit_mesh`, pour
+  tout facteur.**
 - **`version_format` du maillage passe à 2**, et la version 1 est refusée par
   `SCG_ERR_UNSUPPORTED_FORMAT_VERSION`. Le format porte désormais des **trames**
   et une **normale par sommet** : les coordonnées de texture restent par sommet
@@ -93,6 +101,14 @@ publié, et explique les conventions du dépôt à qui y contribue.
 ***
 
 ### Added
+- `scg_submit_mesh_frame`: a mesh submitted **between two of its frames**. Two
+  explicit indices rather than "the frame and the next one" — a host may loop
+  from the last to the first, or blend two non-adjacent frames, without the
+  engine knowing anything of sequences. A factor outside `[0, 1]` is **refused,
+  never clamped**: silent clamping would render an extrapolated pose without
+  saying so, and extrapolating is the game's decision. **With
+  `frame_a == frame_b` the image is exactly that of `scg_submit_mesh`, for any
+  factor.**
 - **The mesh `version_format` moves to 2**, and version 1 is refused with
   `SCG_ERR_UNSUPPORTED_FORMAT_VERSION`. The format now carries **frames** and a
   **per-vertex normal**: texture coordinates stay per vertex and constant, while

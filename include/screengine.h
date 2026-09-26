@@ -1091,6 +1091,38 @@ int32_t scg_mesh_texture_name(const struct ScgMesh *mesh,
 // writable `uint32_t`.
 int32_t scg_mesh_triangle_count(const struct ScgMesh *mesh, uint32_t *out);
 
+// Submits a mesh interpolated between two of its frames.
+//
+// **`frame_a == frame_b` renders exactly what `scg_submit_mesh` renders of
+// that frame, for any `t`.** That is not a convenience: it is the theorem this
+// path validates against, as portal traversal validates against the raw path.
+//
+// Two explicit indices rather than "the frame and the next one": a host may
+// loop from the last to the first, or blend two non-adjacent frames, without
+// the engine knowing anything of clips or sequences — nothing of the game
+// crosses the boundary.
+//
+// `t` outside `[0, 1]` is **refused, never clamped**: silent clamping would
+// render an extrapolated pose without saying so, and extrapolating is the
+// game's decision. A frame index beyond `scg_mesh_frame_count` returns
+// `SCG_ERR_INVALID_ARGUMENT` and draws nothing — the file is fine, the call is
+// out of bounds.
+//
+// Every other rule of `scg_submit_mesh` applies, the all-or-nothing refusal
+// included.
+//
+// # Safety
+//
+// Same preconditions as `scg_submit_mesh`.
+int32_t scg_submit_mesh_frame(struct ScgContext *ctx,
+                              const struct ScgMat4 *model,
+                              const struct ScgMesh *mesh,
+                              const struct ScgTexture *const *textures,
+                              uint32_t texture_count,
+                              uint32_t frame_a,
+                              uint32_t frame_b,
+                              float t);
+
 // Writes the number of animation frames the mesh carries to `out`.
 //
 // A static mesh returns 1: the format has one shape, not two, and a decoder
