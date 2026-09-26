@@ -137,6 +137,10 @@ export const EXPORTS = [
   "scg_world_entity_data",
   "scg_submit_world",
   "scg_submit_world_visible",
+  "scg_world_cell_count",
+  "scg_world_cell_id",
+  "scg_world_locate",
+  "scg_world_track",
 ];
 
 /** Taille de `ScgContextConfig`, celle qu'affirme le header. */

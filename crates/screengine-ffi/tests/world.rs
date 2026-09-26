@@ -224,6 +224,80 @@ fn soumet_une_carte() {
     }
 }
 
+/// La carte dit combien de cellules elle porte, et l'identifiant de chacune.
+#[test]
+fn enumere_ses_cellules() {
+    let world = load(&one_cell_world());
+    let mut count = 0u32;
+    // SAFETY: carte vivante, pointeur de sortie local.
+    assert_eq!(unsafe { scg_world_cell_count(world, &mut count) }, SCG_OK);
+    assert_eq!(count, 1);
+
+    let mut id = 0u32;
+    // SAFETY: idem, rang sous le compte.
+    assert_eq!(unsafe { scg_world_cell_id(world, 0, &mut id) }, SCG_OK);
+    assert_eq!(id, 7);
+
+    // SAFETY: idem, rang au-delà du compte.
+    let beyond = unsafe { scg_world_cell_id(world, 1, &mut id) };
+    assert_eq!(beyond, SCG_ERR_INVALID_ARGUMENT);
+
+    // SAFETY: handle vivant, détruit une seule fois.
+    unsafe { scg_world_destroy(world) };
+}
+
+/// Un point hors de toute cellule rend zéro, qui vaut « nulle part ».
+///
+/// La carte d'épreuve n'a qu'une face : elle ne délimite aucun volume, donc aucun
+/// point n'y est dedans. C'est exactement ce que doit rendre une carte en cours
+/// d'édition, et c'est une clause, pas une erreur.
+#[test]
+fn un_point_hors_de_toute_cellule_rend_zero() {
+    let world = load(&one_cell_world());
+    let position = [100.0f32, 100.0, 100.0];
+    let mut cell = 7u32;
+    // SAFETY: carte vivante, trois flottants lisibles, sortie locale.
+    let code = unsafe { scg_world_locate(world, position.as_ptr(), &mut cell) };
+    assert_eq!(code, SCG_OK, "la localisation n'est pas un échec");
+    assert_eq!(cell, 0);
+
+    // SAFETY: handle vivant, détruit une seule fois.
+    unsafe { scg_world_destroy(world) };
+}
+
+/// Une position non finie est refusée.
+///
+/// Le refus est à la frontière : une comparaison avec `NaN` est fausse dans les
+/// deux sens, et le comptage de traversées déclarerait la caméra nulle part sans
+/// qu'on sache pourquoi.
+#[test]
+fn une_position_non_finie_est_refusee() {
+    let world = load(&one_cell_world());
+    let position = [f32::NAN, 0.0, 0.0];
+    let mut cell = 0u32;
+    // SAFETY: carte vivante, trois flottants lisibles, sortie locale.
+    let code = unsafe { scg_world_locate(world, position.as_ptr(), &mut cell) };
+    assert_eq!(code, SCG_ERR_INVALID_ARGUMENT);
+
+    // SAFETY: handle vivant, détruit une seule fois.
+    unsafe { scg_world_destroy(world) };
+}
+
+/// Un suivi depuis une cellule qui n'existe pas rend zéro.
+#[test]
+fn un_suivi_depuis_une_cellule_inconnue_rend_zero() {
+    let world = load(&one_cell_world());
+    let point = [0.0f32, 0.0, 0.0];
+    let mut cell = 7u32;
+    // SAFETY: carte vivante, deux triplets lisibles, sortie locale.
+    let code = unsafe { scg_world_track(world, 99, point.as_ptr(), point.as_ptr(), &mut cell) };
+    assert_eq!(code, SCG_OK);
+    assert_eq!(cell, 0, "il n'y a pas de fil à reprendre");
+
+    // SAFETY: handle vivant, détruit une seule fois.
+    unsafe { scg_world_destroy(world) };
+}
+
 /// Une traversée se lance à travers la frontière et rend un succès.
 ///
 /// La carte n'a qu'une cellule et aucun portail : la traversée la soumet entière,

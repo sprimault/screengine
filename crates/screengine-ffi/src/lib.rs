@@ -1188,6 +1188,25 @@ unsafe fn mesh_count(mesh: *const ScgMesh, out: *mut u32, count: impl Fn(&Mesh) 
 /// `world` est nul ou un handle vivant, `out` est nul ou vise un `u32`
 /// inscriptible.
 unsafe fn world_count(world: *const ScgWorld, out: *mut u32, count: impl Fn(&World) -> u32) -> i32 {
+    // SAFETY: mêmes préconditions, transmises telles quelles.
+    unsafe { world_value(world, out, |world| Ok(count(&world.inner))) }
+}
+
+/// La lecture d'un entier de la carte qui peut refuser, partagée par les
+/// accesseurs indexés et par les interrogations géométriques.
+///
+/// `world_count` en est le cas dégénéré, celui d'une lecture qui ne refuse jamais :
+/// elle passe par ici plutôt qu'à côté, faute de quoi la vérification du pointeur
+/// de sortie et celle du handle existeraient à deux endroits.
+///
+/// # Safety
+///
+/// `world` est nul ou un handle vivant, et `out` vise un `u32` inscriptible.
+unsafe fn world_value(
+    world: *const ScgWorld,
+    out: *mut u32,
+    read: impl FnOnce(&ScgWorld) -> Result<u32, AbiError>,
+) -> i32 {
     entry::without_context(|| {
         if out.is_null() {
             return Err(AbiError::NULL);
@@ -1195,11 +1214,33 @@ unsafe fn world_count(world: *const ScgWorld, out: *mut u32, count: impl Fn(&Wor
         // SAFETY: précondition de la fonction — le pointeur est nul ou vise un
         // handle vivant.
         let world = unsafe { world.as_ref() }.ok_or(AbiError::NULL)?;
+        let value = read(world)?;
         // SAFETY: précondition de la fonction — `out` vise un `u32`
         // inscriptible.
-        unsafe { out.write(count(&world.inner)) };
+        unsafe { out.write(value) };
         Ok(())
     })
+}
+
+/// Les trois flottants d'un point, refusés s'ils ne sont pas finis.
+///
+/// Le refus est ici et non dans le noyau : une position non finie rendrait toutes
+/// les comparaisons du comptage de traversées fausses dans les deux sens, et la
+/// caméra serait déclarée nulle part sans qu'on sache pourquoi.
+///
+/// # Safety
+///
+/// `ptr` est nul, ou vise trois `float` lisibles.
+unsafe fn read_point(ptr: *const f32) -> Result<Vec3, AbiError> {
+    if ptr.is_null() {
+        return Err(AbiError::NULL);
+    }
+    // SAFETY: précondition de la fonction — trois flottants lisibles.
+    let values = unsafe { [ptr.read(), ptr.add(1).read(), ptr.add(2).read()] };
+    if values.iter().any(|value| !value.is_finite()) {
+        return Err(CoreError::InvalidArgument(Argument::VertexCoordinate).into());
+    }
+    Ok(Vec3::new(values[0], values[1], values[2]))
 }
 
 /// La lecture en deux temps d'un nom, partagée par les deux ressources.
@@ -1391,6 +1432,107 @@ pub unsafe extern "C" fn scg_submit_world(
 
     // SAFETY: précondition de la fonction — `ctx` est nul ou un handle vivant.
     unsafe { entry::with_context(ctx, submit) }
+}
+
+/// Writes the number of cells the map carries to `out`.
+///
+/// # Safety
+///
+/// `world` must be a live handle from `scg_world_load`, and `out` must point to a
+/// writable `uint32_t`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn scg_world_cell_count(world: *const ScgWorld, out: *mut u32) -> i32 {
+    // SAFETY: mêmes préconditions que les autres comptes de la carte.
+    unsafe { world_count(world, out, World::cell_count) }
+}
+
+/// Writes the stable identifier of the cell at `index` to `out`.
+///
+/// `index` is a rank in what `scg_world_cell_count` returned, and it is **not**
+/// stable across loads: it enumerates, it does not designate. The identifier does.
+/// An index beyond the count is `SCG_ERR_INVALID_ARGUMENT` and writes nothing.
+///
+/// # Safety
+///
+/// `world` must be a live handle from `scg_world_load`, and `out` must point to a
+/// writable `uint32_t`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn scg_world_cell_id(
+    world: *const ScgWorld,
+    index: u32,
+    out: *mut u32,
+) -> i32 {
+    let read = |world: &ScgWorld| world.inner.cell_id(index).ok_or(AbiError::WORLD_INDEX);
+    // SAFETY: mêmes préconditions que les autres accesseurs indexés.
+    unsafe { world_value(world, out, read) }
+}
+
+/// Writes the identifier of the cell containing `position` to `out`, or `0`.
+///
+/// **Zero means "nowhere"**, which is a clause and not an error: a host may
+/// legitimately place a camera in a gap while a level is being edited. Pass what
+/// this writes to `scg_submit_world_visible`.
+///
+/// **Two overlapping cells may hold the same point**, and the first one in file
+/// order wins. This walks every cell and every face, so it is meant for loading a
+/// map or for picking the thread back up — between two frames,
+/// `scg_world_track` costs far less.
+///
+/// It takes no context and writes its error to the thread-local slot, read with
+/// `scg_last_error(NULL)`.
+///
+/// # Safety
+///
+/// `world` must be a live handle from `scg_world_load`, `position` must point to
+/// three readable `float`s, and `out` must point to a writable `uint32_t`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn scg_world_locate(
+    world: *const ScgWorld,
+    position: *const f32,
+    out: *mut u32,
+) -> i32 {
+    let read = |world: &ScgWorld| {
+        // SAFETY: précondition de la fonction — trois flottants lisibles.
+        let position = unsafe { read_point(position) }?;
+        Ok(world.inner.locate(position))
+    };
+    // SAFETY: mêmes préconditions que les autres accesseurs de la carte.
+    unsafe { world_value(world, out, read) }
+}
+
+/// Writes the identifier of the cell a move ends in to `out`, or `0`.
+///
+/// `from_cell` is where the move starts. Crossing a linked portal carries the cell
+/// over; leaving through a wall or an unlinked portal writes `0`, and so does a
+/// `from_cell` that designates no cell — there is no thread to follow from a cell
+/// that does not exist.
+///
+/// **Several cells may be crossed in one move**, and this follows them. The engine
+/// never relocates a camera on its own: when this writes `0`, it is for the host
+/// to call `scg_world_locate` again.
+///
+/// # Safety
+///
+/// `world` must be a live handle from `scg_world_load`, `from` and `to` must each
+/// point to three readable `float`s, and `out` must point to a writable
+/// `uint32_t`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn scg_world_track(
+    world: *const ScgWorld,
+    from_cell: u32,
+    from: *const f32,
+    to: *const f32,
+    out: *mut u32,
+) -> i32 {
+    let read = |world: &ScgWorld| {
+        // SAFETY: précondition de la fonction — trois flottants lisibles chacun.
+        let start = unsafe { read_point(from) }?;
+        // SAFETY: idem.
+        let end = unsafe { read_point(to) }?;
+        Ok(world.inner.track(from_cell, start, end))
+    };
+    // SAFETY: mêmes préconditions que les autres accesseurs de la carte.
+    unsafe { world_value(world, out, read) }
 }
 
 /// Submits only what the camera sees of a map, from the cell it stands in.

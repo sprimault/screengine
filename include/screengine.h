@@ -1091,6 +1091,68 @@ int32_t scg_submit_world(struct ScgContext *ctx,
                          const struct ScgTexture *const *textures,
                          uint32_t texture_count);
 
+// Writes the number of cells the map carries to `out`.
+//
+// # Safety
+//
+// `world` must be a live handle from `scg_world_load`, and `out` must point to a
+// writable `uint32_t`.
+int32_t scg_world_cell_count(const struct ScgWorld *world, uint32_t *out);
+
+// Writes the stable identifier of the cell at `index` to `out`.
+//
+// `index` is a rank in what `scg_world_cell_count` returned, and it is **not**
+// stable across loads: it enumerates, it does not designate. The identifier does.
+// An index beyond the count is `SCG_ERR_INVALID_ARGUMENT` and writes nothing.
+//
+// # Safety
+//
+// `world` must be a live handle from `scg_world_load`, and `out` must point to a
+// writable `uint32_t`.
+int32_t scg_world_cell_id(const struct ScgWorld *world, uint32_t index, uint32_t *out);
+
+// Writes the identifier of the cell containing `position` to `out`, or `0`.
+//
+// **Zero means "nowhere"**, which is a clause and not an error: a host may
+// legitimately place a camera in a gap while a level is being edited. Pass what
+// this writes to `scg_submit_world_visible`.
+//
+// **Two overlapping cells may hold the same point**, and the first one in file
+// order wins. This walks every cell and every face, so it is meant for loading a
+// map or for picking the thread back up — between two frames,
+// `scg_world_track` costs far less.
+//
+// It takes no context and writes its error to the thread-local slot, read with
+// `scg_last_error(NULL)`.
+//
+// # Safety
+//
+// `world` must be a live handle from `scg_world_load`, `position` must point to
+// three readable `float`s, and `out` must point to a writable `uint32_t`.
+int32_t scg_world_locate(const struct ScgWorld *world, const float *position, uint32_t *out);
+
+// Writes the identifier of the cell a move ends in to `out`, or `0`.
+//
+// `from_cell` is where the move starts. Crossing a linked portal carries the cell
+// over; leaving through a wall or an unlinked portal writes `0`, and so does a
+// `from_cell` that designates no cell — there is no thread to follow from a cell
+// that does not exist.
+//
+// **Several cells may be crossed in one move**, and this follows them. The engine
+// never relocates a camera on its own: when this writes `0`, it is for the host
+// to call `scg_world_locate` again.
+//
+// # Safety
+//
+// `world` must be a live handle from `scg_world_load`, `from` and `to` must each
+// point to three readable `float`s, and `out` must point to a writable
+// `uint32_t`.
+int32_t scg_world_track(const struct ScgWorld *world,
+                        uint32_t from_cell,
+                        const float *from,
+                        const float *to,
+                        uint32_t *out);
+
 // Submits only what the camera sees of a map, from the cell it stands in.
 //
 // `textures` works exactly as in `scg_submit_world`. `cell_id` is the stable

@@ -11,5 +11,6 @@
 //! dépend : la pile de (cellule, fenêtre) la réduit de portail en portail, et
 //! une fenêtre trop étroite laisse un trou définitif dans l'image.
 
+pub(crate) mod locate;
 pub(crate) mod traversal;
 pub(crate) mod window;

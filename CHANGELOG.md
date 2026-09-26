@@ -63,6 +63,11 @@ critère est `code < 0`, et un statut inconnu se traite comme `SCG_OK`.
   borné par le nombre de triangles de la carte. Une cellule inconnue est refusée ;
   aucune cellule de départ est une clause, pas une erreur. **Sur un décor où tout
   est visible, la traversée rend la même image que le chemin brut**, qui reste.
+- **La cellule d'une caméra se trouve puis se suit** : `scg_world_locate` par une
+  position, `scg_world_track` par un déplacement. Zéro vaut « nulle part », ce qui
+  est une clause et non une erreur — le moteur ne relocalise jamais une caméra de
+  lui-même. Une carte énumère ses cellules par `scg_world_cell_count` et
+  `scg_world_cell_id`.
 - **`scg_submit_world_visible` expose la traversée**, avec les deux bornes
   `SCG_TRAVERSAL_DEPTH` et `SCG_TRAVERSAL_CELLS` que l'image ne peut pas dépasser.
   Son paramètre de lightmaps n'accepte que `NULL` : il existe dès maintenant pour
