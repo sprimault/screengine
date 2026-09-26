@@ -35,7 +35,14 @@ fn une_panique_rend_le_contexte_defaillant() {
 
     // SAFETY: le handle vise une valeur locale vivante, utilisée par ce seul
     // thread pendant les deux appels.
-    let code = unsafe { with_context(handle, |_| panic!("défaut simulé du moteur")) };
+    // Le type de succès s'annote parce qu'une clôture qui panique n'en produit
+    // aucun : l'enveloppe est générique sur ce qu'elle rend, pour laisser passer
+    // les statuts positifs de la traversée.
+    let code = unsafe {
+        with_context(handle, |_| -> Result<(), AbiError> {
+            panic!("défaut simulé")
+        })
+    };
     assert_eq!(code, SCG_ERR_PANIC);
 
     // SAFETY: même handle, toujours vivant.
@@ -54,7 +61,11 @@ fn le_message_survit_a_la_defaillance() {
     let handle: *mut ScgContext = &mut ctx;
 
     // SAFETY: le handle vise une valeur locale vivante.
-    unsafe { with_context(handle, |_| panic!("défaut simulé du moteur")) };
+    unsafe {
+        with_context(handle, |_| -> Result<(), AbiError> {
+            panic!("défaut simulé du moteur")
+        })
+    };
     let message = ctx.message().as_ptr();
     // SAFETY: le message appartient au contexte, vivant jusqu'à la fin du
     // test, et rien n'écrit entre-temps.

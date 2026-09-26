@@ -37,7 +37,7 @@ use super::window::reduce;
 /// galerie dessinée exprès une douzaine, et qu'au-delà de vingt on ne traverse
 /// plus un décor, on tourne en rond. Le coût d'une profondeur de plus est une
 /// entrée de pile et zéro pixel.
-pub(crate) const MAX_DEPTH: usize = 64;
+pub const MAX_DEPTH: usize = 64;
 
 /// Le nombre maximal de visites qu'une image peut porter.
 ///
@@ -50,7 +50,7 @@ pub(crate) const MAX_DEPTH: usize = 64;
 /// Quatre mille quatre-vingt-seize est hors d'atteinte d'un décor de cette
 /// classe, où une image montre quelques dizaines de cellules. L'atteindre rend le
 /// même statut que la profondeur : l'image est tronquée, et elle le dit.
-pub(crate) const MAX_VISITS: usize = 4096;
+pub const MAX_VISITS: usize = 4096;
 
 /// Une cellule retenue par la traversée, et par quelle fenêtre la dessiner.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

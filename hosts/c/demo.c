@@ -130,7 +130,7 @@ static ScgTexture *load_checker(uint32_t side, uint32_t cell)
     desc.format = SCG_TEXTURE_FORMAT_RGBA8;
 
     ScgTexture *texture = NULL;
-    if (scg_texture_load(&desc, texels, bytes, &texture) != SCG_OK) {
+    if (scg_texture_load(&desc, texels, bytes, &texture) < 0) {
         texture = NULL;
     }
     free(texels);
@@ -214,7 +214,7 @@ int main(int argc, char **argv)
     int32_t code = scg_world_load(bytes, len, &world);
     /* Le bloc est libéré tout de suite : le moteur copie ce qu'il garde. */
     free(bytes);
-    if (code != SCG_OK) {
+    if (code < 0) {
         fail(NULL, "la carte est refusée");
         return 1;
     }
@@ -231,9 +231,9 @@ int main(int argc, char **argv)
     for (uint32_t i = 0; i < materials; i++) {
         char name[64];
         size_t needed = 0;
-        if (scg_world_material_name(world, i, NULL, 0, &needed) != SCG_OK
+        if (scg_world_material_name(world, i, NULL, 0, &needed) < 0
             || needed + 1 > sizeof name
-            || scg_world_material_name(world, i, name, sizeof name, &needed) != SCG_OK) {
+            || scg_world_material_name(world, i, name, sizeof name, &needed) < 0) {
             fail(NULL, "nom de matériau illisible");
             return 1;
         }
@@ -256,7 +256,7 @@ int main(int argc, char **argv)
     ScgMesh *crate = NULL;
     code = scg_mesh_load(bytes, len, &crate);
     free(bytes);
-    if (code != SCG_OK) {
+    if (code < 0) {
         fail(NULL, "le maillage est refusé");
         return 1;
     }
@@ -276,7 +276,7 @@ int main(int argc, char **argv)
     config.tile_size = TILE;
 
     ScgContext *ctx = NULL;
-    if (scg_create(&config, &ctx) != SCG_OK) {
+    if (scg_create(&config, &ctx) < 0) {
         fail(NULL, "création du contexte");
         return 1;
     }
@@ -349,7 +349,7 @@ int main(int argc, char **argv)
         yaw(angle, camera.orientation);
         camera.fov_y = 1.2f;
         camera.near_plane = 0.1f;
-        if (scg_set_camera(ctx, &camera) != SCG_OK) {
+        if (scg_set_camera(ctx, &camera) < 0) {
             fail(ctx, "caméra refusée");
             break;
         }
@@ -357,7 +357,7 @@ int main(int argc, char **argv)
         ScgMat4 model;
         memset(&model, 0, sizeof model);
         model.m[0] = model.m[5] = model.m[10] = model.m[15] = 1.0f;
-        if (scg_submit_world(ctx, &model, world, slots, materials) != SCG_OK) {
+        if (scg_submit_world(ctx, &model, world, slots, materials) < 0) {
             fail(ctx, "carte refusée");
             break;
         }
@@ -367,7 +367,7 @@ int main(int argc, char **argv)
         for (size_t i = 0; i < sizeof CRATES / sizeof CRATES[0]; i++) {
             ScgMat4 placement;
             crate_model(CRATES[i], &placement);
-            if (scg_submit_mesh(ctx, &placement, crate, crate_slots, 2) != SCG_OK) {
+            if (scg_submit_mesh(ctx, &placement, crate, crate_slots, 2) < 0) {
                 fail(ctx, "maillage refusé");
                 running = 0;
                 break;
@@ -380,18 +380,18 @@ int main(int argc, char **argv)
         /* Par tuiles : un hôte qui voudrait les répartir sur ses threads le
          * ferait ici, et rien d'autre ne changerait. */
         uint32_t tiles = 0;
-        if (scg_frame_begin(ctx, &tiles) != SCG_OK) {
+        if (scg_frame_begin(ctx, &tiles) < 0) {
             fail(ctx, "début d'image");
             break;
         }
         for (uint32_t i = 0; i < tiles; i++) {
-            if (scg_frame_tile(ctx, i, pixels, WIDTH) != SCG_OK) {
+            if (scg_frame_tile(ctx, i, pixels, WIDTH) < 0) {
                 fail(ctx, "tuile");
                 running = 0;
                 break;
             }
         }
-        if (scg_frame_end(ctx, pixels, WIDTH) != SCG_OK) {
+        if (scg_frame_end(ctx, pixels, WIDTH) < 0) {
             fail(ctx, "fin d'image");
             break;
         }

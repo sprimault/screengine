@@ -78,6 +78,16 @@ impl AbiError {
         message: "texture count must equal the number of slots the resource declares",
     };
 
+    /// Un handle de lightmaps a été passé, alors que rien n'en produit encore.
+    ///
+    /// Le paramètre existe dès la première version pour que la signature ne
+    /// change jamais ; toute valeur non nulle est donc forcément invalide, et la
+    /// refuser vaut mieux que la déréférencer.
+    pub(crate) const LIGHTING: Self = Self {
+        code: SCG_ERR_INVALID_ARGUMENT,
+        message: "lighting must be null: no call produces such a handle yet",
+    };
+
     /// Le tampon d'un nom ne peut pas porter le nom et son terminateur.
     ///
     /// Rien n'est écrit dans ce cas, `out_len` compris : la mesure a son propre
@@ -248,6 +258,30 @@ impl Core<'_> {
     }
 }
 
+/// Ce qu'un point d'entrée rend quand il réussit.
+///
+/// Presque tous rendent `()`, donc `SCG_OK`. Ceux de la traversée rendent un
+/// **statut positif**, et c'est la seule raison de ce trait : l'enveloppe reste
+/// unique. La dupliquer pour laisser passer un code serait rouvrir le défaut le
+/// plus discret du projet — un point d'entrée sans `catch_unwind`, qui ne se
+/// manifeste que le jour où quelque chose panique, chez quelqu'un d'autre.
+pub(crate) trait Outcome {
+    /// Le code que l'ABI rend pour ce succès.
+    fn code(self) -> i32;
+}
+
+impl Outcome for () {
+    fn code(self) -> i32 {
+        SCG_OK
+    }
+}
+
+impl Outcome for i32 {
+    fn code(self) -> i32 {
+        self
+    }
+}
+
 /// Enveloppe un appel qui porte sur un contexte, hors rendu d'une tuile.
 ///
 /// Son message va dans le contexte. Il ne s'exécute pas en même temps qu'un
@@ -257,9 +291,10 @@ impl Core<'_> {
 /// # Safety
 ///
 /// `ctx` est nul, ou un handle rendu par `scg_create` et pas encore détruit.
-pub(crate) unsafe fn with_context<F>(ctx: *mut ScgContext, f: F) -> i32
+pub(crate) unsafe fn with_context<T, F>(ctx: *mut ScgContext, f: F) -> i32
 where
-    F: FnOnce(Core<'_>) -> Result<(), AbiError>,
+    T: Outcome,
+    F: FnOnce(Core<'_>) -> Result<T, AbiError>,
 {
     // Vidé en entrant, pour qu'un thread recyclé ne rende jamais le message
     // d'une tâche précédente.
@@ -285,7 +320,7 @@ where
 
     let core = Core { cell: ctx.core() };
     match guarded(|| f(core)) {
-        Ok(()) => SCG_OK,
+        Ok(value) => value.code(),
         Err(Failure::Abi(error)) => {
             // SAFETY: un appel exclusif est seul à écrire le message.
             unsafe { ctx.message_mut() }.set(error.message);

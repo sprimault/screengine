@@ -102,7 +102,7 @@ ScgTexture *load_checker(uint32_t side, uint32_t cell)
     desc.format = SCG_TEXTURE_FORMAT_RGBA8;
 
     ScgTexture *texture = nullptr;
-    if (scg_texture_load(&desc, texels.data(), texels.size(), &texture) != SCG_OK) {
+    if (scg_texture_load(&desc, texels.data(), texels.size(), &texture) < 0) {
         return nullptr;
     }
     return texture;
@@ -182,7 +182,7 @@ int main(int argc, char **argv)
     }
 
     ScgWorld *raw_world = nullptr;
-    if (scg_world_load(bytes.data(), bytes.size(), &raw_world) != SCG_OK) {
+    if (scg_world_load(bytes.data(), bytes.size(), &raw_world) < 0) {
         fail(nullptr, "la carte est refusée");
         return 1;
     }
@@ -198,13 +198,13 @@ int main(int argc, char **argv)
     std::vector<const ScgTexture *> slots(materials, nullptr);
     for (uint32_t i = 0; i < materials; i++) {
         size_t needed = 0;
-        if (scg_world_material_name(world.get(), i, nullptr, 0, &needed) != SCG_OK) {
+        if (scg_world_material_name(world.get(), i, nullptr, 0, &needed) < 0) {
             fail(nullptr, "nom de matériau illisible");
             return 1;
         }
         std::string name(needed + 1, '\0');
         if (scg_world_material_name(world.get(), i, name.data(), name.size(), &needed)
-            != SCG_OK) {
+            < 0) {
             fail(nullptr, "nom de matériau illisible");
             return 1;
         }
@@ -225,7 +225,7 @@ int main(int argc, char **argv)
         return 1;
     }
     ScgMesh *raw_crate = nullptr;
-    if (scg_mesh_load(mesh_bytes.data(), mesh_bytes.size(), &raw_crate) != SCG_OK) {
+    if (scg_mesh_load(mesh_bytes.data(), mesh_bytes.size(), &raw_crate) < 0) {
         fail(nullptr, "le maillage est refusé");
         return 1;
     }
@@ -246,7 +246,7 @@ int main(int argc, char **argv)
     config.tile_size = TILE;
 
     ScgContext *raw_ctx = nullptr;
-    if (scg_create(&config, &raw_ctx) != SCG_OK) {
+    if (scg_create(&config, &raw_ctx) < 0) {
         fail(nullptr, "création du contexte");
         return 1;
     }
@@ -315,14 +315,14 @@ int main(int argc, char **argv)
         yaw(angle, camera.orientation);
         camera.fov_y = 1.2f;
         camera.near_plane = 0.1f;
-        if (scg_set_camera(ctx.get(), &camera) != SCG_OK) {
+        if (scg_set_camera(ctx.get(), &camera) < 0) {
             fail(ctx.get(), "caméra refusée");
             break;
         }
 
         ScgMat4 model{};
         model.m[0] = model.m[5] = model.m[10] = model.m[15] = 1.0f;
-        if (scg_submit_world(ctx.get(), &model, world.get(), slots.data(), materials) != SCG_OK) {
+        if (scg_submit_world(ctx.get(), &model, world.get(), slots.data(), materials) < 0) {
             fail(ctx.get(), "carte refusée");
             break;
         }
@@ -331,7 +331,7 @@ int main(int argc, char **argv)
         // dessinée trois fois, ce qu'un décor fait de ses accessoires.
         for (const float(&placement)[3] : CRATES) {
             const ScgMat4 transform = crate_model(placement);
-            if (scg_submit_mesh(ctx.get(), &transform, crate.get(), crate_slots, 2) != SCG_OK) {
+            if (scg_submit_mesh(ctx.get(), &transform, crate.get(), crate_slots, 2) < 0) {
                 fail(ctx.get(), "maillage refusé");
                 running = false;
                 break;
@@ -344,17 +344,17 @@ int main(int argc, char **argv)
         // Par tuiles : un hôte qui voudrait les répartir sur ses threads le
         // ferait ici, et rien d'autre ne changerait.
         uint32_t tiles = 0;
-        if (scg_frame_begin(ctx.get(), &tiles) != SCG_OK) {
+        if (scg_frame_begin(ctx.get(), &tiles) < 0) {
             fail(ctx.get(), "début d'image");
             break;
         }
         for (uint32_t i = 0; i < tiles && running; i++) {
-            if (scg_frame_tile(ctx.get(), i, pixels.data(), WIDTH) != SCG_OK) {
+            if (scg_frame_tile(ctx.get(), i, pixels.data(), WIDTH) < 0) {
                 fail(ctx.get(), "tuile");
                 running = false;
             }
         }
-        if (scg_frame_end(ctx.get(), pixels.data(), WIDTH) != SCG_OK) {
+        if (scg_frame_end(ctx.get(), pixels.data(), WIDTH) < 0) {
             fail(ctx.get(), "fin d'image");
             break;
         }

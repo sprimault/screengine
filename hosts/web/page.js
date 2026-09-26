@@ -107,7 +107,7 @@ function loadTexture(engine, side, texels) {
 
   engine.writeTextureDesc(desc, side, side);
   engine.bytes().set(texels, block);
-  if (e.scg_texture_load(desc, block, texels.length, out) !== scg.SCG_OK) {
+  if (e.scg_texture_load(desc, block, texels.length, out) < 0) {
     throw new Error(`texture refusée : ${engine.lastError(0)}`);
   }
   const texture = engine.readU32(out);
@@ -229,7 +229,7 @@ async function main() {
     height: HEIGHT,
     tileSize: TILE,
   });
-  if (e.scg_create(config, out) !== scg.SCG_OK) {
+  if (e.scg_create(config, out) < 0) {
     status(engine.lastError(0));
     return;
   }
@@ -241,7 +241,7 @@ async function main() {
   const file = new Uint8Array(await (await fetch("couloir.world")).arrayBuffer());
   const block = engine.alloc(file.length);
   engine.bytes().set(file, block);
-  if (e.scg_world_load(block, file.length, out) !== scg.SCG_OK) {
+  if (e.scg_world_load(block, file.length, out) < 0) {
     status(`carte refusée : ${engine.lastError(0)}`);
     return;
   }
@@ -280,7 +280,7 @@ async function main() {
   const meshFile = new Uint8Array(await (await fetch("caisse.mesh")).arrayBuffer());
   const meshBlock = engine.alloc(meshFile.length);
   engine.bytes().set(meshFile, meshBlock);
-  if (e.scg_mesh_load(meshBlock, meshFile.length, out) !== scg.SCG_OK) {
+  if (e.scg_mesh_load(meshBlock, meshFile.length, out) < 0) {
     status(`maillage refusé : ${engine.lastError(0)}`);
     return;
   }
@@ -337,11 +337,11 @@ async function main() {
       fovY: 1.2,
       nearPlane: 0.1,
     });
-    if (e.scg_set_camera(ctx, camera) !== scg.SCG_OK) {
+    if (e.scg_set_camera(ctx, camera) < 0) {
       status(engine.lastError(ctx));
       return;
     }
-    if (e.scg_submit_world(ctx, model, world, slots, materials) !== scg.SCG_OK) {
+    if (e.scg_submit_world(ctx, model, world, slots, materials) < 0) {
       status(engine.lastError(ctx));
       return;
     }
@@ -350,7 +350,7 @@ async function main() {
     // dessinée trois fois, ce qu'un décor fait de ses accessoires.
     for (const placement of CRATES) {
       engine.writeMat4(crateModelPtr, crateModel(placement));
-      if (e.scg_submit_mesh(ctx, crateModelPtr, mesh, crateSlots, 2) !== scg.SCG_OK) {
+      if (e.scg_submit_mesh(ctx, crateModelPtr, mesh, crateSlots, 2) < 0) {
         status(engine.lastError(ctx));
         return;
       }
@@ -358,18 +358,18 @@ async function main() {
 
     // Par tuiles, comme un hôte qui voudrait les répartir : le web n'a qu'un
     // thread, mais le découpage est celui que les autres emprunteront.
-    if (e.scg_frame_begin(ctx, out) !== scg.SCG_OK) {
+    if (e.scg_frame_begin(ctx, out) < 0) {
       status(engine.lastError(ctx));
       return;
     }
     const tiles = engine.readU32(out);
     for (let i = 0; i < tiles; i++) {
-      if (e.scg_frame_tile(ctx, i, pixels, WIDTH) !== scg.SCG_OK) {
+      if (e.scg_frame_tile(ctx, i, pixels, WIDTH) < 0) {
         status(engine.lastError(ctx));
         return;
       }
     }
-    if (e.scg_frame_end(ctx, pixels, WIDTH) !== scg.SCG_OK) {
+    if (e.scg_frame_end(ctx, pixels, WIDTH) < 0) {
       status(engine.lastError(ctx));
       return;
     }
