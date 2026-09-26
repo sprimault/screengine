@@ -26,6 +26,7 @@ mod world;
 use std::alloc::{self, Layout};
 use std::ffi::c_char;
 use std::ptr;
+use std::slice;
 
 use std::sync::Arc;
 
@@ -1549,6 +1550,112 @@ pub unsafe extern "C" fn scg_lighting_state(
         };
         // SAFETY: précondition de la fonction — `out` vise un `u32` inscriptible.
         unsafe { out.write(value) };
+        Ok(())
+    })
+}
+
+/// Writes the lightmap cache to `buf`.
+///
+/// Call it once with `buf` null and `cap` zero: it writes the required length to
+/// `out_len`. Call it again with a buffer of at least `*out_len` bytes: it writes
+/// the block and writes its length to `out_len` again. The length is known
+/// analytically — the measuring call serialises nothing.
+///
+/// A `cap` too short returns `SCG_ERR_INVALID_ARGUMENT` and **writes nothing**,
+/// `out_len` included, so a host that ignores the first call cannot half-fill a
+/// buffer. A longer buffer is fine; only the block is written, and the block
+/// carries its own length in its header. Measure and fill must see the same state:
+/// a lightmap computed in between changes the required length.
+///
+/// A carrier where nothing has been computed writes a valid, empty block. On wasm
+/// the buffer comes from `scg_buffer_alloc`, as everywhere else.
+///
+/// # Safety
+///
+/// `lighting` must be a live handle from `scg_lighting_create`. `buf` must be null
+/// with `cap` zero, or cover `cap` writable bytes. `out_len` must point to a
+/// writable `size_t`, in both steps.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn scg_lighting_save(
+    lighting: *const ScgLighting,
+    buf: *mut u8,
+    cap: usize,
+    out_len: *mut usize,
+) -> i32 {
+    entry::without_context(|| {
+        if out_len.is_null() || (buf.is_null() && cap != 0) {
+            return Err(AbiError::NULL);
+        }
+        // SAFETY: précondition de la fonction — le handle est nul ou vivant.
+        let lighting = unsafe { lighting.as_ref() }.ok_or(AbiError::NULL)?;
+        let len = lighting
+            .inner
+            .save_len(&lighting.world)
+            .map_err(AbiError::from)?;
+
+        if !buf.is_null() {
+            if cap < len {
+                return Err(AbiError::CACHE_CAPACITY);
+            }
+            // SAFETY: précondition de la fonction — `buf` couvre `cap` octets
+            // inscriptibles, et `cap` vaut la longueur qu'on vient de mesurer. Le
+            // cache vit dans le porteur, que `buf` ne recouvre pas.
+            let out = unsafe { slice::from_raw_parts_mut(buf, len) };
+            lighting
+                .inner
+                .save(&lighting.world, out)
+                .map_err(AbiError::from)?;
+        }
+        // SAFETY: précondition de la fonction — `out_len` vise une `size_t`
+        // inscriptible.
+        unsafe { out_len.write(len) };
+        Ok(())
+    })
+}
+
+/// Restores a lightmap cache, and writes how many entries were taken to
+/// `out_accepted`.
+///
+/// **An entry whose fingerprint no longer matches is dropped, and that is not an
+/// error**: the call returns `SCG_OK` and counts it out. So is an entry naming a
+/// cell the map no longer carries. A partly stale cache is an editor's normal
+/// case, and refusing the whole block would recompute a level for one moved wall.
+/// Cells that were dropped stay absent, and `scg_lighting_state` says which.
+///
+/// Only a malformed block is an error, `SCG_ERR_INVALID_FORMAT`. What the block
+/// carries decides nothing on its own: every entry is checked against the loaded
+/// map.
+///
+/// # Safety
+///
+/// `lighting` must be a live handle from `scg_lighting_create`, `bytes` must cover
+/// `len` readable bytes, and `out_accepted` must point to a writable `uint32_t`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn scg_lighting_restore(
+    lighting: *mut ScgLighting,
+    bytes: *const u8,
+    len: usize,
+    out_accepted: *mut u32,
+) -> i32 {
+    entry::without_context(|| {
+        if bytes.is_null() || out_accepted.is_null() {
+            return Err(AbiError::NULL);
+        }
+        // SAFETY: précondition de la fonction — le handle est nul ou vivant, et
+        // aucun autre appel ne le touche en même temps.
+        let lighting = unsafe { lighting.as_mut() }.ok_or(AbiError::NULL)?;
+        let world = lighting.world.clone();
+        // SAFETY: précondition de la fonction — `bytes` couvre `len` octets
+        // lisibles. Ce qu'ils portent est hostile, et le décodeur le traite comme
+        // tel ; seule la couverture est promise par l'appelant.
+        let block = unsafe { slice::from_raw_parts(bytes, len) };
+        let accepted = lighting
+            .inner
+            .restore(&world, block)
+            .map_err(AbiError::from)?;
+        // SAFETY: précondition de la fonction — `out_accepted` vise un `u32`
+        // inscriptible.
+        unsafe { out_accepted.write(accepted) };
         Ok(())
     })
 }

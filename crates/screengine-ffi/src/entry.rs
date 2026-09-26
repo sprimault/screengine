@@ -88,6 +88,18 @@ impl AbiError {
         message: "name buffer too short: measure the name first with a null buffer and zero capacity",
     };
 
+    /// Le tampon du cache ne peut pas porter le bloc.
+    ///
+    /// Rien n'est écrit dans ce cas, `out_len` compris : la mesure a son propre
+    /// appel — tampon nul, capacité nulle —, comme pour le tampon d'un nom. Un
+    /// tampon plus long que nécessaire est accepté et n'est rempli que de ce que
+    /// le bloc occupe ; sa longueur est dans son en-tête, donc un hôte qui le
+    /// relit n'a pas à se souvenir de la capacité qu'il avait donnée.
+    pub(crate) const CACHE_CAPACITY: Self = Self {
+        code: SCG_ERR_INVALID_ARGUMENT,
+        message: "cache buffer too short: measure the cache first with a null buffer and zero capacity",
+    };
+
     /// Une coordonnée de sommet n'est pas un nombre fini.
     ///
     /// Le noyau ferait disparaître le triangle sans erreur, ce qui est le bon
