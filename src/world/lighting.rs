@@ -20,10 +20,14 @@ use alloc::vec::Vec;
 use crate::buffer::reserved;
 use crate::error::{Error, Result};
 use crate::format::World;
+use crate::format::world::{Cell, Surface};
 use crate::texture::Texture;
+
+use crate::format::cache::{self, Entry, Record};
 
 use super::atlas::{Atlas, pack};
 use super::bake::bake;
+use super::digest::fingerprint;
 
 /// Ce qu'une cellule a comme lightmap.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -47,6 +51,13 @@ struct Lit {
     /// Le rangement qui a produit ses texels : la soumission y lit le rectangle
     /// de chaque surface pour décaler ses coordonnées.
     atlas: Atlas,
+    /// L'empreinte de la cellule au moment du calcul.
+    ///
+    /// Gardée plutôt que recalculée à l'écriture : elle dit ce que cette lightmap
+    /// *a* vu, et une carte que l'édition à chaud d'une étape ultérieure modifiera
+    /// n'en dirait plus rien. C'est aussi ce qui permettra à `state` de rendre
+    /// « périmée » sans recuire.
+    fingerprint: u64,
 }
 
 /// Les lightmaps calculées d'une carte.
@@ -90,6 +101,7 @@ impl Lightmaps {
         self.cells[index as usize] = Some(Lit {
             texture: Arc::new(texture),
             atlas: baked.atlas,
+            fingerprint: fingerprint(world, index)?,
         });
         Ok(())
     }
@@ -103,6 +115,81 @@ impl Lightmaps {
         })
     }
 
+    /// La longueur qu'occuperait le cache, sans rien sérialiser.
+    ///
+    /// **L'hôte mesure, alloue, puis remplit** : c'est le patron de l'ABI, et la
+    /// mesure ne doit pas coûter une sérialisation jetée. Zéro quand aucune cellule
+    /// n'est cuite — un bloc vide reste un bloc valide, que relire ne rend rien.
+    pub fn save_len(&self, world: &World) -> Result<usize> {
+        let records = self.records(world)?;
+        cache::measure(&records).ok_or(Error::OutOfMemory)
+    }
+
+    /// Écrit le cache dans le tampon de l'hôte.
+    ///
+    /// `out` doit faire exactement la longueur que [`Lightmaps::save_len`] annonce,
+    /// mesurée sur le même état : un tampon d'une autre longueur est refusé sans
+    /// rien écrire.
+    pub fn save(&self, world: &World, out: &mut [u8]) -> Result<()> {
+        cache::write(&self.records(world)?, out)
+    }
+
+    /// Ce que l'état courant déposerait, dans l'ordre des cellules de la carte.
+    ///
+    /// L'ordre du fichier est déjà celui des identifiants croissants — le
+    /// chargement le vérifie —, donc les enregistrements sortent triés sans tri.
+    fn records<'a>(&'a self, world: &'a World) -> Result<Vec<Record<'a>>> {
+        let cells = world.cells();
+        let mut out = reserved(self.cells.len())?;
+        for (index, entry) in self.cells.iter().enumerate() {
+            let Some(lit) = entry else {
+                continue;
+            };
+            out.push(Record {
+                cell: &cells[index],
+                fingerprint: lit.fingerprint,
+                atlas: &lit.atlas,
+                texels: lit.texture.level_texels(0),
+            });
+        }
+        Ok(out)
+    }
+
+    /// Reprend un cache, et rend le nombre d'entrées acceptées.
+    ///
+    /// **Une entrée écartée n'est pas une erreur** : ni celle dont l'empreinte ne
+    /// concorde plus, ni celle qui désigne une cellule que la carte ne porte pas.
+    /// Un cache partiellement périmé est le cas normal d'un éditeur, et refuser le
+    /// bloc entier ferait tout recuire pour un mur déplacé. Seul un bloc malformé
+    /// remonte une erreur.
+    ///
+    /// Ce que porte le bloc ne décide de rien : chaque entrée est confrontée à la
+    /// carte chargée. Une empreinte se vole, elle ne prouve rien — c'est un FNV, pas
+    /// une signature —, donc le rangement relu est vérifié pour lui-même.
+    pub fn restore(&mut self, world: &World, bytes: &[u8]) -> Result<u32> {
+        let cells = world.cells();
+        let mut accepted = 0;
+        for entry in cache::read(bytes)? {
+            let Some(index) = world.cell_of(entry.cell_id) else {
+                continue;
+            };
+            if entry.fingerprint != fingerprint(world, index)? {
+                continue;
+            }
+            if !fits(&entry, &cells[index as usize]) {
+                continue;
+            }
+            let texture = Texture::load(entry.atlas.side, entry.atlas.side, entry.texels)?;
+            self.cells[index as usize] = Some(Lit {
+                texture: Arc::new(texture),
+                atlas: entry.atlas,
+                fingerprint: entry.fingerprint,
+            });
+            accepted += 1;
+        }
+        Ok(accepted)
+    }
+
     /// L'atlas d'une cellule, par son rang, ou `None` si rien n'est calculé.
     pub(crate) fn of(&self, index: u32) -> Option<(&Arc<Texture>, &Atlas)> {
         self.cells
@@ -110,6 +197,34 @@ impl Lightmaps {
             .as_ref()
             .map(|lit| (&lit.texture, &lit.atlas))
     }
+}
+
+/// Le rangement relu décrit-il bien cette cellule ?
+///
+/// **L'empreinte ne suffit pas à s'en assurer.** C'est un FNV, pas une signature :
+/// un bloc forgé peut la porter juste et décrire n'importe quel rangement. Or la
+/// soumission lit `slots[rang de la surface]` sans borne — un rectangle de moins
+/// ferait paniquer une image —, et un rectangle qui déborde de l'atlas ferait lire
+/// les luxels d'une autre surface. Les deux se vérifient ici, une fois, plutôt qu'à
+/// chaque image.
+fn fits(entry: &Entry<'_>, cell: &Cell) -> bool {
+    if entry.surfaces.len() != cell.surfaces.len() {
+        return false;
+    }
+    if entry
+        .surfaces
+        .iter()
+        .copied()
+        .ne(cell.surfaces.iter().map(Surface::id))
+    {
+        return false;
+    }
+    entry.atlas.slots.iter().all(|slot| {
+        slot.width <= entry.atlas.side
+            && slot.height <= entry.atlas.side
+            && slot.x <= entry.atlas.side - slot.width
+            && slot.y <= entry.atlas.side - slot.height
+    })
 }
 
 #[cfg(test)]

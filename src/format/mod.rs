@@ -15,6 +15,7 @@
 //! débogage : aucune lecture n'indexe le bloc, et aucune capacité d'allocation
 //! ne vient d'un nombre déclaré.
 
+pub(crate) mod cache;
 mod cursor;
 mod ears;
 mod mesh;

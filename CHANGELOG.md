@@ -86,6 +86,13 @@ critère est `code < 0`, et un statut inconnu se traite comme `SCG_OK`.
   disparaît. Une cellule est éclairée par ce que sa région laisse passer — elle,
   ses voisines à un portail, le bord refermé —, si bien que **la lumière ne tourne
   pas deux coins** et qu'un plancher opaque reste opaque.
+- **Les lightmaps calculées se rangent dans un cache et se reprennent**, plutôt
+  que d'être recuites à chaque chargement. Chaque entrée porte l'empreinte de ce
+  que sa cuisson a vu, et c'est elle qui décide si l'entrée vaut encore : une
+  entrée périmée est écartée sans erreur, la cellule reste simplement sans
+  lightmap. **Réhabiller un décor ou déplacer une entité ne périme rien** ;
+  toucher à une cellule périme en revanche aussi ses voisines, la lumière qui
+  franchissait la porte ayant été calculée là-bas.
 - Les lightmaps d'une cellule tiennent dans **un seul atlas**, chaque surface y
   recevant un rectangle en puissances de deux aligné sur sa propre taille : aucune
   réduction 2×2 ne traverse sa frontière, et la chaîne de mipmaps est celle que des
@@ -144,6 +151,13 @@ signature changes.
   a corner receive the same value and the corner disappears. A cell is lit by what
   its region lets through — itself, its neighbours one portal away, the boundary
   sealed — so **light does not turn two corners** and an opaque floor stays opaque.
+- **Computed lightmaps can be cached and restored**, rather than recomputed on
+  every load. Each entry carries the fingerprint of what its bake saw, and that is
+  what decides whether the entry still holds: a stale entry is dropped without an
+  error, and the cell is simply left with no lightmap. **Reskinning a level or
+  moving an entity invalidates nothing**; touching one cell does invalidate its
+  neighbours too, since the light coming through the doorway was computed over
+  there.
 - A cell's lightmaps fit in **a single atlas**, each surface getting a power-of-two
   rectangle aligned on its own size: no 2×2 reduction crosses its boundary, and the
   mipmap chain is the one separate textures would have produced. Packing is

@@ -954,7 +954,7 @@ fn light_bytes(id: u32, position: [f32; 3], radius: f32, color: [u8; 3]) -> Vec<
 }
 
 /// Une entité, longueur-préfixée.
-fn entity_bytes(
+pub(crate) fn entity_bytes(
     id: u32,
     cell: u32,
     class: &str,
