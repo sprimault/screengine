@@ -215,6 +215,54 @@ impl ScgVertexUv {
     }
 }
 
+/// A vertex carrying its texture coordinates **and its normal**.
+///
+/// Thirty-two bytes, offsets 0 to 28 on every target, with no padding — every
+/// field is a four-byte float.
+///
+/// It extends `ScgVertexUv` and not `ScgVertexUv2`: a moving prop has no
+/// lightmap, since a lightmap is computed per cell, and the scenery already
+/// carries its angle in a baked Lambert term.
+///
+/// **The normal need not be unit.** The engine normalises it, and it has to:
+/// interpolating between two frames denormalises it anyway. A zero-length
+/// normal is treated as no normal at all — the lighting then falls back to
+/// distance alone, which is what every path did before this structure existed.
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct ScgVertexUvN {
+    /// X coordinate, in object space.
+    pub x: f32,
+    /// Y coordinate.
+    pub y: f32,
+    /// Z coordinate.
+    pub z: f32,
+    /// Texture abscissa, in texels.
+    pub u: f32,
+    /// Texture ordinate, in texels.
+    pub v: f32,
+    /// Normal X component.
+    pub nx: f32,
+    /// Normal Y component.
+    pub ny: f32,
+    /// Normal Z component.
+    pub nz: f32,
+}
+
+impl ScgVertexUvN {
+    /// Le sommet du noyau, normale comprise.
+    pub(crate) fn to_core(self) -> VertexUv2 {
+        VertexUv2::shaded(
+            VertexUv {
+                position: Vec3::new(self.x, self.y, self.z),
+                u: self.u,
+                v: self.v,
+            },
+            Vec3::new(self.nx, self.ny, self.nz),
+        )
+    }
+}
+
 /// A vertex carrying a second set of coordinates, the one a lightmap is read
 /// with.
 ///
@@ -256,6 +304,9 @@ impl ScgVertexUv2 {
             v: self.v,
             u2: self.u2,
             v2: self.v2,
+            // Un lot éclairé par lightmap n'a pas de normale : son angle est
+            // déjà cuit dans la lightmap, avec son propre terme de Lambert.
+            normal: Vec3::ZERO,
         }
     }
 }
@@ -344,6 +395,28 @@ pub(crate) fn check_finite_uv(vertices: &[ScgVertexUv]) -> Result<(), AbiError> 
     let finite = vertices
         .iter()
         .all(|v| v.x.is_finite() && v.y.is_finite() && v.z.is_finite());
+    if finite {
+        Ok(())
+    } else {
+        Err(AbiError::VERTEX_NOT_FINITE)
+    }
+}
+
+/// La même, pour les sommets à normale.
+///
+/// **La normale est vérifiée finie, jamais unitaire** : l'exiger unitaire serait
+/// une précondition qu'un hôte ne peut pas tenir, l'interpolation entre deux
+/// trames la dénormalisant d'elle-même. Un composant non fini refuse le lot
+/// entier, comme une coordonnée.
+pub(crate) fn check_finite_uvn(vertices: &[ScgVertexUvN]) -> Result<(), AbiError> {
+    let finite = vertices.iter().all(|v| {
+        v.x.is_finite()
+            && v.y.is_finite()
+            && v.z.is_finite()
+            && v.nx.is_finite()
+            && v.ny.is_finite()
+            && v.nz.is_finite()
+    });
     if finite {
         Ok(())
     } else {
@@ -590,6 +663,14 @@ const _: () = {
     assert!(offset_of!(ScgVertexUv2, v) == 16);
     assert!(offset_of!(ScgVertexUv2, u2) == 20);
     assert!(offset_of!(ScgVertexUv2, v2) == 24);
+
+    assert!(size_of::<ScgVertexUvN>() == 32 && align_of::<ScgVertexUvN>() == 4);
+    assert!(offset_of!(ScgVertexUvN, z) == 8);
+    assert!(offset_of!(ScgVertexUvN, u) == 12);
+    assert!(offset_of!(ScgVertexUvN, v) == 16);
+    assert!(offset_of!(ScgVertexUvN, nx) == 20);
+    assert!(offset_of!(ScgVertexUvN, ny) == 24);
+    assert!(offset_of!(ScgVertexUvN, nz) == 28);
 
     // Le seul type de l'ABI dont les champs n'ont pas tous la même largeur :
     // quatre `float` puis quatre octets. C'est donc le seul où un bourrage

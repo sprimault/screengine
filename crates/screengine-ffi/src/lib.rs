@@ -43,7 +43,7 @@ pub use mesh::ScgMesh;
 pub use scene::{
     SCG_BLEND_MODULATE, SCG_FILTER_BILINEAR, SCG_FILTER_DITHER, SCG_TEXTURE_FORMAT_RGBA8,
     SCG_TEXTURE_FORMAT_RGBA8_MASKED, ScgCamera, ScgGrade, ScgLight, ScgMat4, ScgTextureDesc,
-    ScgTriangle, ScgVertex, ScgVertexUv, ScgVertexUv2,
+    ScgTriangle, ScgVertex, ScgVertexUv, ScgVertexUv2, ScgVertexUvN,
 };
 pub use status::{
     SCG_ERR_FAULTED, SCG_ERR_INVALID_ARGUMENT, SCG_ERR_INVALID_FORMAT, SCG_ERR_INVALID_STATE,
@@ -936,6 +936,74 @@ pub unsafe extern "C" fn scg_submit_blended(
             .submit_each_blended(model, triangles.len(), texture.map(|t| &t.inner), |i| {
                 let triangle = triangles[i];
                 let mut corners = [VertexUv::untextured(Vec3::ZERO); 3];
+                for (corner, index) in
+                    corners
+                        .iter_mut()
+                        .zip([triangle.i0, triangle.i1, triangle.i2])
+                {
+                    *corner = vertices
+                        .get(index as usize)
+                        .ok_or(CoreError::InvalidArgument(Argument::VertexIndex))?
+                        .to_core();
+                }
+                Ok((corners, triangle.color()))
+            })
+            .map_err(AbiError::from)
+    };
+
+    // SAFETY: précondition de la fonction — `ctx` est nul ou un handle vivant.
+    unsafe { entry::with_context(ctx, submit) }
+}
+
+/// Submits a batch of triangles whose vertices carry a normal.
+///
+/// Same contract as `scg_submit_textured`, with one difference: dynamic lights
+/// then take the surface's orientation into account. A face turned away from a
+/// light receives nothing, where without a normal it received the same light as
+/// every other face at the same distance.
+///
+/// **The normal need not be unit** — the engine normalises it, and it must,
+/// since interpolating between frames denormalises it anyway. A zero-length
+/// normal means no normal: the lighting falls back to distance alone. A
+/// non-finite component rejects the whole batch, like a coordinate.
+///
+/// This changes nothing for lightmaps. What closes here is the angular term of
+/// a **dynamic** light; occlusion remains the baking's business, and a baked
+/// lamp and the same lamp as a dynamic light will never render quite the same.
+///
+/// # Safety
+///
+/// Same preconditions as `scg_submit_textured`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn scg_submit_shaded(
+    ctx: *mut ScgContext,
+    model: *const ScgMat4,
+    vertices: *const ScgVertexUvN,
+    vertex_count: u32,
+    triangles: *const ScgTriangle,
+    triangle_count: u32,
+    texture: *const ScgTexture,
+) -> i32 {
+    let submit = |mut core: entry::Core<'_>| {
+        // SAFETY: précondition de la fonction — chaque pointeur est nul ou vise
+        // une valeur lisible.
+        let model = unsafe { model.as_ref() }.ok_or(AbiError::NULL)?;
+        let model = model.to_core()?;
+        // SAFETY: précondition de la fonction — `texture` est nul ou vivant.
+        let texture = unsafe { texture.as_ref() };
+        // SAFETY: précondition de la fonction — chaque pointeur couvre son
+        // nombre d'éléments.
+        let (vertices, triangles) = unsafe {
+            (
+                slice_of(vertices, vertex_count),
+                slice_of(triangles, triangle_count),
+            )
+        };
+        scene::check_finite_uvn(vertices)?;
+        core.exclusive()?
+            .submit_each_shaded(model, triangles.len(), texture.map(|t| &t.inner), |i| {
+                let triangle = triangles[i];
+                let mut corners = [VertexUv2::unlit(VertexUv::untextured(Vec3::ZERO)); 3];
                 for (corner, index) in
                     corners
                         .iter_mut()

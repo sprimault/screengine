@@ -481,6 +481,7 @@ impl LitMesh {
                 v: vertex.v,
                 u2: 1.0,
                 v2: 1.0,
+                normal: Vec3::ZERO,
             })
             .collect();
         Self {
@@ -505,6 +506,7 @@ impl LitMesh {
             v: t * across * density,
             u2: if s > 0.0 { 1.5 } else { 0.5 },
             v2: if t > 0.0 { 1.5 } else { 0.5 },
+            normal: Vec3::ZERO,
         };
         self.quad([
             corner(0.0, 0.0),
@@ -563,6 +565,7 @@ impl LitMesh {
                     v: t * across * density,
                     u2: lu(s),
                     v2: lv(t),
+                    normal: Vec3::ZERO,
                 };
                 self.quad([
                     corner(s0, t0),

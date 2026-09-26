@@ -543,6 +543,7 @@ fn lit_quad(
             v: position.y * density,
             u2,
             v2,
+            normal: Vec3::ZERO,
         })
         .collect();
     let triangles = [

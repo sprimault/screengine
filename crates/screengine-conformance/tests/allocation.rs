@@ -492,6 +492,7 @@ fn aucune_image_eclairee_n_alloue() {
             v: ((i >> 1) * 64) as f32,
             u2: ((i & 1) * 16) as f32,
             v2: ((i >> 1) * 16) as f32,
+            normal: Vec3::ZERO,
         })
         .collect();
 

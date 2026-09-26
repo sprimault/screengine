@@ -77,17 +77,41 @@ impl Placed {
     ///
     /// Aucune racine n'est appelée : c'est le carré de la distance qui entre
     /// dans la formule, et il s'obtient par un produit scalaire.
-    fn contribution(&self, point: Vec3) -> [f32; 3] {
+    fn contribution(&self, point: Vec3, normal: Vec3) -> [f32; 3] {
+        // **De la surface vers la lumière**, et ce sens compte : il était
+        // l'inverse tant que seul le carré servait, et le produit scalaire du
+        // terme de Lambert le rendrait négatif partout.
         let offset = Vec3::new(
-            point.x - self.position.x,
-            point.y - self.position.y,
-            point.z - self.position.z,
+            self.position.x - point.x,
+            self.position.y - point.y,
+            self.position.z - point.z,
         );
-        let ratio = offset.dot(offset) * self.inverse_square;
+        let square = offset.dot(offset);
+        let ratio = square * self.inverse_square;
         if ratio >= 1.0 {
             return [0.0; 3];
         }
-        let falloff = (1.0 - ratio) * (1.0 - ratio);
+        // **Le rejet se fait sur le signe, avant la racine inverse.** Il a le
+        // même signe que le terme de Lambert, donc il le devance sans rien
+        // coûter — et c'est le rejet le plus payant du calcul, une surface qui
+        // tourne le dos à la lumière n'ayant rien à recevoir.
+        // Une normale nulle est une normale absente : le lot n'en porte pas, ou
+        // elle est dégénérée. Ni l'une ni l'autre ne dit vers où la surface
+        // regarde, et l'atténuation reste alors celle de la distance seule —
+        // le comportement d'avant la normale par sommet.
+        let lambert = if normal.dot(normal) <= 0.0 {
+            1.0
+        } else {
+            if normal.dot(offset) <= 0.0 {
+                return [0.0; 3];
+            }
+            // La normalisation passe par la table du noyau : aucune libm,
+            // aucune approximation matérielle. L'ordre suit celui de la
+            // cuisson — direction d'abord, produit scalaire ensuite —, sans
+            // quoi les deux modes ne seraient pas comparables.
+            normal.normalize().dot(offset.normalize())
+        };
+        let falloff = (1.0 - ratio) * (1.0 - ratio) * lambert;
         [
             self.color[0] * falloff,
             self.color[1] * falloff,
@@ -102,10 +126,10 @@ impl Placed {
 /// contribution séparément éteindrait les lumières faibles partout où une
 /// forte domine, alors que leur teinte est précisément ce qu'on veut voir se
 /// mélanger.
-pub fn sum(lights: &[Placed], point: Vec3) -> [f32; 3] {
+pub fn sum(lights: &[Placed], point: Vec3, normal: Vec3) -> [f32; 3] {
     let mut total = [0.0f32; 3];
     for light in lights {
-        let add = light.contribution(point);
+        let add = light.contribution(point, normal);
         total[0] += add[0];
         total[1] += add[1];
         total[2] += add[2];
@@ -114,6 +138,18 @@ pub fn sum(lights: &[Placed], point: Vec3) -> [f32; 3] {
     // même façon en SSE et en NEON, et le noyau se l'interdit partout.
     let capped = |value: f32| if value > 1.0 { 1.0 } else { value };
     [capped(total[0]), capped(total[1]), capped(total[2])]
+}
+
+#[cfg(test)]
+impl Placed {
+    /// La contribution d'une lumière à un sommet **sans normale**.
+    ///
+    /// Ce que ces tests mesurent est l'atténuation par la distance, qui ne
+    /// dépend pas de l'orientation : la passer à chaque appel n'apprendrait
+    /// rien et masquerait ce qui varie d'un cas à l'autre.
+    fn lit(&self, point: Vec3) -> [f32; 3] {
+        self.contribution(point, Vec3::ZERO)
+    }
 }
 
 #[cfg(test)]

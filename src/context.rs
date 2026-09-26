@@ -1224,6 +1224,11 @@ impl Context {
                                         v2: lv - extent.min_v as f32
                                             + (slot.y + GUTTER) as f32
                                             + 0.5,
+                                        // Le décor n'a pas de normale par
+                                        // sommet : son angle est déjà dans la
+                                        // lightmap, cuite avec son terme de
+                                        // Lambert.
+                                        normal: Vec3::ZERO,
                                     };
                                 }
                                 let _ = side;
@@ -1366,6 +1371,29 @@ impl Context {
             }
             Ok((corners, triangle.color))
         })
+    }
+
+    /// Soumet un lot dont les sommets portent une normale.
+    ///
+    /// Les lumières dynamiques tiennent alors compte de l'orientation de la
+    /// surface : une face qui tourne le dos à une lumière ne reçoit rien, là où
+    /// sans normale elle recevait autant que ses voisines à égale distance.
+    ///
+    /// La normale n'est pas exigée unitaire — le moteur la normalise, et il le
+    /// faut : une normale interpolée entre deux trames ne l'est plus. Une
+    /// normale de longueur nulle vaut « pas de normale », et l'éclairage
+    /// retombe sur la distance seule.
+    pub fn submit_each_shaded<F>(
+        &mut self,
+        model: Affine3,
+        count: usize,
+        texture: Option<&Arc<Texture>>,
+        read: F,
+    ) -> Result<()>
+    where
+        F: Fn(usize) -> Result<([VertexUv2; 3], Color)>,
+    {
+        self.submit_lot(model, count, texture, None, 0, read)
     }
 
     /// Soumet un lot modulé par fonction d'accès, la forme que la frontière
@@ -1516,7 +1544,17 @@ impl Context {
                         // transformation a eu lieu une fois pour le lot, et la
                         // distance y est la même qu'en monde puisque la vue
                         // est rigide.
-                        light: dynamic::sum(&self.placed, view),
+                        // La normale passe en espace de vue par la partie
+                        // linéaire de la même transformation : elle est rigide,
+                        // donc elle préserve les angles, et il n'y a ni
+                        // cofacteurs ni inverse-transposée à former. Une
+                        // matrice modèle à échelle non uniforme les demanderait,
+                        // et la soumission n'en accepte pas.
+                        light: dynamic::sum(
+                            &self.placed,
+                            view,
+                            transform.transform_vector(c.normal),
+                        ),
                     }
                 }),
                 color,
