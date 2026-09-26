@@ -578,6 +578,42 @@ fn refuse_une_description_a_zero() {
     assert!(last_error(ptr::null()).contains("format"));
 }
 
+/// Le format masqué se charge par la même fonction, sans entrée de plus.
+///
+/// C'est tout ce qu'un hôte a à faire pour obtenir la transparence : la
+/// propriété est portée par la texture, et chaque chemin de soumission qui
+/// prend une texture en hérite.
+#[test]
+fn charge_une_texture_masquee() {
+    let masked = ScgTextureDesc {
+        format: SCG_TEXTURE_FORMAT_RGBA8_MASKED,
+        ..desc(4, 4)
+    };
+    let texture = load(&masked, &[0x80; 4 * 4 * 4]);
+    // SAFETY: handle vivant, détruit une seule fois.
+    unsafe { scg_texture_destroy(texture) };
+}
+
+/// Un format que cette version ne connaît pas est refusé, jamais rabattu sur
+/// le défaut.
+///
+/// C'est ce qui rend l'ajout d'un format compatible : une liaison écrite
+/// contre une version ultérieure reçoit une erreur, au lieu d'une image lue
+/// autrement qu'elle ne le croit.
+#[test]
+fn refuse_un_format_inconnu() {
+    let inconnu = ScgTextureDesc {
+        format: SCG_TEXTURE_FORMAT_RGBA8_MASKED + 1,
+        ..desc(4, 4)
+    };
+    let mut out = ptr::null_mut();
+    // SAFETY: description locale vivante, bloc de la longueur annoncée.
+    let code = unsafe { scg_texture_load(&inconnu, [0u8; 64].as_ptr(), 64, &mut out) };
+    assert_eq!(code, SCG_ERR_INVALID_ARGUMENT);
+    assert!(out.is_null(), "rien ne doit être écrit en cas d'échec");
+    assert!(last_error(ptr::null()).contains("format"));
+}
+
 /// Un champ réservé non nul est refusé, et le message le dit : c'est la clause
 /// qui permettra d'en employer un sans casser les liaisons déjà écrites.
 #[test]

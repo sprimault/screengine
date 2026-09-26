@@ -363,12 +363,25 @@ pub(crate) fn check_finite_uv2(vertices: &[ScgVertexUv2]) -> Result<(), AbiError
     }
 }
 
-/// The only pixel format a texture is loaded from.
+/// Opaque pixels: the alpha byte is carried but never read.
 ///
 /// One, never zero: a description left zeroed is refused rather than read as a
 /// valid format. Four bytes per texel, in the memory order of the output
 /// pixels — a host never has two orders to keep straight.
 pub const SCG_TEXTURE_FORMAT_RGBA8: u32 = 1;
+
+/// Same bytes, but the alpha byte decides: binary transparency.
+///
+/// Each texel's alpha is forced to all or nothing when the texture is loaded,
+/// with a threshold of 128; a transparent texel writes neither colour nor
+/// depth, and therefore behaves exactly like a pixel the triangle does not
+/// cover. Every submission that takes a texture honours it — there is no
+/// separate entry point, and no context setting.
+///
+/// Transparency is a property of the texture and not of the drawing, because
+/// the mipmap chain is built when the texture is loaded: deciding at draw time
+/// would mean keeping two chains, or keeping one that is wrong.
+pub const SCG_TEXTURE_FORMAT_RGBA8_MASKED: u32 = 2;
 
 /// Ordered dithering of texture coordinates: the default filter.
 ///
@@ -434,7 +447,8 @@ impl ScgTextureDesc {
     /// clause qui permettra d'en employer un sans casser une liaison déjà
     /// écrite, et elle ne vaut que si personne ne l'a jamais laissée passer.
     pub(crate) fn validate(&self) -> Result<(), AbiError> {
-        if self.format != SCG_TEXTURE_FORMAT_RGBA8 {
+        if self.format != SCG_TEXTURE_FORMAT_RGBA8 && self.format != SCG_TEXTURE_FORMAT_RGBA8_MASKED
+        {
             return Err(AbiError::TEXTURE_FORMAT);
         }
         if self.reserved0 != 0 || self.reserved1 != 0 || self.reserved2 != 0 {

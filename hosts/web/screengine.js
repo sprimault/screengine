@@ -73,13 +73,23 @@ export const SCG_ERR_INVALID_FORMAT = -101;
 export const SCG_ERR_UNSUPPORTED_FORMAT_VERSION = -102;
 
 /**
- * Le seul format de pixels qu'une texture accepte.
+ * Des pixels opaques : l'octet d'alpha est transporté, jamais lu.
  *
  * Un et non zéro : une description laissée à zéro est ainsi refusée plutôt
  * qu'interprétée, ce qui importe d'autant plus ici qu'une liaison JavaScript
  * écrit la structure octet par octet dans la mémoire linéaire.
  */
 export const SCG_TEXTURE_FORMAT_RGBA8 = 1;
+
+/**
+ * Les mêmes octets, mais l'alpha décide : transparence binaire.
+ *
+ * Un texel transparent n'écrit ni couleur ni profondeur. La transparence est
+ * une propriété de la texture et non du dessin, la chaîne de mipmaps se
+ * construisant au chargement : toute soumission qui prend une texture en
+ * hérite, sans point d'entrée ni réglage de plus.
+ */
+export const SCG_TEXTURE_FORMAT_RGBA8_MASKED = 2;
 
 /**
  * Le tramage ordonné des coordonnées, filtrage par défaut.
