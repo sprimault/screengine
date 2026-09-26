@@ -305,6 +305,20 @@ impl World {
         self.triangle_count
     }
 
+    /// Combien de cellules la carte porte.
+    pub fn cell_count(&self) -> u32 {
+        self.cells.len() as u32
+    }
+
+    /// L'identifiant de la cellule de ce rang, ou `None` au-delà du compte.
+    ///
+    /// Le rang est celui du fichier, et il n'est pas stable d'un chargement à
+    /// l'autre : il sert à énumérer, jamais à désigner. C'est l'identifiant qui
+    /// désigne.
+    pub fn cell_id(&self, index: u32) -> Option<u32> {
+        self.cells.get(index as usize).map(|cell| cell.id)
+    }
+
     /// L'index de la cellule que cet identifiant désigne, s'il en désigne une.
     ///
     /// Par dichotomie sur la table triée au chargement. `0` ne désigne aucune
@@ -317,6 +331,37 @@ impl World {
             .binary_search_by_key(&id, |(key, _)| *key)
             .ok()
             .map(|rank| self.cell_index[rank].1)
+    }
+
+    /// L'identifiant de la cellule qui contient ce point, ou `0` s'il n'en est
+    /// dans aucune.
+    ///
+    /// **Une interrogation, pas un état.** Le moteur ne retient pas où est la
+    /// caméra : l'hôte garde l'identifiant et le redonne à chaque soumission, ce
+    /// qui laisse le suivi d'une caméra là où il appartient — dans le jeu.
+    ///
+    /// Le coût est celui d'un parcours de toutes les cellules et de toutes leurs
+    /// faces. C'est un appel nommé, pour le chargement ou pour reprendre le fil ;
+    /// entre deux images, [`World::track`] suffit.
+    pub fn locate(&self, position: Vec3) -> u32 {
+        crate::world::locate::locate(self, position)
+            .and_then(|index| self.cell_id(index))
+            .unwrap_or(0)
+    }
+
+    /// L'identifiant de la cellule où un déplacement aboutit, ou `0` s'il sort de
+    /// toute cellule.
+    ///
+    /// `from_cell` est celui d'où le déplacement part. Un identifiant qui ne
+    /// désigne aucune cellule rend `0`, comme une sortie : il n'y a pas de fil à
+    /// reprendre depuis une cellule qui n'existe pas.
+    pub fn track(&self, from_cell: u32, from: Vec3, to: Vec3) -> u32 {
+        let Some(index) = self.cell_of(from_cell) else {
+            return 0;
+        };
+        crate::world::locate::track(self, index, from, to)
+            .and_then(|found| self.cell_id(found))
+            .unwrap_or(0)
     }
 
     /// Combien de matériaux elle réclame.
