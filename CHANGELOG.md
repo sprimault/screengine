@@ -75,10 +75,13 @@ critère est `code < 0`, et un statut inconnu se traite comme `SCG_OK`.
   dépréciée — c'est le chemin contre lequel la traversée se valide.
 
 ### Modifié
-- Le chargement d'une carte vérifie cinq propriétés du repère de lightmap de
-  chaque surface, là où il n'en vérifiait qu'une : longueur des axes en puissance
-  de deux, exposant pair, origine multiple de cette longueur, axes orthogonaux et
-  contenus dans le plan de la surface. Il refuse en outre une surface dont
+- Le chargement d'une carte vérifie quatre propriétés du repère de lightmap de
+  chaque surface, là où il n'en vérifiait qu'une : longueur des axes au carré en
+  puissance de deux, origine sur un nœud de sa grille, axes orthogonaux et
+  contenus dans le plan de la surface. **Un repère en diagonale est accepté**, ce
+  qui est nécessaire pour éclairer un mur oblique : le pas n'y est pas une
+  puissance de deux, et l'alignement de deux surfaces coplanaires appartient donc
+  à l'éditeur. Il refuse en outre une surface dont
   l'étendue dépasse 256 luxels de côté, plutôt que de laisser l'échec remonter du
   calcul d'éclairage. Une carte que ces clauses refusent produisait déjà des
   grilles de luxels désalignées entre surfaces coplanaires.
@@ -113,12 +116,13 @@ signature changes.
   renders the same image as the raw path**, which remains.
 
 ### Changed
-- Loading a map checks five properties of each surface's lightmap frame where it
-  checked only one: axis lengths a power of two, even exponent, origin a multiple
-  of that length, axes orthogonal and lying in the surface plane. It also rejects
-  a surface extending beyond 256 luxels on a side, rather than letting the failure
-  surface from lighting computation. A map these clauses reject was already
-  producing misaligned luxel grids between coplanar surfaces.
+- Loading a map checks four properties of each surface's lightmap frame where it
+  checked only one: squared axis lengths a power of two, origin on a node of its
+  own grid, axes orthogonal and lying in the surface plane. **A diagonal frame is
+  accepted**, which is what an oblique wall needs to be lit: its step is not a
+  power of two, so aligning two coplanar surfaces belongs to the editor. It also
+  rejects a surface extending beyond 256 luxels on a side, rather than letting the
+  failure surface from lighting computation.
 
 ### Fixed
 - **Two portals with different vertices could be matched**, so the upcoming

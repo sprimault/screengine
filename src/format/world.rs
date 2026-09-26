@@ -859,20 +859,16 @@ fn perpendicular(dot: f64, square_a: f64, square_b: f64) -> bool {
 /// Ces deux derniers contrôles tolèrent un résidu, pour la raison écrite sur
 /// [`SQUARE_TOLERANCE`].
 fn aligned(mapping: Mapping, corners: &[Vec3]) -> bool {
-    let power_of_two_even = |value: f32| {
-        // Mantisse nulle : la valeur est une puissance de deux. Exposant pair :
-        // sa racine en est une aussi — et c'est la racine, la longueur de l'axe,
-        // qui est le pas de la grille.
-        if !(value > 0.0 && value.is_finite() && value.to_bits() & 0x007f_ffff == 0) {
-            return false;
-        }
-        let exponent = ((value.to_bits() >> 23) as i32) - 127;
-        exponent % 2 == 0
-    };
+    // Mantisse nulle : la valeur est une puissance de deux. **L'exposant n'a pas à
+    // être pair**, et l'exiger interdisait tout mur oblique : un axe dans un plan
+    // à 45° s'écrit `(p, −p, 0)`, de carré `2p²`, donc d'exposant impair, et le
+    // second axe ne peut pas être à la fois orthogonal à lui et dans le plan.
+    let power_of_two =
+        |value: f32| value > 0.0 && value.is_finite() && value.to_bits() & 0x007f_ffff == 0;
 
     let square_u = mapping.u.dot(mapping.u);
     let square_v = mapping.v.dot(mapping.v);
-    if !power_of_two_even(square_u) || !power_of_two_even(square_v) {
+    if !power_of_two(square_u) || !power_of_two(square_v) {
         return false;
     }
 
