@@ -529,20 +529,20 @@ fn un_repere_de_lightmap_mal_aligne_est_refuse() {
     );
 }
 
-/// Un axe de lightmap dont le carré a un exposant impair est refusé.
+/// Un repère de lightmap en diagonale est accepté.
 ///
-/// `(1, 1, 0)` donne `|u|² = 2` exactement, donc une puissance de deux — et une
-/// longueur `√2`, qui n'en est pas une. Le pas de la grille étant la longueur,
-/// deux surfaces coplanaires aux pas `2` et `√2` ne partagent plus leurs luxels.
-/// Le cas est isolé : les deux axes sont orthogonaux, de même carré, et dans le
-/// plan du carré, si bien qu'aucun autre contrôle ne peut le refuser à la place.
+/// **C'est ce qui rend un mur oblique éclairable**, et le contrôle l'interdisait :
+/// `(1, 1, 0)` donne `|u|² = 2`, une puissance de deux d'exposant impair, et
+/// exiger la parité écartait le seul repère qu'un plan à 45° admette — un axe y
+/// s'écrit `(p, −p, 0)`, de carré `2p²`, et le second doit être orthogonal à lui
+/// tout en restant dans le plan. Le pas de la grille n'est alors plus une puissance
+/// de deux, et l'alignement de deux surfaces coplanaires redevient l'affaire de
+/// l'éditeur : il ne touche ni la justesse ni le déterminisme, seulement une marche
+/// d'éclairage à une jointure.
 #[test]
-fn un_axe_de_lightmap_de_longueur_irrationnelle_est_refuse() {
+fn un_repere_de_lightmap_en_diagonale_est_accepte() {
     let oblique = frame([0.0, 0.0, 0.0], [1.0, 1.0, 0.0], [-1.0, 1.0, 0.0]);
-    assert_eq!(
-        World::load(&map_with_lightmap(&oblique)).unwrap_err(),
-        refused(Malformation::Mapping)
-    );
+    World::load(&map_with_lightmap(&oblique)).expect("un mur oblique s'éclaire");
 }
 
 /// Une origine de lightmap qui ne tombe pas sur un nœud de sa grille est

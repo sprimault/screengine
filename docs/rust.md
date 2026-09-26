@@ -928,20 +928,15 @@ reconstruire le repère par moindres carrés à chaque opération, et deux édit
 le reconstruiraient différemment : le repère est la source, les coordonnées la
 dérivée.
 
-**Le repère de lightmap se vérifie au chargement sur cinq points**, et chacun
+**Le repère de lightmap se vérifie au chargement sur quatre points**, et chacun
 répond à un besoin distinct — c'est pourquoi aucun ne remplace un autre :
 
 - **la longueur au carré de chaque axe est une puissance de deux**, ce qui rend son
   inverse exact : la reconstruction d'un luxel vers un point du monde se fait alors
   par deux multiplications et trois additions, sans division et donc sans arrondi
   à rendre déterministe ;
-- **son exposant est pair**, donc la longueur elle-même est une puissance de deux.
-  Le pas de la grille en unités de monde étant cette longueur, le seul contrôle du
-  carré laisserait passer un axe de longueur `√2` — deux surfaces coplanaires
-  adjacentes aux pas `2` et `√2` ne partagent alors plus leur grille, et c'est la
-  marche d'éclairage à la jointure que ce contrôle existe pour interdire ;
-- **l'origine est un multiple de cette longueur**, sans quoi les grilles alignées
-  en pas restent décalées en phase ;
+- **l'origine tombe sur un nœud de sa propre grille**, mesurée depuis le zéro du
+  monde, sans quoi deux grilles de même pas restent décalées en phase ;
 - **les deux axes sont orthogonaux**, faute de quoi la reconstruction demande
   l'inverse d'une 2×2 quelconque, donc une division ;
 - **ils sont contenus dans le plan de la surface**, faute de quoi la grille de
@@ -950,7 +945,19 @@ répond à un besoin distinct — c'est pourquoi aucun ne remplace un autre :
 Ce sont des contrôles et non une disposition : `version_format` ne bouge pas, et
 une carte que ces clauses refusent était déjà fausse.
 
-**Les trois premiers sont exacts, les deux derniers tolèrent un résidu relatif**,
+**L'exposant de ce carré n'a pas à être pair, et l'exiger était un défaut.** La
+longueur elle-même serait alors une puissance de deux, ce qui alignerait les
+grilles de deux surfaces coplanaires adjacentes sans rien demander à l'éditeur.
+Mais un axe dans un plan à 45° s'écrit `(p, −p, 0)`, de carré `2p²` : son exposant
+est impair, et le second axe ne peut être à la fois orthogonal à lui et dans le
+plan. La clause interdisait donc d'éclairer **tout mur oblique**, ce qu'un décor de
+cette classe produit à la première coupe de coin. L'alignement des grilles
+redevient ce qu'il était : une propriété que l'éditeur tient en donnant le même pas
+à deux surfaces coplanaires, et qui ne coûte rien à vérifier puisqu'elle ne touche
+ni la justesse ni le déterminisme — seulement une marche d'éclairage à une
+jointure.
+
+**Les deux premiers sont exacts, les deux derniers tolèrent un résidu relatif**,
 et la différence n'est pas un relâchement : une puissance de deux est exacte ou
 n'est pas, alors qu'un repère oblique posé sur une surface oblique porte le résidu
 de sa propre construction. Une tolérance serait interdite sur l'appariement des
