@@ -44,6 +44,25 @@ de version sont ce que lit un auteur de liaison étranger avant de savoir s'il
 doit reprendre son travail. Ce préambule reste en français : il n'est jamais
 publié, et explique les conventions du dépôt à qui y contribue.
 
+## [Non publié]
+
+### Corrigé
+- La table des textures d'une image était dimensionnée sur la capacité de
+  triangles, alors qu'un lot éclairé y prend deux entrées : la sienne et celle
+  de sa lightmap. Un décor éclairé dont les surfaces sont des triangles à
+  matériau propre se voyait refuser par `SCG_ERR_INVALID_ARGUMENT`, alors que la
+  capacité de triangles réglée sur `scg_world_triangle_count` suffisait
+  exactement.
+
+***
+
+### Fixed
+- A frame's texture table was sized on the triangle capacity, although a lit
+  batch takes two entries in it: its own and its lightmap's. A lit scene whose
+  surfaces are triangles with a material of their own was refused with
+  `SCG_ERR_INVALID_ARGUMENT`, although a triangle capacity set from
+  `scg_world_triangle_count` was exactly enough.
+
 ## [0.5.0] — 2026-09-26 — Le monde
 
 **Ce qu'un auteur de liaison doit reprendre : la façon de juger un code de
