@@ -92,7 +92,10 @@ critère est `code < 0`, et un statut inconnu se traite comme `SCG_OK`.
   entrée périmée est écartée sans erreur, la cellule reste simplement sans
   lightmap. **Réhabiller un décor ou déplacer une entité ne périme rien** ;
   toucher à une cellule périme en revanche aussi ses voisines, la lumière qui
-  franchissait la porte ayant été calculée là-bas.
+  franchissait la porte ayant été calculée là-bas. `scg_lighting_save` rend le
+  bloc en deux temps — tampon nul et capacité nulle pour mesurer, puis remplir —
+  et `scg_lighting_restore` écrit le nombre d'entrées reprises sans traiter une
+  entrée périmée comme une erreur.
 - Les lightmaps d'une cellule tiennent dans **un seul atlas**, chaque surface y
   recevant un rectangle en puissances de deux aligné sur sa propre taille : aucune
   réduction 2×2 ne traverse sa frontière, et la chaîne de mipmaps est celle que des
@@ -157,7 +160,9 @@ signature changes.
   error, and the cell is simply left with no lightmap. **Reskinning a level or
   moving an entity invalidates nothing**; touching one cell does invalidate its
   neighbours too, since the light coming through the doorway was computed over
-  there.
+  there. `scg_lighting_save` hands the block over in two steps — null buffer and
+  zero capacity to measure, then fill — and `scg_lighting_restore` writes how many
+  entries it took, without treating a stale one as an error.
 - A cell's lightmaps fit in **a single atlas**, each surface getting a power-of-two
   rectangle aligned on its own size: no 2×2 reduction crosses its boundary, and the
   mipmap chain is the one separate textures would have produced. Packing is

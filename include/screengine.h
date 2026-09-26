@@ -1156,6 +1156,54 @@ int32_t scg_lighting_build(struct ScgLighting *lighting, uint32_t cell_id);
 // point to a writable `uint32_t`.
 int32_t scg_lighting_state(const struct ScgLighting *lighting, uint32_t cell_id, uint32_t *out);
 
+// Writes the lightmap cache to `buf`.
+//
+// Call it once with `buf` null and `cap` zero: it writes the required length to
+// `out_len`. Call it again with a buffer of at least `*out_len` bytes: it writes
+// the block and writes its length to `out_len` again. The length is known
+// analytically — the measuring call serialises nothing.
+//
+// A `cap` too short returns `SCG_ERR_INVALID_ARGUMENT` and **writes nothing**,
+// `out_len` included, so a host that ignores the first call cannot half-fill a
+// buffer. A longer buffer is fine; only the block is written, and the block
+// carries its own length in its header. Measure and fill must see the same state:
+// a lightmap computed in between changes the required length.
+//
+// A carrier where nothing has been computed writes a valid, empty block. On wasm
+// the buffer comes from `scg_buffer_alloc`, as everywhere else.
+//
+// # Safety
+//
+// `lighting` must be a live handle from `scg_lighting_create`. `buf` must be null
+// with `cap` zero, or cover `cap` writable bytes. `out_len` must point to a
+// writable `size_t`, in both steps.
+int32_t scg_lighting_save(const struct ScgLighting *lighting,
+                          uint8_t *buf,
+                          size_t cap,
+                          size_t *out_len);
+
+// Restores a lightmap cache, and writes how many entries were taken to
+// `out_accepted`.
+//
+// **An entry whose fingerprint no longer matches is dropped, and that is not an
+// error**: the call returns `SCG_OK` and counts it out. So is an entry naming a
+// cell the map no longer carries. A partly stale cache is an editor's normal
+// case, and refusing the whole block would recompute a level for one moved wall.
+// Cells that were dropped stay absent, and `scg_lighting_state` says which.
+//
+// Only a malformed block is an error, `SCG_ERR_INVALID_FORMAT`. What the block
+// carries decides nothing on its own: every entry is checked against the loaded
+// map.
+//
+// # Safety
+//
+// `lighting` must be a live handle from `scg_lighting_create`, `bytes` must cover
+// `len` readable bytes, and `out_accepted` must point to a writable `uint32_t`.
+int32_t scg_lighting_restore(struct ScgLighting *lighting,
+                             const uint8_t *bytes,
+                             size_t len,
+                             uint32_t *out_accepted);
+
 // Writes the number of cells the map carries to `out`.
 //
 // # Safety

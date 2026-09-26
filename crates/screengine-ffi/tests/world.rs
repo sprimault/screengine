@@ -452,6 +452,134 @@ fn une_cellule_inconnue_ne_se_cuit_pas() {
     }
 }
 
+/// Le cache se mesure, s'écrit, puis se reprend.
+///
+/// **Le patron en deux temps est ce qu'un auteur de liaison lira le plus souvent
+/// de travers** : mesurer avec un tampon nul, allouer, remplir. Le test le suit
+/// exactement comme un hôte le ferait, et vérifie que la seconde reprise retrouve
+/// l'entrée que la première avait cuite.
+#[test]
+fn le_cache_se_mesure_s_ecrit_et_se_reprend() {
+    let world = load(&one_cell_world());
+    let mut lighting = ptr::null_mut();
+    // SAFETY: carte vivante, pointeur de sortie local.
+    let created = unsafe { scg_lighting_create(world, &mut lighting) };
+    assert_eq!(created, SCG_OK, "création refusée : {}", orphan_error());
+
+    // SAFETY: handle vivant.
+    let built = unsafe { scg_lighting_build(lighting, 7) };
+    assert_eq!(built, SCG_OK, "cuisson refusée : {}", orphan_error());
+
+    let mut len = 0usize;
+    // SAFETY: handle vivant, tampon nul avec capacité nulle, sortie locale.
+    let measured = unsafe { scg_lighting_save(lighting, ptr::null_mut(), 0, &mut len) };
+    assert_eq!(measured, SCG_OK, "mesure refusée : {}", orphan_error());
+    assert!(len > 0, "un cache d'une cellule cuite n'est pas vide");
+
+    let mut block = vec![0u8; len];
+    let mut written = 0usize;
+    // SAFETY: handle vivant, tampon local de `len` octets, sortie locale.
+    let saved = unsafe { scg_lighting_save(lighting, block.as_mut_ptr(), len, &mut written) };
+    assert_eq!(saved, SCG_OK, "écriture refusée : {}", orphan_error());
+    assert_eq!(written, len);
+
+    let mut other = ptr::null_mut();
+    // SAFETY: carte vivante, pointeur de sortie local.
+    let created = unsafe { scg_lighting_create(world, &mut other) };
+    assert_eq!(created, SCG_OK);
+
+    let mut accepted = 0u32;
+    // SAFETY: handle vivant, bloc local de `len` octets, sortie locale.
+    let restored = unsafe { scg_lighting_restore(other, block.as_ptr(), len, &mut accepted) };
+    assert_eq!(restored, SCG_OK, "reprise refusée : {}", orphan_error());
+    assert_eq!(accepted, 1);
+
+    let mut state = 0u32;
+    // SAFETY: handle vivant, sortie locale.
+    let read = unsafe { scg_lighting_state(other, 7, &mut state) };
+    assert_eq!(read, SCG_OK);
+    assert_eq!(state, SCG_LIGHTMAP_READY);
+
+    // SAFETY: handles vivants, détruits une seule fois chacun.
+    unsafe {
+        scg_lighting_destroy(other);
+        scg_lighting_destroy(lighting);
+        scg_world_destroy(world);
+    }
+}
+
+/// Un tampon qui n'a pas la longueur mesurée est refusé, et rien n'est écrit.
+///
+/// **`out_len` compris** : remplir un paramètre de sortie sur un chemin d'erreur
+/// serait la seule exception de toute l'ABI, et une liaison qui s'y fierait lirait
+/// une longueur d'un appel qui a échoué.
+#[test]
+fn un_tampon_de_cache_trop_court_est_refuse_sans_rien_ecrire() {
+    let world = load(&one_cell_world());
+    let mut lighting = ptr::null_mut();
+    // SAFETY: carte vivante, pointeur de sortie local.
+    assert_eq!(unsafe { scg_lighting_create(world, &mut lighting) }, SCG_OK);
+    // SAFETY: handle vivant.
+    assert_eq!(unsafe { scg_lighting_build(lighting, 7) }, SCG_OK);
+
+    let mut len = 0usize;
+    // SAFETY: handle vivant, tampon nul avec capacité nulle, sortie locale.
+    let measured = unsafe { scg_lighting_save(lighting, ptr::null_mut(), 0, &mut len) };
+    assert_eq!(measured, SCG_OK);
+
+    let mut block = vec![0u8; len];
+    let mut written = 9usize;
+    // SAFETY: handle vivant, tampon local dont on annonce une longueur plus
+    // courte que sa vraie taille : l'appel ne doit pas y écrire.
+    let short = unsafe { scg_lighting_save(lighting, block.as_mut_ptr(), len - 1, &mut written) };
+    assert_eq!(short, SCG_ERR_INVALID_ARGUMENT);
+    assert_eq!(written, 9, "out_len a été écrit sur un chemin d'erreur");
+    assert!(
+        block.iter().all(|byte| *byte == 0),
+        "le tampon a été touché"
+    );
+
+    // Un tampon plus long est en revanche accepté, et seul le bloc est écrit : sa
+    // longueur est dans son en-tête, l'hôte n'a pas à retenir sa capacité.
+    let mut roomy = vec![0u8; len + 64];
+    // SAFETY: handle vivant, tampon local de `len + 64` octets, sortie locale.
+    let long = unsafe { scg_lighting_save(lighting, roomy.as_mut_ptr(), len + 64, &mut written) };
+    assert_eq!(long, SCG_OK, "tampon plus long refusé : {}", orphan_error());
+    assert_eq!(written, len);
+    assert!(
+        roomy[len..].iter().all(|byte| *byte == 0),
+        "l'écriture a débordé du bloc"
+    );
+
+    // SAFETY: handles vivants, détruits une seule fois chacun.
+    unsafe {
+        scg_lighting_destroy(lighting);
+        scg_world_destroy(world);
+    }
+}
+
+/// Un bloc de cache malformé est une erreur de format.
+#[test]
+fn un_bloc_de_cache_malforme_est_refuse() {
+    let world = load(&one_cell_world());
+    let mut lighting = ptr::null_mut();
+    // SAFETY: carte vivante, pointeur de sortie local.
+    assert_eq!(unsafe { scg_lighting_create(world, &mut lighting) }, SCG_OK);
+
+    let junk = *b"pas un bloc";
+    let mut accepted = 7u32;
+    // SAFETY: handle vivant, tranche locale, sortie locale.
+    let refused =
+        unsafe { scg_lighting_restore(lighting, junk.as_ptr(), junk.len(), &mut accepted) };
+    assert_eq!(refused, SCG_ERR_INVALID_FORMAT);
+
+    // SAFETY: handles vivants, détruits une seule fois chacun.
+    unsafe {
+        scg_lighting_destroy(lighting);
+        scg_world_destroy(world);
+    }
+}
+
 /// Un compte de textures qui n'est pas celui des matériaux est refusé.
 #[test]
 fn refuse_un_compte_de_textures_qui_n_est_pas_celui_des_materiaux() {

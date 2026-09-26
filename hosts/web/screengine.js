@@ -145,6 +145,8 @@ export const EXPORTS = [
   "scg_lighting_destroy",
   "scg_lighting_build",
   "scg_lighting_state",
+  "scg_lighting_save",
+  "scg_lighting_restore",
 ];
 
 /** Une cellule n'a pas encore de lightmap. */
