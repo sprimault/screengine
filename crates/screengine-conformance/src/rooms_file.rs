@@ -277,6 +277,32 @@ pub fn bytes() -> Vec<u8> {
         &mut cells,
     );
 
+    // **Une lampe devant l'angle rentrant de la salle en L**, et du bon côté des
+    // deux murs qui le forment : c'est le seul endroit du décor où l'on voit si
+    // l'orientation d'une face entre dans l'éclairage, et sans le terme de Lambert
+    // les deux murs recevraient des valeurs que la seule distance explique.
+    //
+    // Le sommet rentrant est en `(4, 4)` et le creux du L est **dehors** : une
+    // lampe posée en `(5, 5)` — ce qu'elle était — a les deux murs dans son dos,
+    // Lambert les rejette, et ils restent noirs. Le décor annonçait alors un angle
+    // éclairé qu'aucune vue ne montrait.
+    let mut lights = Vec::new();
+    words(&[1], &mut lights);
+    floats(&[3.0, 3.0, 2.0, 20.0], &mut lights);
+    lights.extend_from_slice(&[0xFF, 0xE8, 0xC0, 0x00]);
+    // Une seconde, plus loin dans le couloir, pour que la cellule voisine ne soit
+    // pas noire quand on la regarde par le portail.
+    words(&[2], &mut lights);
+    floats(&[11.0, 2.0, 2.0, 16.0], &mut lights);
+    lights.extend_from_slice(&[0xC0, 0xD0, 0xFF, 0x00]);
+    // **Une troisième à l'étage, parce que la cellule superposée est close.** Aucun
+    // portail ne la relie au rez-de-chaussée et son plancher est opaque : les deux
+    // lampes du bas ne l'atteignent pas, et sans celle-ci la vue qui l'éprouve est
+    // une image noire — dont l'empreinte ne distingue plus rien.
+    words(&[3], &mut lights);
+    floats(&[5.0, 2.0, 10.0, 20.0], &mut lights);
+    lights.extend_from_slice(&[0xE0, 0xFF, 0xD0, 0x00]);
+
     let mut materials = Vec::new();
     for (id, name) in [(WALLS, "mur"), (FLOOR, "sol")] {
         words(&[id], &mut materials);
@@ -284,12 +310,14 @@ pub fn bytes() -> Vec<u8> {
         materials.extend_from_slice(name.as_bytes());
     }
 
-    file(&cells, &materials)
+    file(&cells, &lights, &materials)
 }
 
 /// Assemble un fichier de carte à partir de ses deux sections.
-fn file(cells: &[u8], materials: &[u8]) -> Vec<u8> {
-    let sections = [(*b"CELL", cells), (*b"MATS", materials)];
+fn file(cells: &[u8], lights: &[u8], materials: &[u8]) -> Vec<u8> {
+    // Les sections se rangent par genre croissant, ce que l'en-tête exige :
+    // `CELL`, `LGTS`, `MATS`.
+    let sections = [(*b"CELL", cells), (*b"LGTS", lights), (*b"MATS", materials)];
     let first = 20 + 12 * sections.len();
     let total = first + sections.iter().map(|(_, body)| body.len()).sum::<usize>();
 

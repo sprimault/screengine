@@ -78,16 +78,6 @@ impl AbiError {
         message: "texture count must equal the number of slots the resource declares",
     };
 
-    /// Un handle de lightmaps a été passé, alors que rien n'en produit encore.
-    ///
-    /// Le paramètre existe dès la première version pour que la signature ne
-    /// change jamais ; toute valeur non nulle est donc forcément invalide, et la
-    /// refuser vaut mieux que la déréférencer.
-    pub(crate) const LIGHTING: Self = Self {
-        code: SCG_ERR_INVALID_ARGUMENT,
-        message: "lighting must be null: no call produces such a handle yet",
-    };
-
     /// Le tampon d'un nom ne peut pas porter le nom et son terminateur.
     ///
     /// Rien n'est écrit dans ce cas, `out_len` compris : la mesure a son propre

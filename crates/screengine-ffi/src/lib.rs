@@ -30,8 +30,8 @@ use std::ptr;
 use std::sync::Arc;
 
 use screengine::{
-    Argument, Context, Error as CoreError, Mesh, Texture, Vec3, VertexUv, VertexUv2, Visibility,
-    World,
+    Argument, Context, Error as CoreError, Lightmap, Lightmaps, Mesh, Texture, Vec3, VertexUv,
+    VertexUv2, Visibility, World,
 };
 
 use entry::AbiError;
@@ -46,8 +46,9 @@ pub use scene::{
 pub use status::{
     SCG_ERR_FAULTED, SCG_ERR_INVALID_ARGUMENT, SCG_ERR_INVALID_FORMAT, SCG_ERR_INVALID_STATE,
     SCG_ERR_NULL, SCG_ERR_OUT_OF_MEMORY, SCG_ERR_PANIC, SCG_ERR_POISONED, SCG_ERR_UNKNOWN_RESOURCE,
-    SCG_ERR_UNSUPPORTED_FORMAT_VERSION, SCG_OK, SCG_STATUS_INCOMPLETE, SCG_STATUS_NO_CELL,
-    SCG_TRAVERSAL_CELLS, SCG_TRAVERSAL_DEPTH,
+    SCG_ERR_UNSUPPORTED_FORMAT_VERSION, SCG_LIGHTMAP_ABSENT, SCG_LIGHTMAP_READY,
+    SCG_LIGHTMAP_STALE, SCG_OK, SCG_STATUS_INCOMPLETE, SCG_STATUS_NO_CELL, SCG_TRAVERSAL_CELLS,
+    SCG_TRAVERSAL_DEPTH,
 };
 pub use texture::ScgTexture;
 pub use world::{ScgLighting, ScgWorld};
@@ -1312,7 +1313,9 @@ pub unsafe extern "C" fn scg_world_load(
         // lisibles, le cas vide étant traité par `slice_of_bytes`.
         let bytes = unsafe { slice_of_bytes(bytes, len) };
         let world = World::load(bytes)?;
-        let handle = Box::into_raw(Box::new(ScgWorld { inner: world }));
+        let handle = Box::into_raw(Box::new(ScgWorld {
+            inner: Arc::new(world),
+        }));
         // SAFETY: précondition de la fonction — `out` vise un handle
         // inscriptible, et rien n'y a été écrit avant ce point.
         unsafe { out.write(handle) };
@@ -1432,6 +1435,122 @@ pub unsafe extern "C" fn scg_submit_world(
 
     // SAFETY: précondition de la fonction — `ctx` est nul ou un handle vivant.
     unsafe { entry::with_context(ctx, submit) }
+}
+
+/// Creates the holder of a map's computed lightmaps, without computing any.
+///
+/// The allocation happens here, in a named call, and never at the first
+/// computation: that is how a host knows when it pays. The handle keeps `world`
+/// alive, so the two may be destroyed in either order.
+///
+/// It takes no context — a resource belongs to none — and writes its error to the
+/// thread-local slot, read with `scg_last_error(NULL)`.
+///
+/// # Safety
+///
+/// `world` must be a live handle from `scg_world_load`, and `out` must point to a
+/// writable pointer.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn scg_lighting_create(
+    world: *const ScgWorld,
+    out: *mut *mut ScgLighting,
+) -> i32 {
+    entry::without_context(|| {
+        if out.is_null() {
+            return Err(AbiError::NULL);
+        }
+        // SAFETY: précondition de la fonction — `world` est nul ou vivant.
+        let world = unsafe { world.as_ref() }.ok_or(AbiError::NULL)?;
+        let inner = Lightmaps::new(&world.inner).map_err(AbiError::from)?;
+        let handle = Box::into_raw(Box::new(ScgLighting {
+            inner,
+            world: world.inner.clone(),
+        }));
+        // SAFETY: précondition de la fonction — `out` vise un pointeur
+        // inscriptible.
+        unsafe { out.write(handle) };
+        Ok(())
+    })
+}
+
+/// Releases a lightmap holder. `scg_lighting_destroy(NULL)` does nothing.
+///
+/// # Safety
+///
+/// `lighting` must be null, or a handle from `scg_lighting_create` that has not
+/// been destroyed yet.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn scg_lighting_destroy(lighting: *mut ScgLighting) {
+    if lighting.is_null() {
+        return;
+    }
+    // SAFETY: précondition de la fonction — le handle vient de `Box::into_raw` et
+    // n'a pas encore été repris.
+    drop(unsafe { Box::from_raw(lighting) });
+}
+
+/// Computes the lightmaps of one cell, named by its stable identifier.
+///
+/// **By identifier and never by rank**: a cache stores identifiers, and editing
+/// will name the cell it just changed. An identifier no cell carries is
+/// `SCG_ERR_UNKNOWN_RESOURCE`.
+///
+/// **This allocates and takes time**, so it is a named call and nothing allows it
+/// between the start and the end of a frame. A cell that changes recomputes its
+/// own — but **its immediate neighbours become wrong**, since the light coming
+/// through the doorway was computed over there, and it is for the host to ask for
+/// them again.
+///
+/// # Safety
+///
+/// `lighting` must be a live handle from `scg_lighting_create`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn scg_lighting_build(lighting: *mut ScgLighting, cell_id: u32) -> i32 {
+    entry::without_context(|| {
+        // SAFETY: précondition de la fonction — le handle est nul ou vivant, et
+        // aucun autre appel ne le touche en même temps.
+        let lighting = unsafe { lighting.as_mut() }.ok_or(AbiError::NULL)?;
+        let world = lighting.world.clone();
+        lighting
+            .inner
+            .build(&world, cell_id)
+            .map_err(AbiError::from)
+    })
+}
+
+/// Writes what a cell has as a lightmap to `out`.
+///
+/// One of `SCG_LIGHTMAP_ABSENT`, `SCG_LIGHTMAP_READY` or `SCG_LIGHTMAP_STALE`.
+///
+/// # Safety
+///
+/// `lighting` must be a live handle from `scg_lighting_create`, and `out` must
+/// point to a writable `uint32_t`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn scg_lighting_state(
+    lighting: *const ScgLighting,
+    cell_id: u32,
+    out: *mut u32,
+) -> i32 {
+    entry::without_context(|| {
+        if out.is_null() {
+            return Err(AbiError::NULL);
+        }
+        // SAFETY: précondition de la fonction — le handle est nul ou vivant.
+        let lighting = unsafe { lighting.as_ref() }.ok_or(AbiError::NULL)?;
+        let state = lighting
+            .inner
+            .state(&lighting.world, cell_id)
+            .map_err(AbiError::from)?;
+        let value = match state {
+            Lightmap::Absent => status::SCG_LIGHTMAP_ABSENT,
+            Lightmap::Ready => status::SCG_LIGHTMAP_READY,
+            Lightmap::Stale => status::SCG_LIGHTMAP_STALE,
+        };
+        // SAFETY: précondition de la fonction — `out` vise un `u32` inscriptible.
+        unsafe { out.write(value) };
+        Ok(())
+    })
 }
 
 /// Writes the number of cells the map carries to `out`.
@@ -1555,7 +1674,10 @@ pub unsafe extern "C" fn scg_world_track(
 /// difference between "the camera is nowhere", which happens while a level is
 /// being edited, and "that cell does not exist", which is a fault in the call.
 ///
-/// `lighting` must be `NULL`: nothing produces such a handle yet.
+/// `lighting` may be `NULL`, in which case the level is submitted unlit. A cell
+/// whose lightmaps are not computed is submitted unlit too, surface by surface:
+/// **a partially relit level stays displayable**, which is exactly when an editor
+/// needs to see it.
 ///
 /// # Safety
 ///
@@ -1579,11 +1701,9 @@ pub unsafe extern "C" fn scg_submit_world_visible(
         let model = model.to_core()?;
         // SAFETY: précondition de la fonction — `world` est un handle vivant.
         let world = unsafe { world.as_ref() }.ok_or(AbiError::NULL)?;
-        // Rien ne produit encore ce handle : toute valeur non nulle est donc
-        // forcément invalide, et la refuser vaut mieux que la déréférencer.
-        if !lighting.is_null() {
-            return Err(AbiError::LIGHTING);
-        }
+        // SAFETY: précondition de la fonction — nul, ou un handle vivant rendu par
+        // `scg_lighting_create`.
+        let lighting = unsafe { lighting.as_ref() };
         if textures.is_null() && texture_count != 0 {
             return Err(AbiError::NULL);
         }
@@ -1596,13 +1716,19 @@ pub unsafe extern "C" fn scg_submit_world_visible(
 
         let seen = core
             .exclusive()?
-            .submit_world_visible(model, &world.inner, cell_id, |material| {
-                // SAFETY: mêmes préconditions que `scg_submit_world`.
-                slots
-                    .get(material as usize)
-                    .and_then(|handle| unsafe { handle.as_ref() })
-                    .map(|texture| &texture.inner)
-            })
+            .submit_world_visible(
+                model,
+                &world.inner,
+                cell_id,
+                lighting.map(|lighting| &lighting.inner),
+                |material| {
+                    // SAFETY: mêmes préconditions que `scg_submit_world`.
+                    slots
+                        .get(material as usize)
+                        .and_then(|handle| unsafe { handle.as_ref() })
+                        .map(|texture| &texture.inner)
+                },
+            )
             .map_err(AbiError::from)?;
 
         Ok(match seen {

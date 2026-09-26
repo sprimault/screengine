@@ -102,6 +102,18 @@
 // place the camera in a cell again. The engine never relocates it on its own.
 #define SCG_STATUS_NO_CELL 2
 
+// A cell has no lightmap yet.
+#define SCG_LIGHTMAP_ABSENT 0
+
+// A cell's lightmap is ready.
+#define SCG_LIGHTMAP_READY 1
+
+// A cell has a lightmap, but has changed since it was computed.
+//
+// Never returned while nothing modifies a loaded map; the value is published now
+// because editing will produce it, and a published state does not change meaning.
+#define SCG_LIGHTMAP_STALE 2
+
 // How deep portal traversal follows a line of sight.
 //
 // Exposed so a host can tell why an image came back incomplete. It is a constant
@@ -143,10 +155,13 @@ typedef struct ScgContext ScgContext;
 
 // An opaque handle to a map's computed lightmaps.
 //
-// **Nothing creates one yet**, so the only value `scg_submit_world_visible`
-// accepts for it is `NULL`; anything else is rejected. The parameter exists from
-// the first version on purpose: a published signature never changes, and adding
-// it later would mean a second submission function, for good.
+// Created by `scg_lighting_create`, released by `scg_lighting_destroy`, filled
+// one cell at a time by `scg_lighting_build`. It keeps the map it was created
+// from alive, so the host may destroy the two in either order.
+//
+// **It belongs to no context**, like every resource: computing lightmaps is a
+// named call that allocates, and nothing allows it between the start and the end
+// of a frame.
 typedef struct ScgLighting ScgLighting;
 
 // An opaque handle to a loaded mesh.
@@ -1091,6 +1106,56 @@ int32_t scg_submit_world(struct ScgContext *ctx,
                          const struct ScgTexture *const *textures,
                          uint32_t texture_count);
 
+// Creates the holder of a map's computed lightmaps, without computing any.
+//
+// The allocation happens here, in a named call, and never at the first
+// computation: that is how a host knows when it pays. The handle keeps `world`
+// alive, so the two may be destroyed in either order.
+//
+// It takes no context — a resource belongs to none — and writes its error to the
+// thread-local slot, read with `scg_last_error(NULL)`.
+//
+// # Safety
+//
+// `world` must be a live handle from `scg_world_load`, and `out` must point to a
+// writable pointer.
+int32_t scg_lighting_create(const struct ScgWorld *world, struct ScgLighting **out);
+
+// Releases a lightmap holder. `scg_lighting_destroy(NULL)` does nothing.
+//
+// # Safety
+//
+// `lighting` must be null, or a handle from `scg_lighting_create` that has not
+// been destroyed yet.
+void scg_lighting_destroy(struct ScgLighting *lighting);
+
+// Computes the lightmaps of one cell, named by its stable identifier.
+//
+// **By identifier and never by rank**: a cache stores identifiers, and editing
+// will name the cell it just changed. An identifier no cell carries is
+// `SCG_ERR_UNKNOWN_RESOURCE`.
+//
+// **This allocates and takes time**, so it is a named call and nothing allows it
+// between the start and the end of a frame. A cell that changes recomputes its
+// own — but **its immediate neighbours become wrong**, since the light coming
+// through the doorway was computed over there, and it is for the host to ask for
+// them again.
+//
+// # Safety
+//
+// `lighting` must be a live handle from `scg_lighting_create`.
+int32_t scg_lighting_build(struct ScgLighting *lighting, uint32_t cell_id);
+
+// Writes what a cell has as a lightmap to `out`.
+//
+// One of `SCG_LIGHTMAP_ABSENT`, `SCG_LIGHTMAP_READY` or `SCG_LIGHTMAP_STALE`.
+//
+// # Safety
+//
+// `lighting` must be a live handle from `scg_lighting_create`, and `out` must
+// point to a writable `uint32_t`.
+int32_t scg_lighting_state(const struct ScgLighting *lighting, uint32_t cell_id, uint32_t *out);
+
 // Writes the number of cells the map carries to `out`.
 //
 // # Safety
@@ -1173,7 +1238,10 @@ int32_t scg_world_track(const struct ScgWorld *world,
 // difference between "the camera is nowhere", which happens while a level is
 // being edited, and "that cell does not exist", which is a fault in the call.
 //
-// `lighting` must be `NULL`: nothing produces such a handle yet.
+// `lighting` may be `NULL`, in which case the level is submitted unlit. A cell
+// whose lightmaps are not computed is submitted unlit too, surface by surface:
+// **a partially relit level stays displayable**, which is exactly when an editor
+// needs to see it.
 //
 // # Safety
 //

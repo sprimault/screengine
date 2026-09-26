@@ -39,4 +39,5 @@ pub use math::{Affine3, Angle, MAX_TEXEL_COORD, Quat, Vec3};
 pub use raster::Rect;
 pub use scene::{Camera, Color, Light, Triangle, VertexUv, VertexUv2};
 pub use texture::{Filter, MAX_TEXTURE_SIZE, Texture};
+pub use world::lighting::{Lightmap, Lightmaps};
 pub use world::traversal::{MAX_DEPTH as TRAVERSAL_DEPTH, MAX_VISITS as TRAVERSAL_CELLS};

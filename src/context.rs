@@ -25,6 +25,8 @@ use crate::raster::{
 };
 use crate::scene::{Camera, Color, Light, Triangle, VertexUv, VertexUv2};
 use crate::texture::{Filter, Texture};
+use crate::world::atlas::GUTTER;
+use crate::world::lighting::Lightmaps;
 use crate::world::traversal::{MAX_VISITS, Visit, traverse};
 
 pub use frame::{Frame, Output, Rows};
@@ -972,6 +974,7 @@ impl Context {
         model: Affine3,
         world: &World,
         cell_id: u32,
+        lighting: Option<&Lightmaps>,
         texture: F,
     ) -> Result<Visibility>
     where
@@ -1010,21 +1013,71 @@ impl Context {
             // triangle : c'est par elle que le remplissage retrouvera la fenêtre.
             self.visits[rank].first_triangle = self.triangles.len() as u32;
             let cell = &cells[visit.cell as usize];
-            for surface in &cell.surfaces {
+            for (rank_in_cell, surface) in cell.surfaces.iter().enumerate() {
                 let first = surface.first_triangle as usize;
-                let result = self.submit_each_uv(
-                    model,
-                    surface.triangle_count as usize,
-                    texture(surface.material),
-                    |i| {
-                        let triangle = cell.triangles[first + i];
-                        let mut corners = [VertexUv::untextured(Vec3::ZERO); 3];
-                        for (corner, &index) in corners.iter_mut().zip(&triangle) {
-                            *corner = cell.vertices[index as usize];
-                        }
-                        Ok((corners, Color::new(0xFF, 0xFF, 0xFF, 0xFF)))
-                    },
-                );
+                // La cellule a-t-elle son atlas, et cette surface accepte-t-elle
+                // une lightmap ? Sinon le lot part par le chemin non éclairé —
+                // **un niveau partiellement rallumé reste affichable**, ce qui est
+                // exactement le moment où un éditeur a besoin de le voir.
+                let lit = lighting
+                    .and_then(|lighting| lighting.of(visit.cell))
+                    .filter(|_| !surface.skips_lightmap())
+                    .map(|(texture, atlas)| (texture, atlas.slots[rank_in_cell]));
+
+                let result = match lit {
+                    Some((lightmap, slot)) => {
+                        let extent = surface.luxels;
+                        let side = lightmap.width() as f32;
+                        self.submit_each_lit(
+                            model,
+                            surface.triangle_count as usize,
+                            texture(surface.material),
+                            lightmap,
+                            |i| {
+                                let triangle = cell.triangles[first + i];
+                                let mut corners =
+                                    [VertexUv2::unlit(VertexUv::untextured(Vec3::ZERO)); 3];
+                                for (corner, &index) in corners.iter_mut().zip(&triangle) {
+                                    let vertex = cell.vertices[index as usize];
+                                    // Les coordonnées locales de la surface, plus
+                                    // l'origine de son rectangle : la carte reste
+                                    // indépendante d'un rangement que le premier
+                                    // déplacement de sommet changerait. Le
+                                    // demi-luxel n'est pas décoratif — le
+                                    // bilinéaire retranche déjà un demi-texel, et
+                                    // le centre du luxel (0,0) est en (0,5 ; 0,5).
+                                    let (lu, lv) = surface.lightmap.project(vertex.position);
+                                    *corner = VertexUv2 {
+                                        position: vertex.position,
+                                        u: vertex.u,
+                                        v: vertex.v,
+                                        u2: lu - extent.min_u as f32
+                                            + (slot.x + GUTTER) as f32
+                                            + 0.5,
+                                        v2: lv - extent.min_v as f32
+                                            + (slot.y + GUTTER) as f32
+                                            + 0.5,
+                                    };
+                                }
+                                let _ = side;
+                                Ok((corners, Color::new(0xFF, 0xFF, 0xFF, 0xFF)))
+                            },
+                        )
+                    }
+                    None => self.submit_each_uv(
+                        model,
+                        surface.triangle_count as usize,
+                        texture(surface.material),
+                        |i| {
+                            let triangle = cell.triangles[first + i];
+                            let mut corners = [VertexUv::untextured(Vec3::ZERO); 3];
+                            for (corner, &index) in corners.iter_mut().zip(&triangle) {
+                                *corner = cell.vertices[index as usize];
+                            }
+                            Ok((corners, Color::new(0xFF, 0xFF, 0xFF, 0xFF)))
+                        },
+                    ),
+                };
                 if let Err(error) = result {
                     self.triangles.truncate(mark);
                     self.lighting.truncate(lights);

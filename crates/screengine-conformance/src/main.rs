@@ -26,7 +26,8 @@ use std::sync::Arc;
 
 use screengine::{
     Affine3, Angle, BYTES_PER_PIXEL, Camera, Color, Config, Context, Filter, Frame, Light,
-    MAX_OVERBRIGHT, Mesh, Quat, Rect, Rows, Texture, Triangle, Vec3, VertexUv, VertexUv2, World,
+    Lightmaps, MAX_OVERBRIGHT, Mesh, Quat, Rect, Rows, Texture, Triangle, Vec3, VertexUv,
+    VertexUv2, World,
 };
 use screengine_conformance::{mesh_file, rooms_file, world_file};
 
@@ -1212,11 +1213,25 @@ impl Scene {
                 let cell = world.locate(position);
                 let walls = checker(512, 128);
                 let floor = checker(256, 32);
+
+                // **Toutes les cellules sont cuites, pas seulement celles que cette
+                // vue montre** : une lightmap est un cache dérivable, calculé une
+                // fois pour la carte, et le faire par vue rendrait l'éclairage
+                // dépendant de la position de la caméra.
+                let mut lightmaps = Lightmaps::new(&world)?;
+                for index in 0..world.cell_count() {
+                    let id = world
+                        .cell_id(index)
+                        .unwrap_or_else(|| unreachable!("le rang vient du compte"));
+                    lightmaps.build(&world, id)?;
+                }
+
                 context
                     .submit_world_visible(
                         Affine3::IDENTITY,
                         &world,
                         cell,
+                        Some(&lightmaps),
                         |material| match material {
                             0 => Some(&walls),
                             _ => Some(&floor),

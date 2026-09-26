@@ -178,6 +178,15 @@ fn context_error(ctx: *const ScgContext) -> String {
     text.to_str().expect("UTF-8 valide").to_owned()
 }
 
+/// Lit le message de l'emplacement par thread, où vont les refus des appels qui
+/// n'ont pas de contexte auquel se rattacher.
+fn orphan_error() -> String {
+    // SAFETY: le contrat admet un contexte nul, et le pointeur rendu reste valide
+    // jusqu'au prochain appel — la copie a lieu avant.
+    let text = unsafe { CStr::from_ptr(scg_last_error(ptr::null())) };
+    text.to_str().expect("UTF-8 valide").to_owned()
+}
+
 /// Une configuration de contexte qui passe.
 fn config() -> ScgContextConfig {
     ScgContextConfig {
@@ -380,33 +389,66 @@ fn une_cellule_inconnue_est_refusee() {
     }
 }
 
-/// Un handle de lightmaps est refusé tant que rien n'en produit.
+/// Les lightmaps se créent, se calculent et se soumettent à travers la frontière.
 ///
-/// Le paramètre existe dès la première version pour que la signature ne change
-/// jamais ; toute valeur non nulle est donc forcément invalide, et la refuser vaut
-/// mieux que la déréférencer.
+/// **La carte se détruit avant le porteur**, exprès : le handle la garde vivante
+/// de son côté, et c'est ce qui permet à un hôte de ne pas avoir à ordonner ses
+/// destructions. Sans cette garantie, l'ordre choisi ici rendrait la carte
+/// pendante et le calcul lirait de la mémoire libérée.
 #[test]
-fn un_handle_de_lightmaps_est_refuse() {
-    let mut ctx = ptr::null_mut();
-    let config = config();
-    // SAFETY: les deux pointeurs visent des valeurs locales vivantes.
-    assert_eq!(unsafe { scg_create(&config, &mut ctx) }, SCG_OK);
-
+fn les_lightmaps_franchissent_la_frontiere() {
     let world = load(&one_cell_world());
-    let slots: [*const ScgTexture; 2] = [ptr::null(), ptr::null()];
-    let model = identity();
-    // Une adresse que rien n'a produite : le contrôle tombe avant tout accès.
-    let lighting = 8usize as *const ScgLighting;
-    // SAFETY: mêmes préconditions ; `lighting` n'est jamais déréférencé.
-    let code =
-        unsafe { scg_submit_world_visible(ctx, &model, world, slots.as_ptr(), 2, lighting, 7) };
-    assert_eq!(code, SCG_ERR_INVALID_ARGUMENT);
-    assert!(context_error(ctx).contains("lighting must be null"));
+    let mut lighting = ptr::null_mut();
+    // SAFETY: carte vivante, pointeur de sortie local.
+    let created = unsafe { scg_lighting_create(world, &mut lighting) };
+    assert_eq!(created, SCG_OK, "création refusée : {}", orphan_error());
+    assert!(!lighting.is_null());
 
-    // SAFETY: handles vivants, détruits une seule fois.
+    let mut state = 9u32;
+    // SAFETY: handle vivant, sortie locale.
+    let read = unsafe { scg_lighting_state(lighting, 7, &mut state) };
+    assert_eq!(read, SCG_OK);
+    assert_eq!(state, SCG_LIGHTMAP_ABSENT);
+
+    // SAFETY: handle vivant.
+    let built = unsafe { scg_lighting_build(lighting, 7) };
+    assert_eq!(built, SCG_OK, "cuisson refusée : {}", orphan_error());
+    // SAFETY: handle vivant, sortie locale.
+    let read = unsafe { scg_lighting_state(lighting, 7, &mut state) };
+    assert_eq!(read, SCG_OK);
+    assert_eq!(state, SCG_LIGHTMAP_READY);
+
+    // La carte part la première : le porteur en garde une référence.
+    // SAFETY: handle vivant, détruit une seule fois.
+    unsafe { scg_world_destroy(world) };
+
+    // SAFETY: handle vivant, détruit une seule fois.
+    unsafe { scg_lighting_destroy(lighting) };
+    // SAFETY: le contrat dit qu'un pointeur nul ne fait rien.
+    unsafe { scg_lighting_destroy(ptr::null_mut()) };
+}
+
+/// Une cellule que la carte ne porte pas est refusée au calcul comme à la lecture.
+#[test]
+fn une_cellule_inconnue_ne_se_cuit_pas() {
+    let world = load(&one_cell_world());
+    let mut lighting = ptr::null_mut();
+    // SAFETY: carte vivante, pointeur de sortie local.
+    assert_eq!(unsafe { scg_lighting_create(world, &mut lighting) }, SCG_OK);
+
+    // SAFETY: handle vivant.
+    let built = unsafe { scg_lighting_build(lighting, 99) };
+    assert_eq!(built, SCG_ERR_UNKNOWN_RESOURCE);
+
+    let mut state = 0u32;
+    // SAFETY: handle vivant, sortie locale.
+    let read = unsafe { scg_lighting_state(lighting, 99, &mut state) };
+    assert_eq!(read, SCG_ERR_UNKNOWN_RESOURCE);
+
+    // SAFETY: handles vivants, détruits une seule fois chacun.
     unsafe {
+        scg_lighting_destroy(lighting);
         scg_world_destroy(world);
-        scg_destroy(ctx);
     }
 }
 

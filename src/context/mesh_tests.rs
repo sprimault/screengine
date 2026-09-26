@@ -564,7 +564,7 @@ fn la_traversee_rend_la_meme_image_que_le_chemin_brut() {
 
     let mut par_traversee = small_ctx();
     let status = par_traversee
-        .submit_world_visible(Affine3::IDENTITY, &world, 7, |_| Some(&texture))
+        .submit_world_visible(Affine3::IDENTITY, &world, 7, None, |_| Some(&texture))
         .expect("capacité");
     assert_eq!(status, Visibility::Complete);
     let visible = pixels_of(&mut par_traversee);
@@ -586,7 +586,7 @@ fn une_cellule_nulle_ne_soumet_rien() {
     let world = two_cell_world();
     let mut ctx = small_ctx();
     let status = ctx
-        .submit_world_visible(Affine3::IDENTITY, &world, 0, |_| None)
+        .submit_world_visible(Affine3::IDENTITY, &world, 0, None, |_| None)
         .expect("aucune cellule n'est une clause");
     assert_eq!(status, Visibility::NoCell);
 
@@ -604,7 +604,41 @@ fn une_cellule_inconnue_est_refusee() {
     let world = two_cell_world();
     let mut ctx = small_ctx();
     assert_eq!(
-        ctx.submit_world_visible(Affine3::IDENTITY, &world, 99, |_| None),
+        ctx.submit_world_visible(Affine3::IDENTITY, &world, 99, None, |_| None),
         Err(Error::UnknownResource)
+    );
+}
+
+/// Une cellule cuite rend une autre image que la même cellule sans lightmap.
+///
+/// **C'est le seul contrôle qui prouve que les lightmaps entrent dans l'image.**
+/// Tout le reste — l'atlas, les luxels, le porteur — se vérifie sans jamais
+/// dessiner, et un branchement inerte y passerait sans un mot : la soumission
+/// prendrait le chemin non éclairé, les tests de cuisson resteraient verts, et
+/// l'image serait celle d'avant.
+#[test]
+fn une_cellule_cuite_change_l_image() {
+    let world = two_cell_world();
+    let texture = plain_texture(0x80, 0x80, 0x80);
+
+    let mut sans = small_ctx();
+    sans.submit_world_visible(Affine3::IDENTITY, &world, 7, None, |_| Some(&texture))
+        .expect("capacité");
+    let brut = pixels_of(&mut sans);
+
+    let mut lightmaps = Lightmaps::new(&world).expect("porteur");
+    lightmaps.build(&world, 7).expect("cuisson possible");
+    lightmaps.build(&world, 8).expect("cuisson possible");
+
+    let mut avec = small_ctx();
+    avec.submit_world_visible(Affine3::IDENTITY, &world, 7, Some(&lightmaps), |_| {
+        Some(&texture)
+    })
+    .expect("capacité");
+    let eclaire = pixels_of(&mut avec);
+
+    assert_ne!(
+        brut, eclaire,
+        "la lightmap n'a rien changé : le chemin éclairé n'est pas pris"
     );
 }

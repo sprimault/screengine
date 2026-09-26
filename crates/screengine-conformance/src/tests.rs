@@ -609,7 +609,7 @@ fn la_traversee_ne_troue_pas_le_decor_de_validation() {
             context.set_camera(camera).expect("caméra valide");
             if traverse {
                 context
-                    .submit_world_visible(Affine3::IDENTITY, &world, cell, textures)
+                    .submit_world_visible(Affine3::IDENTITY, &world, cell, None, textures)
                     .expect("capacité");
             } else {
                 context

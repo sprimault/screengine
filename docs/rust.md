@@ -1090,6 +1090,39 @@ cette expression exacte : `|u|²` puissance de deux rend son inverse exact, et
 l'orthogonalité évite l'inverse d'une 2×2 quelconque. Sans eux il faudrait une
 division par pixel de lightmap, donc un arrondi de plus à rendre contractuel.
 
+**Le point obtenu se rabat ensuite sur le plan de la surface, contre l'un de ses
+sommets.** L'origine du repère n'appartient pas nécessairement à ce plan, et le
+format n'a aucune raison de l'exiger : un éditeur pose un repère par matériau et
+le partage entre les surfaces qu'il habille. Pour la texture c'est sans effet, la
+projection ne gardant que les composantes tangentielles. Pour la cuisson, prendre
+le point tel quel place les luxels d'un plafond à hauteur de sol : la lumière les
+atteint alors par-derrière, le terme de Lambert les rejette, et la face reste
+noire sans que rien ne le signale. Annuler la composante normale ne laisse à
+l'origine que son décalage dans le plan, qui est tout ce qu'elle porte.
+
+**Un luxel qui tombe hors de son polygone est ramené sur son contour.** Le
+rectangle d'une lightmap déborde toujours de la surface qu'elle habille, et pour
+une surface concave il en déborde largement — le plafond d'une salle en L occupe
+le carré qui la contient, dont un quart n'est pas la salle. Ces luxels sont
+calculés, le rectangle étant plein ; les laisser où ils tombent les met hors de la
+cellule, où plus rien ne les occulte, et ils reçoivent alors une lampe qu'un
+plancher opaque cache — que le filtrage bilinéaire ramène ensuite sur le bord
+visible de la surface. Le point du contour le plus proche prolonge au contraire
+vers le dehors la valeur que le bord porte déjà, ce que la gouttière fait au bord
+du rectangle.
+
+**Le sens de la normale vient du signe du volume de la cellule, jamais d'une face
+prise isolément.** La formule de Newell suit l'enroulement, et le format ne dit
+pas lequel des deux sens est l'intérieur : il fixe la face visible, ce qui n'est
+pas la même chose. Une normale à l'envers rend le terme de Lambert négatif et la
+surface reste noire. Le volume signé — la somme, sur les faces qui ferment la
+cellule, **portails compris**, du produit scalaire d'un de leurs points par leur
+normale de Newell — donne un signe unique qui les oriente toutes. Comparer chaque
+normale à la direction du barycentre a été essayé et ne vaut pas : il suffit que
+le barycentre appartienne au plan d'une face pour que le produit scalaire
+s'annule et que rien ne tranche, et le barycentre d'une salle en L tombe
+exactement sur son coin rentrant.
+
 **Le point d'échantillonnage est décalé le long de la normale du plan d'une
 puissance de deux en unités de monde.** La surface est de toute façon exclue de
 ses propres occulteurs ; le décalage sert à ce qu'aucun sous-normal n'entre dans

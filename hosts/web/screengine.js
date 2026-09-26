@@ -141,7 +141,20 @@ export const EXPORTS = [
   "scg_world_cell_id",
   "scg_world_locate",
   "scg_world_track",
+  "scg_lighting_create",
+  "scg_lighting_destroy",
+  "scg_lighting_build",
+  "scg_lighting_state",
 ];
+
+/** Une cellule n'a pas encore de lightmap. */
+export const SCG_LIGHTMAP_ABSENT = 0;
+
+/** Sa lightmap est prête. */
+export const SCG_LIGHTMAP_READY = 1;
+
+/** Elle en a une, mais la cellule a changé depuis. */
+export const SCG_LIGHTMAP_STALE = 2;
 
 /** Taille de `ScgContextConfig`, celle qu'affirme le header. */
 export const CONFIG_SIZE = 32;
