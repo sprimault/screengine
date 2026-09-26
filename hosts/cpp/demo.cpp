@@ -126,22 +126,22 @@ void yaw(float angle, float *out)
 /// séparément et soumises séparément : la carte porte les murs, le maillage ce
 /// qu'on y pose.
 constexpr float CRATES[][3] = {
-    { 6.0f, -1.2f, 0.4f },
-    { 11.0f, 1.4f, -0.7f },
-    { 17.0f, -0.6f, 1.1f },
+    { 3.0f, 2.0f, 0.4f },
+    { 10.0f, 2.0f, -0.7f },
+    { 16.0f, 4.0f, 1.1f },
 };
 
 /// L'échelle des caisses.
 ///
-/// **Le maillage fait deux unités de côté**, et le couloir six de large : posée
-/// telle quelle, une caisse en occupe le tiers. Le fichier ne se redimensionne
+/// **Le maillage fait deux unités de côté**, et les salles quatre de haut : posée
+/// telle quelle, une caisse en occupe la moitié. Le fichier ne se redimensionne
 /// pas — c'est celui de la scène de conformance, et son empreinte est figée —,
 /// donc l'échelle va dans la matrice de modèle, qui est faite pour ça.
 constexpr float CRATE_SCALE = 0.5f;
 
-/// La cote du centre d'une caisse : sa demi-hauteur au-dessus du sol du
-/// couloir, qui est à -1,5.
-constexpr float CRATE_Z = -1.0f;
+/// La cote du centre d'une caisse : sa demi-hauteur au-dessus du sol, qui est en
+/// zéro dans ce décor.
+constexpr float CRATE_Z = 0.5f;
 
 /// La matrice d'une caisse : une rotation autour de la verticale mise à
 /// l'échelle, puis une translation. Par colonnes, comme l'ABI l'attend.
@@ -190,6 +190,27 @@ int main(int argc, char **argv)
     // plus : il copie ce qu'il garde.
     const std::unique_ptr<ScgWorld, decltype(&scg_world_destroy)> world(raw_world,
                                                                        &scg_world_destroy);
+
+    // Les lightmaps, cuites une fois pour toutes les cellules avant la première
+    // image : une lightmap est un cache de la carte et non de la vue, et la cuire
+    // en chemin ferait allouer un atlas au milieu d'une image.
+    ScgLighting *raw_lighting = nullptr;
+    if (scg_lighting_create(world.get(), &raw_lighting) < 0) {
+        fail(nullptr, "porteur de lightmaps refusé");
+        return 1;
+    }
+    const std::unique_ptr<ScgLighting, decltype(&scg_lighting_destroy)> lighting(
+        raw_lighting, &scg_lighting_destroy);
+    uint32_t cells = 0;
+    scg_world_cell_count(world.get(), &cells);
+    for (uint32_t i = 0; i < cells; i++) {
+        uint32_t id = 0;
+        if (scg_world_cell_id(world.get(), i, &id) < 0
+            || scg_lighting_build(lighting.get(), id) < 0) {
+            fail(nullptr, "cuisson refusée");
+            return 1;
+        }
+    }
 
     // Une texture par matériau, dans l'ordre que la carte déclare. L'hôte lit
     // les noms, décide de ce qu'il charge, et passe les handles dans cet ordre.
@@ -273,8 +294,15 @@ int main(int argc, char **argv)
     SDL_SetTextureScaleMode(screen, SDL_SCALEMODE_NEAREST);
 
     std::vector<uint8_t> pixels(static_cast<size_t>(WIDTH) * HEIGHT * 4);
-    float position[3] = {0.0f, 0.0f, 0.0f};
+    // Le sol de ce décor est en zéro : une caméra laissée à l'origine serait dans
+    // le plancher, hors de toute cellule, et la traversée ne rendrait rien.
+    float position[3] = {2.0f, 2.0f, 2.0f};
     float angle = 0.0f;
+    uint32_t cell = 0;
+    if (scg_world_locate(world.get(), position, &cell) < 0 || cell == 0) {
+        fail(nullptr, "la caméra ne part d'aucune cellule");
+        return 1;
+    }
     Uint64 previous = SDL_GetTicks();
     Uint64 since = previous;
     unsigned frames = 0;
@@ -307,8 +335,19 @@ int main(int argc, char **argv)
         }
         const float forward = static_cast<float>(keys[SDL_SCANCODE_UP] || keys[SDL_SCANCODE_W])
             - static_cast<float>(keys[SDL_SCANCODE_DOWN] || keys[SDL_SCANCODE_S]);
+        const float previous_position[3] = { position[0], position[1], position[2] };
         position[0] += SDL_cosf(angle) * forward * SPEED * dt;
         position[1] += SDL_sinf(angle) * forward * SPEED * dt;
+
+        // La cellule se suit par le déplacement, et c'est l'hôte qui la garde : le
+        // moteur ne retient aucune caméra. Zéro veut dire « sorti du décor » et ne
+        // s'écrit pas — garder la dernière cellule connue laisse voir le décor
+        // depuis dehors, là où l'écraser éteindrait l'image.
+        uint32_t found = 0;
+        if (scg_world_track(world.get(), cell, previous_position, position, &found) >= 0
+            && found != 0) {
+            cell = found;
+        }
 
         ScgCamera camera{};
         std::memcpy(camera.position, position, sizeof camera.position);
@@ -322,7 +361,9 @@ int main(int argc, char **argv)
 
         ScgMat4 model{};
         model.m[0] = model.m[5] = model.m[10] = model.m[15] = 1.0f;
-        if (scg_submit_world(ctx.get(), &model, world.get(), slots.data(), materials) < 0) {
+        if (scg_submit_world_visible(ctx.get(), &model, world.get(), slots.data(), materials,
+                                     lighting.get(), cell)
+            < 0) {
             fail(ctx.get(), "carte refusée");
             break;
         }

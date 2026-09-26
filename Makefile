@@ -384,13 +384,13 @@ demo-c: lib
 	@reason=$$($(MAKE) -s --no-print-directory -C hosts/c why-not-demo); \
 	if [ -n "$$reason" ]; then echo "demo-c impossible : $$reason"; exit 1; fi
 	$(MAKE) -C hosts/c demo-run PROFILE=release-ffi OUT=$(abspath $(SORTIE))/host-c \
-	  WORLD=$(abspath hosts/couloir.world) MESH=$(abspath hosts/caisse.mesh)
+	  WORLD=$(abspath hosts/salles.world) MESH=$(abspath hosts/caisse.mesh)
 
 demo-cpp: lib
 	@reason=$$($(MAKE) -s --no-print-directory -C hosts/cpp why-not-demo); \
 	if [ -n "$$reason" ]; then echo "demo-cpp impossible : $$reason"; exit 1; fi
 	$(MAKE) -C hosts/cpp demo-run PROFILE=release-ffi OUT=$(abspath $(SORTIE))/host-cpp \
-	  WORLD=$(abspath hosts/couloir.world) MESH=$(abspath hosts/caisse.mesh)
+	  WORLD=$(abspath hosts/salles.world) MESH=$(abspath hosts/caisse.mesh)
 
 # La page du navigateur, servie en local : `fetch` ne lit pas un .wasm en
 # file://. PORT se choisit sur la ligne de commande.

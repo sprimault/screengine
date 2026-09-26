@@ -14,10 +14,13 @@
 //! qu'elle coûte sur une scène où tout est visible — le cas où elle ne peut que
 //! perdre.
 //!
-//! **La carte est celle du dépôt**, `hosts/couloir.world`, intégrée à la
-//! compilation par `include_bytes!` : le noyau n'ouvre aucun fichier, et un
-//! bench qui construirait sa propre carte mesurerait un encodeur écrit pour
-//! lui.
+//! **Les deux cartes sont celles du dépôt**, `hosts/couloir.world` et
+//! `hosts/salles.world`, intégrées à la compilation par `include_bytes!` : le
+//! noyau n'ouvre aucun fichier, et un bench qui construirait sa propre carte
+//! mesurerait un encodeur écrit pour lui. Le couloir reste ici alors que les hôtes
+//! ne le parcourent plus : c'est le cas où tout est visible, donc celui où
+//! l'élimination ne peut que perdre, et le retirer ne laisserait que le décor qui
+//! l'avantage.
 //!
 //! Le harnais, les règles et ce que ces chiffres valent sur un téléphone sont
 //! dans [`remplissage`](../remplissage/index.html) : aucun seuil, jamais

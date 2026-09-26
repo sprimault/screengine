@@ -68,7 +68,10 @@ critère est `code < 0`, et un statut inconnu se traite comme `SCG_OK`.
   et un étage superposé au rez-de-chaussée sans lien avec lui. Cinq vues le
   parcourent, et sur chacune la traversée rend **la même image que le chemin
   brut** — le décor du couloir n'est pas touché et garde son empreinte. Il est
-  aussi rangé en fichier, à côté du couloir, pour que les hôtes le parcourent.
+  aussi rangé en fichier, et **c'est lui que les cinq hôtes parcourent désormais**,
+  par la traversée et avec des lightmaps cuites : chacun suit lui-même la cellule
+  de sa caméra, ce que l'ABI lui donne les moyens de faire et que le moteur ne
+  retient pas à sa place.
 - **La cellule d'une caméra se trouve puis se suit** : `scg_world_locate` par une
   position, `scg_world_track` par un déplacement. Zéro vaut « nulle part », ce qui
   est une clause et non une erreur — le moteur ne relocalise jamais une caméra de

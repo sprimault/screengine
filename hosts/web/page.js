@@ -9,9 +9,12 @@
  * boucle d'animation — si bien que ce qu'il montre du moteur se transpose
  * partout sans rien démêler d'une bibliothèque d'accueil.
  *
- * Le décor vient de `couloir.world`, le fichier versionné que la conformance
+ * Le décor vient de `salles.world`, le fichier versionné que la conformance
  * engendre : la page ne construit aucune géométrie, elle charge un bloc
  * d'octets et le soumet. C'est tout ce que l'étape des données a pour objet.
+ *
+ * Il est parcouru **par la traversée de portails**, avec une cellule courante que
+ * la page suit elle-même, et ses lightmaps sont cuites avant la première image.
  *
  * La mise à l'échelle appartient à l'hôte : la page dessine à la résolution
  * interne, et c'est le CSS qui l'agrandit sans lissage.
@@ -157,27 +160,31 @@ function trackKeys() {
  *
  * Le décor et les accessoires sont deux ressources différentes, chargées
  * séparément et soumises séparément : la carte porte les murs, le maillage ce
- * qu'on y pose. C'est ce que l'étape des données a construit, et un couloir vide
- * n'en montrerait que la moitié.
+ * qu'on y pose. C'est ce que l'étape des données a construit, et un décor vide
+ * n'en montrerait que la moitié. Une caisse par cellule que la traversée atteint,
+ * aucune à l'étage : une caisse qu'on ne peut pas aller voir ne prouve rien.
  */
 const CRATES = [
-  [6.0, -1.2, 0.4],
-  [11.0, 1.4, -0.7],
-  [17.0, -0.6, 1.1],
+  [3.0, 2.0, 0.4],
+  [10.0, 2.0, -0.7],
+  [16.0, 4.0, 1.1],
 ];
 
 /**
  * L'échelle des caisses.
  *
- * **Le maillage fait deux unités de côté**, et le couloir six de large : posée
- * telle quelle, une caisse en occupe le tiers. Le fichier ne se redimensionne
+ * **Le maillage fait deux unités de côté**, et les salles quatre de haut : posée
+ * telle quelle, une caisse en occupe la moitié. Le fichier ne se redimensionne
  * pas — c'est celui de la scène de conformance, et son empreinte est figée —,
  * donc l'échelle va dans la matrice de modèle, qui est faite pour ça.
  */
 const CRATE_SCALE = 0.5;
 
-/** La cote du centre d'une caisse : sa demi-hauteur au-dessus du sol, à -1,5. */
-const CRATE_Z = -1.0;
+/** La cote du centre d'une caisse : sa demi-hauteur au-dessus du sol, qui est en zéro. */
+const CRATE_Z = 0.5;
+
+/** Où la caméra commence : dans la salle en L, à hauteur d'œil. */
+const START = [2.0, 2.0, 2.0];
 
 /**
  * La matrice d'une caisse : une rotation autour de la verticale mise à
@@ -210,7 +217,7 @@ function yaw(angle) {
   return [0, 0, Math.sin(angle / 2), Math.cos(angle / 2)];
 }
 
-/** Charge le module et le décor, puis parcourt le couloir. */
+/** Charge le module et le décor, puis parcourt les salles. */
 async function main() {
   const module = await WebAssembly.compileStreaming(fetch("screengine.wasm"));
   const engine = await scg.Screengine.instantiate(module);
@@ -238,7 +245,7 @@ async function main() {
   // Le décor : un bloc d'octets, que le moteur copie. La page ne garde pas le
   // sien — c'est toute la raison pour laquelle le chargement prend des octets
   // et non un chemin.
-  const file = new Uint8Array(await (await fetch("couloir.world")).arrayBuffer());
+  const file = new Uint8Array(await (await fetch("salles.world")).arrayBuffer());
   const block = engine.alloc(file.length);
   engine.bytes().set(file, block);
   if (e.scg_world_load(block, file.length, out) < 0) {
@@ -247,6 +254,24 @@ async function main() {
   }
   const world = engine.readU32(out);
   engine.free(block, file.length);
+
+  // Les lightmaps, cuites une fois pour toutes les cellules avant la première
+  // image : une lightmap est un cache de la carte et non de la vue, et la cuire en
+  // chemin ferait allouer un atlas au milieu d'une image.
+  if (e.scg_lighting_create(world, out) < 0) {
+    status(`porteur de lightmaps refusé : ${engine.lastError(0)}`);
+    return;
+  }
+  const lighting = engine.readU32(out);
+  e.scg_world_cell_count(world, out);
+  const cells = engine.readU32(out);
+  for (let i = 0; i < cells; i++) {
+    e.scg_world_cell_id(world, i, out);
+    if (e.scg_lighting_build(lighting, engine.readU32(out)) < 0) {
+      status(`cuisson refusée : ${engine.lastError(0)}`);
+      return;
+    }
+  }
 
   // Une texture par matériau, dans l'ordre que la carte déclare : l'hôte lit
   // les noms, charge ce qu'il veut, et passe les handles dans cet ordre.
@@ -305,7 +330,18 @@ async function main() {
   const surface = canvas.getContext("2d", { alpha: false });
 
   const held = trackKeys();
-  const position = [0, 0, 0];
+  const position = [...START];
+  // La cellule de départ, puis suivie d'une image à l'autre : le moteur ne
+  // retient aucune caméra, c'est à la page de la garder.
+  const from = engine.alloc(12);
+  const to = engine.alloc(12);
+  engine.writePoint(to, START);
+  e.scg_world_locate(world, to, out);
+  let cell = engine.readU32(out);
+  if (cell === 0) {
+    status("la caméra ne part d'aucune cellule");
+    return;
+  }
   let angle = 0;
   let previous = performance.now();
   let frames = 0;
@@ -328,8 +364,21 @@ async function main() {
     }
     const forward = (held.has("ArrowUp") || held.has("KeyW") ? 1 : 0)
       - (held.has("ArrowDown") || held.has("KeyS") ? 1 : 0);
+    engine.writePoint(from, position);
     position[0] += Math.cos(angle) * forward * SPEED * dt;
     position[1] += Math.sin(angle) * forward * SPEED * dt;
+
+    // La cellule se suit par le déplacement, et c'est la page qui la garde : le
+    // moteur ne retient aucune caméra. Zéro veut dire « sorti du décor » et ne
+    // s'écrit pas — garder la dernière cellule connue laisse voir le décor depuis
+    // dehors, là où l'écraser éteindrait l'image.
+    engine.writePoint(to, position);
+    if (e.scg_world_track(world, cell, from, to, out) >= 0) {
+      const found = engine.readU32(out);
+      if (found !== 0) {
+        cell = found;
+      }
+    }
 
     engine.writeCamera(camera, {
       position,
@@ -341,7 +390,9 @@ async function main() {
       status(engine.lastError(ctx));
       return;
     }
-    if (e.scg_submit_world(ctx, model, world, slots, materials) < 0) {
+    if (
+      e.scg_submit_world_visible(ctx, model, world, slots, materials, lighting, cell) < 0
+    ) {
       status(engine.lastError(ctx));
       return;
     }
