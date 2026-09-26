@@ -135,7 +135,19 @@ impl AbiError {
     /// valide — la raison pour laquelle le format RGBA8 vaut un et non zéro.
     pub(crate) const TEXTURE_FORMAT: Self = Self {
         code: SCG_ERR_INVALID_ARGUMENT,
-        message: "texture format must be SCG_TEXTURE_FORMAT_RGBA8",
+        message: "texture format must be SCG_TEXTURE_FORMAT_RGBA8 \
+                  or SCG_TEXTURE_FORMAT_RGBA8_MASKED",
+    };
+
+    /// Le mode de mélange demandé n'existe pas dans cette bibliothèque.
+    ///
+    /// Zéro y tombe aussi, et c'est voulu : un mode passé à une soumission est
+    /// une description, pas un réglage de contexte. Zéro ne vaut défaut que
+    /// pour les seconds — le filtrage —, et une description laissée à zéro se
+    /// refuse plutôt que s'interprète.
+    pub(crate) const BLEND_MODE: Self = Self {
+        code: SCG_ERR_INVALID_ARGUMENT,
+        message: "blend mode must be SCG_BLEND_MODULATE",
     };
 
     /// Le niveau de filtrage demandé n'existe pas dans cette bibliothèque.

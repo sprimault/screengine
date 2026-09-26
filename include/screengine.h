@@ -42,6 +42,17 @@
 // would mean keeping two chains, or keeping one that is wrong.
 #define SCG_TEXTURE_FORMAT_RGBA8_MASKED 2
 
+// Multiply what is already in the buffer instead of overwriting it.
+//
+// One, never zero, and this is the rule for **every** mode passed to a
+// submission: such a mode is a description, like a texture format, not a
+// context setting like the filter. Zero means default only for the latter, and
+// a description left zeroed is refused rather than interpreted.
+//
+// 255 is the neutral value, as it is for a lightmap: a modulated surface
+// darkens or does nothing, and never brightens.
+#define SCG_BLEND_MODULATE 1
+
 // Ordered dithering of texture coordinates: the default filter.
 //
 // Zero, unlike `SCG_TEXTURE_FORMAT_RGBA8`, and for the opposite reason: a
@@ -896,6 +907,41 @@ int32_t scg_submit_textured(struct ScgContext *ctx,
                             const struct ScgTriangle *triangles,
                             uint32_t triangle_count,
                             const struct ScgTexture *texture);
+
+// Submits a batch of triangles that **multiply** the buffer instead of
+// overwriting it.
+//
+// Same contract as `scg_submit_textured`, with one difference that decides
+// everything: 255 is the neutral value, as it is for a lightmap. A modulated
+// surface darkens or does nothing — it never brightens.
+//
+// **It tests depth without writing it, and the test is not strict.** The two
+// halves are set separately and each has its reason. Not strict, because a
+// stain is coplanar with the surface it marks and a strict test would lose it
+// at equal depth. No write, because a modulated surface occludes nothing: were
+// it to write depth, two stacked stains would multiply only once, in an order
+// that depended on tile binning.
+//
+// **Submit the scenery before its stains.** That is the only ordering the
+// z-buffer does not remove for you, and it costs nothing new: submission order
+// is already contractual, and already independent of tile size and thread
+// count.
+//
+// `texture` may be null, in which case each triangle's colour is the factor.
+// `blend` must be `SCG_BLEND_MODULATE`; zero and any unknown value are
+// refused, never silently mapped onto a default.
+//
+// # Safety
+//
+// Same preconditions as `scg_submit_textured`.
+int32_t scg_submit_blended(struct ScgContext *ctx,
+                           const struct ScgMat4 *model,
+                           const struct ScgVertexUv *vertices,
+                           uint32_t vertex_count,
+                           const struct ScgTriangle *triangles,
+                           uint32_t triangle_count,
+                           const struct ScgTexture *texture,
+                           uint32_t blend);
 
 // Submits a batch of triangles lit by a lightmap.
 //

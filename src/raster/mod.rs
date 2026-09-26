@@ -17,7 +17,8 @@ pub use bins::{Bins, Grid};
 pub use clip::{MAX_CLIP_TRIANGLES, clip};
 pub(crate) use triangle::DITHER;
 pub use triangle::{
-    Lighting, Lit, NO_LIGHTING, NO_TEXTURE, Prepared, Sampling, Vertex, fill, prepare, prepare_lit,
+    Lighting, Lit, MODULATED, NO_LIGHTING, NO_TEXTURE, Prepared, Sampling, Vertex, fill, prepare,
+    prepare_lit,
 };
 
 /// Un rectangle de l'image, en pixels.
@@ -111,4 +112,26 @@ pub trait Target {
     /// un état caché dans le puits ferait dépendre l'écriture d'un test qui l'a
     /// précédée, et rien dans le type ne le garantirait.
     fn write(&mut self, x: i32, y: i32, z: u32, color: u32);
+
+    /// Propose un pixel d'une surface **modulée**, dont le test est non strict.
+    ///
+    /// Non strict parce qu'une surface modulée est coplanaire avec celle
+    /// qu'elle marque — une tache d'ombre sur le sol qui la porte —, et que le
+    /// test strict la perdrait à égalité de profondeur. Le décor se soumet donc
+    /// avant ses taches, ce qui ne demande aucune garantie nouvelle : l'ordre
+    /// de soumission est déjà contractuel.
+    fn test_modulated(&mut self, x: i32, y: i32, z: u32) -> bool;
+
+    /// Multiplie le pixel déjà écrit par `factor`, **sans toucher la
+    /// profondeur**.
+    ///
+    /// Une surface modulée n'occulte rien. Si elle inscrivait sa profondeur,
+    /// deux taches superposées ne se multiplieraient plus qu'une fois, dans un
+    /// ordre qui dépendrait de la répartition en tuiles — donc l'image
+    /// dépendrait de la taille des tuiles, ce que l'invariant interdit.
+    ///
+    /// C'est le puits qui porte l'opération et non le remplissage, comme pour
+    /// [`Target::write`] : lui seul sait où sa couleur est rangée, et un
+    /// accesseur en lecture obligerait chaque implémentation à l'exposer.
+    fn modulate(&mut self, x: i32, y: i32, factor: u32);
 }

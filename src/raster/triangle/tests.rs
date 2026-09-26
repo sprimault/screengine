@@ -130,6 +130,14 @@ impl Target for Coverage {
     }
 
     fn write(&mut self, _x: i32, _y: i32, _z: u32, _color: u32) {}
+
+    /// Une surface modulée se compte comme une autre : c'est la couverture
+    /// qu'on mesure ici, et le mode d'écriture n'y change rien.
+    fn test_modulated(&mut self, x: i32, y: i32, z: u32) -> bool {
+        self.test(x, y, z)
+    }
+
+    fn modulate(&mut self, _x: i32, _y: i32, _factor: u32) {}
 }
 
 /// Un point, en pixels entiers convertis en sous-pixels.
@@ -629,6 +637,12 @@ impl Target for Depths {
     }
 
     fn write(&mut self, _x: i32, _y: i32, _z: u32, _color: u32) {}
+
+    fn test_modulated(&mut self, x: i32, y: i32, z: u32) -> bool {
+        self.test(x, y, z)
+    }
+
+    fn modulate(&mut self, _x: i32, _y: i32, _factor: u32) {}
 }
 
 /// Les trois permutations circulaires d'un même triangle rendent les mêmes
@@ -740,6 +754,28 @@ impl Target for Strict {
         self.depth[(y * W + x) as usize] = z;
         self.accepted = None;
     }
+
+    /// Non strict, et c'est la seule différence avec `test` : c'est elle que ce
+    /// puits sert à éprouver, la tache coplanaire devant passer là où le test
+    /// strict la rejetterait.
+    fn test_modulated(&mut self, x: i32, y: i32, z: u32) -> bool {
+        self.tests += 1;
+        let passes = z >= self.depth[(y * W + x) as usize];
+        self.accepted = passes.then_some((x, y));
+        passes
+    }
+
+    /// La profondeur ne bouge pas : c'est ce que ce puits vérifie, en la
+    /// laissant telle quelle pour que le test suivant la retrouve.
+    fn modulate(&mut self, x: i32, y: i32, _factor: u32) {
+        assert_eq!(
+            self.accepted,
+            Some((x, y)),
+            "modulation en ({x}, {y}) sans test accepté"
+        );
+        self.writes += 1;
+        self.accepted = None;
+    }
 }
 
 /// Un pixel occulté est testé mais pas écrit.
@@ -800,6 +836,15 @@ impl Target for Paint {
     fn write(&mut self, x: i32, y: i32, z: u32, color: u32) {
         self.depth[(y * W + x) as usize] = z;
         self.color[(y * W + x) as usize] = color;
+    }
+
+    fn test_modulated(&mut self, x: i32, y: i32, z: u32) -> bool {
+        z >= self.depth[(y * W + x) as usize]
+    }
+
+    fn modulate(&mut self, x: i32, y: i32, factor: u32) {
+        let i = (y * W + x) as usize;
+        self.color[i] = crate::light::modulate(self.color[i], factor, 0);
     }
 }
 

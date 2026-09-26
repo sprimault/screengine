@@ -20,8 +20,8 @@ use crate::math::fixed::MAX_TEXEL_COORD;
 use crate::math::projection::ClipVertex;
 use crate::math::{Affine3, Projection, Vec3};
 use crate::raster::{
-    Bins, Grid, Lighting, MAX_CLIP_TRIANGLES, NO_LIGHTING, NO_TEXTURE, Prepared, Rect, Vertex,
-    clip, prepare, prepare_lit,
+    Bins, Grid, Lighting, MAX_CLIP_TRIANGLES, MODULATED, NO_LIGHTING, NO_TEXTURE, Prepared, Rect,
+    Vertex, clip, prepare, prepare_lit,
 };
 use crate::scene::{Camera, Color, Light, Triangle, VertexUv, VertexUv2};
 use crate::texture::{Filter, Texture};
@@ -291,14 +291,15 @@ const CLOSING: u8 = 2;
 /// faire — se voit refuser un décor dont les surfaces sont des triangles à
 /// matériau propre, alors que sa capacité de triangles suffit exactement.
 ///
-/// Le plafond dur vient de la sentinelle : [`NO_TEXTURE`] occupe `u16::MAX`,
-/// il reste donc 65535 index. À huit octets l'entrée, la table coûte 256 Kio à
-/// la capacité par défaut, contre plus de deux mégaoctets de triangles
-/// préparés et de bacs déjà réservés.
+/// Le plafond dur vient des deux sentinelles : [`NO_TEXTURE`] occupe `0x7FFF`
+/// et le bit de poids fort porte la modulation, il reste donc 32767 index. À
+/// huit octets l'entrée, la table coûte 256 Kio à la capacité par défaut,
+/// contre plus de deux mégaoctets de triangles préparés et de bacs déjà
+/// réservés.
 fn texture_capacity(triangles: usize) -> usize {
     // `usize` fait 32 bits sur wasm32 et armv7, et la capacité vient d'un
     // `u32` : le double déborde avant d'être plafonné.
-    triangles.saturating_mul(2).min(u16::MAX as usize)
+    triangles.saturating_mul(2).min(NO_TEXTURE as usize)
 }
 
 /// Les triangles éclairés qu'une image peut porter, pour une capacité de
@@ -839,7 +840,7 @@ impl Context {
     where
         F: Fn(usize) -> Result<([VertexUv2; 3], Color)>,
     {
-        self.submit_lot(model, count, texture, Some(lightmap), read)
+        self.submit_lot(model, count, texture, Some(lightmap), 0, read)
     }
 
     /// Soumet un lot éclairé par indices, la façade de
@@ -1177,7 +1178,58 @@ impl Context {
     where
         F: Fn(usize) -> Result<([VertexUv; 3], Color)>,
     {
-        self.submit_lot(model, count, texture, None, |i| {
+        self.submit_lot(model, count, texture, None, 0, |i| {
+            let (corners, color) = read(i)?;
+            Ok((corners.map(VertexUv2::unlit), color))
+        })
+    }
+
+    /// Soumet un lot **modulé** : chaque pixel multiplie ce qui est déjà dans
+    /// le tampon, au lieu de l'écraser.
+    ///
+    /// **Le décor se soumet avant ses taches.** Une surface modulée teste sa
+    /// profondeur sans la réécrire, et son test n'est pas strict : c'est ce qui
+    /// laisse une tache coplanaire gagner sur le sol qu'elle marque. L'ordre de
+    /// soumission décide, et il est déjà contractuel — rien de neuf n'est
+    /// promis ici.
+    ///
+    /// Le cas d'usage est l'ombre d'un objet mobile, dont le jeu décide la
+    /// place : le moteur ne fournit que la primitive, un polygone qui assombrit
+    /// au lieu de recouvrir. 255 est le neutre, comme pour une lightmap, et une
+    /// surface modulée n'éclaircit jamais.
+    pub fn submit_blended(
+        &mut self,
+        model: Affine3,
+        vertices: &[VertexUv],
+        triangles: &[Triangle],
+        texture: Option<&Arc<Texture>>,
+    ) -> Result<()> {
+        self.submit_each_blended(model, triangles.len(), texture, |i| {
+            let triangle = triangles[i];
+            let mut corners = [VertexUv::untextured(Vec3::ZERO); 3];
+            for (corner, &index) in corners.iter_mut().zip(&triangle.indices) {
+                *corner = *vertices
+                    .get(index as usize)
+                    .ok_or(Error::InvalidArgument(Argument::VertexIndex))?;
+            }
+            Ok((corners, triangle.color))
+        })
+    }
+
+    /// Soumet un lot modulé par fonction d'accès, la forme que la frontière
+    /// emploie : elle lit les structures de l'hôte sur place, sans les recopier
+    /// dans un tampon intermédiaire.
+    pub fn submit_each_blended<F>(
+        &mut self,
+        model: Affine3,
+        count: usize,
+        texture: Option<&Arc<Texture>>,
+        read: F,
+    ) -> Result<()>
+    where
+        F: Fn(usize) -> Result<([VertexUv; 3], Color)>,
+    {
+        self.submit_lot(model, count, texture, None, MODULATED, |i| {
             let (corners, color) = read(i)?;
             Ok((corners.map(VertexUv2::unlit), color))
         })
@@ -1192,6 +1244,7 @@ impl Context {
         count: usize,
         texture: Option<&Arc<Texture>>,
         lightmap: Option<&Arc<Texture>>,
+        blend: u16,
         read: F,
     ) -> Result<()>
     where
@@ -1216,7 +1269,10 @@ impl Context {
                 };
                 Ok((index, lit))
             })
-            .and_then(|(index, lit)| self.submit_batch(model, count, index, lit, read));
+            // Le mode voyage dans l'index de texture, faute d'un octet libre
+            // dans le triangle préparé : le bit de poids fort le porte, et
+            // `Prepared::texture` le retire avant toute indexation.
+            .and_then(|(index, lit)| self.submit_batch(model, count, index | blend, lit, read));
         // Un lot refusé, mais aussi un lot accepté dont pas un triangle n'a
         // survécu à la projection : dans les deux cas la table garderait une
         // texture que plus rien ne référence, et le plafond ne se déduirait
