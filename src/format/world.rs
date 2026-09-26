@@ -111,7 +111,10 @@ impl Mapping {
 }
 
 /// Une surface d'une cellule, une fois triangulée.
-#[derive(Debug, Clone, Copy, PartialEq)]
+// **Plus `Copy` depuis que la surface garde son polygone** : ses indices sont un
+// `Vec`, et c'est voulu — un tableau de taille fixe y coûterait le plafond de
+// soixante-quatre sommets sur chaque surface d'un décor qui en a surtout quatre.
+#[derive(Debug, Clone, PartialEq)]
 pub(crate) struct Surface {
     /// Son identifiant stable, attribué par l'éditeur, jamais nul.
     // Lu par l'interrogation de la scène, à l'étape 8 : le décodage le valide
@@ -134,11 +137,39 @@ pub(crate) struct Surface {
     pub(crate) triangle_count: u32,
     /// Son repère de lightmap, vérifié aligné sur une grille de puissance de
     /// deux.
-    // Lu par le calcul de lightmap, à l'étape 5. Le chargement le vérifie dès
-    // maintenant : c'est cet alignement qui évite une marche d'éclairage à la
-    // jointure de deux surfaces coplanaires, et il se vérifie plutôt qu'il ne
-    // se convient.
-    lightmap: Mapping,
+    pub(crate) lightmap: Mapping,
+    /// Ses sommets dans la cellule, dans l'ordre du fichier.
+    ///
+    /// **Le polygone et non sa triangulation**, et c'est une clause du calcul
+    /// d'éclairage, pas un confort : un rayon qui passe exactement par une arête
+    /// interne de la découpe d'oreilles peut être manqué par les deux triangles
+    /// qui la partagent, et la lumière traverse alors le mur par un trou
+    /// d'épingle — invisible à l'arrêt, visible en mouchetures sur une lightmap
+    /// cuite, et tout le calculateur serait déjà construit dessus.
+    pub(crate) corners: Vec<u32>,
+    /// Le coin de la grille de luxels, et ses deux étendues.
+    ///
+    /// Dérivé au chargement comme tout le reste : c'est ce qui dimensionne le
+    /// rectangle de la surface dans l'atlas de sa cellule, et le faire au calcul
+    /// obligerait à reparcourir les sommets une seconde fois.
+    pub(crate) luxels: Extent,
+}
+
+/// L'étendue d'une surface dans son repère de lightmap, en luxels.
+///
+/// Les bornes sont celles des **nœuds** de la grille, pas des sommets : la
+/// surface commence au nœud qui la précède et finit à celui qui la suit, si bien
+/// qu'aucun de ses points ne tombe hors de la grille qui l'éclaire.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct Extent {
+    /// Le nœud de départ le long de l'axe `u`.
+    pub(crate) min_u: i32,
+    /// Celui le long de l'axe `v`.
+    pub(crate) min_v: i32,
+    /// Le nombre de luxels le long de `u`, au moins un.
+    pub(crate) width: u32,
+    /// Celui le long de `v`.
+    pub(crate) height: u32,
 }
 
 /// Un portail : le polygone plan convexe par lequel deux cellules se voient.
@@ -729,11 +760,16 @@ fn surface(
     bounded(index_count, 4, cursor.remaining())?;
 
     let mut corners = [Vec3::ZERO; MAX_POLYGON];
+    // Les indices se gardent en plus des points : c'est le polygone que le calcul
+    // d'éclairage interroge, et il n'est nulle part ailleurs une fois la surface
+    // triangulée.
+    let mut indices = reserved(index_count)?;
     for corner in corners.iter_mut().take(index_count) {
         let index = cursor.u32()? as usize;
         *corner = *points
             .get(index)
             .ok_or(Error::InvalidFormat(Malformation::Index))?;
+        indices.push(index as u32);
     }
     let corners = &corners[..index_count];
 
@@ -743,9 +779,11 @@ fn surface(
     // adjacentes, et c'est ce qui évite une marche d'éclairage à leur jointure.
     // Vérifié plutôt que conventionnel : une carte qui ne respecterait pas cet
     // alignement ne se verrait qu'à la première capture d'éclairage.
-    if !aligned(lightmap, corners) || !within_luxel_bound(lightmap, corners) {
+    if !aligned(lightmap, corners) {
         return Err(Error::InvalidFormat(Malformation::Mapping));
     }
+    let luxels =
+        luxel_extent(lightmap, corners).ok_or(Error::InvalidFormat(Malformation::Mapping))?;
 
     let mut cut = [[0u32; 3]; MAX_POLYGON];
     let count =
@@ -779,6 +817,8 @@ fn surface(
         first_triangle,
         triangle_count: count as u32,
         lightmap,
+        corners: indices,
+        luxels,
     })
 }
 
@@ -894,13 +934,37 @@ fn aligned(mapping: Mapping, corners: &[Vec3]) -> bool {
         && perpendicular(dot64(normal, mapping.v), square_n, f64::from(square_v))
 }
 
-/// Vrai si l'étendue de la surface dans son repère de lightmap tient sous le
+/// L'entier immédiatement inférieur ou égal, sans passer par la bibliothèque.
+///
+/// `floor` est de celles que `clippy.toml` refuse : son résultat dépend de
+/// l'implémentation, et une carte serait refusée ici et acceptée là. La
+/// conversion `as` tronque vers zéro, ce qui n'est le plancher que pour un
+/// positif — d'où la correction écrite, et le bornage qui la précède.
+fn floor_i32(value: f64) -> Option<i32> {
+    if !value.is_finite() || value < -1.0e9 || value > 1.0e9 {
+        return None;
+    }
+    let truncated = value as i32;
+    Some(if (truncated as f64) > value {
+        truncated - 1
+    } else {
+        truncated
+    })
+}
+
+/// L'étendue d'une surface dans son repère de lightmap, ou `None` au-delà du
 /// plafond.
+///
+/// **Les bornes sont des nœuds de la grille, pas les sommets eux-mêmes** : le
+/// plancher du minimum et le plafond du maximum, si bien qu'aucun point de la
+/// surface ne tombe hors de la grille qui l'éclaire. Un luxel de plus de chaque
+/// côté ne coûte rien et évite d'avoir à raisonner sur le cas où un sommet tombe
+/// pile sur un nœud.
 ///
 /// Les extrema se prennent par comparaisons écrites et non par `f32::min`, dont
 /// le résultat sur `min(-0,0, 0,0)` n'est pas spécifié : deux cibles refuseraient
 /// alors des cartes différentes.
-fn within_luxel_bound(mapping: Mapping, corners: &[Vec3]) -> bool {
+fn luxel_extent(mapping: Mapping, corners: &[Vec3]) -> Option<Extent> {
     let square_u = f64::from(mapping.u.dot(mapping.u));
     let square_v = f64::from(mapping.v.dot(mapping.v));
     let mut bounds = [(f64::MAX, f64::MIN); 2];
@@ -917,7 +981,7 @@ fn within_luxel_bound(mapping: Mapping, corners: &[Vec3]) -> bool {
         ];
         for (bound, value) in bounds.iter_mut().zip(coordinates) {
             if !value.is_finite() {
-                return false;
+                return None;
             }
             if value < bound.0 {
                 bound.0 = value;
@@ -928,9 +992,26 @@ fn within_luxel_bound(mapping: Mapping, corners: &[Vec3]) -> bool {
         }
     }
 
-    bounds
-        .iter()
-        .all(|(low, high)| high - low <= f64::from(MAX_LUXELS))
+    let mut nodes = [(0i32, 0u32); 2];
+    for (node, (low, high)) in nodes.iter_mut().zip(bounds) {
+        if high - low > f64::from(MAX_LUXELS) {
+            return None;
+        }
+        let first = floor_i32(low)?;
+        // Le nœud qui suit le maximum : le plancher, plus un dès que le maximum
+        // n'est pas déjà sur un nœud.
+        let last = floor_i32(high)?;
+        let last = if (last as f64) < high { last + 1 } else { last };
+        let span = last.checked_sub(first)?;
+        *node = (first, span as u32 + 1);
+    }
+
+    Some(Extent {
+        min_u: nodes[0].0,
+        min_v: nodes[1].0,
+        width: nodes[0].1,
+        height: nodes[1].1,
+    })
 }
 
 /// Les coordonnées de texture d'une surface, repliées dans `[0, 2048)`.
