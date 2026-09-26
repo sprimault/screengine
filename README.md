@@ -44,12 +44,13 @@ for those making a game, and the engine does not know it exists.
 
 ## Status
 
-**Step 4 cleared, released as 0.4.0: data.** Two versioned file formats — meshes
-and maps — loaded from a block of bytes the host reads: non-convex cells,
-surfaces triangulated at load time, portals matched bit for bit, static lights
-and entities decoded, stable identifiers throughout. Five hosts walk through the
+**Step 5 cleared, released as 0.5.0: the world.** A level is walked through its
+portals: traversal narrows a clipping window from cell to cell and submits only
+what is visible, the camera's cell is tracked through the portals it crosses, and
+the core computes a cell's lightmaps on the host's call — with a cache the host
+keeps and hands back on the next load. Nothing is compiled: what the editor writes
+is what the engine loads, and portal links are derived. Five hosts walk through the
 same decor in a window: C, C++, the browser, Android, and the Rust host layer.
-**Every cell is drawn, with no culling whatsoever** — portal traversal is step 5.
 
 The roadmap has ten steps, each one published.
 

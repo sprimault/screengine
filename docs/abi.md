@@ -7,19 +7,20 @@ Un auteur de liaison qui ne lit pas le français trouve l'essentiel dans
 `include/screengine.h`, dont la documentation est en anglais : ce qui ne peut pas
 être ignoré à l'appel y figure, fonction par fonction.
 
-**État : l'étape 4 est publiée en 0.4.0** — les sept points d'entrée de l'étape 0,
+**État : l'étape 5 est publiée en 0.5.0** — les sept points d'entrée de l'étape 0,
 le rendu par tuiles, les textures avec leur niveau de filtrage, la lumière
 (lightmaps fournies par l'hôte, lumières dynamiques, brouillard, résolution
-interne, courbe de sortie), et les deux formats de données avec leurs
-accesseurs. Chaque décision garde ci-dessous l'option écartée et pourquoi. Un
-seul point reste marqué **À trancher** : la dépréciation, qui attend le gel de
-l'ABI en 1.0.
+interne, courbe de sortie), les deux formats de données avec leurs accesseurs, et
+la traversée par portails avec le suivi de la cellule de la caméra et le calcul
+des lightmaps, cache compris. Chaque décision garde ci-dessous l'option écartée et
+pourquoi. Un seul point reste marqué **À trancher** : la dépréciation, qui attend
+le gel de l'ABI en 1.0.
 
-**L'étape 5 est exposée entière** : la traversée par portails, le suivi de la
-cellule de la caméra, et le calcul des lightmaps avec son cache. Le contrat se
-fige avant le premier code, comme celui d'un format se fige avant son premier
-décodeur et comme les formats de virgule fixe se sont figés avant le premier
-remplissage : ce qui s'écrit après s'écrit contre ce qui a déjà été codé.
+`SCG_ABI_VERSION` reste à **1** : aucune signature publiée n'a changé, l'étape 5
+n'ayant fait qu'ajouter des fonctions. Ce qui change pour une liaison est ailleurs,
+et c'est le premier point des notes de la 0.5.0 : les deux premiers **codes de
+retour positifs** du projet, qui font d'un test « différent de zéro » un refus de
+succès.
 
 **Elle rend les deux premiers codes positifs du projet**, ce que la section
 « Codes de retour » avait réservé sans l'employer. Une liaison qui juge un appel
@@ -433,7 +434,7 @@ dans la mémoire linéaire après le trap, sans rappeler le module.
   contexte, ce qu'impose la collision sans rendu de l'étape 7. Leur mémoire est
   allouée à leur chargement, mipmaps compris. **Une lightmap fournie par l'hôte
   est une ressource comme les autres**, et suit donc cette règle ; celle que le
-  noyau calculera à l'étape 5 alloue à l'appel qui la calcule. Détruire une
+  noyau calcule alloue à l'appel qui la calcule. Détruire une
   ressource encore référencée par un appel de dessin est une précondition, pas
   un cas d'erreur.
 
@@ -1140,7 +1141,8 @@ Arrêté :
   dimensionner le contexte — ce pour quoi il existe.
 - **Le rendu du monde ne prend pas de cellule de départ**, puisqu'il ne fait
   aucune élimination : il dessine toutes les surfaces de toutes les cellules. La
-  traversée par portails est l'étape 5 et ajoutera sa propre fonction. Un
+  traversée par portails a sa propre fonction, `scg_submit_world_visible`, et
+  `scg_submit_world` reste — c'est le chemin contre lequel elle se valide. Un
   paramètre qui ne sert pas encore est un paramètre dont le sens changera, ce qui
   imposerait alors une version d'ABI.
 - **Aucune allocation pendant une soumission.** Le tableau de textures est lu sur
