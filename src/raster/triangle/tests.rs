@@ -1749,3 +1749,76 @@ fn la_lightmap_et_les_lumieres_dynamiques_s_ajoutent() {
         "la lightmap est ignorée quand des lumières dynamiques sont présentes"
     );
 }
+
+/// Une texture masquée dont la moitié gauche est transparente : quatre texels
+/// de côté, les colonnes 0 et 1 invisibles, les deux autres blanches.
+///
+/// La frontière tombe au milieu d'un texel pour que le niveau zéro suffise et
+/// que rien ne dépende du filtrage : ce sont les écritures qu'on mesure, pas
+/// l'échantillonnage.
+fn demi_masquee() -> Texture {
+    let mut bytes = Vec::new();
+    for _ in 0..4 {
+        for u in 0..4 {
+            let opaque = u >= 2;
+            bytes.extend_from_slice(&[0xFF, 0xFF, 0xFF, if opaque { 0xFF } else { 0x00 }]);
+        }
+    }
+    Texture::load_masked(4, 4, &bytes).expect("texture valide")
+}
+
+/// Un texel transparent n'écrit **ni la couleur ni la profondeur**.
+///
+/// La profondeur compte autant que la couleur, et c'est elle qu'on oublie : un
+/// texel qui n'est pas peint mais qui inscrit sa profondeur masque ce qui est
+/// derrière lui, et la silhouette découpe alors un trou dans le décor sans
+/// qu'aucun pixel ne le montre.
+#[test]
+fn un_texel_transparent_n_ecrit_ni_couleur_ni_profondeur() {
+    let (triangle, _) = sol_texture_fuyant(8.0, 1.0);
+    let texture = demi_masquee();
+
+    let mut paint = Paint::new();
+    fill(&mut paint, CLIP, &triangle, dithered(&texture), None);
+
+    let peints = paint.color.iter().filter(|c| **c != 0).count();
+    let profonds = paint.depth.iter().filter(|z| **z != 0).count();
+    assert!(peints > 0, "le cas ne peint rien du tout");
+    assert_eq!(
+        peints, profonds,
+        "un pixel non peint a laissé sa profondeur"
+    );
+
+    let mut opaque = Paint::new();
+    let entiere = addressed(4);
+    fill(&mut opaque, CLIP, &triangle, dithered(&entiere), None);
+    let couverts = opaque.color.iter().filter(|c| **c != 0).count();
+    assert!(
+        peints < couverts,
+        "la moitié transparente n'a rien retiré : {peints} contre {couverts}"
+    );
+}
+
+/// Deux surfaces masquées qui se croisent se résolvent par la profondeur, dans
+/// n'importe quel ordre de soumission.
+///
+/// C'est la promesse que la transparence **binaire** laisse vraie, et la
+/// raison pour laquelle l'étape ne fait pas de mélange fractionnaire : celui-ci
+/// aurait exigé un tri par profondeur, c'est-à-dire ce que le z-buffer a
+/// supprimé.
+#[test]
+fn l_ordre_de_soumission_ne_change_pas_une_scene_masquee() {
+    let (proche, _) = sol_texture_fuyant(8.0, 1.0);
+    let (loin, _) = sol_texture_fuyant(12.0, 1.0);
+    let texture = demi_masquee();
+
+    let peindre = |ordre: [&Prepared; 2]| {
+        let mut paint = Paint::new();
+        for triangle in ordre {
+            fill(&mut paint, CLIP, triangle, dithered(&texture), None);
+        }
+        paint.color
+    };
+
+    assert_eq!(peindre([&proche, &loin]), peindre([&loin, &proche]));
+}

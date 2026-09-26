@@ -92,6 +92,12 @@ pub struct Texture {
     texels: Vec<u32>,
     levels: [Level; MAX_LEVELS],
     count: usize,
+    /// Vrai si ses texels portent une transparence binaire.
+    ///
+    /// Porté par la texture et non par la soumission : c'est au chargement que
+    /// la chaîne de mipmaps se construit, et une transparence décidée au dessin
+    /// obligerait à tenir deux chaînes, ou à en tenir une fausse.
+    masked: bool,
 }
 
 /// Les dimensions plutôt que les texels : un `Vec` de cinq millions d'entrées
@@ -123,6 +129,25 @@ impl Texture {
     /// C'est l'un des appels nommés où l'allocation est permise, et le seul que
     /// la scène impose.
     pub fn load(width: u32, height: u32, pixels: &[u8]) -> Result<Self> {
+        Self::load_format(width, height, pixels, false)
+    }
+
+    /// Charge une texture à transparence binaire, et engendre ses mipmaps.
+    ///
+    /// Mêmes octets que [`Texture::load`], mais l'alpha de chaque texel y
+    /// décide : ramené à tout ou rien au chargement, seuil à 128. Un texel
+    /// transparent n'est ni peint ni inscrit dans la profondeur.
+    ///
+    /// Deux façades plutôt qu'un paramètre de format : le masquage est une
+    /// variante et non un axe, et `load_masked` se lit à l'appel là où un
+    /// argument de format se répéterait sans rien dire sur la trentaine de
+    /// chargements opaques du dépôt.
+    pub fn load_masked(width: u32, height: u32, pixels: &[u8]) -> Result<Self> {
+        Self::load_format(width, height, pixels, true)
+    }
+
+    /// Le corps commun aux deux chargements.
+    fn load_format(width: u32, height: u32, pixels: &[u8], masked: bool) -> Result<Self> {
         // `is_power_of_two` écarte zéro de lui-même : le minorant n'a pas à
         // être écrit une seconde fois.
         let valid = |side: u32| side.is_power_of_two() && side <= MAX_TEXTURE_SIZE;
@@ -163,6 +188,11 @@ impl Texture {
             *texel = u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]);
         }
 
+        if masked {
+            threshold(&mut texels[..levels[0].len()]);
+            dilate(&mut texels[..levels[0].len()], levels[0]);
+        }
+
         for i in 1..count {
             let (src, dst) = texels.split_at_mut(levels[i].offset as usize);
             reduce(
@@ -170,6 +200,7 @@ impl Texture {
                 levels[i - 1],
                 &mut dst[..levels[i].len()],
                 levels[i],
+                masked,
             );
         }
 
@@ -177,7 +208,13 @@ impl Texture {
             texels,
             levels,
             count,
+            masked,
         })
+    }
+
+    /// Vrai si un texel transparent ne doit pas être peint.
+    pub fn masked(&self) -> bool {
+        self.masked
     }
 
     /// La largeur du niveau 0, en texels.
@@ -297,7 +334,92 @@ fn mix(a: u32, b: u32, t: u32) -> u32 {
 /// repasser en linéaire. C'est le comportement de la classe de moteurs visée,
 /// et le rendu est étalonné là-dessus ; linéariser ici éclaircirait chaque
 /// niveau par rapport au précédent.
-fn reduce(src: &[u32], src_level: Level, dst: &mut [u32], dst_level: Level) {
+/// Au-delà, un texel est opaque ; en deçà, il ne s'écrit pas.
+///
+/// La valeur vit ici et nulle part ailleurs : elle sert au chargement, sur le
+/// niveau zéro, et au dessin, sur la couverture d'un niveau réduit.
+pub const ALPHA_THRESHOLD: u32 = 128;
+
+/// Ramène l'alpha de chaque texel à tout ou rien.
+///
+/// Sur le niveau zéro seulement : les niveaux suivants portent une
+/// **couverture**, et la reseuiller à chaque réduction calculerait un niveau
+/// depuis un niveau déjà seuillé. Un détail fin — une grille, une antenne —
+/// disparaîtrait alors d'un coup dès que sa couverture passe sous la moitié, et
+/// reviendrait en approchant : c'est le clignotement qu'on cherche à éviter.
+fn threshold(texels: &mut [u32]) {
+    for texel in texels {
+        *texel = if (*texel >> 24) >= ALPHA_THRESHOLD {
+            *texel | 0xFF00_0000
+        } else {
+            *texel & 0x00FF_FFFF
+        };
+    }
+}
+
+/// Étend la couleur des texels opaques d'un cran dans les zones transparentes.
+///
+/// Sans elle, le bilinéaire mêle au bord d'une silhouette la couleur que l'hôte
+/// a laissée sous ses texels invisibles — souvent du noir — et la cerne d'un
+/// liseré. Un cran suffit au niveau zéro, qui est le seul que le bilinéaire lit
+/// texel par texel ; au-delà, c'est la réduction pondérée qui porte des valeurs
+/// plausibles de niveau en niveau.
+///
+/// **Aucun double tampon, et l'ordre de parcours n'a pourtant aucune
+/// influence** : on ne lit que des texels opaques et on n'écrit que dans des
+/// transparents, et l'alpha ne bouge pas. Aucune écriture ne peut donc devenir
+/// la source d'une lecture ultérieure.
+fn dilate(texels: &mut [u32], level: Level) {
+    let (mask_x, mask_y) = (level.width - 1, level.height - 1);
+    // Les décalages d'un côté de moins de quatre texels se recouvrent une fois
+    // repliés — `−1` et `+1` désignent le même voisin sur deux —, et un voisin
+    // compté deux fois pèserait double dans la moyenne.
+    let steps = |mask: u32| -> &'static [u32] {
+        match mask {
+            0 => &[0],
+            1 => &[0, 1],
+            _ => &[u32::MAX, 0, 1],
+        }
+    };
+    for y in 0..level.height {
+        for x in 0..level.width {
+            let here = (y * level.width + x) as usize;
+            if texels[here] >> 24 != 0 {
+                continue;
+            }
+            let mut sum = [0u32; 3];
+            let mut count = 0;
+            for &dy in steps(mask_y) {
+                for &dx in steps(mask_x) {
+                    // `wrapping_add` parce que le pas vers la gauche est
+                    // `u32::MAX` : le repli par masque le ramène au bon texel,
+                    // la somme seule déborde.
+                    let sx = x.wrapping_add(dx) & mask_x;
+                    let sy = y.wrapping_add(dy) & mask_y;
+                    let neighbour = texels[(sy * level.width + sx) as usize];
+                    if neighbour >> 24 == 0 {
+                        continue;
+                    }
+                    let bytes = neighbour.to_le_bytes();
+                    for (channel, byte) in sum.iter_mut().zip(bytes) {
+                        *channel += u32::from(byte);
+                    }
+                    count += 1;
+                }
+            }
+            if count == 0 {
+                continue;
+            }
+            let mut bytes = [0u8; 4];
+            for (byte, channel) in bytes.iter_mut().zip(sum) {
+                *byte = ((channel + count / 2) / count) as u8;
+            }
+            texels[here] = u32::from_le_bytes(bytes);
+        }
+    }
+}
+
+fn reduce(src: &[u32], src_level: Level, dst: &mut [u32], dst_level: Level, masked: bool) {
     let shift_x = u32::from(src_level.width > dst_level.width);
     let shift_y = u32::from(src_level.height > dst_level.height);
     let shift = shift_x + shift_y;
@@ -306,6 +428,10 @@ fn reduce(src: &[u32], src_level: Level, dst: &mut [u32], dst_level: Level) {
     for y in 0..dst_level.height {
         for x in 0..dst_level.width {
             let mut sum = [0u32; 4];
+            // La somme des alphas des sources : elle sert de poids aux trois
+            // autres canaux quand la texture est masquée, et elle n'est lue
+            // que dans ce cas.
+            let mut weighted = [0u32; 3];
             for dy in 0..=shift_y {
                 for dx in 0..=shift_x {
                     let sx = (x << shift_x) + dx;
@@ -313,6 +439,9 @@ fn reduce(src: &[u32], src_level: Level, dst: &mut [u32], dst_level: Level) {
                     let texel = src[(sy * src_level.width + sx) as usize].to_le_bytes();
                     for (channel, byte) in sum.iter_mut().zip(texel) {
                         *channel += u32::from(byte);
+                    }
+                    for (channel, byte) in weighted.iter_mut().zip(texel) {
+                        *channel += u32::from(byte) * u32::from(texel[3]);
                     }
                 }
             }
@@ -322,6 +451,20 @@ fn reduce(src: &[u32], src_level: Level, dst: &mut [u32], dst_level: Level) {
             let mut bytes = [0u8; 4];
             for (byte, channel) in bytes.iter_mut().zip(sum) {
                 *byte = ((channel + half) >> shift) as u8;
+            }
+            // **Le RGB d'une texture masquée est pondéré par l'alpha**, sans
+            // quoi un texel transparent teinte ses voisins de la couleur qu'il
+            // porte sous son invisibilité. L'alpha, lui, reste la moyenne
+            // ordinaire : c'est la couverture du texel réduit.
+            //
+            // Quand les quatre sources sont transparentes il n'y a rien à
+            // pondérer, et la moyenne ordinaire tient lieu de valeur plausible
+            // — elle vient de texels déjà dilatés, et cette valeur ne sera lue
+            // que par le bilinéaire du niveau suivant.
+            if masked && sum[3] != 0 {
+                for (byte, channel) in bytes.iter_mut().zip(weighted) {
+                    *byte = ((channel + sum[3] / 2) / sum[3]) as u8;
+                }
             }
             dst[(y * dst_level.width + x) as usize] = u32::from_le_bytes(bytes);
         }

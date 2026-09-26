@@ -79,6 +79,103 @@ fn le_niveau_zero_reprend_les_octets_dans_l_ordre_recu() {
     );
 }
 
+/// Une texture ordinaire n'est pas masquée, et son alpha traverse intact.
+///
+/// C'est le témoin des trois tests qui suivent : sans lui, un seuillage
+/// appliqué à tort passerait inaperçu, les deux chemins rendant alors la même
+/// chose sur des texels déjà opaques.
+#[test]
+fn une_texture_ordinaire_garde_son_alpha() {
+    let pixels = block(2, 1, |x, _| [9, 9, 9, if x == 0 { 1 } else { 200 }]);
+    let texture = Texture::load(2, 1, &pixels).expect("texture valide");
+    assert!(!texture.masked());
+    assert_eq!(texture.level_texels(0)[0] >> 24, 1);
+    assert_eq!(texture.level_texels(0)[1] >> 24, 200);
+}
+
+/// Le seuil du niveau zéro est à 128, et il est inclusif d'un seul côté :
+/// 127 disparaît, 128 reste.
+#[test]
+fn le_seuil_de_l_alpha_tombe_a_cent_vingt_huit() {
+    let pixels = block(2, 1, |x, _| [9, 9, 9, if x == 0 { 127 } else { 128 }]);
+    let texture = Texture::load_masked(2, 1, &pixels).expect("texture valide");
+    assert!(texture.masked());
+    assert_eq!(texture.level_texels(0)[0] >> 24, 0);
+    assert_eq!(texture.level_texels(0)[1] >> 24, 255);
+}
+
+/// Le RGB laissé sous un texel transparent est remplacé par celui de ses
+/// voisins opaques.
+///
+/// C'est ce qui évite le liseré : sans dilatation, le bilinéaire mêle au bord
+/// d'une silhouette la couleur invisible que l'hôte y a laissée — ici du noir
+/// sous un motif blanc, le cas exact qui se voit.
+#[test]
+fn le_rgb_se_dilate_sous_les_texels_transparents() {
+    let pixels = block(4, 1, |x, _| {
+        if x == 0 {
+            [255, 255, 255, 255]
+        } else {
+            [0, 0, 0, 0]
+        }
+    });
+    let texture = Texture::load_masked(4, 1, &pixels).expect("texture valide");
+    let texels = texture.level_texels(0);
+
+    assert_eq!(texels[1] & 0x00FF_FFFF, 0x00FF_FFFF, "le voisin de droite");
+    assert_eq!(
+        texels[3] & 0x00FF_FFFF,
+        0x00FF_FFFF,
+        "le voisin par le repli"
+    );
+    assert_eq!(texels[2] & 0x00FF_FFFF, 0, "à deux crans, rien ne change");
+    for texel in &texels[1..] {
+        assert_eq!(texel >> 24, 0, "la dilatation ne rend rien opaque");
+    }
+}
+
+/// Un texel transparent ne teinte pas ses voisins dans la chaîne de mipmaps,
+/// et l'alpha réduit porte la **couverture**.
+///
+/// Les deux tiennent dans le même cas parce qu'ils viennent de la même
+/// pondération : sans elle, un texel blanc entouré de trois transparents
+/// rendrait un gris au niveau suivant, et la silhouette se délaverait de
+/// niveau en niveau au lieu de rester blanche et de perdre sa couverture.
+#[test]
+fn la_reduction_pondere_le_rgb_par_l_alpha() {
+    let pixels = block(2, 2, |x, y| {
+        if (x, y) == (0, 0) {
+            [255, 255, 255, 255]
+        } else {
+            [0, 0, 0, 0]
+        }
+    });
+    let texture = Texture::load_masked(2, 2, &pixels).expect("texture valide");
+    let reduit = texture.level_texels(1)[0];
+
+    assert_eq!(
+        reduit & 0x00FF_FFFF,
+        0x00FF_FFFF,
+        "le seul texel qui compte"
+    );
+    assert_eq!(reduit >> 24, 64, "un opaque sur quatre");
+}
+
+/// Sans pondération, le même cas rendrait la moyenne ordinaire : le témoin de
+/// ce que le chemin opaque fait, et de ce que le masqué ne doit pas faire.
+#[test]
+fn la_reduction_ordinaire_delave_ce_que_la_ponderation_garde() {
+    let pixels = block(2, 2, |x, y| {
+        if (x, y) == (0, 0) {
+            [255, 255, 255, 255]
+        } else {
+            [0, 0, 0, 0]
+        }
+    });
+    let texture = Texture::load(2, 2, &pixels).expect("texture valide");
+    assert_eq!(texture.level_texels(1)[0] & 0xFF, 64);
+}
+
 /// Une texture d'un seul texel n'a qu'un niveau : la boucle de construction
 /// doit s'arrêter avant de diviser, et non après.
 #[test]

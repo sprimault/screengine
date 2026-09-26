@@ -15,7 +15,7 @@ use crate::math::projection::ProjectedVertex;
 
 use super::plane::{GRADIENT_BITS, Plane};
 use super::{Rect, Target};
-use crate::texture::{Filter, MAX_TEXTURE_SIZE, Texture};
+use crate::texture::{ALPHA_THRESHOLD, Filter, MAX_TEXTURE_SIZE, Texture};
 
 /// Une texture et la façon de la lire.
 ///
@@ -881,9 +881,28 @@ fn textured<T: Target, const BILINEAR: bool>(
     ey: i64,
     ends: &Ends,
 ) {
+    // Le masquage se lit sur la texture et se porte dans le type, comme le
+    // filtrage : il vaut pour le lot entier, et le résoudre ici laisse la
+    // boucle de pixels d'une surface opaque exactement telle qu'elle était.
+    if texture.masked() {
+        masked_textured::<T, BILINEAR, true>(walk, texture, texel, lit, ey, ends)
+    } else {
+        masked_textured::<T, BILINEAR, false>(walk, texture, texel, lit, ey, ends)
+    }
+}
+
+/// Le corps de [`textured`], une fois le masquage connu du type.
+fn masked_textured<T: Target, const BILINEAR: bool, const MASKED: bool>(
+    walk: Walk<'_, T>,
+    texture: &Texture,
+    texel: Crawl,
+    lit: Option<Lit<'_>>,
+    ey: i64,
+    ends: &Ends,
+) {
     let (triangle, start) = (walk.triangle, walk.draw.0);
     match lit {
-        None => walk.run(Texel::<BILINEAR> { texel, texture }),
+        None => walk.run(Texel::<BILINEAR, MASKED> { texel, texture }),
         Some(lit) => with_glow!(
             walk,
             triangle,
@@ -892,7 +911,7 @@ fn textured<T: Target, const BILINEAR: bool>(
             ey,
             ends,
             |walk: Walk<'_, T>, glow, overbright| {
-                walk.run(TexelLight::<BILINEAR, _> {
+                walk.run(TexelLight::<BILINEAR, MASKED, _> {
                     texel,
                     texture,
                     glow,
@@ -947,7 +966,15 @@ impl<T: Target> Walk<'_, T> {
         for x in self.draw.0..=self.draw.1 {
             let z = (depth >> GRADIENT_BITS) as u32;
             if self.target.test(x, self.y, z) {
-                self.target.write(x, self.y, z, shade.pixel(x, self.y));
+                let color = shade.pixel(x, self.y);
+                // Un texel transparent n'écrit **ni la couleur ni la
+                // profondeur** : il se comporte exactement comme un pixel que
+                // le triangle ne couvre pas. C'est ce qui laisse deux surfaces
+                // masquées qui se croisent se résoudre par la profondeur seule,
+                // dans n'importe quel ordre de soumission.
+                if !S::MASKED || (color >> 24) >= ALPHA_THRESHOLD {
+                    self.target.write(x, self.y, z, color);
+                }
             }
             depth = depth.wrapping_add(depth_x);
             shade.step();
@@ -963,7 +990,17 @@ impl<T: Target> Walk<'_, T> {
 /// remplissage — y compris à une scène qui n'a ni texture ni lightmap, donc
 /// pour un choix toujours identique.
 trait Shade {
+    /// Vrai si l'alpha de [`Shade::pixel`] décide de l'écriture.
+    ///
+    /// Une constante et non un champ, pour la raison qui vaut déjà au
+    /// filtrage : un ombrage sans transparence ne paie pas le test, il n'est
+    /// simplement pas compilé avec.
+    const MASKED: bool = false;
+
     /// La couleur du pixel `(x, y)`.
+    ///
+    /// Quand [`Shade::MASKED`] est vrai, son alpha porte la couverture du
+    /// texel et non une couleur : le parcours s'en sert pour décider d'écrire.
     fn pixel(&self, x: i32, y: i32) -> u32;
     /// Avance d'un pixel vers la droite.
     fn step(&mut self);
@@ -989,12 +1026,14 @@ impl Shade for Flat {
 /// `BILINEAR` porte le filtrage dans le type : il vaut pour l'image entière, et
 /// le choisir une fois par segment plutôt qu'à chaque pixel est ce qui permet
 /// aux deux lectures d'être compilées séparément.
-struct Texel<'a, const BILINEAR: bool> {
+struct Texel<'a, const BILINEAR: bool, const MASKED: bool> {
     texel: Crawl,
     texture: &'a Texture,
 }
 
-impl<const BILINEAR: bool> Shade for Texel<'_, BILINEAR> {
+impl<const BILINEAR: bool, const MASKED: bool> Shade for Texel<'_, BILINEAR, MASKED> {
+    const MASKED: bool = MASKED;
+
     #[inline]
     fn pixel(&self, x: i32, y: i32) -> u32 {
         self.texel.sample::<BILINEAR>(self.texture, x, y)
@@ -1091,14 +1130,18 @@ impl<G: Glowing> Shade for Light<G> {
 }
 
 /// Une surface texturée qu'un éclairage couvre.
-struct TexelLight<'a, const BILINEAR: bool, G: Glowing> {
+struct TexelLight<'a, const BILINEAR: bool, const MASKED: bool, G: Glowing> {
     texel: Crawl,
     texture: &'a Texture,
     glow: G,
     overbright: u32,
 }
 
-impl<const BILINEAR: bool, G: Glowing> Shade for TexelLight<'_, BILINEAR, G> {
+impl<const BILINEAR: bool, const MASKED: bool, G: Glowing> Shade
+    for TexelLight<'_, BILINEAR, MASKED, G>
+{
+    const MASKED: bool = MASKED;
+
     #[inline]
     fn pixel(&self, x: i32, y: i32) -> u32 {
         let texel = self.texel.sample::<BILINEAR>(self.texture, x, y);

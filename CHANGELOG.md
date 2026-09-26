@@ -46,6 +46,14 @@ publié, et explique les conventions du dépôt à qui y contribue.
 
 ## [Non publié]
 
+### Ajouté
+- `SCG_TEXTURE_FORMAT_RGBA8_MASKED` : une texture à transparence binaire, dont
+  l'alpha décide. Un texel transparent n'écrit ni couleur ni profondeur, si bien
+  que deux surfaces masquées qui se croisent se résolvent par la profondeur, dans
+  n'importe quel ordre de soumission. Aucune fonction nouvelle — la transparence
+  est portée par la texture, et chaque soumission qui en prend une en hérite.
+  `SCG_ABI_VERSION` reste à 1.
+
 ### Modifié
 - Le contrat d'ABI fige l'étape 6 avant son premier code : les deux façons
   d'écrire un pixel — le texel transparent et la surface modulée —, les
@@ -65,6 +73,13 @@ publié, et explique les conventions du dépôt à qui y contribue.
   exactement.
 
 ***
+
+### Added
+- `SCG_TEXTURE_FORMAT_RGBA8_MASKED`: a texture with binary transparency, where
+  the alpha byte decides. A transparent texel writes neither colour nor depth, so
+  two masked surfaces crossing each other resolve by depth alone, in any
+  submission order. No new function — transparency belongs to the texture, and
+  every submission taking one inherits it. `SCG_ABI_VERSION` stays at 1.
 
 ### Changed
 - The ABI contract freezes step 6 ahead of its first code: the two ways of

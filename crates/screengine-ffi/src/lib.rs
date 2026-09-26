@@ -41,8 +41,9 @@ use output::HostRows;
 pub use context::{ScgContext, ScgContextConfig};
 pub use mesh::ScgMesh;
 pub use scene::{
-    SCG_FILTER_BILINEAR, SCG_FILTER_DITHER, SCG_TEXTURE_FORMAT_RGBA8, ScgCamera, ScgGrade,
-    ScgLight, ScgMat4, ScgTextureDesc, ScgTriangle, ScgVertex, ScgVertexUv, ScgVertexUv2,
+    SCG_FILTER_BILINEAR, SCG_FILTER_DITHER, SCG_TEXTURE_FORMAT_RGBA8,
+    SCG_TEXTURE_FORMAT_RGBA8_MASKED, ScgCamera, ScgGrade, ScgLight, ScgMat4, ScgTextureDesc,
+    ScgTriangle, ScgVertex, ScgVertexUv, ScgVertexUv2,
 };
 pub use status::{
     SCG_ERR_FAULTED, SCG_ERR_INVALID_ARGUMENT, SCG_ERR_INVALID_FORMAT, SCG_ERR_INVALID_STATE,
@@ -776,7 +777,11 @@ pub unsafe extern "C" fn scg_texture_load(
         // lisibles. Un `len` nul admet le pointeur nul, que `from_raw_parts`
         // exigerait quand même aligné.
         let pixels = unsafe { slice_of_bytes(pixels, len) };
-        let texture = Texture::load(desc.width, desc.height, pixels)?;
+        let texture = if desc.format == SCG_TEXTURE_FORMAT_RGBA8_MASKED {
+            Texture::load_masked(desc.width, desc.height, pixels)?
+        } else {
+            Texture::load(desc.width, desc.height, pixels)?
+        };
         let handle = Box::into_raw(Box::new(ScgTexture {
             inner: Arc::new(texture),
         }));
