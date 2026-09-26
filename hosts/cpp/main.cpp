@@ -688,7 +688,7 @@ uint64_t render(bool &ok)
 
     ScgContextConfig config = scene_config();
     ScgContext *raw = nullptr;
-    if (scg_create(&config, &raw) != SCG_OK) {
+    if (scg_create(&config, &raw) < 0) {
         check(false, "création du contexte de rendu");
         return 0;
     }
@@ -734,7 +734,7 @@ void check_resize(uint64_t expected)
     config.height = 1;
 
     ScgContext *raw = nullptr;
-    if (scg_create(&config, &raw) != SCG_OK) {
+    if (scg_create(&config, &raw) < 0) {
         check(false, "création du contexte redimensionnable");
         return;
     }
@@ -762,7 +762,7 @@ void check_tiles(uint64_t expected)
 {
     ScgContextConfig config = scene_config();
     ScgContext *raw = nullptr;
-    if (scg_create(&config, &raw) != SCG_OK) {
+    if (scg_create(&config, &raw) < 0) {
         check(false, "création du contexte des tuiles");
         return;
     }
@@ -782,7 +782,7 @@ void check_tiles(uint64_t expected)
                 if (i % workers != w || i % 4 == 0) {
                     continue;
                 }
-                if (scg_frame_tile(ctx.get(), i, pixels.data(), STRIDE) != SCG_OK) {
+                if (scg_frame_tile(ctx.get(), i, pixels.data(), STRIDE) < 0) {
                     ++refused;
                 }
             }

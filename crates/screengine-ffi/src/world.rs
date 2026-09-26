@@ -19,3 +19,19 @@ pub struct ScgWorld {
     /// La ressource du noyau, immuable une fois chargée.
     pub(crate) inner: World,
 }
+
+/// An opaque handle to a map's computed lightmaps.
+///
+/// **Nothing creates one yet**, so the only value `scg_submit_world_visible`
+/// accepts for it is `NULL`; anything else is rejected. The parameter exists from
+/// the first version on purpose: a published signature never changes, and adding
+/// it later would mean a second submission function, for good.
+pub struct ScgLighting {
+    /// Réservé au lot qui calcule les lightmaps.
+    ///
+    /// Un champ privé plutôt qu'une structure vide : `cbindgen` en rend un type
+    /// incomplet, que l'hôte ne peut donc ni construire ni déréférencer, et c'est
+    /// ce que « handle opaque » veut dire.
+    #[allow(dead_code)]
+    pub(crate) reserved: u8,
+}

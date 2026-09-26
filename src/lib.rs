@@ -29,7 +29,7 @@ mod world;
 
 pub use context::{
     BYTES_PER_PIXEL, Config, Context, Frame, MAX_RESOLUTION, Output, Rows, TILE_SIZES,
-    TRIANGLE_CAPACITY,
+    TRIANGLE_CAPACITY, Visibility,
 };
 pub use error::{Argument, Error, Malformation, Result};
 pub use format::{Mesh, World};
@@ -39,3 +39,4 @@ pub use math::{Affine3, Angle, MAX_TEXEL_COORD, Quat, Vec3};
 pub use raster::Rect;
 pub use scene::{Camera, Color, Light, Triangle, VertexUv, VertexUv2};
 pub use texture::{Filter, MAX_TEXTURE_SIZE, Texture};
+pub use world::traversal::{MAX_DEPTH as TRAVERSAL_DEPTH, MAX_VISITS as TRAVERSAL_CELLS};

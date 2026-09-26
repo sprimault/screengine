@@ -46,10 +46,53 @@ pub const SCG_ERR_POISONED: i32 = -6;
 
 /// A lookup by stable identifier found nothing.
 ///
-/// No call returns it yet: an identifier missing from a file is caught while
-/// loading it, and an index beyond its count is a fault in the call. It is
-/// defined now because a published code never changes meaning.
+/// Returned by `scg_submit_world_visible` when no cell carries the given
+/// identifier. The file is well formed and the call is well shaped: it is the
+/// reference that finds no target, which is neither a malformation nor a bad
+/// argument.
 pub const SCG_ERR_UNKNOWN_RESOURCE: i32 = -100;
+
+/// Success, and traversal stopped at one of its bounds.
+///
+/// **A positive code is a success carrying a status.** Judge a call by the sign
+/// of its code, never by "not `SCG_OK`": a status a binding does not know is
+/// handled as success, because ignoring one is always correct.
+///
+/// The image holds everything that was reached, and the far cell is drawn whole —
+/// only its portals were not unfolded, so what is missing begins one cell
+/// further. Neither bound is configurable, so there is nothing for the host to
+/// adjust: this is a property of the level, not a fault in the call.
+pub const SCG_STATUS_INCOMPLETE: i32 = 1;
+
+/// Success, and no cell was given, so nothing was submitted.
+///
+/// The background, the alpha and the output curve are written as they are for an
+/// empty scene. Unlike [`SCG_STATUS_INCOMPLETE`], the host has something to do:
+/// place the camera in a cell again. The engine never relocates it on its own.
+pub const SCG_STATUS_NO_CELL: i32 = 2;
+
+/// How deep portal traversal follows a line of sight.
+///
+/// Exposed so a host can tell why an image came back incomplete. It is a constant
+/// of the engine and cannot be configured: reaching it truncates the image, and
+/// an image that depended on a configuration field would escape the conformance
+/// suite.
+pub const SCG_TRAVERSAL_DEPTH: u32 = 64;
+
+/// How many cells one image may retain.
+///
+/// A second bound, which does not follow from the first: depth limits the length
+/// of a path, this one the number of cells a single image can keep a window for.
+pub const SCG_TRAVERSAL_CELLS: u32 = 4096;
+
+// **Les deux valeurs sont écrites en littéral, et concordent par assertion.**
+// `cbindgen` analyse la source syntaxiquement et n'interroge jamais `rustc` : une
+// constante définie depuis un chemin du noyau n'entre pas dans le header, elle y
+// disparaît en silence. Les recopier les y fait entrer ; l'assertion refuse la
+// compilation le jour où le noyau change la sienne, ce qu'un commentaire ne
+// ferait pas.
+const _: () = assert!(SCG_TRAVERSAL_DEPTH as usize == screengine::TRAVERSAL_DEPTH);
+const _: () = assert!(SCG_TRAVERSAL_CELLS as usize == screengine::TRAVERSAL_CELLS);
 
 /// The block is not a data file this library can read.
 ///

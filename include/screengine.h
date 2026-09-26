@@ -77,10 +77,44 @@
 
 // A lookup by stable identifier found nothing.
 //
-// No call returns it yet: an identifier missing from a file is caught while
-// loading it, and an index beyond its count is a fault in the call. It is
-// defined now because a published code never changes meaning.
+// Returned by `scg_submit_world_visible` when no cell carries the given
+// identifier. The file is well formed and the call is well shaped: it is the
+// reference that finds no target, which is neither a malformation nor a bad
+// argument.
 #define SCG_ERR_UNKNOWN_RESOURCE -100
+
+// Success, and traversal stopped at one of its bounds.
+//
+// **A positive code is a success carrying a status.** Judge a call by the sign
+// of its code, never by "not `SCG_OK`": a status a binding does not know is
+// handled as success, because ignoring one is always correct.
+//
+// The image holds everything that was reached, and the far cell is drawn whole —
+// only its portals were not unfolded, so what is missing begins one cell
+// further. Neither bound is configurable, so there is nothing for the host to
+// adjust: this is a property of the level, not a fault in the call.
+#define SCG_STATUS_INCOMPLETE 1
+
+// Success, and no cell was given, so nothing was submitted.
+//
+// The background, the alpha and the output curve are written as they are for an
+// empty scene. Unlike [`SCG_STATUS_INCOMPLETE`], the host has something to do:
+// place the camera in a cell again. The engine never relocates it on its own.
+#define SCG_STATUS_NO_CELL 2
+
+// How deep portal traversal follows a line of sight.
+//
+// Exposed so a host can tell why an image came back incomplete. It is a constant
+// of the engine and cannot be configured: reaching it truncates the image, and
+// an image that depended on a configuration field would escape the conformance
+// suite.
+#define SCG_TRAVERSAL_DEPTH 64
+
+// How many cells one image may retain.
+//
+// A second bound, which does not follow from the first: depth limits the length
+// of a path, this one the number of cells a single image can keep a window for.
+#define SCG_TRAVERSAL_CELLS 4096
 
 // The block is not a data file this library can read.
 //
@@ -106,6 +140,14 @@
 // distinct threads. Two contexts are independent and may each serve their own
 // thread.
 typedef struct ScgContext ScgContext;
+
+// An opaque handle to a map's computed lightmaps.
+//
+// **Nothing creates one yet**, so the only value `scg_submit_world_visible`
+// accepts for it is `NULL`; anything else is rejected. The parameter exists from
+// the first version on purpose: a published signature never changes, and adding
+// it later would mean a second submission function, for good.
+typedef struct ScgLighting ScgLighting;
 
 // An opaque handle to a loaded mesh.
 //
@@ -1028,11 +1070,11 @@ int32_t scg_world_triangle_count(const struct ScgWorld *world, uint32_t *out);
 // `scg_world_material_count`. A null entry means "no texture" for that
 // material. The array is read in place and never copied.
 //
-// **Every cell, no culling.** This is the raw path: portal traversal comes
-// later and will replace it, which is also how it will be checked — a scene
-// where everything is visible must render the same image either way. There is
-// no starting cell, because a parameter that does nothing yet is a parameter
-// whose meaning would change.
+// **Every cell, no culling**, and it is not deprecated. Portal traversal is
+// `scg_submit_world_visible`; this one stays as the path traversal is validated
+// against — on a level where everything is visible, both must render the same
+// image. It takes no starting cell, because a parameter that does nothing is a
+// parameter whose meaning would change.
 //
 // **The map is submitted whole or not at all**, like a mesh: size the capacity
 // with `scg_world_triangle_count` before creating the context.
@@ -1048,6 +1090,41 @@ int32_t scg_submit_world(struct ScgContext *ctx,
                          const struct ScgWorld *world,
                          const struct ScgTexture *const *textures,
                          uint32_t texture_count);
+
+// Submits only what the camera sees of a map, from the cell it stands in.
+//
+// `textures` works exactly as in `scg_submit_world`. `cell_id` is the stable
+// identifier of the camera's cell, never an index.
+//
+// **Traversal decides first, submission follows.** Each retained cell is
+// submitted **once**, in file order — the order that settles two coplanar
+// surfaces — so the total stays within `scg_world_triangle_count`, which remains
+// a valid way to size the context.
+//
+// **Returns a positive status, not only `SCG_OK`.** Judge the result by the sign
+// of the code: `SCG_STATUS_INCOMPLETE` when traversal hit `SCG_TRAVERSAL_DEPTH`
+// or `SCG_TRAVERSAL_CELLS`, and `SCG_STATUS_NO_CELL` when `cell_id` is `0`,
+// which means "nowhere" and submits nothing. A host that tests `!= SCG_OK`
+// treats both as failures.
+//
+// An identifier that no cell carries is `SCG_ERR_UNKNOWN_RESOURCE` — the
+// difference between "the camera is nowhere", which happens while a level is
+// being edited, and "that cell does not exist", which is a fault in the call.
+//
+// `lighting` must be `NULL`: nothing produces such a handle yet.
+//
+// # Safety
+//
+// `ctx` must be null or a live handle, `model` must point to a readable
+// `ScgMat4`, `world` must be a live handle from `scg_world_load`, and `textures`
+// must cover `texture_count` entries, each null or a live texture handle.
+int32_t scg_submit_world_visible(struct ScgContext *ctx,
+                                 const struct ScgMat4 *model,
+                                 const struct ScgWorld *world,
+                                 const struct ScgTexture *const *textures,
+                                 uint32_t texture_count,
+                                 const struct ScgLighting *lighting,
+                                 uint32_t cell_id);
 
 // Writes the number of static lights the map carries to `out`.
 //

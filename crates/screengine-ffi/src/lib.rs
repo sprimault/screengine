@@ -30,7 +30,8 @@ use std::ptr;
 use std::sync::Arc;
 
 use screengine::{
-    Argument, Context, Error as CoreError, Mesh, Texture, Vec3, VertexUv, VertexUv2, World,
+    Argument, Context, Error as CoreError, Mesh, Texture, Vec3, VertexUv, VertexUv2, Visibility,
+    World,
 };
 
 use entry::AbiError;
@@ -45,10 +46,11 @@ pub use scene::{
 pub use status::{
     SCG_ERR_FAULTED, SCG_ERR_INVALID_ARGUMENT, SCG_ERR_INVALID_FORMAT, SCG_ERR_INVALID_STATE,
     SCG_ERR_NULL, SCG_ERR_OUT_OF_MEMORY, SCG_ERR_PANIC, SCG_ERR_POISONED, SCG_ERR_UNKNOWN_RESOURCE,
-    SCG_ERR_UNSUPPORTED_FORMAT_VERSION, SCG_OK,
+    SCG_ERR_UNSUPPORTED_FORMAT_VERSION, SCG_OK, SCG_STATUS_INCOMPLETE, SCG_STATUS_NO_CELL,
+    SCG_TRAVERSAL_CELLS, SCG_TRAVERSAL_DEPTH,
 };
 pub use texture::ScgTexture;
-pub use world::ScgWorld;
+pub use world::{ScgLighting, ScgWorld};
 
 /// ABI version this library implements.
 ///
@@ -1333,11 +1335,11 @@ pub unsafe extern "C" fn scg_world_triangle_count(world: *const ScgWorld, out: *
 /// `scg_world_material_count`. A null entry means "no texture" for that
 /// material. The array is read in place and never copied.
 ///
-/// **Every cell, no culling.** This is the raw path: portal traversal comes
-/// later and will replace it, which is also how it will be checked — a scene
-/// where everything is visible must render the same image either way. There is
-/// no starting cell, because a parameter that does nothing yet is a parameter
-/// whose meaning would change.
+/// **Every cell, no culling**, and it is not deprecated. Portal traversal is
+/// `scg_submit_world_visible`; this one stays as the path traversal is validated
+/// against — on a level where everything is visible, both must render the same
+/// image. It takes no starting cell, because a parameter that does nothing is a
+/// parameter whose meaning would change.
 ///
 /// **The map is submitted whole or not at all**, like a mesh: size the capacity
 /// with `scg_world_triangle_count` before creating the context.
@@ -1385,6 +1387,87 @@ pub unsafe extern "C" fn scg_submit_world(
                     .map(|texture| &texture.inner)
             })
             .map_err(AbiError::from)
+    };
+
+    // SAFETY: précondition de la fonction — `ctx` est nul ou un handle vivant.
+    unsafe { entry::with_context(ctx, submit) }
+}
+
+/// Submits only what the camera sees of a map, from the cell it stands in.
+///
+/// `textures` works exactly as in `scg_submit_world`. `cell_id` is the stable
+/// identifier of the camera's cell, never an index.
+///
+/// **Traversal decides first, submission follows.** Each retained cell is
+/// submitted **once**, in file order — the order that settles two coplanar
+/// surfaces — so the total stays within `scg_world_triangle_count`, which remains
+/// a valid way to size the context.
+///
+/// **Returns a positive status, not only `SCG_OK`.** Judge the result by the sign
+/// of the code: `SCG_STATUS_INCOMPLETE` when traversal hit `SCG_TRAVERSAL_DEPTH`
+/// or `SCG_TRAVERSAL_CELLS`, and `SCG_STATUS_NO_CELL` when `cell_id` is `0`,
+/// which means "nowhere" and submits nothing. A host that tests `!= SCG_OK`
+/// treats both as failures.
+///
+/// An identifier that no cell carries is `SCG_ERR_UNKNOWN_RESOURCE` — the
+/// difference between "the camera is nowhere", which happens while a level is
+/// being edited, and "that cell does not exist", which is a fault in the call.
+///
+/// `lighting` must be `NULL`: nothing produces such a handle yet.
+///
+/// # Safety
+///
+/// `ctx` must be null or a live handle, `model` must point to a readable
+/// `ScgMat4`, `world` must be a live handle from `scg_world_load`, and `textures`
+/// must cover `texture_count` entries, each null or a live texture handle.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn scg_submit_world_visible(
+    ctx: *mut ScgContext,
+    model: *const ScgMat4,
+    world: *const ScgWorld,
+    textures: *const *const ScgTexture,
+    texture_count: u32,
+    lighting: *const ScgLighting,
+    cell_id: u32,
+) -> i32 {
+    let submit = |mut core: entry::Core<'_>| {
+        // SAFETY: précondition de la fonction — chaque pointeur est nul ou vise
+        // une valeur lisible.
+        let model = unsafe { model.as_ref() }.ok_or(AbiError::NULL)?;
+        let model = model.to_core()?;
+        // SAFETY: précondition de la fonction — `world` est un handle vivant.
+        let world = unsafe { world.as_ref() }.ok_or(AbiError::NULL)?;
+        // Rien ne produit encore ce handle : toute valeur non nulle est donc
+        // forcément invalide, et la refuser vaut mieux que la déréférencer.
+        if !lighting.is_null() {
+            return Err(AbiError::LIGHTING);
+        }
+        if textures.is_null() && texture_count != 0 {
+            return Err(AbiError::NULL);
+        }
+        if texture_count != world.inner.material_count() {
+            return Err(AbiError::TEXTURE_COUNT);
+        }
+        // SAFETY: précondition de la fonction — le tableau couvre son nombre
+        // d'éléments, le cas vide étant traité par `slice_of`.
+        let slots = unsafe { slice_of(textures, texture_count) };
+
+        let seen = core
+            .exclusive()?
+            .submit_world_visible(model, &world.inner, cell_id, |material| {
+                // SAFETY: mêmes préconditions que `scg_submit_world`.
+                slots
+                    .get(material as usize)
+                    .and_then(|handle| unsafe { handle.as_ref() })
+                    .map(|texture| &texture.inner)
+            })
+            .map_err(AbiError::from)?;
+
+        Ok(match seen {
+            Visibility::Complete => status::SCG_OK,
+            Visibility::Incomplete => status::SCG_STATUS_INCOMPLETE,
+            Visibility::NoCell => status::SCG_STATUS_NO_CELL,
+        })
     };
 
     // SAFETY: précondition de la fonction — `ctx` est nul ou un handle vivant.

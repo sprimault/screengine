@@ -63,6 +63,11 @@ critère est `code < 0`, et un statut inconnu se traite comme `SCG_OK`.
   borné par le nombre de triangles de la carte. Une cellule inconnue est refusée ;
   aucune cellule de départ est une clause, pas une erreur. **Sur un décor où tout
   est visible, la traversée rend la même image que le chemin brut**, qui reste.
+- **`scg_submit_world_visible` expose la traversée**, avec les deux bornes
+  `SCG_TRAVERSAL_DEPTH` et `SCG_TRAVERSAL_CELLS` que l'image ne peut pas dépasser.
+  Son paramètre de lightmaps n'accepte que `NULL` : il existe dès maintenant pour
+  que la signature ne change jamais. `scg_submit_world` reste et n'est pas
+  dépréciée — c'est le chemin contre lequel la traversée se valide.
 
 ### Modifié
 - Le chargement d'une carte vérifie cinq propriétés du repère de lightmap de

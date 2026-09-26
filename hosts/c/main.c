@@ -399,7 +399,7 @@ static void check_resize(uint64_t expected)
 
     config.width = 1;
     config.height = 1;
-    if (pixels == NULL || scg_create(&config, &ctx) != SCG_OK) {
+    if (pixels == NULL || scg_create(&config, &ctx) < 0) {
         check(0, "création du contexte redimensionnable");
         free(pixels);
         return;
@@ -449,7 +449,7 @@ static uint64_t render(int *ok)
     uint64_t hash = 0;
 
     *ok = 0;
-    if (block == NULL || scg_create(&config, &ctx) != SCG_OK) {
+    if (block == NULL || scg_create(&config, &ctx) < 0) {
         check(0, "création du contexte de rendu");
         free(block);
         return 0;
@@ -500,7 +500,7 @@ static void check_tiles(uint64_t expected)
     uint8_t *pixels = malloc((size_t)STRIDE * HEIGHT * 4);
     uint32_t count = 0;
 
-    if (pixels == NULL || scg_create(&config, &ctx) != SCG_OK) {
+    if (pixels == NULL || scg_create(&config, &ctx) < 0) {
         check(0, "création du contexte des tuiles");
         free(pixels);
         return;

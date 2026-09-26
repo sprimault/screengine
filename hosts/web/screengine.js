@@ -45,8 +45,26 @@ export const SCG_ERR_FAULTED = -6;
 /** Ancien nom de `SCG_ERR_FAULTED`, gardé comme dans le header. */
 export const SCG_ERR_POISONED = -6;
 
-/** Recherche par identifiant stable qui ne trouve rien. Aucun appel ne le rend encore. */
+/** Recherche par identifiant stable qui ne trouve rien : la cellule de départ d'une traversée. */
 export const SCG_ERR_UNKNOWN_RESOURCE = -100;
+
+/**
+ * Succès, et la traversée s'est arrêtée à une de ses bornes.
+ *
+ * **Un code positif est un succès.** Juger un appel par son signe, jamais par
+ * « différent de `SCG_OK` » : un statut inconnu se traite comme un succès, parce
+ * que l'ignorer est toujours correct.
+ */
+export const SCG_STATUS_INCOMPLETE = 1;
+
+/** Succès, et aucune cellule n'a été donnée : rien n'a été soumis. */
+export const SCG_STATUS_NO_CELL = 2;
+
+/** Profondeur à laquelle la traversée suit une ligne de vue. */
+export const SCG_TRAVERSAL_DEPTH = 64;
+
+/** Nombre de cellules qu'une image peut retenir. */
+export const SCG_TRAVERSAL_CELLS = 4096;
 
 /** Le bloc n'est pas un fichier de données lisible : la faute est dans le contenu. */
 export const SCG_ERR_INVALID_FORMAT = -101;
@@ -118,6 +136,7 @@ export const EXPORTS = [
   "scg_world_entity_class",
   "scg_world_entity_data",
   "scg_submit_world",
+  "scg_submit_world_visible",
 ];
 
 /** Taille de `ScgContextConfig`, celle qu'affirme le header. */

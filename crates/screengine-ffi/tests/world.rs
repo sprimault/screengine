@@ -224,6 +224,118 @@ fn soumet_une_carte() {
     }
 }
 
+/// Une traversée se lance à travers la frontière et rend un succès.
+///
+/// La carte n'a qu'une cellule et aucun portail : la traversée la soumet entière,
+/// sans atteindre aucune de ses bornes.
+#[test]
+fn soumet_ce_qu_une_cellule_laisse_voir() {
+    let mut ctx = ptr::null_mut();
+    let config = config();
+    // SAFETY: les deux pointeurs visent des valeurs locales vivantes.
+    assert_eq!(unsafe { scg_create(&config, &mut ctx) }, SCG_OK);
+
+    let world = load(&one_cell_world());
+    let slots: [*const ScgTexture; 2] = [ptr::null(), ptr::null()];
+    let model = identity();
+    // SAFETY: contexte et carte vivants, matrice et tableau locaux, compte des
+    // matériaux exact, et pas de handle de lightmaps.
+    let code =
+        unsafe { scg_submit_world_visible(ctx, &model, world, slots.as_ptr(), 2, ptr::null(), 7) };
+    assert_eq!(code, SCG_OK, "traversée refusée : {}", context_error(ctx));
+
+    // SAFETY: handles vivants, détruits une seule fois.
+    unsafe {
+        scg_world_destroy(world);
+        scg_destroy(ctx);
+    }
+}
+
+/// Sans cellule de départ, la traversée rend un statut et ne soumet rien.
+///
+/// **Un code positif est un succès**, et c'est le premier du projet à franchir la
+/// frontière : une liaison qui jugerait par « différent de `SCG_OK` » y verrait un
+/// échec.
+#[test]
+fn sans_cellule_la_traversee_rend_un_statut() {
+    let mut ctx = ptr::null_mut();
+    let config = config();
+    // SAFETY: les deux pointeurs visent des valeurs locales vivantes.
+    assert_eq!(unsafe { scg_create(&config, &mut ctx) }, SCG_OK);
+
+    let world = load(&one_cell_world());
+    let slots: [*const ScgTexture; 2] = [ptr::null(), ptr::null()];
+    let model = identity();
+    // SAFETY: mêmes préconditions ; seule la cellule est nulle.
+    let code =
+        unsafe { scg_submit_world_visible(ctx, &model, world, slots.as_ptr(), 2, ptr::null(), 0) };
+    assert_eq!(code, SCG_STATUS_NO_CELL);
+    assert!(code > 0, "un statut est un succès, pas un échec");
+
+    // SAFETY: handles vivants, détruits une seule fois.
+    unsafe {
+        scg_world_destroy(world);
+        scg_destroy(ctx);
+    }
+}
+
+/// Une cellule que la carte ne porte pas est refusée.
+///
+/// C'est le premier appel de tout le projet à rendre ce code, réservé depuis
+/// l'étape des formats sans qu'aucune fonction ne le produise.
+#[test]
+fn une_cellule_inconnue_est_refusee() {
+    let mut ctx = ptr::null_mut();
+    let config = config();
+    // SAFETY: les deux pointeurs visent des valeurs locales vivantes.
+    assert_eq!(unsafe { scg_create(&config, &mut ctx) }, SCG_OK);
+
+    let world = load(&one_cell_world());
+    let slots: [*const ScgTexture; 2] = [ptr::null(), ptr::null()];
+    let model = identity();
+    // SAFETY: mêmes préconditions ; seul l'identifiant ne désigne rien.
+    let code =
+        unsafe { scg_submit_world_visible(ctx, &model, world, slots.as_ptr(), 2, ptr::null(), 99) };
+    assert_eq!(code, SCG_ERR_UNKNOWN_RESOURCE);
+    assert!(context_error(ctx).contains("unknown identifier"));
+
+    // SAFETY: handles vivants, détruits une seule fois.
+    unsafe {
+        scg_world_destroy(world);
+        scg_destroy(ctx);
+    }
+}
+
+/// Un handle de lightmaps est refusé tant que rien n'en produit.
+///
+/// Le paramètre existe dès la première version pour que la signature ne change
+/// jamais ; toute valeur non nulle est donc forcément invalide, et la refuser vaut
+/// mieux que la déréférencer.
+#[test]
+fn un_handle_de_lightmaps_est_refuse() {
+    let mut ctx = ptr::null_mut();
+    let config = config();
+    // SAFETY: les deux pointeurs visent des valeurs locales vivantes.
+    assert_eq!(unsafe { scg_create(&config, &mut ctx) }, SCG_OK);
+
+    let world = load(&one_cell_world());
+    let slots: [*const ScgTexture; 2] = [ptr::null(), ptr::null()];
+    let model = identity();
+    // Une adresse que rien n'a produite : le contrôle tombe avant tout accès.
+    let lighting = 8usize as *const ScgLighting;
+    // SAFETY: mêmes préconditions ; `lighting` n'est jamais déréférencé.
+    let code =
+        unsafe { scg_submit_world_visible(ctx, &model, world, slots.as_ptr(), 2, lighting, 7) };
+    assert_eq!(code, SCG_ERR_INVALID_ARGUMENT);
+    assert!(context_error(ctx).contains("lighting must be null"));
+
+    // SAFETY: handles vivants, détruits une seule fois.
+    unsafe {
+        scg_world_destroy(world);
+        scg_destroy(ctx);
+    }
+}
+
 /// Un compte de textures qui n'est pas celui des matériaux est refusé.
 #[test]
 fn refuse_un_compte_de_textures_qui_n_est_pas_celui_des_materiaux() {

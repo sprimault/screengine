@@ -192,7 +192,7 @@ function renderTextured(engine, filter) {
   const texture = engine.readU32(out);
 
   engine.writeConfig(config, sceneConfig());
-  if (loaded !== scg.SCG_OK || e.scg_create(config, out) !== scg.SCG_OK) {
+  if (loaded < 0 || e.scg_create(config, out) < 0) {
     check(false, "création du contexte texturé");
     return null;
   }
@@ -257,7 +257,7 @@ function renderGraded(engine) {
   const texture = engine.readU32(out);
 
   engine.writeConfig(config, sceneConfig());
-  if (loaded !== scg.SCG_OK || e.scg_create(config, out) !== scg.SCG_OK) {
+  if (loaded < 0 || e.scg_create(config, out) < 0) {
     check(false, "création du contexte étalonné");
     return null;
   }
@@ -339,7 +339,7 @@ function renderLights(engine) {
   const out = engine.alloc(4);
   const config = engine.alloc(scg.CONFIG_SIZE);
   engine.writeConfig(config, sceneConfig());
-  if (e.scg_create(config, out) !== scg.SCG_OK) {
+  if (e.scg_create(config, out) < 0) {
     check(false, "création du contexte éclairé");
     return null;
   }
@@ -393,7 +393,7 @@ function renderLights(engine) {
       },
     ];
     for (const surface of surfaces) {
-      if (submitted !== scg.SCG_OK) {
+      if (submitted < 0) {
         break;
       }
       const vertices = engine.alloc(4 * scg.VERTEX_SIZE);
@@ -456,7 +456,7 @@ function renderFog(engine) {
   const texture = engine.readU32(out);
 
   engine.writeConfig(config, sceneConfig());
-  if (loaded !== scg.SCG_OK || e.scg_create(config, out) !== scg.SCG_OK) {
+  if (loaded < 0 || e.scg_create(config, out) < 0) {
     check(false, "création du contexte embrumé");
     return null;
   }
@@ -595,9 +595,9 @@ function renderLit(engine, overbright) {
   const config = engine.alloc(scg.CONFIG_SIZE);
   engine.writeConfig(config, sceneConfig());
   if (
-    texLoaded !== scg.SCG_OK ||
-    lightLoaded !== scg.SCG_OK ||
-    e.scg_create(config, out) !== scg.SCG_OK
+    texLoaded < 0 ||
+    lightLoaded < 0 ||
+    e.scg_create(config, out) < 0
   ) {
     check(false, "création du contexte éclairé");
     return null;
@@ -944,7 +944,7 @@ function render(engine) {
   const out = engine.alloc(4);
 
   engine.writeConfig(config, sceneConfig());
-  if (block === 0 || e.scg_create(config, out) !== scg.SCG_OK) {
+  if (block === 0 || e.scg_create(config, out) < 0) {
     check(false, "création du contexte de rendu");
     return null;
   }
@@ -1006,7 +1006,7 @@ function checkResize(engine, expected) {
   const out = engine.alloc(4);
 
   engine.writeConfig(config, { ...sceneConfig(), width: 1, height: 1 });
-  if (pixels === 0 || e.scg_create(config, out) !== scg.SCG_OK) {
+  if (pixels === 0 || e.scg_create(config, out) < 0) {
     check(false, "création du contexte redimensionnable");
     return;
   }
@@ -1047,7 +1047,7 @@ function checkTiles(engine, expected) {
   const out = engine.alloc(4);
 
   engine.writeConfig(config, sceneConfig());
-  if (pixels === 0 || e.scg_create(config, out) !== scg.SCG_OK) {
+  if (pixels === 0 || e.scg_create(config, out) < 0) {
     check(false, "création du contexte des tuiles");
     return;
   }
@@ -1115,7 +1115,7 @@ function renderMesh(engine, meshBytes) {
 
   const loaded = e.scg_mesh_load(block, meshBytes.length, out);
   check(loaded === scg.SCG_OK, "le fichier de maillage se charge");
-  if (loaded !== scg.SCG_OK) {
+  if (loaded < 0) {
     return null;
   }
   const mesh = engine.readU32(out);
@@ -1164,7 +1164,7 @@ function renderMesh(engine, meshBytes) {
 
   const config = engine.alloc(scg.CONFIG_SIZE);
   engine.writeConfig(config, sceneConfig());
-  if (e.scg_create(config, out) !== scg.SCG_OK) {
+  if (e.scg_create(config, out) < 0) {
     check(false, "création du contexte du maillage");
     return null;
   }

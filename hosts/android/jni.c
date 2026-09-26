@@ -280,7 +280,7 @@ static jlong texture_load(JNIEnv *env, jclass cls, jint width, jint height, jbyt
         desc.width = (uint32_t)width;
         desc.height = (uint32_t)height;
         desc.format = SCG_TEXTURE_FORMAT_RGBA8;
-        if (scg_texture_load(&desc, block, (size_t)len, &texture) != SCG_OK) {
+        if (scg_texture_load(&desc, block, (size_t)len, &texture) < 0) {
             texture = NULL;
         }
     }
@@ -318,7 +318,7 @@ static jlong mesh_load(JNIEnv *env, jclass cls, jbyteArray bytes)
     ScgMesh *mesh = NULL;
     if (block != NULL) {
         (*env)->GetByteArrayRegion(env, bytes, 0, len, (jbyte *)block);
-        if (scg_mesh_load(block, (size_t)len, &mesh) != SCG_OK) {
+        if (scg_mesh_load(block, (size_t)len, &mesh) < 0) {
             mesh = NULL;
         }
     }
@@ -341,7 +341,7 @@ static jint mesh_triangle_count(JNIEnv *env, jclass cls, jlong mesh)
     (void)env;
     (void)cls;
     uint32_t count = 0;
-    if (scg_mesh_triangle_count((const ScgMesh *)(intptr_t)mesh, &count) != SCG_OK) {
+    if (scg_mesh_triangle_count((const ScgMesh *)(intptr_t)mesh, &count) < 0) {
         return -1;
     }
     return (jint)count;
@@ -353,7 +353,7 @@ static jint mesh_texture_count(JNIEnv *env, jclass cls, jlong mesh)
     (void)env;
     (void)cls;
     uint32_t count = 0;
-    if (scg_mesh_texture_count((const ScgMesh *)(intptr_t)mesh, &count) != SCG_OK) {
+    if (scg_mesh_texture_count((const ScgMesh *)(intptr_t)mesh, &count) < 0) {
         return -1;
     }
     return (jint)count;
@@ -372,7 +372,7 @@ static jstring mesh_texture_name(JNIEnv *env, jclass cls, jlong mesh, jint slot)
     (void)cls;
     const ScgMesh *handle = (const ScgMesh *)(intptr_t)mesh;
     size_t len = 0;
-    if (scg_mesh_texture_name(handle, (uint32_t)slot, NULL, 0, &len) != SCG_OK) {
+    if (scg_mesh_texture_name(handle, (uint32_t)slot, NULL, 0, &len) < 0) {
         return NULL;
     }
     char *buffer = calloc(len + 1, 1);
@@ -438,7 +438,7 @@ static jlong world_load(JNIEnv *env, jclass cls, jbyteArray bytes)
     ScgWorld *world = NULL;
     if (block != NULL) {
         (*env)->GetByteArrayRegion(env, bytes, 0, len, (jbyte *)block);
-        if (scg_world_load(block, (size_t)len, &world) != SCG_OK) {
+        if (scg_world_load(block, (size_t)len, &world) < 0) {
             world = NULL;
         }
     }
@@ -460,7 +460,7 @@ static jint world_material_count(JNIEnv *env, jclass cls, jlong world)
     (void)env;
     (void)cls;
     uint32_t count = 0;
-    if (scg_world_material_count((const ScgWorld *)(intptr_t)world, &count) != SCG_OK) {
+    if (scg_world_material_count((const ScgWorld *)(intptr_t)world, &count) < 0) {
         return -1;
     }
     return (jint)count;
@@ -476,7 +476,7 @@ static jstring world_material_name(JNIEnv *env, jclass cls, jlong world, jint ra
     (void)cls;
     const ScgWorld *handle = (const ScgWorld *)(intptr_t)world;
     size_t len = 0;
-    if (scg_world_material_name(handle, (uint32_t)rank, NULL, 0, &len) != SCG_OK) {
+    if (scg_world_material_name(handle, (uint32_t)rank, NULL, 0, &len) < 0) {
         return NULL;
     }
     char *buffer = calloc(len + 1, 1);
