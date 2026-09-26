@@ -139,7 +139,26 @@ const _: () = assert!(size_of::<Prepared>() == 128);
 /// Une sentinelle plutôt qu'un `Option<u16>` : celui-ci ferait quatre octets
 /// là où deux suffisent, et le test se fait une fois par triangle, hors de la
 /// boucle de pixels.
-pub const NO_TEXTURE: u16 = u16::MAX;
+///
+/// Quinze bits et non seize : le seizième porte [`MODULATED`], et les deux
+/// notions cohabitent dans le même champ faute d'un octet libre dans
+/// [`Prepared`], plein à ses deux lignes de cache.
+pub const NO_TEXTURE: u16 = 0x7FFF;
+
+/// Le bit qui dit qu'un triangle **multiplie** le tampon au lieu de l'écraser.
+///
+/// **Dans l'index de texture, et c'est un arbitrage.** Le triangle préparé est
+/// plein : l'élargir ferait payer ce volume à la passe de répartition, qui
+/// parcourt le tableau deux fois par image sans jamais lire ces octets, donc à
+/// toutes les scènes — y compris celles qui ne modulent rien. Le loger dans la
+/// sentinelle d'éclairage était l'autre voie gratuite, mais elle interdisait
+/// pour toujours une surface modulée qui serait elle-même éclairée.
+///
+/// Ce qu'il coûte : le plafond de la table de textures passe à
+/// [`NO_TEXTURE`] entrées. C'est exactement la borne d'avant le doublement de
+/// la table, où elle ne gênait personne — et elle reste le double de ce qu'une
+/// image peut atteindre en textures distinctes.
+pub const MODULATED: u16 = 0x8000;
 
 /// La place que porte un triangle sans éclairage.
 pub const NO_LIGHTING: u16 = u16::MAX;
@@ -312,8 +331,16 @@ impl Prepared {
     }
 
     /// L'index de sa texture dans la table de l'image, ou [`NO_TEXTURE`].
+    ///
+    /// Le bit de modulation est retiré : un appelant qui indexerait la table
+    /// avec le champ brut sortirait de ses bornes sur un triangle modulé.
     pub fn texture(&self) -> u16 {
-        self.texture
+        self.texture & !MODULATED
+    }
+
+    /// Vrai si ce triangle multiplie le tampon au lieu de l'écraser.
+    pub fn modulated(&self) -> bool {
+        self.texture & MODULATED != 0
     }
 
     /// La place de ses plans d'éclairage dans le tableau annexe de l'image, ou
@@ -651,12 +678,22 @@ pub fn fill<T: Target>(
             // façon, et rien ne justifierait une seconde boucle pour cela.
             if sampling.is_none() && lit.is_none() {
                 let mut depth = plane.at(ex(lo), ey);
+                // Le chemin rapide a sa propre boucle, et la modulation doit
+                // donc y être traitée aussi : une tache unie passe par ici, et
+                // c'est même le cas le plus courant — une ombre au sol n'a pas
+                // de texture. L'oubli ne se voyait pas à la compilation, la
+                // tache étant simplement peinte comme une surface ordinaire.
+                let modulated = triangle.modulated();
                 for x in lo..=hi {
                     // En un pixel couvert, la valeur tient dans [0, 2³²) : les
                     // sommets sont bornés par `to_depth` avec une marge qui
                     // couvre l'arrondi des gradients.
                     let z = (depth >> GRADIENT_BITS) as u32;
-                    if target.test(x, y, z) {
+                    if modulated {
+                        if target.test_modulated(x, y, z) {
+                            target.modulate(x, y, color);
+                        }
+                    } else if target.test(x, y, z) {
                         target.write(x, y, z, color);
                     }
                     depth = depth.wrapping_add(depth_x);
@@ -798,6 +835,7 @@ fn fill_segment<T: Target>(
         triangle,
         y,
         draw,
+        modulated: triangle.modulated(),
     };
     match texels {
         Some((sampling, texel)) => match sampling.filter {
@@ -949,6 +987,14 @@ struct Walk<'a, T: Target> {
     triangle: &'a Prepared,
     y: i32,
     draw: (i32, i32),
+    /// Le triangle multiplie le tampon au lieu de l'écraser.
+    ///
+    /// Un champ et non un paramètre de type, à l'inverse du filtrage et du
+    /// masquage : il se lit **une fois par segment**, hors de la boucle de
+    /// pixels, là où ceux-là se lisaient par pixel. Le porter dans le type
+    /// doublerait les instanciations de chaque ombrage pour un cas rare — une
+    /// poignée de taches d'ombre dans une image de décor.
+    modulated: bool,
 }
 
 impl<T: Target> Walk<'_, T> {
@@ -962,6 +1008,25 @@ impl<T: Target> Walk<'_, T> {
         let ex = |x: i32| (x * SUBPIXEL_SCALE + PIXEL_CENTER - self.triangle.ref_x) as i64;
         let mut depth = self.triangle.depth.at(ex(self.draw.0), ey);
         let depth_x = self.triangle.depth.step_x(SUBPIXEL_SCALE);
+
+        // Deux boucles, et le choix se fait ici : une surface modulée teste sa
+        // profondeur sans la réécrire, et son test n'est pas strict. Écrire ce
+        // choix dans la boucle le ferait examiner à chaque pixel, ce que le
+        // remplissage refuse partout ailleurs pour la même raison.
+        if self.modulated {
+            for x in self.draw.0..=self.draw.1 {
+                let z = (depth >> GRADIENT_BITS) as u32;
+                if self.target.test_modulated(x, self.y, z) {
+                    let color = shade.pixel(x, self.y);
+                    if !S::MASKED || (color >> 24) >= ALPHA_THRESHOLD {
+                        self.target.modulate(x, self.y, color);
+                    }
+                }
+                depth = depth.wrapping_add(depth_x);
+                shade.step();
+            }
+            return;
+        }
 
         for x in self.draw.0..=self.draw.1 {
             let z = (depth >> GRADIENT_BITS) as u32;

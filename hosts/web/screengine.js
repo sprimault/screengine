@@ -92,6 +92,18 @@ export const SCG_TEXTURE_FORMAT_RGBA8 = 1;
 export const SCG_TEXTURE_FORMAT_RGBA8_MASKED = 2;
 
 /**
+ * Multiplier le tampon au lieu de l'écraser.
+ *
+ * Un et non zéro, et c'est la règle de **tout** mode passé à une soumission :
+ * un mode est une description, comme le format de texture, et non un réglage de
+ * contexte comme le filtrage. Zéro ne vaut défaut que pour les seconds.
+ *
+ * 255 est le neutre, comme pour une lightmap : une surface modulée assombrit ou
+ * ne fait rien, et n'éclaircit jamais.
+ */
+export const SCG_BLEND_MODULATE = 1;
+
+/**
  * Le tramage ordonné des coordonnées, filtrage par défaut.
  *
  * Zéro, à l'inverse du format de texture : un contexte qu'on ne configure pas
@@ -118,6 +130,7 @@ export const EXPORTS = [
   "scg_texture_load",
   "scg_texture_destroy",
   "scg_submit_textured",
+  "scg_submit_blended",
   "scg_submit_lit",
   "scg_set_resolution",
   "scg_set_grade",

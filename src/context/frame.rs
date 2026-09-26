@@ -134,6 +134,20 @@ impl Target for Scratch<'_> {
         self.depth[i] = z;
         self.color[i] = color;
     }
+
+    fn test_modulated(&mut self, x: i32, y: i32, z: u32) -> bool {
+        // Non strict, à l'inverse de `test` : une tache coplanaire avec la
+        // surface qu'elle marque doit gagner, et c'est l'ordre de soumission
+        // qui la départage — le décor d'abord, sa tache ensuite.
+        z >= self.depth[self.index(x, y)]
+    }
+
+    fn modulate(&mut self, x: i32, y: i32, factor: u32) {
+        let i = self.index(x, y);
+        // Sur-éclairement nul, et ce n'est pas celui du contexte : une tache
+        // assombrit ou ne fait rien, elle n'éclaircit jamais.
+        self.color[i] = light::modulate(self.color[i], factor, 0);
+    }
 }
 
 /// Le bit de poids fort de `in_flight` : une tuile n'est pas revenue de son

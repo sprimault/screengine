@@ -383,6 +383,17 @@ pub const SCG_TEXTURE_FORMAT_RGBA8: u32 = 1;
 /// would mean keeping two chains, or keeping one that is wrong.
 pub const SCG_TEXTURE_FORMAT_RGBA8_MASKED: u32 = 2;
 
+/// Multiply what is already in the buffer instead of overwriting it.
+///
+/// One, never zero, and this is the rule for **every** mode passed to a
+/// submission: such a mode is a description, like a texture format, not a
+/// context setting like the filter. Zero means default only for the latter, and
+/// a description left zeroed is refused rather than interpreted.
+///
+/// 255 is the neutral value, as it is for a lightmap: a modulated surface
+/// darkens or does nothing, and never brightens.
+pub const SCG_BLEND_MODULATE: u32 = 1;
+
 /// Ordered dithering of texture coordinates: the default filter.
 ///
 /// Zero, unlike `SCG_TEXTURE_FORMAT_RGBA8`, and for the opposite reason: a

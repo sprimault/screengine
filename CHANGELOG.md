@@ -47,6 +47,16 @@ publié, et explique les conventions du dépôt à qui y contribue.
 ## [Non publié]
 
 ### Ajouté
+- `scg_submit_blended` et `SCG_BLEND_MODULATE` : une surface qui **multiplie**
+  le tampon au lieu de l'écraser, 255 étant le neutre — elle assombrit ou ne
+  fait rien, jamais l'inverse. Elle teste la profondeur sans l'écrire et son
+  test n'est pas strict, ce qui laisse une tache coplanaire gagner sur la
+  surface qu'elle marque : le décor se soumet avant ses taches, et cet ordre
+  était déjà contractuel. Le cas d'usage est l'ombre d'un objet mobile, dont le
+  jeu décide la place. `SCG_ABI_VERSION` reste à 1.
+- **Un mode passé à une soumission commence à 1, et zéro y est refusé** — jamais
+  rabattu sur un défaut. Zéro ne vaut défaut que pour un réglage de contexte,
+  comme le filtrage ; un mode est une description, comme le format de texture.
 - `SCG_TEXTURE_FORMAT_RGBA8_MASKED` : une texture à transparence binaire, dont
   l'alpha décide. Un texel transparent n'écrit ni couleur ni profondeur, si bien
   que deux surfaces masquées qui se croisent se résolvent par la profondeur, dans
@@ -75,6 +85,16 @@ publié, et explique les conventions du dépôt à qui y contribue.
 ***
 
 ### Added
+- `scg_submit_blended` and `SCG_BLEND_MODULATE`: a surface that **multiplies**
+  the buffer instead of overwriting it, with 255 as the neutral value — it
+  darkens or does nothing, never the reverse. It tests depth without writing it
+  and its test is not strict, which lets a coplanar stain win over the surface it
+  marks: submit the scenery before its stains, an ordering that was already
+  contractual. The use case is the shadow of a moving object, whose placement the
+  game decides. `SCG_ABI_VERSION` stays at 1.
+- **A mode passed to a submission starts at 1, and zero is refused there** —
+  never silently mapped onto a default. Zero means default only for a context
+  setting, such as the filter; a mode is a description, like a texture format.
 - `SCG_TEXTURE_FORMAT_RGBA8_MASKED`: a texture with binary transparency, where
   the alpha byte decides. A transparent texel writes neither colour nor depth, so
   two masked surfaces crossing each other resolve by depth alone, in any

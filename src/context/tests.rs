@@ -1387,6 +1387,57 @@ fn un_lot_eclaire_prend_deux_entrees_de_la_table() {
     assert_eq!(ctx.textures.len(), 4, "deux entrées par lot éclairé");
 }
 
+/// Une tache modulée coplanaire gagne sur la surface qu'elle marque, et **ne
+/// laisse pas sa profondeur derrière elle**.
+///
+/// Les deux moitiés se règlent séparément et chacune a sa raison. Le test non
+/// strict, parce qu'une tache d'ombre est dans le plan du sol : le test strict
+/// la perdrait à égalité. L'absence d'écriture, parce qu'une surface modulée
+/// n'occulte rien — si elle inscrivait sa profondeur, deux taches superposées
+/// ne se multiplieraient plus qu'une fois, dans un ordre qui dépendrait de la
+/// répartition en tuiles, donc l'image dépendrait de la taille des tuiles.
+#[test]
+fn une_tache_modulee_gagne_sans_laisser_sa_profondeur() {
+    let mut ctx = small();
+    let mut pixels = vec![0u8; 64 * 64 * BYTES_PER_PIXEL];
+
+    // Un sol blanc, puis deux taches grises exactement au même endroit. La
+    // seconde ne se voit que si la première n'a pas inscrit sa profondeur.
+    let sol = [Triangle {
+        indices: [0, 1, 2],
+        color: Color::new(0xFF, 0xFF, 0xFF, 0xFF),
+    }];
+    let tache = [Triangle {
+        indices: [0, 1, 2],
+        color: Color::new(0x80, 0x80, 0x80, 0xFF),
+    }];
+
+    let peint = |ctx: &mut Context, pixels: &mut [u8], taches: usize| {
+        ctx.submit(Affine3::IDENTITY, &ahead(), &sol).expect("sol");
+        for _ in 0..taches {
+            ctx.submit_blended(Affine3::IDENTITY, &ahead_uv(0.0, 0.0), &tache, None)
+                .expect("tache");
+        }
+        ctx.frame_end(pixels, 64).expect("image rendue");
+        pixels
+            .chunks_exact(BYTES_PER_PIXEL)
+            .find(|p| p[3] == 0xFF && p[0] != 0)
+            .map(|p| p[0])
+            .expect("aucun pixel peint")
+    };
+
+    let une = peint(&mut ctx, &mut pixels, 1);
+    let deux = peint(&mut ctx, &mut pixels, 2);
+    let sans = peint(&mut ctx, &mut pixels, 0);
+
+    assert_eq!(sans, 0xFF, "le sol seul");
+    assert!(une < sans, "la tache coplanaire n'a pas gagné : {une}");
+    assert!(
+        deux < une,
+        "la seconde tache n'a rien fait : la première a inscrit sa profondeur"
+    );
+}
+
 /// La table pleine refuse le lot, et c'est le seul refus qui tombe avant qu'un
 /// triangle ait été préparé : la texture s'enregistre avant que le lot soit
 /// posé.

@@ -41,7 +41,7 @@ use output::HostRows;
 pub use context::{ScgContext, ScgContextConfig};
 pub use mesh::ScgMesh;
 pub use scene::{
-    SCG_FILTER_BILINEAR, SCG_FILTER_DITHER, SCG_TEXTURE_FORMAT_RGBA8,
+    SCG_BLEND_MODULATE, SCG_FILTER_BILINEAR, SCG_FILTER_DITHER, SCG_TEXTURE_FORMAT_RGBA8,
     SCG_TEXTURE_FORMAT_RGBA8_MASKED, ScgCamera, ScgGrade, ScgLight, ScgMat4, ScgTextureDesc,
     ScgTriangle, ScgVertex, ScgVertexUv, ScgVertexUv2,
 };
@@ -855,6 +855,85 @@ pub unsafe extern "C" fn scg_submit_textured(
         scene::check_finite_uv(vertices)?;
         core.exclusive()?
             .submit_each_uv(model, triangles.len(), Some(&texture.inner), |i| {
+                let triangle = triangles[i];
+                let mut corners = [VertexUv::untextured(Vec3::ZERO); 3];
+                for (corner, index) in
+                    corners
+                        .iter_mut()
+                        .zip([triangle.i0, triangle.i1, triangle.i2])
+                {
+                    *corner = vertices
+                        .get(index as usize)
+                        .ok_or(CoreError::InvalidArgument(Argument::VertexIndex))?
+                        .to_core();
+                }
+                Ok((corners, triangle.color()))
+            })
+            .map_err(AbiError::from)
+    };
+
+    // SAFETY: précondition de la fonction — `ctx` est nul ou un handle vivant.
+    unsafe { entry::with_context(ctx, submit) }
+}
+
+/// Submits a batch of triangles that **multiply** the buffer instead of
+/// overwriting it.
+///
+/// Same contract as `scg_submit_textured`, with one difference that decides
+/// everything: 255 is the neutral value, as it is for a lightmap. A modulated
+/// surface darkens or does nothing — it never brightens.
+///
+/// **It tests depth without writing it, and the test is not strict.** The two
+/// halves are set separately and each has its reason. Not strict, because a
+/// stain is coplanar with the surface it marks and a strict test would lose it
+/// at equal depth. No write, because a modulated surface occludes nothing: were
+/// it to write depth, two stacked stains would multiply only once, in an order
+/// that depended on tile binning.
+///
+/// **Submit the scenery before its stains.** That is the only ordering the
+/// z-buffer does not remove for you, and it costs nothing new: submission order
+/// is already contractual, and already independent of tile size and thread
+/// count.
+///
+/// `texture` may be null, in which case each triangle's colour is the factor.
+/// `blend` must be `SCG_BLEND_MODULATE`; zero and any unknown value are
+/// refused, never silently mapped onto a default.
+///
+/// # Safety
+///
+/// Same preconditions as `scg_submit_textured`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn scg_submit_blended(
+    ctx: *mut ScgContext,
+    model: *const ScgMat4,
+    vertices: *const ScgVertexUv,
+    vertex_count: u32,
+    triangles: *const ScgTriangle,
+    triangle_count: u32,
+    texture: *const ScgTexture,
+    blend: u32,
+) -> i32 {
+    let submit = |mut core: entry::Core<'_>| {
+        if blend != SCG_BLEND_MODULATE {
+            return Err(AbiError::BLEND_MODE);
+        }
+        // SAFETY: précondition de la fonction — chaque pointeur est nul ou vise
+        // une valeur lisible.
+        let model = unsafe { model.as_ref() }.ok_or(AbiError::NULL)?;
+        let model = model.to_core()?;
+        // SAFETY: précondition de la fonction — `texture` est nul ou vivant.
+        let texture = unsafe { texture.as_ref() };
+        // SAFETY: précondition de la fonction — chaque pointeur couvre son
+        // nombre d'éléments.
+        let (vertices, triangles) = unsafe {
+            (
+                slice_of(vertices, vertex_count),
+                slice_of(triangles, triangle_count),
+            )
+        };
+        scene::check_finite_uv(vertices)?;
+        core.exclusive()?
+            .submit_each_blended(model, triangles.len(), texture.map(|t| &t.inner), |i| {
                 let triangle = triangles[i];
                 let mut corners = [VertexUv::untextured(Vec3::ZERO); 3];
                 for (corner, index) in

@@ -628,6 +628,26 @@ la création du contexte rend une erreur plutôt que de déborder en silence.
   la traversée. Les bornes verticales, elles, sont de purs bornages de boucle et
   se replieraient sans dommage : l'asymétrie est réelle et c'est pour cela qu'elle
   est écrite.
+- **Le mode d'une surface modulée voyage dans le bit de poids fort de son index
+  de texture**, et non dans un champ à lui. Le triangle préparé est plein à ses
+  deux lignes de cache : l'élargir ferait payer ce volume à la passe de
+  répartition, qui parcourt le tableau deux fois par image sans jamais lire ces
+  octets — donc à toutes les scènes, y compris celles qui ne modulent rien. Le
+  plafond de la table de textures tombe en conséquence à 32767 entrées, la borne
+  d'avant son doublement, et elle reste hors d'atteinte. Écartée : la sentinelle
+  d'éclairage, gratuite elle aussi, mais qui interdisait pour toujours une
+  surface modulée qui serait elle-même éclairée.
+
+  **Le remplissage a deux chemins, et tous deux doivent le traiter.** Le chemin
+  rapide des surfaces unies ne passe pas par le parcours de segments : une tache
+  d'ombre n'ayant pas de texture, c'est même celui qu'elle emprunte le plus
+  souvent. L'oublier ne casse aucune compilation — la tache est simplement
+  peinte comme une surface ordinaire, et écrase le sol au lieu de le multiplier.
+- **Le choix du mode se fait une fois par segment**, jamais par pixel : deux
+  boucles écrites côte à côte plutôt qu'un test dans la boucle. C'est la même
+  règle que pour le filtrage et le masquage, à ceci près que ceux-là sont portés
+  par le type : le porter aussi doublerait les instanciations de chaque ombrage
+  pour un cas rare, une poignée de taches dans une image de décor.
 - **Le niveau de mipmap se choisit par segment de 16 pixels**, sur la même grille,
   à partir de la dérivée entière des coordonnées de texture ; le logarithme se
   prend par `leading_zeros`.

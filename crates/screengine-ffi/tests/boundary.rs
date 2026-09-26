@@ -578,6 +578,79 @@ fn refuse_une_description_a_zero() {
     assert!(last_error(ptr::null()).contains("format"));
 }
 
+/// Un mode de mélange inconnu est refusé, **et zéro en fait partie**.
+///
+/// C'est la règle générale que l'étape écrit : zéro ne vaut défaut que pour un
+/// réglage de contexte, comme le filtrage. Un mode passé à une soumission est
+/// une description, et une description laissée à zéro se refuse plutôt que de
+/// s'interpréter — sans quoi un hôte qui oublie ce champ obtient une image
+/// rendue autrement qu'il ne croit, sans rien pour l'en avertir.
+#[test]
+fn refuse_un_mode_de_melange_inconnu() {
+    let ctx = create(&sane());
+    let model = ScgMat4 {
+        m: [
+            1.0, 0.0, 0.0, 0.0, //
+            0.0, 1.0, 0.0, 0.0, //
+            0.0, 0.0, 1.0, 0.0, //
+            0.0, 0.0, 0.0, 1.0,
+        ],
+    };
+    let sommets = [
+        ScgVertexUv {
+            x: 2.0,
+            y: 2.5,
+            z: 1.6,
+            u: 0.0,
+            v: 0.0,
+        },
+        ScgVertexUv {
+            x: 3.5,
+            y: -2.5,
+            z: 1.6,
+            u: 1.0,
+            v: 0.0,
+        },
+        ScgVertexUv {
+            x: 3.5,
+            y: -2.5,
+            z: -1.6,
+            u: 1.0,
+            v: 1.0,
+        },
+    ];
+    let faces = [ScgTriangle {
+        i0: 0,
+        i1: 1,
+        i2: 2,
+        r: 0x80,
+        g: 0x80,
+        b: 0x80,
+        a: 0xFF,
+    }];
+
+    for mode in [0, SCG_BLEND_MODULATE + 1, u32::MAX] {
+        // SAFETY: handle vivant, pointeurs locaux, comptes exacts.
+        let code = unsafe {
+            scg_submit_blended(
+                ctx,
+                &model,
+                sommets.as_ptr(),
+                sommets.len() as u32,
+                faces.as_ptr(),
+                faces.len() as u32,
+                ptr::null(),
+                mode,
+            )
+        };
+        assert_eq!(code, SCG_ERR_INVALID_ARGUMENT, "mode {mode}");
+        assert!(last_error(ctx).contains("blend"));
+    }
+
+    // SAFETY: handle vivant, détruit une seule fois.
+    unsafe { scg_destroy(ctx) };
+}
+
 /// Le format masqué se charge par la même fonction, sans entrée de plus.
 ///
 /// C'est tout ce qu'un hôte a à faire pour obtenir la transparence : la
