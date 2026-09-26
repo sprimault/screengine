@@ -79,15 +79,73 @@ pub(crate) fn name_bytes(text: &str) -> Vec<u8> {
     bytes
 }
 
-/// Un fichier de maillage bien formé, à partir de ses quatre sections.
+/// Une section de trames : le compte, puis les poses données telles quelles.
+pub(crate) fn frames_bytes(count: u32, poses: &[u8]) -> Vec<u8> {
+    let mut bytes = count.to_le_bytes().to_vec();
+    bytes.extend_from_slice(poses);
+    bytes
+}
+
+/// Une pose de sommet : sa position, puis sa normale.
+pub(crate) fn pose_bytes(position: [f32; 3], normal: [f32; 3]) -> Vec<u8> {
+    let mut bytes = Vec::new();
+    for value in position.into_iter().chain(normal) {
+        bytes.extend_from_slice(&value.to_le_bytes());
+    }
+    bytes
+}
+
+/// Un fichier de maillage bien formé, à partir de ses cinq sections.
 ///
 /// **La disposition est écrite ici une seconde fois**, à la main : en-tête de
 /// vingt octets, douze par entrée de table, sections par genre croissant. C'est
 /// ce qui fait rougir un désaccord entre l'écrivain et le lecteur, là où un
 /// fichier produit par le décodeur rendrait le test tautologique. Une section
 /// vide n'entre pas dans la table.
+/// Un fichier de maillage à partir de sommets écrits « x, y, z, u, v ».
+///
+/// **Les tests décrivent un sommet comme un point habillé**, et c'est leur
+/// intention ; le format, lui, sépare ce qui anime de ce qui n'anime pas. Le
+/// découpage est fait ici, une fois, plutôt que dans chacun des essais — et la
+/// disposition reste écrite une seconde fois, ce qui est tout ce que la
+/// doctrine demande.
+///
+/// La normale vaut `+Z` partout : aucune passe ne la lit à cette étape, et une
+/// normale nulle serait un vecteur sans direction, que le format refusera le
+/// jour où il la vérifiera.
 pub(crate) fn mesh_file(surf: &[u8], texn: &[u8], tris: &[u8], vtxs: &[u8]) -> Vec<u8> {
+    let mut poses = Vec::new();
+    let mut uvs = Vec::new();
+    for sommet in vtxs.chunks_exact(20) {
+        poses.extend_from_slice(&sommet[..12]);
+        poses.extend_from_slice(&pose_normal());
+        uvs.extend_from_slice(&sommet[12..]);
+    }
+    let frms = if vtxs.is_empty() {
+        Vec::new()
+    } else {
+        frames_bytes(1, &poses)
+    };
+    mesh_sections(&frms, surf, texn, tris, &uvs)
+}
+
+/// La normale que les fichiers de test portent, en octets.
+fn pose_normal() -> [u8; 12] {
+    let mut bytes = [0u8; 12];
+    bytes[8..].copy_from_slice(&1.0f32.to_le_bytes());
+    bytes
+}
+
+/// Le même, section par section, pour les essais qui les composent eux-mêmes.
+pub(crate) fn mesh_sections(
+    frms: &[u8],
+    surf: &[u8],
+    texn: &[u8],
+    tris: &[u8],
+    vtxs: &[u8],
+) -> Vec<u8> {
     let sections: Vec<([u8; 4], &[u8])> = [
+        (*b"FRMS", frms),
         (*b"SURF", surf),
         (*b"TEXN", texn),
         (*b"TRIS", tris),
@@ -103,7 +161,7 @@ pub(crate) fn mesh_file(surf: &[u8], texn: &[u8], tris: &[u8], vtxs: &[u8]) -> V
     let mut bytes = Vec::new();
     bytes.extend_from_slice(b"SCG\x1a");
     bytes.extend_from_slice(b"MESH");
-    bytes.extend_from_slice(&1u32.to_le_bytes());
+    bytes.extend_from_slice(&2u32.to_le_bytes());
     bytes.extend_from_slice(&(total as u32).to_le_bytes());
     bytes.extend_from_slice(&(sections.len() as u32).to_le_bytes());
 

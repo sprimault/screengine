@@ -1246,7 +1246,26 @@ pub unsafe extern "C" fn scg_mesh_triangle_count(mesh: *const ScgMesh, out: *mut
     unsafe { mesh_count(mesh, out, Mesh::triangle_count) }
 }
 
-/// Le corps commun des deux accesseurs scalaires d'un maillage.
+/// Writes the number of animation frames the mesh carries to `out`.
+///
+/// A static mesh returns 1: the format has one shape, not two, and a decoder
+/// with two paths is a decoder with two behaviours to keep in step.
+///
+/// It exists for the reason `scg_mesh_triangle_count` does — without it, the
+/// only way to know is to try — and a host needs it before submitting: frame
+/// indices beyond this count are refused.
+///
+/// # Safety
+///
+/// `mesh` must be a live handle from `scg_mesh_load`, and `out` must point to a
+/// writable `uint32_t`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn scg_mesh_frame_count(mesh: *const ScgMesh, out: *mut u32) -> i32 {
+    // SAFETY: mêmes préconditions que ci-dessus.
+    unsafe { mesh_count(mesh, out, Mesh::frame_count) }
+}
+
+/// Le corps commun des accesseurs scalaires d'un maillage.
 ///
 /// # Safety
 ///

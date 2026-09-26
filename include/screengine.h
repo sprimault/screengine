@@ -1091,6 +1091,21 @@ int32_t scg_mesh_texture_name(const struct ScgMesh *mesh,
 // writable `uint32_t`.
 int32_t scg_mesh_triangle_count(const struct ScgMesh *mesh, uint32_t *out);
 
+// Writes the number of animation frames the mesh carries to `out`.
+//
+// A static mesh returns 1: the format has one shape, not two, and a decoder
+// with two paths is a decoder with two behaviours to keep in step.
+//
+// It exists for the reason `scg_mesh_triangle_count` does — without it, the
+// only way to know is to try — and a host needs it before submitting: frame
+// indices beyond this count are refused.
+//
+// # Safety
+//
+// `mesh` must be a live handle from `scg_mesh_load`, and `out` must point to a
+// writable `uint32_t`.
+int32_t scg_mesh_frame_count(const struct ScgMesh *mesh, uint32_t *out);
+
 // Loads a map from a block of bytes.
 //
 // Same contract as `scg_mesh_load`, and deliberately so: two resources loaded

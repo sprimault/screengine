@@ -127,16 +127,26 @@ fn corners(face: &Face) -> [([f32; 3], (f32, f32)); 4] {
 pub fn bytes() -> Vec<u8> {
     let faces: Vec<&Face> = SIDES.iter().chain(CAPS.iter()).collect();
 
-    let mut vertices = Vec::new();
+    // Ce qui anime et ce qui n'anime pas vivent dans deux sections : les
+    // coordonnées de texture sont constantes sur toutes les trames, les poses
+    // changent. La caisse n'en a qu'une, et le décodeur n'a pas deux chemins.
+    let mut uvs = Vec::new();
+    let mut poses = Vec::new();
     let mut triangles = Vec::new();
     for (index, face) in faces.iter().enumerate() {
         let first = (index * 4) as u32;
         for (position, (u, v)) in corners(face) {
             for value in position {
-                f32_bytes(value, &mut vertices);
+                f32_bytes(value, &mut poses);
             }
-            f32_bytes(u, &mut vertices);
-            f32_bytes(v, &mut vertices);
+            // La normale de la face, la même pour ses quatre coins : une caisse
+            // a des arêtes vives, et c'est précisément ce qu'une normale
+            // dérivée des sommets voisins arrondirait.
+            for value in face.normal {
+                f32_bytes(value, &mut poses);
+            }
+            f32_bytes(u, &mut uvs);
+            f32_bytes(v, &mut uvs);
         }
 
         let tint = if index < SIDES.len() {
@@ -170,16 +180,22 @@ pub fn bytes() -> Vec<u8> {
         names.extend_from_slice(name.as_bytes());
     }
 
-    file(&groups, &names, &triangles, &vertices)
+    // Une seule trame, écrite en tête de sa section : la caisse ne s'anime pas,
+    // et un maillage statique est une animation d'une pose.
+    let mut frames = 1u32.to_le_bytes().to_vec();
+    frames.extend_from_slice(&poses);
+
+    file(&frames, &groups, &names, &triangles, &uvs)
 }
 
-/// Assemble un fichier de maillage à partir de ses quatre sections.
+/// Assemble un fichier de maillage à partir de ses cinq sections.
 ///
 /// En-tête de vingt octets — signature, genre, version, longueur totale, nombre
 /// de sections —, puis douze octets par entrée de table, puis les sections par
 /// genre croissant, pavant le fichier.
-fn file(surf: &[u8], texn: &[u8], tris: &[u8], vtxs: &[u8]) -> Vec<u8> {
+fn file(frms: &[u8], surf: &[u8], texn: &[u8], tris: &[u8], vtxs: &[u8]) -> Vec<u8> {
     let sections = [
+        (*b"FRMS", frms),
         (*b"SURF", surf),
         (*b"TEXN", texn),
         (*b"TRIS", tris),
@@ -191,7 +207,7 @@ fn file(surf: &[u8], texn: &[u8], tris: &[u8], vtxs: &[u8]) -> Vec<u8> {
     let mut bytes = Vec::new();
     bytes.extend_from_slice(b"SCG\x1a");
     bytes.extend_from_slice(b"MESH");
-    bytes.extend_from_slice(&1u32.to_le_bytes());
+    bytes.extend_from_slice(&2u32.to_le_bytes());
     bytes.extend_from_slice(&(total as u32).to_le_bytes());
     bytes.extend_from_slice(&(sections.len() as u32).to_le_bytes());
 

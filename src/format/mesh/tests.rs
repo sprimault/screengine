@@ -13,8 +13,8 @@ use alloc::vec::Vec;
 
 use super::*;
 use crate::testing::{
-    Rng, group_bytes as group, mesh_file as file, name_bytes as name, triangle_bytes as triangle,
-    vertex_bytes as vertex,
+    Rng, frames_bytes, group_bytes as group, mesh_file as file, mesh_sections as sections,
+    name_bytes as name, pose_bytes, triangle_bytes as triangle, vertex_bytes as vertex,
 };
 
 /// Quatre sommets, deux triangles, deux groupes, deux emplacements : le maillage
@@ -250,13 +250,18 @@ fn un_nom_qui_deborde_sa_section_est_refuse() {
 /// comme une troncature, sans contrôle qui lui soit propre.
 #[test]
 fn une_section_a_element_partiel_est_refusee() {
-    let vertices = vertex(0.0, 0.0, 0.0, 0.0, 0.0);
-    let partial = &vertices[..VERTEX_LEN - 1];
+    // Par sections, pour couper la section des coordonnées elle-même : le
+    // constructeur ordinaire décrit un sommet comme un point habillé, et
+    // découperait ce qu'on veut justement laisser incomplet.
+    let poses = pose_bytes([0.0; 3], [0.0, 0.0, 1.0]);
+    let uvs = vec![0u8; VERTEX_LEN - 1];
     assert_eq!(
-        Mesh::load(&file(&[], &[], &[], partial)).unwrap_err(),
+        Mesh::load(&sections(&frames_bytes(1, &poses), &[], &[], &[], &uvs)).unwrap_err(),
         refused(Malformation::Truncated),
-        "un sommet coupé"
+        "une coordonnée coupée"
     );
+
+    let vertices = vertex(0.0, 0.0, 0.0, 0.0, 0.0);
 
     let triangles = triangle(0, 0, 0, [0; 4]);
     let partial = &triangles[..TRIANGLE_LEN - 1];
