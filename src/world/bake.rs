@@ -203,7 +203,7 @@ fn point_of(cell: &Cell, surface: &Surface, i: usize) -> usize {
 /// statiques n'ont pas de champ de cellule, et un test d'appartenance à une
 /// cellule non convexe est un comptage de traversées — un calcul de plus à rendre
 /// déterministe pour un résultat que la boîte englobante donne gratuitement.
-fn retained(world: &World, cell: &Cell) -> Result<Vec<Light>> {
+pub(crate) fn retained(world: &World, cell: &Cell) -> Result<Vec<Light>> {
     let (low, high) = bounds_of(cell);
     let mut kept = reserved(0)?;
     for index in 0..world.light_count() {

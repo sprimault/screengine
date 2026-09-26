@@ -13,6 +13,7 @@
 
 pub(crate) mod atlas;
 pub(crate) mod bake;
+pub(crate) mod digest;
 pub(crate) mod lighting;
 pub(crate) mod locate;
 pub(crate) mod traversal;

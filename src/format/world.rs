@@ -178,6 +178,20 @@ impl Surface {
     pub(crate) fn skips_lightmap(&self) -> bool {
         self.flags & SURFACE_NO_LIGHTMAP != 0
     }
+
+    /// Son identifiant stable.
+    pub(crate) fn id(&self) -> u32 {
+        self.id
+    }
+
+    /// Ses drapeaux, tels que le fichier les porte.
+    ///
+    /// L'empreinte du cache les prend en entier plutôt que le seul bit qu'elle
+    /// sait lire : un drapeau ajouté plus tard qui changerait la cuisson périmerait
+    /// alors les entrées de lui-même, là où une lecture sélective l'oublierait.
+    pub(crate) fn flags(&self) -> u32 {
+        self.flags
+    }
 }
 
 /// L'étendue d'une surface dans son repère de lightmap, en luxels.
@@ -217,6 +231,13 @@ pub(crate) struct Portal {
     pub(crate) link: Option<(u32, u32)>,
 }
 
+impl Portal {
+    /// Son identifiant stable.
+    pub(crate) fn id(&self) -> u32 {
+        self.id
+    }
+}
+
 /// Une cellule : l'unité d'édition, un volume fermé quelconque.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct Cell {
@@ -236,6 +257,18 @@ pub(crate) struct Cell {
     pub(crate) surfaces: Vec<Surface>,
     /// Ses portails.
     pub(crate) portals: Vec<Portal>,
+}
+
+impl Cell {
+    /// Son identifiant stable.
+    pub(crate) fn id(&self) -> u32 {
+        self.id
+    }
+
+    /// Ses drapeaux, tels que le fichier les porte.
+    pub(crate) fn flags(&self) -> u32 {
+        self.flags
+    }
 }
 
 /// Une lumière statique du décor.
