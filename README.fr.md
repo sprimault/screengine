@@ -45,13 +45,14 @@ ces hôtes, écrit en Rust pour qui fait un jeu, et le moteur ignore son existen
 
 ## État
 
-**Étape 4 franchie, publiée en 0.4.0 : les données.** Deux formats de fichier
-versionnés — maillages et cartes —, chargés depuis un bloc d'octets que l'hôte
-lit : cellules non convexes, surfaces triangulées au chargement, portails
-appariés au bit près, lumières statiques et entités décodées, identifiants
-stables partout. Cinq hôtes parcourent le même décor dans une fenêtre : C, C++,
-navigateur, Android, et l'étage d'accueil Rust. **Toutes les cellules sont
-dessinées, sans aucune élimination** — la traversée par portails est l'étape 5.
+**Étape 5 franchie, publiée en 0.5.0 : le monde.** Un décor se parcourt par ses
+portails : la traversée réduit une fenêtre de clipping de cellule en cellule et ne
+soumet que ce qui est visible, la cellule de la caméra se suit par ses traversées,
+et le noyau calcule les lightmaps d'une cellule sur appel de l'hôte — avec un cache
+que celui-ci garde et rend au chargement suivant. Rien ne se compile : ce que
+l'éditeur écrit, le moteur le charge tel quel, et les liens de portails se
+déduisent. Cinq hôtes parcourent le même décor dans une fenêtre : C, C++,
+navigateur, Android, et l'étage d'accueil Rust.
 
 La feuille de route compte dix étapes, publiées à chacune.
 

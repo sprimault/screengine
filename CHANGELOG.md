@@ -44,7 +44,7 @@ de version sont ce que lit un auteur de liaison étranger avant de savoir s'il
 doit reprendre son travail. Ce préambule reste en français : il n'est jamais
 publié, et explique les conventions du dépôt à qui y contribue.
 
-## [Non publié]
+## [0.5.0] — 2026-09-26 — Le monde
 
 **Ce qu'un auteur de liaison doit reprendre : la façon de juger un code de
 retour.** L'étape 5 rend les deux premiers **codes positifs** du projet — un

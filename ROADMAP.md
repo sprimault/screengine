@@ -229,8 +229,11 @@ déjà, fournies par l'hôte : rien du remplissage n'est à reprendre.
 ce qui suit se déroule. Si elle est bancale, il y aura des trous dans l'image
 pour toujours, et ils ne se rattrapent pas par un correctif local.
 
-**Franchie quand** un niveau multi-cellules se parcourt sans trou, avec des
-cellules superposées, des cellules non convexes et des portails obliques.
+**Franchie, publiée en 0.5.0.** Le décor de validation a les trois : un étage
+superposé au rez-de-chaussée, une salle en L, et un portail coupé en biais. Sur
+chacune de ses cinq vues, la traversée rend la **même image que le chemin brut**,
+qui soumet toutes les cellules — l'égalité est ce qui prouve l'absence de trou,
+puisque le chemin brut ne peut en avoir.
 
 ## 6 — Animation et sprites
 
