@@ -56,13 +56,18 @@ const TRIANGLES: [Triangle; 2] = [
 /// quadrilatère est assez court pour que la recopie coûte moins qu'une
 /// bibliothèque ouverte pour lui.
 fn quad_mesh() -> Vec<u8> {
-    let mut vertices = Vec::new();
+    // Deux sections : les poses animent, les coordonnées de texture non.
+    let mut poses = 1u32.to_le_bytes().to_vec();
+    let mut uvs = Vec::new();
     for (i, position) in VERTICES.iter().enumerate() {
         for value in [position.x, position.y, position.z] {
-            vertices.extend_from_slice(&value.to_le_bytes());
+            poses.extend_from_slice(&value.to_le_bytes());
+        }
+        for value in [0.0f32, 0.0, 1.0] {
+            poses.extend_from_slice(&value.to_le_bytes());
         }
         for value in [((i & 1) * 64) as f32, ((i >> 1) * 64) as f32] {
-            vertices.extend_from_slice(&value.to_le_bytes());
+            uvs.extend_from_slice(&value.to_le_bytes());
         }
     }
 
@@ -84,10 +89,11 @@ fn quad_mesh() -> Vec<u8> {
     names.extend_from_slice(b"mur");
 
     let sections = [
+        (*b"FRMS", poses.as_slice()),
         (*b"SURF", groups.as_slice()),
         (*b"TEXN", names.as_slice()),
         (*b"TRIS", triangles.as_slice()),
-        (*b"VTXS", vertices.as_slice()),
+        (*b"VTXS", uvs.as_slice()),
     ];
     let first = 20 + 12 * sections.len();
     let total = first + sections.iter().map(|(_, body)| body.len()).sum::<usize>();
@@ -95,7 +101,7 @@ fn quad_mesh() -> Vec<u8> {
     let mut bytes = Vec::new();
     bytes.extend_from_slice(b"SCG\x1a");
     bytes.extend_from_slice(b"MESH");
-    bytes.extend_from_slice(&1u32.to_le_bytes());
+    bytes.extend_from_slice(&2u32.to_le_bytes());
     bytes.extend_from_slice(&(total as u32).to_le_bytes());
     bytes.extend_from_slice(&(sections.len() as u32).to_le_bytes());
 

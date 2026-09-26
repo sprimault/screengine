@@ -61,10 +61,16 @@ fn mesh_bytes(sections: &[([u8; 4], Vec<u8>)], kind: &[u8; 4], version: u32) -> 
 
 /// Un maillage d'un triangle, trois sommets, un emplacement nommé.
 fn one_triangle_mesh() -> Vec<u8> {
-    let mut vertices = Vec::new();
+    // Une trame, puis ses poses : position et normale. Les coordonnées de
+    // texture vivent à part, constantes sur toutes les trames.
+    let mut poses = 1u32.to_le_bytes().to_vec();
+    let mut uvs = Vec::new();
     for (x, y) in [(0.0f32, 0.0f32), (1.0, 0.0), (0.0, 1.0)] {
-        for value in [x, y, -2.0, 0.0, 0.0] {
-            vertices.extend_from_slice(&value.to_le_bytes());
+        for value in [x, y, -2.0, 0.0, 0.0, 1.0] {
+            poses.extend_from_slice(&value.to_le_bytes());
+        }
+        for value in [0.0f32, 0.0] {
+            uvs.extend_from_slice(&value.to_le_bytes());
         }
     }
 
@@ -84,13 +90,14 @@ fn one_triangle_mesh() -> Vec<u8> {
 
     mesh_bytes(
         &[
+            (*b"FRMS", poses),
             (*b"SURF", groups),
             (*b"TEXN", names),
             (*b"TRIS", triangles),
-            (*b"VTXS", vertices),
+            (*b"VTXS", uvs),
         ],
         b"MESH",
-        1,
+        2,
     )
 }
 
@@ -118,7 +125,7 @@ fn charge_et_detruit_un_maillage_sans_contexte() {
 /// autres.
 #[test]
 fn un_maillage_vide_franchit_la_frontiere() {
-    let mesh = load(&mesh_bytes(&[], b"MESH", 1));
+    let mesh = load(&mesh_bytes(&[], b"MESH", 2));
     let mut count = 1;
     // SAFETY: handle vivant, paramètre de sortie local.
     let code = unsafe { scg_mesh_triangle_count(mesh, &mut count) };
@@ -156,13 +163,22 @@ fn refuse_un_bloc_qui_n_est_pas_un_maillage() {
 /// à l'hôte quoi faire.
 #[test]
 fn refuse_une_version_de_format_inconnue() {
-    let bytes = mesh_bytes(&[], b"MESH", 2);
-    let mut out = ptr::null_mut();
-    // SAFETY: bloc local vivant, longueur celle de la tranche.
-    let code = unsafe { scg_mesh_load(bytes.as_ptr(), bytes.len(), &mut out) };
-    assert_eq!(code, SCG_ERR_UNSUPPORTED_FORMAT_VERSION);
-    assert!(out.is_null());
-    assert!(last_error().contains("version"));
+    // La 1 autant que la 3 : l'ancienne version est refusée comme une inconnue,
+    // et c'est ce qui dit à l'hôte de réexporter plutôt que de chercher une
+    // corruption. Il n'y a pas de convertisseur — il devrait inventer les
+    // normales, ce que le format refuse précisément de faire.
+    for version in [1, 3] {
+        let bytes = mesh_bytes(&[], b"MESH", version);
+        let mut out = ptr::null_mut();
+        // SAFETY: bloc local vivant, longueur celle de la tranche.
+        let code = unsafe { scg_mesh_load(bytes.as_ptr(), bytes.len(), &mut out) };
+        assert_eq!(
+            code, SCG_ERR_UNSUPPORTED_FORMAT_VERSION,
+            "version {version}"
+        );
+        assert!(out.is_null());
+        assert!(last_error().contains("version"));
+    }
 }
 
 /// Une carte là où un maillage est attendu est refusée par le genre, et le
@@ -367,7 +383,7 @@ fn refuse_les_pointeurs_nuls_de_la_lecture_d_un_nom() {
 fn lit_un_nom_vide() {
     let mut names = 0u16.to_le_bytes().to_vec();
     names.extend_from_slice(b"");
-    let mesh = load(&mesh_bytes(&[(*b"TEXN", names)], b"MESH", 1));
+    let mesh = load(&mesh_bytes(&[(*b"TEXN", names)], b"MESH", 2));
 
     let mut len = usize::MAX;
     let mut buf = [0xaau8; 2];
@@ -386,7 +402,7 @@ fn lit_un_nom_vide() {
 fn un_nom_accentue_traverse_la_frontiere() {
     let mut names = (b"b\xc3\xa9ton".len() as u16).to_le_bytes().to_vec();
     names.extend_from_slice("béton".as_bytes());
-    let mesh = load(&mesh_bytes(&[(*b"TEXN", names)], b"MESH", 1));
+    let mesh = load(&mesh_bytes(&[(*b"TEXN", names)], b"MESH", 2));
 
     assert_eq!(slot_name(mesh, 0), "béton");
     // SAFETY: handle vivant, détruit une seule fois.
@@ -594,7 +610,7 @@ fn le_message_d_un_refus_va_dans_l_emplacement_du_thread() {
 
     // Un appel qui réussit vide le message : sans quoi un hôte qui lit après
     // coup rapporterait le refus précédent.
-    let mesh = load(&mesh_bytes(&[], b"MESH", 1));
+    let mesh = load(&mesh_bytes(&[], b"MESH", 2));
     assert!(last_error().is_empty());
     // SAFETY: handle vivant, détruit une seule fois.
     unsafe { scg_mesh_destroy(mesh) };

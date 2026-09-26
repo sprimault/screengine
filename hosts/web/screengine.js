@@ -145,6 +145,7 @@ export const EXPORTS = [
   "scg_mesh_texture_count",
   "scg_mesh_texture_name",
   "scg_mesh_triangle_count",
+  "scg_mesh_frame_count",
   "scg_submit_mesh",
   "scg_world_load",
   "scg_world_destroy",

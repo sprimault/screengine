@@ -27,29 +27,63 @@ const KIND: [u8; 4] = *b"MESH";
 
 /// La seule version de format que cette construction lit.
 ///
-/// Elle cassera à l'étape 6, qui tranche la normale par sommet, et c'est prévu :
-/// le numéro existe pour écrire une migration plutôt que jeter les maillages de
-/// test.
-const VERSION: u32 = 1;
+/// **Deux dans cette version, et la version 1 est refusée.** L'étape 6 y porte
+/// les trames et la normale par sommet, et les deux cassures tiennent dans un
+/// seul incrément : deux incréments, ce seraient deux migrations à écrire, deux
+/// états à éprouver et deux annonces en tête de notes. Il n'y a pas de
+/// convertisseur — il devrait inventer les normales —, et la migration est un
+/// réexport.
+const VERSION: u32 = 2;
 
 /// Les genres de sections, croissants comme l'en-tête l'exige.
-const TAGS: [[u8; 4]; 4] = [*b"SURF", *b"TEXN", *b"TRIS", *b"VTXS"];
+const TAGS: [[u8; 4]; 5] = [*b"FRMS", *b"SURF", *b"TEXN", *b"TRIS", *b"VTXS"];
 
-/// Rang de la section des groupes de surface dans ce que rend le socle.
-const SURF: usize = 0;
+/// Rang de la section des trames dans ce que rend le socle.
+const FRMS: usize = 0;
+/// Rang de la section des groupes de surface.
+const SURF: usize = 1;
 /// Rang de la section des noms d'emplacements.
-const TEXN: usize = 1;
+const TEXN: usize = 2;
 /// Rang de la section des triangles.
-const TRIS: usize = 2;
+const TRIS: usize = 3;
 /// Rang de la section des sommets.
-const VTXS: usize = 3;
+const VTXS: usize = 4;
 
-/// Taille d'un sommet dans le fichier, en octets.
-const VERTEX_LEN: usize = 20;
+/// Taille d'un sommet dans le fichier, en octets : deux flottants.
+///
+/// **Ce qui anime est séparé de ce qui n'anime pas.** Les coordonnées de
+/// texture sont par sommet et constantes sur toutes les trames — la topologie
+/// et le plaquage ne bougent pas, seule la géométrie bouge. C'est ce qui garde
+/// une trame contiguë en mémoire et laisse le contrôle de borne des
+/// coordonnées au chargement, une fois.
+const VERTEX_LEN: usize = 8;
+
+/// Taille d'une pose de sommet : trois flottants de position, trois de normale.
+const POSE_LEN: usize = 24;
 /// Taille d'un triangle, en octets.
 const TRIANGLE_LEN: usize = 16;
 /// Taille d'un groupe de surface, en octets.
 const GROUP_LEN: usize = 16;
+
+/// La pose d'un sommet dans une trame : où il est, et vers où il regarde.
+///
+/// **La normale est stockée, jamais dérivée**, et c'est l'inverse du choix fait
+/// pour la boîte englobante. Les deux ne sont pas de même nature : une boîte est
+/// une fonction des sommets, une normale porte une intention de lissage que seul
+/// l'outil d'export connaît. Une normale dérivée arrondit les arêtes vives d'une
+/// caisse, et la contourner demanderait des sommets dupliqués — donc, de toute
+/// façon, une normale par sommet écrite. Et deux poses interpolées ne redonnent
+/// pas la normale dérivée de la pose interpolée : par trame, il n'y a pas le
+/// choix.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct Pose {
+    /// La position du sommet dans cette trame.
+    pub(crate) position: Vec3,
+    /// Sa normale, pas nécessairement unitaire : l'interpolation la dénormalise
+    /// de toute façon, et c'est le moteur qui normalise.
+    #[allow(dead_code)]
+    pub(crate) normal: Vec3,
+}
 
 /// Un groupe de surface : les triangles contigus qu'une seule soumission dessine
 /// avec un même habillage.
@@ -77,8 +111,17 @@ pub(crate) struct Group {
 /// copiés au chargement, si bien que l'hôte peut libérer son bloc au retour.
 #[derive(Debug)]
 pub struct Mesh {
-    /// Les sommets, que les triangles indexent.
+    /// Les sommets de la **première trame**, assemblés au chargement.
+    ///
+    /// Position et coordonnées de texture réunies, ce que le rendu attend. Un
+    /// maillage statique n'en a qu'une, et le chemin de soumission non animé
+    /// lit celle-ci sans rien savoir des autres : c'est ce qui laisse
+    /// `submit_mesh` inchangé quand le format gagne ses trames.
     vertices: Vec<VertexUv>,
+    /// Toutes les poses, par trame, chacune une tranche contiguë.
+    poses: Vec<Pose>,
+    /// Combien de trames la section en portait. Un maillage statique en a une.
+    frames: u32,
     /// Les triangles, dans l'ordre du fichier — qui est celui de la soumission,
     /// et donc ce qui départage deux surfaces coplanaires.
     triangles: Vec<Triangle>,
@@ -101,18 +144,53 @@ impl Mesh {
     /// triangles bornent leur pavage.
     pub fn load(bytes: &[u8]) -> Result<Self> {
         let sections = decode(bytes, KIND, VERSION, TAGS)?;
-        let vertices = vertices(sections[VTXS])?;
-        let triangles = triangles(sections[TRIS], vertices.len())?;
+        let uvs = uvs(sections[VTXS])?;
+        let (frames, poses) = frames(sections[FRMS], uvs.len())?;
+        let triangles = triangles(sections[TRIS], uvs.len())?;
         let names = names(sections[TEXN])?;
         let groups = groups(sections[SURF], triangles.len(), names.len())?;
+
+        // La première trame, assemblée une fois : c'est elle que le rendu non
+        // animé dessine, et la reconstruire à chaque soumission coûterait un
+        // parcours par image pour une valeur qui ne change jamais.
+        let mut vertices = reserved(uvs.len())?;
+        for (pose, &[u, v]) in poses.iter().zip(&uvs) {
+            vertices.push(VertexUv {
+                position: pose.position,
+                u,
+                v,
+            });
+        }
         let bounds = bounds(&vertices);
         Ok(Self {
             vertices,
+            poses,
+            frames,
             triangles,
             groups,
             names,
             bounds,
         })
+    }
+
+    /// Combien de trames le maillage porte. Un maillage statique en rend une.
+    ///
+    /// L'hôte en a besoin avant de soumettre, pour la raison qui vaut déjà au
+    /// compte de triangles : sans lui, la seule façon de le connaître serait
+    /// d'essayer.
+    pub fn frame_count(&self) -> u32 {
+        self.frames
+    }
+
+    /// Les poses d'une trame, ou `None` au-delà de la dernière.
+    ///
+    /// Une tranche contiguë, ce que le rangement par trame garantit : rien
+    /// n'est à rassembler, donc rien n'est à allouer.
+    #[allow(dead_code)]
+    pub(crate) fn frame(&self, index: u32) -> Option<&[Pose]> {
+        let n = self.vertices.len();
+        let debut = (index as usize).checked_mul(n)?;
+        self.poses.get(debut..debut + n)
     }
 
     /// Combien de triangles le maillage porte.
@@ -163,26 +241,67 @@ impl Mesh {
     }
 }
 
-/// Les sommets d'une section, cinq flottants chacun.
+/// Les coordonnées de texture d'une section, deux flottants chacune.
 ///
 /// La capacité vient de la longueur de la section et jamais d'un nombre déclaré :
 /// c'est la bombe d'allocation que le format ferme d'avance.
-fn vertices(section: &[u8]) -> Result<Vec<VertexUv>> {
+fn uvs(section: &[u8]) -> Result<Vec<[f32; 2]>> {
     let mut cursor = Cursor::new(section);
-    let mut vertices = reserved(section.len() / VERTEX_LEN)?;
+    let mut uvs = reserved(section.len() / VERTEX_LEN)?;
+    while cursor.remaining() != 0 {
+        let u = cursor.f32()?;
+        let v = cursor.f32()?;
+        uvs.push([u, v]);
+    }
+    Ok(uvs)
+}
+
+/// Les trames d'une section : un compte, puis `trames × sommets` poses.
+///
+/// **Rangées par trame**, si bien qu'une trame est une tranche contiguë.
+/// Dispersées, elles imposeraient de rassembler les sommets d'une pose à
+/// chaque image, donc un tampon, donc une allocation par image — c'est
+/// l'argument déjà écrit pour le pavage des groupes de triangles.
+///
+/// Les deux comptes se recoupent avec la longueur de la section en arithmétique
+/// vérifiée : `4 + trames × sommets × 24` exactement, et rien d'autre.
+fn frames(section: &[u8], vertex_count: usize) -> Result<(u32, Vec<Pose>)> {
+    // Un maillage sans sommet est légitime, et il n'a alors pas de section de
+    // trames à porter : c'est une trame de zéro pose, et non un fichier fautif.
+    if section.is_empty() && vertex_count == 0 {
+        return Ok((1, Vec::new()));
+    }
+    let mut cursor = Cursor::new(section);
+    let count = cursor.u32()?;
+    if count == 0 {
+        return Err(Error::InvalidFormat(Malformation::Count));
+    }
+    // `checked_mul` et non `*` : sur wasm32 et armv7 un `usize` fait 32 bits, et
+    // un produit déborde bien en deçà de ce qu'un fichier peut déclarer.
+    let poses = (count as usize)
+        .checked_mul(vertex_count)
+        .ok_or(Error::InvalidFormat(Malformation::Count))?;
+    let attendu = poses
+        .checked_mul(POSE_LEN)
+        .ok_or(Error::InvalidFormat(Malformation::Count))?;
+    if cursor.remaining() != attendu {
+        return Err(Error::InvalidFormat(Malformation::Count));
+    }
+
+    let mut all = reserved(poses)?;
     while cursor.remaining() != 0 {
         let x = cursor.f32()?;
         let y = cursor.f32()?;
         let z = cursor.f32()?;
-        let u = cursor.f32()?;
-        let v = cursor.f32()?;
-        vertices.push(VertexUv {
+        let nx = cursor.f32()?;
+        let ny = cursor.f32()?;
+        let nz = cursor.f32()?;
+        all.push(Pose {
             position: Vec3::new(x, y, z),
-            u,
-            v,
+            normal: Vec3::new(nx, ny, nz),
         });
     }
-    Ok(vertices)
+    Ok((count, all))
 }
 
 /// Les triangles d'une section, indices bornés par le nombre de sommets.

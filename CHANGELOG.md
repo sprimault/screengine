@@ -47,6 +47,14 @@ publié, et explique les conventions du dépôt à qui y contribue.
 ## [Non publié]
 
 ### Ajouté
+- **`version_format` du maillage passe à 2**, et la version 1 est refusée par
+  `SCG_ERR_UNSUPPORTED_FORMAT_VERSION`. Le format porte désormais des **trames**
+  et une **normale par sommet** : les coordonnées de texture restent par sommet
+  et constantes, les positions et normales vivent dans une section de trames,
+  rangées par trame et donc contiguës. Un maillage statique déclare une trame, et
+  le décodeur n'a pas deux chemins. **La migration est un réexport** — il n'y a
+  pas de convertisseur, il devrait inventer les normales. `scg_mesh_frame_count`
+  les compte, pour la raison qui vaut déjà au compte de triangles.
 - `scg_submit_blended` et `SCG_BLEND_MODULATE` : une surface qui **multiplie**
   le tampon au lieu de l'écraser, 255 étant le neutre — elle assombrit ou ne
   fait rien, jamais l'inverse. Elle teste la profondeur sans l'écrire et son
@@ -85,6 +93,14 @@ publié, et explique les conventions du dépôt à qui y contribue.
 ***
 
 ### Added
+- **The mesh `version_format` moves to 2**, and version 1 is refused with
+  `SCG_ERR_UNSUPPORTED_FORMAT_VERSION`. The format now carries **frames** and a
+  **per-vertex normal**: texture coordinates stay per vertex and constant, while
+  positions and normals live in a frame section, laid out frame by frame and so
+  contiguous. A static mesh declares one frame, and the decoder has no second
+  path. **Migration is a re-export** — there is no converter, it would have to
+  invent the normals. `scg_mesh_frame_count` reports them, for the reason that
+  already justifies the triangle count.
 - `scg_submit_blended` and `SCG_BLEND_MODULATE`: a surface that **multiplies**
   the buffer instead of overwriting it, with 255 as the neutral value — it
   darkens or does nothing, never the reverse. It tests depth without writing it
