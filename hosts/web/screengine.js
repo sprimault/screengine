@@ -131,6 +131,7 @@ export const EXPORTS = [
   "scg_texture_destroy",
   "scg_submit_textured",
   "scg_submit_blended",
+  "scg_submit_shaded",
   "scg_submit_lit",
   "scg_set_resolution",
   "scg_set_grade",

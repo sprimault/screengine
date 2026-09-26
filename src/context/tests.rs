@@ -905,6 +905,7 @@ fn le_tampon_ressort_opaque_quelle_que_soit_la_couleur_soumise() {
 fn ahead_uv2(u: f32, v: f32, u2: f32, v2: f32) -> [VertexUv2; 3] {
     ahead().map(|position| VertexUv2 {
         position,
+        normal: Vec3::ZERO,
         u,
         v,
         u2,
@@ -946,6 +947,7 @@ fn un_lot_eclaire_range_ses_plans_dans_l_ordre() {
     ];
     let vertices = [0, 1, 2].map(|i| VertexUv2 {
         position: coupe[i],
+        normal: Vec3::ZERO,
         u: 0.0,
         v: 0.0,
         u2: i as f32,

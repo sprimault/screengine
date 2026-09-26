@@ -461,6 +461,38 @@ typedef struct ScgVertexUv {
   float v;
 } ScgVertexUv;
 
+// A vertex carrying its texture coordinates **and its normal**.
+//
+// Thirty-two bytes, offsets 0 to 28 on every target, with no padding — every
+// field is a four-byte float.
+//
+// It extends `ScgVertexUv` and not `ScgVertexUv2`: a moving prop has no
+// lightmap, since a lightmap is computed per cell, and the scenery already
+// carries its angle in a baked Lambert term.
+//
+// **The normal need not be unit.** The engine normalises it, and it has to:
+// interpolating between two frames denormalises it anyway. A zero-length
+// normal is treated as no normal at all — the lighting then falls back to
+// distance alone, which is what every path did before this structure existed.
+typedef struct ScgVertexUvN {
+  // X coordinate, in object space.
+  float x;
+  // Y coordinate.
+  float y;
+  // Z coordinate.
+  float z;
+  // Texture abscissa, in texels.
+  float u;
+  // Texture ordinate, in texels.
+  float v;
+  // Normal X component.
+  float nx;
+  // Normal Y component.
+  float ny;
+  // Normal Z component.
+  float nz;
+} ScgVertexUvN;
+
 // A vertex carrying a second set of coordinates, the one a lightmap is read
 // with.
 //
@@ -942,6 +974,33 @@ int32_t scg_submit_blended(struct ScgContext *ctx,
                            uint32_t triangle_count,
                            const struct ScgTexture *texture,
                            uint32_t blend);
+
+// Submits a batch of triangles whose vertices carry a normal.
+//
+// Same contract as `scg_submit_textured`, with one difference: dynamic lights
+// then take the surface's orientation into account. A face turned away from a
+// light receives nothing, where without a normal it received the same light as
+// every other face at the same distance.
+//
+// **The normal need not be unit** — the engine normalises it, and it must,
+// since interpolating between frames denormalises it anyway. A zero-length
+// normal means no normal: the lighting falls back to distance alone. A
+// non-finite component rejects the whole batch, like a coordinate.
+//
+// This changes nothing for lightmaps. What closes here is the angular term of
+// a **dynamic** light; occlusion remains the baking's business, and a baked
+// lamp and the same lamp as a dynamic light will never render quite the same.
+//
+// # Safety
+//
+// Same preconditions as `scg_submit_textured`.
+int32_t scg_submit_shaded(struct ScgContext *ctx,
+                          const struct ScgMat4 *model,
+                          const struct ScgVertexUvN *vertices,
+                          uint32_t vertex_count,
+                          const struct ScgTriangle *triangles,
+                          uint32_t triangle_count,
+                          const struct ScgTexture *texture);
 
 // Submits a batch of triangles lit by a lightmap.
 //
@@ -1561,6 +1620,13 @@ SCREENGINE_LAYOUT_ASSERT(offsetof(ScgVertexUv2, u) == 12, "ScgVertexUv2.u moved"
 SCREENGINE_LAYOUT_ASSERT(offsetof(ScgVertexUv2, v) == 16, "ScgVertexUv2.v moved");
 SCREENGINE_LAYOUT_ASSERT(offsetof(ScgVertexUv2, u2) == 20, "ScgVertexUv2.u2 moved");
 SCREENGINE_LAYOUT_ASSERT(offsetof(ScgVertexUv2, v2) == 24, "ScgVertexUv2.v2 moved");
+SCREENGINE_LAYOUT_ASSERT(sizeof(ScgVertexUvN) == 32, "ScgVertexUvN changed size");
+SCREENGINE_LAYOUT_ASSERT(offsetof(ScgVertexUvN, z) == 8, "ScgVertexUvN.z moved");
+SCREENGINE_LAYOUT_ASSERT(offsetof(ScgVertexUvN, u) == 12, "ScgVertexUvN.u moved");
+SCREENGINE_LAYOUT_ASSERT(offsetof(ScgVertexUvN, v) == 16, "ScgVertexUvN.v moved");
+SCREENGINE_LAYOUT_ASSERT(offsetof(ScgVertexUvN, nx) == 20, "ScgVertexUvN.nx moved");
+SCREENGINE_LAYOUT_ASSERT(offsetof(ScgVertexUvN, ny) == 24, "ScgVertexUvN.ny moved");
+SCREENGINE_LAYOUT_ASSERT(offsetof(ScgVertexUvN, nz) == 28, "ScgVertexUvN.nz moved");
 SCREENGINE_LAYOUT_ASSERT(sizeof(ScgLight) == 20, "ScgLight changed size");
 SCREENGINE_LAYOUT_ASSERT(offsetof(ScgLight, z) == 8, "ScgLight.z moved");
 SCREENGINE_LAYOUT_ASSERT(offsetof(ScgLight, radius) == 12, "ScgLight.radius moved");

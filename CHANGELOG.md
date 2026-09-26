@@ -47,6 +47,18 @@ publié, et explique les conventions du dépôt à qui y contribue.
 ## [Non publié]
 
 ### Ajouté
+- `ScgVertexUvN` et `scg_submit_shaded` : **la normale par sommet**, laissée
+  ouverte depuis l'étape 3. Les lumières dynamiques tiennent alors compte de
+  l'orientation de la surface — une face qui tourne le dos ne reçoit rien, là où
+  elle recevait autant que ses voisines à égale distance. La normale **n'a pas à
+  être unitaire**, le moteur la normalise, et une normale nulle vaut « pas de
+  normale » : l'éclairage retombe sur la distance seule, si bien qu'**aucun
+  chemin existant ne change**. Trente-deux octets, décalages 0 à 28 sur les
+  quatre cibles, sans bourrage ; `SCG_ABI_VERSION` reste à 1.
+
+  Ce qui se referme est le seul terme angulaire d'une lumière **dynamique**.
+  L'occultation reste l'affaire de la cuisson, et une lampe cuite ne rendra
+  jamais tout à fait comme la même lampe dynamique.
 - `scg_submit_mesh_frame` : un maillage soumis **entre deux de ses trames**.
   Deux indices explicites et non « la trame et la suivante » — un hôte boucle de
   la dernière à la première, ou mêle deux trames non adjacentes, sans que le
@@ -101,6 +113,17 @@ publié, et explique les conventions du dépôt à qui y contribue.
 ***
 
 ### Added
+- `ScgVertexUvN` and `scg_submit_shaded`: **the per-vertex normal**, left open
+  since step 3. Dynamic lights then account for surface orientation — a face
+  turned away receives nothing, where it used to receive as much as its
+  neighbours at the same distance. The normal **need not be unit**, the engine
+  normalises it, and a zero-length normal means no normal: lighting falls back to
+  distance alone, so **no existing path changes**. Thirty-two bytes, offsets 0 to
+  28 on all four targets, no padding; `SCG_ABI_VERSION` stays at 1.
+
+  What closes here is only the angular term of a **dynamic** light. Occlusion
+  remains the baking's business, and a baked lamp will never render quite like
+  the same lamp as a dynamic light.
 - `scg_submit_mesh_frame`: a mesh submitted **between two of its frames**. Two
   explicit indices rather than "the frame and the next one" — a host may loop
   from the last to the first, or blend two non-adjacent frames, without the

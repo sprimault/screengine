@@ -179,6 +179,15 @@ pub struct VertexUv2 {
     pub u2: f32,
     /// L'ordonnée dans la lightmap, en texels de lightmap.
     pub v2: f32,
+    /// Sa normale, ou le vecteur nul quand le lot n'en porte pas.
+    ///
+    /// **Le nul plutôt qu'un `Option`** : celui-ci ferait seize octets là où
+    /// douze suffisent, sur une structure qui vit trois par trois sur la pile
+    /// de la soumission, et le test se fait une fois par sommet et par lumière
+    /// de toute façon. Une normale absente et une normale dégénérée reçoivent
+    /// alors le même traitement, ce qui est juste : ni l'une ni l'autre ne dit
+    /// vers où la surface regarde.
+    pub normal: Vec3,
 }
 
 impl VertexUv2 {
@@ -194,6 +203,15 @@ impl VertexUv2 {
             v: v.v,
             u2: 0.0,
             v2: 0.0,
+            normal: Vec3::ZERO,
+        }
+    }
+
+    /// Le même, avec la normale que le lot porte pour ce sommet.
+    pub const fn shaded(v: VertexUv, normal: Vec3) -> Self {
+        Self {
+            normal,
+            ..Self::unlit(v)
         }
     }
 }
