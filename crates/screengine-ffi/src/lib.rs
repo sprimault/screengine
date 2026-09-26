@@ -1246,6 +1246,80 @@ pub unsafe extern "C" fn scg_mesh_triangle_count(mesh: *const ScgMesh, out: *mut
     unsafe { mesh_count(mesh, out, Mesh::triangle_count) }
 }
 
+/// Submits a mesh interpolated between two of its frames.
+///
+/// **`frame_a == frame_b` renders exactly what `scg_submit_mesh` renders of
+/// that frame, for any `t`.** That is not a convenience: it is the theorem this
+/// path validates against, as portal traversal validates against the raw path.
+///
+/// Two explicit indices rather than "the frame and the next one": a host may
+/// loop from the last to the first, or blend two non-adjacent frames, without
+/// the engine knowing anything of clips or sequences — nothing of the game
+/// crosses the boundary.
+///
+/// `t` outside `[0, 1]` is **refused, never clamped**: silent clamping would
+/// render an extrapolated pose without saying so, and extrapolating is the
+/// game's decision. A frame index beyond `scg_mesh_frame_count` returns
+/// `SCG_ERR_INVALID_ARGUMENT` and draws nothing — the file is fine, the call is
+/// out of bounds.
+///
+/// Every other rule of `scg_submit_mesh` applies, the all-or-nothing refusal
+/// included.
+///
+/// # Safety
+///
+/// Same preconditions as `scg_submit_mesh`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn scg_submit_mesh_frame(
+    ctx: *mut ScgContext,
+    model: *const ScgMat4,
+    mesh: *const ScgMesh,
+    textures: *const *const ScgTexture,
+    texture_count: u32,
+    frame_a: u32,
+    frame_b: u32,
+    t: f32,
+) -> i32 {
+    let submit = |mut core: entry::Core<'_>| {
+        // SAFETY: précondition de la fonction — chaque pointeur est nul ou vise
+        // une valeur lisible.
+        let model = unsafe { model.as_ref() }.ok_or(AbiError::NULL)?;
+        let model = model.to_core()?;
+        // SAFETY: précondition de la fonction — `mesh` est un handle vivant.
+        let mesh = unsafe { mesh.as_ref() }.ok_or(AbiError::NULL)?;
+        if textures.is_null() && texture_count != 0 {
+            return Err(AbiError::NULL);
+        }
+        if texture_count != mesh.inner.texture_count() {
+            return Err(AbiError::TEXTURE_COUNT);
+        }
+        // SAFETY: précondition de la fonction — le tableau couvre son nombre
+        // d'éléments, le cas vide étant traité par `slice_of`.
+        let slots = unsafe { slice_of(textures, texture_count) };
+
+        core.exclusive()?
+            .submit_mesh_frame(
+                model,
+                &mesh.inner,
+                |slot| {
+                    // SAFETY: mêmes préconditions que `scg_submit_mesh`, et le
+                    // compte a été vérifié égal.
+                    slots
+                        .get(slot as usize)
+                        .and_then(|handle| unsafe { handle.as_ref() })
+                        .map(|texture| &texture.inner)
+                },
+                frame_a,
+                frame_b,
+                t,
+            )
+            .map_err(AbiError::from)
+    };
+
+    // SAFETY: précondition de la fonction — `ctx` est nul ou un handle vivant.
+    unsafe { entry::with_context(ctx, submit) }
+}
+
 /// Writes the number of animation frames the mesh carries to `out`.
 ///
 /// A static mesh returns 1: the format has one shape, not two, and a decoder

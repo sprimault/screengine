@@ -11,7 +11,7 @@ use core::sync::atomic::{AtomicBool, AtomicU8, AtomicU32, Ordering};
 
 use crate::buffer::reserved;
 use crate::error::{Argument, Error, Result};
-use crate::format::{Mesh, World};
+use crate::format::{Mesh, Pose, World};
 use crate::light::MAX_OVERBRIGHT;
 use crate::light::dynamic::{self, MAX_LIGHTS};
 use crate::light::fog::Fog;
@@ -300,6 +300,26 @@ fn texture_capacity(triangles: usize) -> usize {
     // `usize` fait 32 bits sur wasm32 et armv7, et la capacité vient d'un
     // `u32` : le double déborde avant d'être plafonné.
     triangles.saturating_mul(2).min(NO_TEXTURE as usize)
+}
+
+/// Une position entre deux poses, `p + (q − p)·t`, composante par composante.
+///
+/// **L'ordre est contractuel**, comme tout ordre d'opérations flottant du
+/// projet : une variante qui l'écrirait autrement rendrait d'autres bits.
+/// Jamais de `mul_add` — sur une cible sans instruction de fusion il retombe
+/// sur la libm, et sur une autre il ne rend pas les mêmes bits qu'une
+/// multiplication suivie d'une addition.
+///
+/// **Elle n'est pas exacte en `t = 1`**, et c'est pour cela que l'appelant
+/// tranche ce cas avant de l'appeler : `p + (q − p)` s'écarte de `q` dès que la
+/// soustraction perd des bits, ce qu'un écart d'échelle entre les deux poses
+/// suffit à produire.
+fn blend(p: Vec3, q: Vec3, t: f32) -> Vec3 {
+    Vec3::new(
+        p.x + (q.x - p.x) * t,
+        p.y + (q.y - p.y) * t,
+        p.z + (q.z - p.z) * t,
+    )
 }
 
 /// Les triangles éclairés qu'une image peut porter, pour une capacité de
@@ -886,6 +906,27 @@ impl Context {
     where
         F: Fn(u32) -> Option<&'t Arc<Texture>>,
     {
+        self.submit_mesh_with(model, mesh, texture, |i| mesh.vertices()[i])
+    }
+
+    /// Le corps commun des trois soumissions de maillage : seule la façon de
+    /// lire un sommet les distingue.
+    ///
+    /// Un seul corps et non trois, parce que c'est lui qui porte le refus en
+    /// entier — un maillage qui ne tient pas dans la capacité restante ne doit
+    /// rien laisser derrière lui, pas même les groupes déjà posés. Recopié, ce
+    /// rattrapage finirait par manquer sur le chemin ajouté en dernier.
+    fn submit_mesh_with<'t, F, V>(
+        &mut self,
+        model: Affine3,
+        mesh: &Mesh,
+        texture: F,
+        vertex: V,
+    ) -> Result<()>
+    where
+        F: Fn(u32) -> Option<&'t Arc<Texture>>,
+        V: Fn(usize) -> VertexUv,
+    {
         let (mark, textures) = (self.triangles.len(), self.textures.len());
         let lights = self.lighting.len();
 
@@ -899,7 +940,7 @@ impl Context {
                     let triangle = mesh.triangles()[first + i];
                     let mut corners = [VertexUv::untextured(Vec3::ZERO); 3];
                     for (corner, &index) in corners.iter_mut().zip(&triangle.indices) {
-                        *corner = mesh.vertices()[index as usize];
+                        *corner = vertex(index as usize);
                     }
                     Ok((corners, triangle.color))
                 },
@@ -912,6 +953,117 @@ impl Context {
             }
         }
         Ok(())
+    }
+
+    /// Soumet le maillage dans une pose donnée, sans interpoler.
+    ///
+    /// Les coordonnées de texture viennent des sommets assemblés au chargement :
+    /// elles n'animent pas, et les relire ailleurs serait une seconde source
+    /// pour la même valeur.
+    fn submit_posed<'t, F>(
+        &mut self,
+        model: Affine3,
+        mesh: &Mesh,
+        texture: F,
+        poses: &[Pose],
+    ) -> Result<()>
+    where
+        F: Fn(u32) -> Option<&'t Arc<Texture>>,
+    {
+        self.submit_mesh_with(model, mesh, texture, |i| VertexUv {
+            position: poses[i].position,
+            u: mesh.vertices()[i].u,
+            v: mesh.vertices()[i].v,
+        })
+    }
+
+    /// Soumet le maillage entre deux poses, par `a + (b − a)·t`.
+    ///
+    /// **Composante par composante, dans l'ordre x, y, z**, et cet ordre est
+    /// contractuel comme tout ordre d'opérations flottant du projet : une
+    /// variante qui l'écrirait autrement rendrait d'autres bits. Jamais de
+    /// `mul_add` — sur une cible sans instruction de fusion il retombe sur la
+    /// libm, et sur une autre il ne rend pas les mêmes bits qu'une
+    /// multiplication suivie d'une addition.
+    ///
+    /// Les cas dégénérés n'arrivent pas ici : l'appelant les a tranchés.
+    fn submit_interpolated<'t, F>(
+        &mut self,
+        model: Affine3,
+        mesh: &Mesh,
+        texture: F,
+        a: &[Pose],
+        b: &[Pose],
+        t: f32,
+    ) -> Result<()>
+    where
+        F: Fn(u32) -> Option<&'t Arc<Texture>>,
+    {
+        self.submit_mesh_with(model, mesh, texture, |i| VertexUv {
+            position: blend(a[i].position, b[i].position, t),
+            u: mesh.vertices()[i].u,
+            v: mesh.vertices()[i].v,
+        })
+    }
+
+    /// Soumet un maillage entre deux de ses trames.
+    ///
+    /// **`frame_a == frame_b` rend exactement ce que [`Context::submit_mesh`]
+    /// rend de cette trame, pour tout `t`.** Ce n'est pas une commodité : c'est
+    /// le théorème contre lequel ce chemin se valide, comme la traversée par
+    /// portails se valide contre le chemin brut. Il contraint l'écriture de
+    /// l'interpolation, et c'est pour lui que les trois cas ci-dessous se
+    /// tranchent une fois par lot.
+    ///
+    /// Deux indices explicites et non « la trame et la suivante » : un hôte
+    /// boucle de la dernière à la première, ou mêle deux trames non adjacentes,
+    /// sans que le moteur connaisse la moindre notion de séquence — rien du jeu
+    /// ne traverse.
+    ///
+    /// `t` hors de `[0, 1]` est **refusé, jamais ramené dans l'intervalle** : un
+    /// bornage silencieux rendrait une pose extrapolée sans le dire, et
+    /// extrapoler est une décision de jeu.
+    pub fn submit_mesh_frame<'t, F>(
+        &mut self,
+        model: Affine3,
+        mesh: &Mesh,
+        texture: F,
+        frame_a: u32,
+        frame_b: u32,
+        factor: f32,
+    ) -> Result<()>
+    where
+        F: Fn(u32) -> Option<&'t Arc<Texture>>,
+    {
+        // `is_nan` nommément et avant les comparaisons de bornes : toute
+        // comparaison avec lui est fausse, et un refus écrit `t <= 1` le
+        // laisserait passer.
+        if factor.is_nan() || !(0.0..=1.0).contains(&factor) {
+            return Err(Error::InvalidArgument(Argument::FrameFactor));
+        }
+        let (a, b) = (mesh.frame(frame_a), mesh.frame(frame_b));
+        let (Some(a), Some(b)) = (a, b) else {
+            return Err(Error::InvalidArgument(Argument::FrameIndex));
+        };
+
+        // **Les cas se tranchent ici, une fois par lot**, et jamais par sommet :
+        // le facteur ne change pas d'un sommet à l'autre.
+        //
+        // **Un seul des trois est nécessaire à l'exactitude, et c'est `t = 1`**
+        // — mesuré, pas supposé. Avec la forme `p + (q − p)·t`, deux trames
+        // identiques donnent `q − p = 0` exactement et rendent `p` au bit près,
+        // et `t = 0` de même : ces deux cas-là sont une **économie**, pas une
+        // garantie. En `t = 1`, en revanche, `p + (q − p)` n'est pas `q` dès
+        // que la soustraction perd des bits, et c'est lui qui fait du théorème
+        // ci-dessus une conséquence de l'écriture plutôt qu'une chance.
+        let poses: &[Pose] = if frame_a == frame_b || factor == 0.0 {
+            a
+        } else if factor == 1.0 {
+            b
+        } else {
+            return self.submit_interpolated(model, mesh, texture, a, b, factor);
+        };
+        self.submit_posed(model, mesh, texture, poses)
     }
 
     /// Soumet une carte entière, un lot par surface.

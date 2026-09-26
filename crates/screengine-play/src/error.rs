@@ -76,6 +76,12 @@ impl fmt::Display for Error {
                 Argument::TextureCapacity => {
                     f.write_str("more distinct textures in one frame than the engine reserved")
                 }
+                Argument::FrameIndex => {
+                    f.write_str("a frame index goes beyond what the mesh carries")
+                }
+                Argument::FrameFactor => f.write_str(
+                    "the interpolation factor must be finite and within [0, 1], and is never clamped",
+                ),
                 Argument::TextureCoordinate => {
                     f.write_str("a texture coordinate is not finite, or beyond 16384 texels")
                 }
