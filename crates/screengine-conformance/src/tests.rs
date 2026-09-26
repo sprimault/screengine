@@ -479,6 +479,52 @@ fn le_fichier_de_carte_versionne_est_a_jour() {
     );
 }
 
+/// Le fichier du décor à quatre cellules est à jour.
+///
+/// Même règle que le couloir : le fichier versionné n'est pas la source de vérité,
+/// et un fichier périmé échoue ici plutôt que de faire parcourir aux hôtes un décor
+/// qui n'est plus celui de la conformance.
+#[test]
+fn le_fichier_des_salles_est_a_jour() {
+    const VERSIONED: &[u8] = include_bytes!("../../../hosts/salles.world");
+    let engendre = rooms_file::bytes();
+
+    assert_eq!(
+        VERSIONED.len(),
+        engendre.len(),
+        "hosts/salles.world fait {} octets, la conformance en écrit {} — \
+         relancer `make mesh`",
+        VERSIONED.len(),
+        engendre.len()
+    );
+    let ecart = VERSIONED
+        .iter()
+        .zip(&engendre)
+        .position(|(versionne, engendre)| versionne != engendre);
+    assert_eq!(
+        ecart, None,
+        "hosts/salles.world diverge à l'octet {ecart:?} — relancer `make mesh`"
+    );
+}
+
+/// Le décor versionné porte bien ses quatre cellules, et leurs liens.
+///
+/// L'appariement des portails est déduit au chargement : le vérifier ici dit que le
+/// fichier écrit décrit les mêmes arêtes des deux côtés, ce qu'une comparaison
+/// d'octets avec le générateur ne dirait pas — les deux seraient faux ensemble.
+#[test]
+fn le_fichier_des_salles_porte_ses_quatre_cellules() {
+    const VERSIONED: &[u8] = include_bytes!("../../../hosts/salles.world");
+    let world = World::load(VERSIONED).expect("le fichier versionné se décode");
+
+    assert_eq!(world.cell_count(), 4);
+    assert_eq!(world.light_count(), 3);
+    // La caméra de la première vue est dans la salle en L ; l'étage lui est
+    // superposé et ne s'atteint pas depuis le rez-de-chaussée.
+    assert_eq!(world.locate(Vec3::new(2.0, 2.0, 2.0)), 1);
+    assert_eq!(world.locate(Vec3::new(2.0, 2.0, 10.0)), 4);
+}
+
 /// Le fichier de carte versionné se décode, et porte le couloir.
 #[test]
 fn le_fichier_de_carte_versionne_porte_le_couloir() {

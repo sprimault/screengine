@@ -986,6 +986,12 @@ impl Context {
         if cell_id == 0 {
             return Ok(Visibility::NoCell);
         }
+        // **Avant la traversée, et non à la première surface soumise.** Le
+        // nettoyage d'une image close vide la liste des visites ; laissé où les
+        // autres soumissions le font, il l'effacerait entre le remplissage par la
+        // traversée et la boucle qui la relit, et la seconde image d'un même
+        // contexte s'arrêterait sur un index hors borne.
+        self.drop_closed_frame();
         let start = world.cell_of(cell_id).ok_or(Error::UnknownResource)?;
 
         let image = Rect {

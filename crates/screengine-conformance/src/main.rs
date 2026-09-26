@@ -222,6 +222,13 @@ enum Mode {
     /// Même règle que le maillage. Le couloir est celui de la scène `carte`,
     /// ce qui évite d'inventer un décor par hôte.
     World(PathBuf),
+    /// Écrit le fichier du décor à quatre cellules.
+    ///
+    /// **Il s'ajoute au couloir, il ne le remplace pas.** Le couloir n'a que deux
+    /// cellules dont tout est visible : c'est le cas où l'élimination ne peut que
+    /// perdre, et c'est pour cela qu'on le garde — un gain mesuré sur le seul décor
+    /// qui l'avantage ne dirait rien.
+    Rooms(PathBuf),
 }
 
 /// Les scènes que la suite sait rendre.
@@ -1490,7 +1497,8 @@ fn dump(scene: Scene, dir: &Path) -> Result<String, String> {
 /// régression au lieu de la signaler.
 fn parse_mode(args: &[String]) -> Result<Mode, String> {
     let usage = "usage : screengine-conformance --check | --update | --print <scène> | \
-                 --dump <répertoire> | --mesh <fichier> | --world <fichier>";
+                 --dump <répertoire> | --mesh <fichier> | --world <fichier> | \
+                 --rooms <fichier>";
     match args {
         [only] if only == "--check" => Ok(Mode::Check),
         [only] if only == "--update" => Ok(Mode::Update),
@@ -1500,6 +1508,7 @@ fn parse_mode(args: &[String]) -> Result<Mode, String> {
         [dump, dir] if dump == "--dump" => Ok(Mode::Dump(PathBuf::from(dir))),
         [mesh, path] if mesh == "--mesh" => Ok(Mode::Mesh(PathBuf::from(path))),
         [world, path] if world == "--world" => Ok(Mode::World(PathBuf::from(path))),
+        [rooms, path] if rooms == "--rooms" => Ok(Mode::Rooms(PathBuf::from(path))),
         _ => Err(usage.to_string()),
     }
 }
@@ -1540,6 +1549,7 @@ fn main() -> ExitCode {
         }
         Mode::Mesh(path) => return write_data(&path, &mesh_file::bytes()),
         Mode::World(path) => return write_data(&path, &world_file::bytes()),
+        Mode::Rooms(path) => return write_data(&path, &rooms_file::bytes()),
         Mode::Print(scene) => {
             // L'empreinte de la première vue, et non celle de la scène : un
             // hôte hache une image, pas une suite d'images, et c'est à cette

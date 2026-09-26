@@ -329,6 +329,7 @@ conform-images:
 mesh:
 	cargo run -p screengine-conformance --release -- --mesh hosts/caisse.mesh
 	cargo run -p screengine-conformance --release -- --world hosts/couloir.world
+	cargo run -p screengine-conformance --release -- --rooms hosts/salles.world
 
 # Le header est généré et versionné : généré parce qu'écrit à la main il
 # divergerait des signatures, versionné parce qu'un intégrateur doit pouvoir le

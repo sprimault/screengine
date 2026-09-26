@@ -24,15 +24,36 @@
 //! d'échec sur une durée, le minimum plutôt que la moyenne, et des chiffres qui
 //! ne valent que comparés à eux-mêmes sur la même machine.
 //!
-//! # La référence, prise le 2026-09-25
+//! # La référence, prise le 2026-09-25, et ce que la traversée en a fait
 //!
 //! ```text
-//! chargement d'une carte         0.003 ms
-//! soumission + image             0.874 ms
+//! chargement du couloir          0.003 ms
+//! chargement des salles          0.007 ms
+//! couloir — brut                 0.828 ms
+//! couloir — traverse             0.824 ms
+//! salles  — brut                 0.928 ms
+//! salles  — traverse             0.903 ms
 //! ```
 //!
+//! La référence de la 0.4.0 était `0.874 ms` pour le couloir, avant que la
+//! traversée existe ; l'écart avec les `0.828` d'aujourd'hui est du bruit de
+//! machine, pas un gain — c'est le même code de soumission.
+//!
+//! **Ce que ces chiffres disent, et c'est le résultat du lot** : la traversée ne
+//! coûte rien là où tout est visible, et ne gagne presque rien sur quatre cellules.
+//! Les deux moitiés comptent. Qu'elle ne coûte rien sur le couloir était la vraie
+//! question — une élimination qui fait perdre sur le cas défavorable ne se garde
+//! pas —, et les quatre microsecondes d'écart sont sous le bruit. Qu'elle ne gagne
+//! que 2,7 % sur les salles n'est pas décevant : trois cellules sur quatre y sont
+//! hors de vue, mais le troncature du champ de vision les écartait déjà presque
+//! aussi vite, et ce que la traversée évite en plus — la transformation de leurs
+//! sommets — ne pèse rien devant le remplissage. Le gain d'une traversée se lit sur
+//! un décor où les cellules invisibles sont nombreuses *et* dans le champ, ce
+//! qu'aucun décor du dépôt n'est encore.
+//!
 //! 640×360, tuiles de 64, un seul thread. Le couloir de conformance : deux
-//! cellules, quatre surfaces par cellule, deux matériaux.
+//! cellules, quatre surfaces par cellule, deux matériaux. Les salles : quatre
+//! cellules, dont une salle non convexe et un étage que rien ne relie au reste.
 //!
 //! **Le chargement ne pèse rien, et c'est attendu** : trois microsecondes pour
 //! seize surfaces. Il est mesuré quand même, parce que c'est là que
@@ -49,7 +70,7 @@ use core::hint::black_box;
 use core::time::Duration;
 use std::time::Instant;
 
-use screengine::{Affine3, BYTES_PER_PIXEL, Config, Context, Texture, World};
+use screengine::{Affine3, BYTES_PER_PIXEL, Camera, Config, Context, Texture, Vec3, World};
 
 /// Largeur de référence.
 const WIDTH: u32 = 640;
@@ -62,6 +83,9 @@ const IMAGES: u32 = 60;
 
 /// La carte du dépôt, celle que les quatre hôtes chargent.
 const COULOIR: &[u8] = include_bytes!("../hosts/couloir.world");
+
+/// Le décor à quatre cellules, où la traversée a quelque chose à éliminer.
+const SALLES: &[u8] = include_bytes!("../hosts/salles.world");
 
 /// Le plus court temps observé sur `IMAGES` répétitions.
 ///
@@ -96,22 +120,13 @@ fn texture() -> Texture {
     Texture::load(side as u32, side as u32, &pixels).expect("texture valide")
 }
 
-fn main() {
-    println!(
-        "screengine — carte, {WIDTH}x{HEIGHT}, tuiles de 64, minimum sur {IMAGES} tours\n\
-         aucune elimination : toutes les cellules sont soumises\n"
-    );
-
-    ligne(
-        "chargement d'une carte",
-        mesure(|| {
-            World::load(black_box(COULOIR)).expect("carte valide");
-        }),
-    );
-
-    let world = World::load(COULOIR).expect("carte valide");
-    let texture = std::sync::Arc::new(texture());
-    let mut context = Context::new(Config {
+/// Le contexte et le tampon des mesures d'image.
+///
+/// Rendus une fois et repris par tous les cas : recréer un contexte par mesure
+/// ferait payer ses allocations, qui sont précisément ce que le moteur promet de
+/// ne pas refaire par image.
+fn scene() -> (Context, Vec<u8>, std::sync::Arc<Texture>) {
+    let context = Context::new(Config {
         max_width: WIDTH,
         max_height: HEIGHT,
         width: WIDTH,
@@ -120,27 +135,94 @@ fn main() {
         max_triangles: 0,
     })
     .expect("configuration valide");
-    let mut pixels = vec![0u8; WIDTH as usize * HEIGHT as usize * BYTES_PER_PIXEL];
+    let pixels = vec![0u8; WIDTH as usize * HEIGHT as usize * BYTES_PER_PIXEL];
+    (context, pixels, std::sync::Arc::new(texture()))
+}
 
-    let duree = mesure(|| {
-        context
-            .submit_world(Affine3::IDENTITY, &world, |_| Some(&texture))
-            .expect("capacité");
-        context
-            .frame_end(black_box(&mut pixels), WIDTH)
-            .expect("image rendue");
-    });
-
-    // La caméra par défaut est dans le couloir, mais rien ne garantit qu'elle y
-    // voie quelque chose : sans ce contrôle, une régression qui viderait l'image
-    // se lirait comme un gain.
-    let peints = pixels
+/// Combien de pixels l'image porte, hors fond.
+///
+/// **Toute mesure d'image passe par là.** Sans ce contrôle, une régression qui
+/// viderait l'image se lirait comme un gain — et c'est exactement le risque qu'une
+/// élimination introduit : elle est d'autant plus rapide qu'elle retire trop.
+fn peints(pixels: &[u8]) -> usize {
+    pixels
         .chunks_exact(BYTES_PER_PIXEL)
         .filter(|p| p[..3] != [0, 0, 0])
-        .count();
-    assert!(
-        peints as f64 >= f64::from(WIDTH * HEIGHT) * 0.5,
-        "carte : {peints} pixels peints, la mesure ne porte sur rien"
+        .count()
+}
+
+fn main() {
+    println!("screengine — carte, {WIDTH}x{HEIGHT}, tuiles de 64, minimum sur {IMAGES} tours\n");
+
+    ligne(
+        "chargement du couloir",
+        mesure(|| {
+            World::load(black_box(COULOIR)).expect("carte valide");
+        }),
     );
-    ligne("soumission + image", duree);
+    ligne(
+        "chargement des salles",
+        mesure(|| {
+            World::load(black_box(SALLES)).expect("carte valide");
+        }),
+    );
+
+    let (mut context, mut pixels, texture) = scene();
+
+    // **Les deux décors, les deux chemins, dans cet ordre.** Le couloir d'abord,
+    // parce que c'est lui qui porte la mesure de référence et que tout y est
+    // visible : la traversée n'y a rien à retirer et ne peut donc qu'y perdre.
+    // Les salles ensuite, où trois cellules sur quatre sont hors de vue.
+    for (nom, bytes, position) in [
+        ("couloir", COULOIR, Vec3::new(2.0, 2.0, 2.0)),
+        ("salles", SALLES, Vec3::new(2.0, 2.0, 2.0)),
+    ] {
+        let world = World::load(bytes).expect("carte valide");
+        context
+            .set_camera(Camera {
+                position,
+                ..Camera::DEFAULT
+            })
+            .expect("caméra valide");
+
+        let brute = mesure(|| {
+            context
+                .submit_world(Affine3::IDENTITY, &world, |_| Some(&texture))
+                .expect("capacité");
+            context
+                .frame_end(black_box(&mut pixels), WIDTH)
+                .expect("image rendue");
+        });
+        let tout = peints(&pixels);
+        assert!(
+            tout as f64 >= f64::from(WIDTH * HEIGHT) * 0.5,
+            "{nom} brut : {tout} pixels peints, la mesure ne porte sur rien"
+        );
+
+        let cell = world.locate(position);
+        let visible = mesure(|| {
+            context
+                .submit_world_visible(Affine3::IDENTITY, &world, cell, None, |_| Some(&texture))
+                .expect("capacité");
+            context
+                .frame_end(black_box(&mut pixels), WIDTH)
+                .expect("image rendue");
+        });
+        // **La traversée doit rendre la même image que le chemin brut**, et c'est
+        // ce qui rend les deux durées comparables : une élimination qui retire du
+        // visible serait plus rapide et fausse.
+        assert_eq!(
+            peints(&pixels),
+            tout,
+            "{nom} : la traversée ne peint pas la même image que le chemin brut"
+        );
+
+        ligne(&alloc_nom(nom, "brut"), brute);
+        ligne(&alloc_nom(nom, "traverse"), visible);
+    }
+}
+
+/// Le libellé d'une ligne, décor puis chemin.
+fn alloc_nom(decor: &str, chemin: &str) -> String {
+    format!("{decor} — {chemin}")
 }

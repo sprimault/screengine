@@ -580,6 +580,32 @@ fn la_traversee_rend_la_meme_image_que_le_chemin_brut() {
     assert_ne!(visible, pixels_of(&mut vierge), "la scène n'a rien peint");
 }
 
+/// Deux images de suite par la traversée, sur le même contexte, rendent la même
+/// chose.
+///
+/// **Le cas que la conformance ne voit pas** : elle rend une vue par contexte, et
+/// un hôte à fenêtre en rend soixante par seconde sur le même. La seconde image
+/// trouvait la liste des visites vidée sous elle — le nettoyage de l'image close
+/// avait lieu à la première surface soumise, donc après la traversée — et le rendu
+/// s'arrêtait sur un index hors borne. Vu en étendant le banc de la carte, qui est
+/// le premier code du dépôt à enchaîner deux images.
+#[test]
+fn deux_images_de_suite_par_la_traversee_rendent_la_meme_chose() {
+    let world = two_cell_world();
+    let texture = plain_texture(0x80, 0x40, 0x20);
+    let mut ctx = small_ctx();
+
+    ctx.submit_world_visible(Affine3::IDENTITY, &world, 7, None, |_| Some(&texture))
+        .expect("capacité");
+    let premiere = pixels_of(&mut ctx);
+
+    ctx.submit_world_visible(Affine3::IDENTITY, &world, 7, None, |_| Some(&texture))
+        .expect("capacité");
+    let seconde = pixels_of(&mut ctx);
+
+    assert_eq!(premiere, seconde);
+}
+
 /// Une cellule nulle ne soumet rien et le dit.
 #[test]
 fn une_cellule_nulle_ne_soumet_rien() {

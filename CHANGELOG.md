@@ -67,7 +67,8 @@ critère est `code < 0`, et un statut inconnu se traite comme `SCG_OK`.
   couloir dont un bout est coupé en biais, la salle que ce portail oblique dessert,
   et un étage superposé au rez-de-chaussée sans lien avec lui. Cinq vues le
   parcourent, et sur chacune la traversée rend **la même image que le chemin
-  brut** — le décor du couloir n'est pas touché et garde son empreinte.
+  brut** — le décor du couloir n'est pas touché et garde son empreinte. Il est
+  aussi rangé en fichier, à côté du couloir, pour que les hôtes le parcourent.
 - **La cellule d'une caméra se trouve puis se suit** : `scg_world_locate` par une
   position, `scg_world_track` par un déplacement. Zéro vaut « nulle part », ce qui
   est une clause et non une erreur — le moteur ne relocalise jamais une caméra de
@@ -141,7 +142,8 @@ signature changes.
   with one end cut on the bias, the room that oblique portal serves, and a floor
   stacked above the ground one with no link to it. Five views walk it, and on each
   traversal renders **the same image as the raw path** — the corridor level is
-  untouched and keeps its hash.
+  untouched and keeps its hash. It is also written out as a file, next to the
+  corridor, for the hosts to walk.
 - **The core traverses a level through its portals** and submits only the visible
   cells, each once and in file order: the total therefore stays bounded by the
   map's triangle count. An unknown cell is refused; no starting cell at all is a
