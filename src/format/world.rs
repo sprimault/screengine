@@ -56,6 +56,14 @@ const VERTEX_LEN: usize = 12;
 /// déjà écrites.
 const SURFACE_FLAGS: u32 = 0b111;
 
+/// Le bit qui dit qu'une surface ne reçoit pas de lightmap.
+///
+/// Défini par le format depuis l'étape des données, sans lecteur jusqu'ici : c'est
+/// le calcul d'éclairage qui lui en donne un. Une surface qui le porte garde son
+/// habillage et reste soumise sans lightmap, comme si sa cellule n'était pas
+/// encore cuite.
+const SURFACE_NO_LIGHTMAP: u32 = 0b010;
+
 /// L'étendue maximale d'une surface dans son repère de lightmap, en luxels sur
 /// un côté.
 ///
@@ -86,11 +94,11 @@ const SQUARE_TOLERANCE: f64 = 1.0 / 1048576.0;
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct Mapping {
     /// Le point de coordonnées nulles.
-    origin: Vec3,
+    pub(crate) origin: Vec3,
     /// L'axe des abscisses, en texels par unité de monde.
-    u: Vec3,
+    pub(crate) u: Vec3,
     /// L'axe des ordonnées.
-    v: Vec3,
+    pub(crate) v: Vec3,
 }
 
 impl Mapping {
@@ -100,7 +108,7 @@ impl Mapping {
     /// l'échelle, si bien qu'aucune normalisation n'intervient — elle
     /// demanderait une racine, donc une table, pour une valeur que l'éditeur a
     /// déjà écrite.
-    fn project(&self, point: Vec3) -> (f32, f32) {
+    pub(crate) fn project(&self, point: Vec3) -> (f32, f32) {
         let d = Vec3::new(
             point.x - self.origin.x,
             point.y - self.origin.y,
@@ -147,12 +155,29 @@ pub(crate) struct Surface {
     /// d'épingle — invisible à l'arrêt, visible en mouchetures sur une lightmap
     /// cuite, et tout le calculateur serait déjà construit dessus.
     pub(crate) corners: Vec<u32>,
+    /// Le rang de son premier sommet dérivé dans la cellule.
+    ///
+    /// Le chargement dédouble les sommets par surface — chacun porte les
+    /// coordonnées de son propre repère —, si bien que les coins d'une surface y
+    /// sont consécutifs à partir de celui-ci. C'est par lui que le calcul
+    /// d'éclairage retrouve le polygone qu'il doit interroger.
+    pub(crate) first_vertex: u32,
     /// Le coin de la grille de luxels, et ses deux étendues.
     ///
     /// Dérivé au chargement comme tout le reste : c'est ce qui dimensionne le
     /// rectangle de la surface dans l'atlas de sa cellule, et le faire au calcul
     /// obligerait à reparcourir les sommets une seconde fois.
     pub(crate) luxels: Extent,
+}
+
+impl Surface {
+    /// Vrai si cette surface refuse la lightmap de sa cellule.
+    ///
+    /// Elle reste soumise et garde son habillage : c'est le chemin non éclairé qui
+    /// la prend, exactement comme si sa cellule n'était pas encore cuite.
+    pub(crate) fn skips_lightmap(&self) -> bool {
+        self.flags & SURFACE_NO_LIGHTMAP != 0
+    }
 }
 
 /// L'étendue d'une surface dans son repère de lightmap, en luxels.
@@ -818,6 +843,7 @@ fn surface(
         triangle_count: count as u32,
         lightmap,
         corners: indices,
+        first_vertex,
         luxels,
     })
 }
@@ -975,10 +1001,14 @@ fn luxel_extent(mapping: Mapping, corners: &[Vec3]) -> Option<Extent> {
             corner.y - mapping.origin.y,
             corner.z - mapping.origin.z,
         );
-        let coordinates = [
-            dot64(offset, mapping.u) / square_u,
-            dot64(offset, mapping.v) / square_v,
-        ];
+        // **Sans diviser par le carré de la longueur**, comme [`Mapping::project`] :
+        // dans ce format, c'est la longueur de l'axe qui porte l'échelle, si bien
+        // que le produit scalaire *est* la coordonnée. Diviser ici donnerait une
+        // étendue en désaccord avec les coordonnées que la soumission calcule — et
+        // rien ne le montrerait tant que les axes sont unitaires, ce qu'ils sont
+        // dans tous les décors du dépôt.
+        let _ = (square_u, square_v);
+        let coordinates = [dot64(offset, mapping.u), dot64(offset, mapping.v)];
         for (bound, value) in bounds.iter_mut().zip(coordinates) {
             if !value.is_finite() {
                 return None;

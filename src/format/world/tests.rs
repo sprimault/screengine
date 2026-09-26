@@ -589,12 +589,18 @@ fn un_axe_de_lightmap_hors_du_plan_est_refuse() {
 
 /// Une surface dont l'étendue en luxels dépasse le plafond est refusée.
 ///
-/// Un pas de `2⁻⁹` sur un carré de quatre unités demande 2048 luxels de côté. Le
-/// refus tombe ici et non au calcul : l'hôte l'apprend en ouvrant la carte, une
-/// fois, au lieu de le voir remonter d'une cuisson pour une seule cellule.
+/// **C'est la longueur de l'axe qui porte l'échelle** : un axe de 512 sur un carré
+/// de quatre unités demande 2048 luxels de côté. Un axe *court* donnerait au
+/// contraire une grille grossière — la convention est celle de
+/// [`Mapping::project`], et l'inverser ici passerait inaperçu tant que les axes
+/// sont unitaires.
+///
+/// Le refus tombe au chargement et non au calcul : l'hôte l'apprend en ouvrant la
+/// carte, une fois, au lieu de le voir remonter d'une cuisson pour une seule
+/// cellule.
 #[test]
 fn une_etendue_de_lightmap_demesuree_est_refusee() {
-    let fine = frame([0.0, 0.0, 0.0], [0.001_953_125, 0.0, 0.0], [0.0, 1.0, 0.0]);
+    let fine = frame([0.0, 0.0, 0.0], [512.0, 0.0, 0.0], [0.0, 1.0, 0.0]);
     assert_eq!(
         World::load(&map_with_lightmap(&fine)).unwrap_err(),
         refused(Malformation::Mapping)

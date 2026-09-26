@@ -71,6 +71,18 @@ pub const SCG_STATUS_INCOMPLETE: i32 = 1;
 /// place the camera in a cell again. The engine never relocates it on its own.
 pub const SCG_STATUS_NO_CELL: i32 = 2;
 
+/// A cell has no lightmap yet.
+pub const SCG_LIGHTMAP_ABSENT: u32 = 0;
+
+/// A cell's lightmap is ready.
+pub const SCG_LIGHTMAP_READY: u32 = 1;
+
+/// A cell has a lightmap, but has changed since it was computed.
+///
+/// Never returned while nothing modifies a loaded map; the value is published now
+/// because editing will produce it, and a published state does not change meaning.
+pub const SCG_LIGHTMAP_STALE: u32 = 2;
+
 /// How deep portal traversal follows a line of sight.
 ///
 /// Exposed so a host can tell why an image came back incomplete. It is a constant

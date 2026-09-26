@@ -12,6 +12,8 @@
 //! une fenêtre trop étroite laisse un trou définitif dans l'image.
 
 pub(crate) mod atlas;
+pub(crate) mod bake;
+pub(crate) mod lighting;
 pub(crate) mod locate;
 pub(crate) mod traversal;
 pub(crate) mod window;

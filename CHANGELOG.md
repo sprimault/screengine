@@ -78,6 +78,19 @@ critère est `code < 0`, et un statut inconnu se traite comme `SCG_OK`.
   Son paramètre de lightmaps n'accepte que `NULL` : il existe dès maintenant pour
   que la signature ne change jamais. `scg_submit_world` reste et n'est pas
   dépréciée — c'est le chemin contre lequel la traversée se valide.
+- **Le noyau calcule les lightmaps d'une cellule**, sur appel explicite de l'hôte
+  — `scg_lighting_create`, `scg_lighting_build`, `scg_lighting_state` — et jamais
+  pendant une image. Elles restent un cache dérivable : la carte est la source.
+  L'éclairement reprend l'atténuation de l'étape 3 et y ajoute un terme de Lambert,
+  sans lequel les deux faces d'un angle reçoivent la même valeur et l'angle
+  disparaît. Une cellule est éclairée par ce que sa région laisse passer — elle,
+  ses voisines à un portail, le bord refermé —, si bien que **la lumière ne tourne
+  pas deux coins** et qu'un plancher opaque reste opaque.
+- Les lightmaps d'une cellule tiennent dans **un seul atlas**, chaque surface y
+  recevant un rectangle en puissances de deux aligné sur sa propre taille : aucune
+  réduction 2×2 ne traverse sa frontière, et la chaîne de mipmaps est celle que des
+  textures séparées auraient donnée. Le rangement est donc un choix de mémoire sans
+  effet sur l'image.
 
 ### Modifié
 - Le chargement d'une carte vérifie quatre propriétés du repère de lightmap de
@@ -124,6 +137,17 @@ signature changes.
   map's triangle count. An unknown cell is refused; no starting cell at all is a
   clause, not an error. **On a level where everything is visible, traversal
   renders the same image as the raw path**, which remains.
+- **The core computes a cell's lightmaps**, on the host's explicit call —
+  `scg_lighting_create`, `scg_lighting_build`, `scg_lighting_state` — and never
+  during a frame. They stay a derivable cache: the map is the source. Lighting
+  reuses step 3's attenuation and adds a Lambert term, without which both faces of
+  a corner receive the same value and the corner disappears. A cell is lit by what
+  its region lets through — itself, its neighbours one portal away, the boundary
+  sealed — so **light does not turn two corners** and an opaque floor stays opaque.
+- A cell's lightmaps fit in **a single atlas**, each surface getting a power-of-two
+  rectangle aligned on its own size: no 2×2 reduction crosses its boundary, and the
+  mipmap chain is the one separate textures would have produced. Packing is
+  therefore a memory choice with no effect on the image.
 
 ### Changed
 - Loading a map checks four properties of each surface's lightmap frame where it
