@@ -278,19 +278,27 @@ const CLOSING: u8 = 2;
 /// Les textures distinctes qu'une image peut employer, pour une capacité de
 /// `triangles` triangles préparés.
 ///
-/// **Ce plafond se déduit, il n'est pas un paramètre.** Une texture vaut pour
-/// un lot, un lot porte au moins un triangle : les textures distinctes d'une
-/// image sont donc au plus aussi nombreuses que ses triangles préparés, et la
-/// table ne déborde jamais en pratique. Un champ de configuration n'apprendrait
-/// rien au moteur, et `ScgContextConfig` n'a plus que deux champs réservés
-/// avant qu'une extension exige une structure et une fonction nouvelles.
+/// **Ce plafond se déduit, il n'est pas un paramètre.** Un lot pose au moins un
+/// triangle et prend au plus **deux** entrées — la sienne et celle de sa
+/// lightmap, qui vivent dans la même table : les textures distinctes d'une
+/// image sont donc au plus le double de ses triangles préparés. Un champ de
+/// configuration n'apprendrait rien au moteur, et `ScgContextConfig` n'a plus
+/// que deux champs réservés avant qu'une extension exige une structure et une
+/// fonction nouvelles.
+///
+/// Le facteur deux n'est pas une marge : sans lui, un hôte qui règle sa
+/// capacité sur le compte de triangles d'une carte — ce que l'ABI lui dit de
+/// faire — se voit refuser un décor dont les surfaces sont des triangles à
+/// matériau propre, alors que sa capacité de triangles suffit exactement.
 ///
 /// Le plafond dur vient de la sentinelle : [`NO_TEXTURE`] occupe `u16::MAX`,
-/// il reste donc 65535 index. À huit octets l'entrée, la table coûte 128 Kio à
+/// il reste donc 65535 index. À huit octets l'entrée, la table coûte 256 Kio à
 /// la capacité par défaut, contre plus de deux mégaoctets de triangles
 /// préparés et de bacs déjà réservés.
 fn texture_capacity(triangles: usize) -> usize {
-    triangles.min(u16::MAX as usize)
+    // `usize` fait 32 bits sur wasm32 et armv7, et la capacité vient d'un
+    // `u32` : le double déborde avant d'être plafonné.
+    triangles.saturating_mul(2).min(u16::MAX as usize)
 }
 
 /// Les triangles éclairés qu'une image peut porter, pour une capacité de

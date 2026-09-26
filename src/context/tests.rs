@@ -1358,3 +1358,62 @@ fn le_brouillard_s_eteint_et_suit_le_plan_proche() {
         "le fond est resté embrumé"
     );
 }
+
+/// Un lot éclairé prend **deux** entrées de la table pour un seul triangle :
+/// la sienne et celle de sa lightmap, qui vivent dans la même table.
+///
+/// C'est ce qui invalide le raisonnement sur lequel le plafond était
+/// dimensionné — « une texture vaut pour un lot, un lot porte au moins un
+/// triangle ». Un hôte qui règle sa capacité sur le compte de triangles d'une
+/// carte, ce que l'ABI lui dit de faire, se voyait refuser un décor dont les
+/// surfaces sont des triangles à matériau propre.
+#[test]
+fn un_lot_eclaire_prend_deux_entrees_de_la_table() {
+    let mut config = sane();
+    config.max_triangles = 2;
+    config.width = 64;
+    config.height = 64;
+    let mut ctx = Context::new(config).expect("configuration saine");
+
+    for _ in 0..2 {
+        let (mur, atlas) = (texture(), lightmap());
+        ctx.submit_each_lit(Affine3::IDENTITY, 1, Some(&mur), &atlas, |_| {
+            Ok((ahead_uv2(0.0, 0.0, 0.0, 0.0), one()[0].color))
+        })
+        .expect("capacité");
+    }
+
+    assert_eq!(ctx.triangles.len(), 2, "la capacité de triangles suffisait");
+    assert_eq!(ctx.textures.len(), 4, "deux entrées par lot éclairé");
+}
+
+/// La table pleine refuse le lot, et c'est le seul refus qui tombe avant qu'un
+/// triangle ait été préparé : la texture s'enregistre avant que le lot soit
+/// posé.
+///
+/// Le plafond doublé ne rend pas cette branche inatteignable, il la déplace :
+/// le lot qui déborde la table est désormais celui qui aurait de toute façon
+/// débordé la capacité de triangles.
+#[test]
+fn la_table_de_textures_pleine_refuse_le_lot() {
+    let mut config = sane();
+    config.max_triangles = 1;
+    config.width = 64;
+    config.height = 64;
+    let mut ctx = Context::new(config).expect("configuration saine");
+
+    let (mur, atlas) = (texture(), lightmap());
+    ctx.submit_each_lit(Affine3::IDENTITY, 1, Some(&mur), &atlas, |_| {
+        Ok((ahead_uv2(0.0, 0.0, 0.0, 0.0), one()[0].color))
+    })
+    .expect("capacité");
+    assert_eq!(ctx.textures.len(), 2, "la table est pleine");
+
+    let autre = texture();
+    assert_eq!(
+        ctx.submit_textured(Affine3::IDENTITY, &ahead_uv(0.0, 0.0), &one(), &autre),
+        Err(Error::InvalidArgument(Argument::TextureCapacity))
+    );
+    assert_eq!(ctx.textures.len(), 2, "le lot refusé n'a rien laissé");
+    assert_eq!(ctx.triangles.len(), 1, "et rien posé");
+}
