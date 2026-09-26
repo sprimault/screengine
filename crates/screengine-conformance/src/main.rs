@@ -25,10 +25,10 @@ use std::{fs, io};
 use std::sync::Arc;
 
 use screengine::{
-    Affine3, Angle, BYTES_PER_PIXEL, Color, Config, Context, Filter, Frame, Light, MAX_OVERBRIGHT,
-    Mesh, Quat, Rect, Rows, Texture, Triangle, Vec3, VertexUv, VertexUv2, World,
+    Affine3, Angle, BYTES_PER_PIXEL, Camera, Color, Config, Context, Filter, Frame, Light,
+    MAX_OVERBRIGHT, Mesh, Quat, Rect, Rows, Texture, Triangle, Vec3, VertexUv, VertexUv2, World,
 };
-use screengine_conformance::{mesh_file, world_file};
+use screengine_conformance::{mesh_file, rooms_file, world_file};
 
 /// Une façon de rendre une scène qui ne doit pas changer l'image.
 ///
@@ -420,6 +420,12 @@ enum Scene {
     /// différentes, si bien qu'une soumission qui lierait la même à tous les
     /// matériaux rendrait une autre image.
     WorldFile,
+    /// Le décor de validation de la traversée, parcouru sous plusieurs vues.
+    ///
+    /// La seule scène que la traversée rend plutôt que le chemin brut, et la seule
+    /// qui déplace sa caméra : c'est son objet — une fenêtre trop étroite ne se
+    /// voit que depuis un endroit précis, et une seule vue en laisserait passer.
+    Rooms,
 }
 
 /// La matrice qui place la caisse : deux rotations composées, puis cinq unités
@@ -660,6 +666,34 @@ struct View {
     angle: u32,
 }
 
+/// Les poses depuis lesquelles le décor de validation se regarde.
+///
+/// Position dans le monde, puis lacet en radians autour de la verticale — la
+/// caméra neutre regarde le `+X`.
+///
+/// **Chacune éprouve une chose que les autres ne montrent pas.** Une seule vue
+/// suffirait à figer une empreinte et ne prouverait presque rien : une fenêtre trop
+/// étroite ne troue l'image que depuis l'endroit d'où le portail est vu de biais,
+/// et une cellule oubliée ne manque que si on regarde vers elle.
+const ROOM_VIEWS: [([f32; 3], f32); 5] = [
+    // Dans la salle en L, face à l'ouverture du couloir : la traversée doit
+    // ramener le couloir, puis le losange derrière lui.
+    ([2.0, 2.0, 2.0], 0.0),
+    // Dans la même salle, tournée vers son coin rentrant : rien ne s'ouvre de ce
+    // côté, et l'empreinte concave doit rester close.
+    ([2.0, 2.0, 2.0], core::f32::consts::FRAC_PI_2),
+    // Dans le couloir, face au portail oblique : c'est la vue où la boîte
+    // englobante de la fenêtre est la plus lâche, donc celle qui paie le
+    // sur-dessin et qui trouerait l'image si la fenêtre mordait.
+    ([10.0, 2.0, 2.0], -core::f32::consts::FRAC_PI_4),
+    // Dans le losange, retournée vers le couloir : le portail oblique vu de
+    // l'autre côté, avec un enroulement inverse.
+    ([16.0, 4.0, 2.0], core::f32::consts::PI),
+    // À l'étage, au-dessus de la salle en L : la cellule superposée, que rien ne
+    // relie au rez-de-chaussée. La traversée ne doit en montrer qu'elle.
+    ([2.0, 2.0, 10.0], 0.0),
+];
+
 impl View {
     /// La désignation d'une vue dans un message de divergence.
     fn label(self) -> String {
@@ -669,7 +703,7 @@ impl View {
 
 impl Scene {
     /// Toutes les scènes, dans l'ordre où `--check` les rejoue.
-    const ALL: [Self; 17] = [
+    const ALL: [Self; 18] = [
         Self::Edge,
         Self::Guard,
         Self::Lateral,
@@ -687,6 +721,7 @@ impl Scene {
         Self::Lights,
         Self::MeshFile,
         Self::WorldFile,
+        Self::Rooms,
     ];
 
     /// La passe que `--print` utilise, celle des hôtes.
@@ -729,6 +764,7 @@ impl Scene {
             Self::Lights => "lumieres",
             Self::MeshFile => "maillage",
             Self::WorldFile => "carte",
+            Self::Rooms => "salles",
         }
     }
 
@@ -868,6 +904,18 @@ impl Scene {
                         height,
                         angle,
                     })
+                })
+                .collect(),
+            // Une vue par pose de [`ROOM_VIEWS`], à la résolution des hôtes. Les
+            // trois résolutions ne s'y ajoutent pas : ce que cette scène éprouve
+            // est la géométrie de la traversée, pas un arrondi propre à une
+            // largeur, et cinq vues sur trois formats feraient quinze images pour
+            // la même question.
+            Self::Rooms => (0..ROOM_VIEWS.len() as u32)
+                .map(|angle| View {
+                    width,
+                    height,
+                    angle,
                 })
                 .collect(),
             _ => vec![View {
@@ -1144,6 +1192,37 @@ impl Scene {
                     0 => Some(&walls),
                     _ => Some(&floor),
                 })
+            }
+            // Le décor de validation, rendu par la traversée depuis la cellule où
+            // la caméra se trouve — trouvée et non supposée, ce qui met
+            // `World::locate` dans le chemin de la conformance.
+            Self::Rooms => {
+                let world = World::load(&rooms_file::bytes())
+                    .unwrap_or_else(|_| unreachable!("le décor de validation est bien formé"));
+                let (position, yaw) = ROOM_VIEWS[view.angle as usize];
+                let position = Vec3::new(position[0], position[1], position[2]);
+                let spin =
+                    Quat::from_axis_angle(Vec3::new(0.0, 0.0, 1.0), Angle::from_radians(yaw));
+                context.set_camera(Camera {
+                    position,
+                    orientation: spin,
+                    ..Camera::DEFAULT
+                })?;
+
+                let cell = world.locate(position);
+                let walls = checker(512, 128);
+                let floor = checker(256, 32);
+                context
+                    .submit_world_visible(
+                        Affine3::IDENTITY,
+                        &world,
+                        cell,
+                        |material| match material {
+                            0 => Some(&walls),
+                            _ => Some(&floor),
+                        },
+                    )
+                    .map(|_| ())
             }
         }
     }

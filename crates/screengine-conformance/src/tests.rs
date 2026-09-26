@@ -510,3 +510,158 @@ fn le_fichier_de_maillage_versionne_porte_la_caisse() {
     assert_eq!(mesh.texture_name(0), Some("cote"));
     assert_eq!(mesh.texture_name(1), Some("chapeau"));
 }
+
+/// Le décor de validation se charge, et il porte ce qu'il annonce.
+///
+/// **Écrit avant toute empreinte, et c'est l'ordre qui compte** : une empreinte dit
+/// qu'une image a changé, jamais qu'elle est juste. Un décor dont les portails ne
+/// s'apparient pas, ou dont une cellule n'est pas celle qu'on croit, se figerait
+/// aussi bien qu'un autre — et la scène ne prouverait alors plus rien de la
+/// traversée.
+#[test]
+fn le_decor_de_validation_porte_ses_trois_proprietes() {
+    let world = World::load(&rooms_file::bytes()).expect("décor de validation valide");
+
+    assert_eq!(world.cell_count(), 4, "quatre cellules");
+    for (index, expected) in [(0u32, 1u32), (1, 2), (2, 3), (3, 4)] {
+        assert_eq!(world.cell_id(index), Some(expected));
+    }
+
+    // **Les deux cellules superposées partagent leur empreinte au sol.** Un point
+    // au-dessus du plancher appartient à l'étage, le même point plus bas au
+    // rez-de-chaussée : c'est ce que la localisation doit distinguer, et le
+    // décor n'a pas d'autre moyen de l'éprouver.
+    assert_eq!(
+        world.locate(Vec3::new(2.0, 2.0, 2.0)),
+        1,
+        "le rez-de-chaussée"
+    );
+    assert_eq!(world.locate(Vec3::new(2.0, 2.0, 10.0)), 4, "l'étage");
+
+    // Le coin rentrant de la salle en L : un point qui serait dedans si son
+    // empreinte était convexe, et qui est dehors.
+    assert_eq!(
+        world.locate(Vec3::new(6.0, 6.0, 2.0)),
+        0,
+        "le coin rentrant doit rester dehors"
+    );
+
+    // La salle en L s'ouvre sur le couloir, et le couloir sur le losange : deux
+    // appariements, donc une traversée qui va du premier au dernier.
+    assert_eq!(
+        world.track(1, Vec3::new(4.0, 2.0, 2.0), Vec3::new(10.0, 2.0, 2.0)),
+        2
+    );
+    assert_eq!(
+        world.track(2, Vec3::new(10.0, 2.0, 2.0), Vec3::new(16.0, 4.0, 2.0)),
+        3,
+        "le portail oblique se franchit"
+    );
+}
+
+/// Sur le décor de validation, la traversée rend la même image que le chemin brut,
+/// depuis chacune de ses vues.
+///
+/// **C'est le critère de franchissement de l'étape, et le seul contrôle qui
+/// attrape une fenêtre trop étroite.** Les cellules sont fermées et disjointes,
+/// toutes celles que la traversée visite sont dessinées, et le tampon de profondeur
+/// cache celles qu'elle élimine : l'égalité est donc un théorème sur une carte bien
+/// formée, pas une commodité. Une fenêtre trop **large**, elle, ne change pas
+/// l'image et reste invisible ici — c'est l'asymétrie à connaître avant de se fier
+/// à ce test.
+#[test]
+fn la_traversee_ne_troue_pas_le_decor_de_validation() {
+    let world = World::load(&rooms_file::bytes()).expect("décor de validation valide");
+    let walls = checker(512, 128);
+    let floor = checker(256, 32);
+    let textures = |material: u32| {
+        if material == 0 {
+            Some(&walls)
+        } else {
+            Some(&floor)
+        }
+    };
+
+    for (index, (position, yaw)) in ROOM_VIEWS.iter().enumerate() {
+        let position = Vec3::new(position[0], position[1], position[2]);
+        let camera = Camera {
+            position,
+            orientation: Quat::from_axis_angle(Vec3::new(0.0, 0.0, 1.0), Angle::from_radians(*yaw)),
+            ..Camera::DEFAULT
+        };
+        let cell = world.locate(position);
+        assert_ne!(
+            cell, 0,
+            "la vue {index} pose la caméra hors de toute cellule"
+        );
+
+        let render = |traverse: bool| -> Vec<u8> {
+            let (width, height) = Scene::RESOLUTION;
+            let mut context = Context::new(Config {
+                max_width: width,
+                max_height: height,
+                width,
+                height,
+                tile_size: 64,
+                max_triangles: 0,
+            })
+            .expect("configuration saine");
+            context.set_camera(camera).expect("caméra valide");
+            if traverse {
+                context
+                    .submit_world_visible(Affine3::IDENTITY, &world, cell, textures)
+                    .expect("capacité");
+            } else {
+                context
+                    .submit_world(Affine3::IDENTITY, &world, textures)
+                    .expect("capacité");
+            }
+            let mut pixels = vec![0u8; (width * height) as usize * BYTES_PER_PIXEL];
+            context.frame_end(&mut pixels, width).expect("image rendue");
+            pixels
+        };
+
+        let traversed = render(true);
+        let raw = render(false);
+        let ecart = traversed.iter().zip(&raw).filter(|(a, b)| a != b).count();
+        assert_eq!(
+            ecart, 0,
+            "la vue {index} diverge sur {ecart} octets : la traversée a troué l'image"
+        );
+    }
+}
+
+/// Les cellules du décor sont closes, et leur superposition est nette.
+///
+/// Le vide entre les deux étages en fait partie : un point à mi-hauteur
+/// n'appartient à aucune cellule, ce qui est la seule façon de vérifier que le
+/// plancher de l'un et le plafond de l'autre ferment bien leurs volumes.
+#[test]
+fn les_cellules_du_decor_sont_closes() {
+    let world = World::load(&rooms_file::bytes()).expect("décor de validation valide");
+
+    // En hauteur : le rez-de-chaussée, le vide, l'étage, puis le ciel.
+    for (z, expected) in [
+        (-1.0f32, 0u32),
+        (0.5, 1),
+        (3.5, 1),
+        (6.0, 0),
+        (8.5, 4),
+        (11.5, 4),
+        (13.0, 0),
+    ] {
+        assert_eq!(world.locate(Vec3::new(2.0, 2.0, z)), expected, "à z={z}");
+    }
+
+    // En longueur : la salle, le couloir, le losange, puis dehors.
+    for (x, expected) in [
+        (1.0f32, 1u32),
+        (7.5, 1),
+        (9.0, 2),
+        (13.0, 2),
+        (15.0, 3),
+        (19.0, 0),
+    ] {
+        assert_eq!(world.locate(Vec3::new(x, 2.0, 2.0)), expected, "à x={x}");
+    }
+}

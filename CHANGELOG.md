@@ -63,6 +63,11 @@ critère est `code < 0`, et un statut inconnu se traite comme `SCG_OK`.
   borné par le nombre de triangles de la carte. Une cellule inconnue est refusée ;
   aucune cellule de départ est une clause, pas une erreur. **Sur un décor où tout
   est visible, la traversée rend la même image que le chemin brut**, qui reste.
+- **Un second décor de référence éprouve la traversée** : une salle non convexe, un
+  couloir dont un bout est coupé en biais, la salle que ce portail oblique dessert,
+  et un étage superposé au rez-de-chaussée sans lien avec lui. Cinq vues le
+  parcourent, et sur chacune la traversée rend **la même image que le chemin
+  brut** — le décor du couloir n'est pas touché et garde son empreinte.
 - **La cellule d'une caméra se trouve puis se suit** : `scg_world_locate` par une
   position, `scg_world_track` par un déplacement. Zéro vaut « nulle part », ce qui
   est une clause et non une erreur — le moteur ne relocalise jamais une caméra de
@@ -109,6 +114,11 @@ signature changes.
 - Step 5's contract is written: the fourteen entry points for portal traversal,
   camera cell tracking and lightmap computation, with traversal's bounds and what
   it returns on reaching them. None is exposed yet.
+- **A second reference level exercises traversal**: a non-convex room, a corridor
+  with one end cut on the bias, the room that oblique portal serves, and a floor
+  stacked above the ground one with no link to it. Five views walk it, and on each
+  traversal renders **the same image as the raw path** — the corridor level is
+  untouched and keeps its hash.
 - **The core traverses a level through its portals** and submits only the visible
   cells, each once and in file order: the total therefore stays bounded by the
   map's triangle count. An unknown cell is refused; no starting cell at all is a
