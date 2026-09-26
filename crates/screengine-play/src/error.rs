@@ -164,6 +164,9 @@ impl fmt::Display for Error {
             Self::Engine(screengine::Error::UnsupportedFormatVersion) => {
                 f.write_str("unsupported data format version: export the data again")
             }
+            Self::Engine(screengine::Error::UnknownResource) => {
+                f.write_str("unknown identifier: the resource holds no such cell")
+            }
             Self::Setting(what) => f.write_str(what),
             Self::ScaleTooLarge {
                 factor,

@@ -319,8 +319,27 @@ impl Context {
         // Zéro est infiniment loin : toute profondeur bornée par `to_depth`
         // le bat.
         scratch.depth.fill(0);
+        // Le curseur des fenêtres de traversée. `Merge` rend les index par ordre
+        // croissant — c'est l'invariant que le test strict de profondeur exige
+        // déjà —, si bien qu'un curseur qui ne revient jamais en arrière suffit :
+        // une comparaison par triangle, aucune recherche, et rien à ranger dans
+        // le triangle préparé, qui est plein.
+        let mut cursor = 0;
         for index in triangles {
             let triangle = &self.triangles[index as usize];
+            // La fenêtre ne borne que la boucle, jamais les valeurs : c'est ce
+            // qui rend l'image identique avec ou sans elle, exactement comme
+            // elle l'est indépendamment du découpage en tuiles.
+            let window = if index < self.visited_end {
+                while cursor + 1 < self.visits.len()
+                    && self.visits[cursor + 1].first_triangle <= index
+                {
+                    cursor += 1;
+                }
+                rect.intersect(self.visits[cursor].window)
+            } else {
+                rect
+            };
             // L'index se résout ici, une fois par triangle : le rasteriseur
             // reçoit la texture et ne connaît ni la table ni le comptage de
             // références, qui appartiennent au contexte.
@@ -346,7 +365,7 @@ impl Context {
                     overbright: self.overbright,
                 }),
             };
-            fill(&mut scratch, rect, triangle, sampling, lit);
+            fill(&mut scratch, window, triangle, sampling, lit);
         }
 
         // Le post-traitement se choisit **une fois par tuile**, et la recopie

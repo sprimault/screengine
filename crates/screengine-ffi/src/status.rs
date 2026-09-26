@@ -82,6 +82,7 @@ pub(crate) fn code_of(error: Error) -> i32 {
         Error::Faulted => SCG_ERR_FAULTED,
         Error::InvalidFormat(_) => SCG_ERR_INVALID_FORMAT,
         Error::UnsupportedFormatVersion => SCG_ERR_UNSUPPORTED_FORMAT_VERSION,
+        Error::UnknownResource => SCG_ERR_UNKNOWN_RESOURCE,
     }
 }
 
@@ -217,6 +218,7 @@ pub(crate) fn message_of(error: Error) -> &'static str {
         Error::UnsupportedFormatVersion => {
             "unsupported data format version: take a newer library, or export the data again"
         }
+        Error::UnknownResource => "unknown identifier: the resource holds no such cell",
     }
 }
 

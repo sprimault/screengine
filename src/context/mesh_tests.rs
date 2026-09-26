@@ -475,3 +475,136 @@ fn un_maillage_se_soumet_deux_fois() {
     .expect("capacité");
     assert_eq!(ctx.triangles.len(), 2);
 }
+
+/// Une carte de deux cellules jointes, dont un tronçon de couloir.
+///
+/// Les sommets de chaque bout sont écrits à l'identique des deux côtés du
+/// portail, ce que l'appariement exige au bit près.
+fn two_cell_world() -> World {
+    use crate::format::world::tests::{cell_bytes, file, frame, material, portal_bytes, words};
+
+    let section = |from: f32, to: f32| {
+        let mut points = [[0.0f32; 3]; 8];
+        for (i, x) in [from, to].iter().enumerate() {
+            for (j, (y, z)) in [(-2.0, -2.0), (2.0, -2.0), (2.0, 2.0), (-2.0, 2.0)]
+                .iter()
+                .enumerate()
+            {
+                points[i * 4 + j] = [*x, *y, *z];
+            }
+        }
+        points
+    };
+    // **Les quatre faces, et non le sol seul.** Les enroulements et les axes sont
+    // ceux de la carte de conformance : une face prise à l'envers disparaît au
+    // découpage, et les deux chemins concorderaient alors sur du vide. Les quatre
+    // faces sont ce qui remplit la fenêtre du portail de part en part, donc ce qui
+    // rend le test sensible au pixel — avec le sol seul, la cellule lointaine
+    // n'occupe que quatre lignes et un rognage d'un pixel passe inaperçu.
+    let faces: [([u32; 4], [f32; 3]); 4] = [
+        ([0, 4, 5, 1], [0.0, 1.0, 0.0]),
+        ([3, 2, 6, 7], [0.0, 1.0, 0.0]),
+        ([0, 3, 7, 4], [0.0, 0.0, 1.0]),
+        ([1, 5, 6, 2], [0.0, 0.0, 1.0]),
+    ];
+    let surfaces = |base: u32| -> Vec<Vec<u8>> {
+        faces
+            .iter()
+            .enumerate()
+            .map(|(i, (indices, v))| {
+                let mut bytes = words(&[base + i as u32, 0, 1, 4]);
+                bytes.extend_from_slice(&words(indices));
+                let along = [1.0f32, 0.0, 0.0];
+                bytes.extend_from_slice(&frame([0.0, 0.0, 0.0], along, *v));
+                bytes.extend_from_slice(&frame([0.0, 0.0, 0.0], along, *v));
+                bytes
+            })
+            .collect()
+    };
+
+    let first = cell_bytes(
+        7,
+        0,
+        &section(-8.0, 4.0),
+        &surfaces(11),
+        &[portal_bytes(21, &[4, 5, 6, 7])],
+    );
+    let second = cell_bytes(
+        8,
+        0,
+        &section(4.0, 16.0),
+        &surfaces(21),
+        &[portal_bytes(22, &[0, 1, 2, 3])],
+    );
+    let mut cells = first;
+    cells.extend_from_slice(&second);
+    World::load(&file(&cells, &[], &[], &material(1, "mur"))).expect("carte valide")
+}
+
+/// Sur un décor où tout est visible, la traversée rend la même image que le
+/// chemin brut.
+///
+/// **C'est le contrôle central de l'étape**, et ce n'est pas une commodité de
+/// test : les cellules sont fermées et disjointes, toutes celles que la traversée
+/// visite sont dessinées, donc l'égalité est un théorème sur une carte bien
+/// formée. C'est aussi le seul contrôle qui attrape une fenêtre **trop
+/// étroite** — une fenêtre trop large, elle, ne change pas l'image, et rien ici
+/// ne la verrait.
+///
+/// **Sa sensibilité tient à la place de la caméra**, et c'est ce qu'il faut savoir
+/// avant d'y toucher : elle est dans sa cellule, près du portail, si bien que la
+/// géométrie de la cellule voisine est tangente aux bords de l'ouverture. Vérifié
+/// en rognant la fenêtre : un seul pixel de moins fait rougir le test. Avec une
+/// caméra reculée à douze unités — et, ce qui était pire, hors de la cellule de
+/// départ —, il fallait deux pixels pour qu'il s'en aperçoive.
+#[test]
+fn la_traversee_rend_la_meme_image_que_le_chemin_brut() {
+    let world = two_cell_world();
+    let texture = plain_texture(0x80, 0x40, 0x20);
+
+    let mut par_traversee = small_ctx();
+    let status = par_traversee
+        .submit_world_visible(Affine3::IDENTITY, &world, 7, |_| Some(&texture))
+        .expect("capacité");
+    assert_eq!(status, Visibility::Complete);
+    let visible = pixels_of(&mut par_traversee);
+
+    let mut par_carte = small_ctx();
+    par_carte
+        .submit_world(Affine3::IDENTITY, &world, |_| Some(&texture))
+        .expect("capacité");
+    let brut = pixels_of(&mut par_carte);
+
+    assert_eq!(visible, brut, "la traversée a perdu ou ajouté des pixels");
+    let mut vierge = small_ctx();
+    assert_ne!(visible, pixels_of(&mut vierge), "la scène n'a rien peint");
+}
+
+/// Une cellule nulle ne soumet rien et le dit.
+#[test]
+fn une_cellule_nulle_ne_soumet_rien() {
+    let world = two_cell_world();
+    let mut ctx = small_ctx();
+    let status = ctx
+        .submit_world_visible(Affine3::IDENTITY, &world, 0, |_| None)
+        .expect("aucune cellule n'est une clause");
+    assert_eq!(status, Visibility::NoCell);
+
+    let mut vierge = small_ctx();
+    assert_eq!(pixels_of(&mut ctx), pixels_of(&mut vierge));
+}
+
+/// Une cellule qui n'existe pas est une erreur, elle.
+///
+/// La différence avec la précédente est celle entre « la caméra n'est nulle
+/// part », qui arrive dans une carte en cours d'édition, et « cette cellule
+/// n'existe pas », qui est une faute de l'appelant.
+#[test]
+fn une_cellule_inconnue_est_refusee() {
+    let world = two_cell_world();
+    let mut ctx = small_ctx();
+    assert_eq!(
+        ctx.submit_world_visible(Affine3::IDENTITY, &world, 99, |_| None),
+        Err(Error::UnknownResource)
+    );
+}
