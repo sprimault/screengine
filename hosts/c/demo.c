@@ -157,9 +157,9 @@ static void yaw(float angle, float *out)
  * démonstration qui ne montrerait qu'un couloir vide n'en dirait que la
  * moitié. */
 static const float CRATES[][3] = {
-    { 6.0f, -1.2f, 0.4f },
-    { 11.0f, 1.4f, -0.7f },
-    { 17.0f, -0.6f, 1.1f },
+    { 3.0f, 2.0f, 0.4f },
+    { 10.0f, 2.0f, -0.7f },
+    { 16.0f, 4.0f, 1.1f },
 };
 
 /* L'échelle des caisses.
@@ -170,9 +170,9 @@ static const float CRATES[][3] = {
  * donc l'échelle va dans la matrice de modèle, qui est faite pour ça. */
 static const float CRATE_SCALE = 0.5f;
 
-/* La cote du centre d'une caisse : sa demi-hauteur au-dessus du sol du
- * couloir, qui est à -1,5. */
-static const float CRATE_Z = -1.0f;
+/* La cote du centre d'une caisse : sa demi-hauteur au-dessus du sol, qui est en
+ * zéro dans ce décor. */
+static const float CRATE_Z = 0.5f;
 
 /* Écrit la matrice d'une caisse : une rotation autour de la verticale mise à
  * l'échelle, puis une translation. Par colonnes, comme l'ABI l'attend.
@@ -245,6 +245,25 @@ int main(int argc, char **argv)
         }
     }
 
+    /* Les lightmaps, cuites une fois pour toutes les cellules avant la première
+     * image. Une lightmap est un cache de la carte et non de la vue : la cuire en
+     * chemin ferait allouer un atlas au milieu d'une image, ce que le moteur
+     * promet de ne jamais faire. */
+    ScgLighting *lighting = NULL;
+    if (scg_lighting_create(world, &lighting) < 0) {
+        fail(NULL, "porteur de lightmaps refusé");
+        return 1;
+    }
+    uint32_t cells = 0;
+    scg_world_cell_count(world, &cells);
+    for (uint32_t i = 0; i < cells; i++) {
+        uint32_t id = 0;
+        if (scg_world_cell_id(world, i, &id) < 0 || scg_lighting_build(lighting, id) < 0) {
+            fail(NULL, "cuisson refusée");
+            return 1;
+        }
+    }
+
     /* Le maillage des caisses, chargé comme la carte : un bloc d'octets, que le
      * moteur copie. Ses deux emplacements portent des noms, et l'hôte décide de
      * ce qu'il met dedans — ici le même damier sur les deux. */
@@ -306,8 +325,15 @@ int main(int argc, char **argv)
         return 1;
     }
 
-    float position[3] = {0.0f, 0.0f, 0.0f};
+    /* Le sol de ce décor est en zéro : une caméra laissée à l'origine serait dans
+     * le plancher, hors de toute cellule, et la traversée ne rendrait rien. */
+    float position[3] = {2.0f, 2.0f, 2.0f};
     float angle = 0.0f;
+    uint32_t cell = 0;
+    if (scg_world_locate(world, position, &cell) < 0 || cell == 0) {
+        fail(NULL, "la caméra ne part d'aucune cellule");
+        return 1;
+    }
     Uint64 previous = SDL_GetTicks();
     Uint64 since = previous;
     unsigned frames = 0;
@@ -340,8 +366,19 @@ int main(int argc, char **argv)
         }
         float forward = (float)(keys[SDL_SCANCODE_UP] || keys[SDL_SCANCODE_W])
             - (float)(keys[SDL_SCANCODE_DOWN] || keys[SDL_SCANCODE_S]);
+        float previous_position[3] = { position[0], position[1], position[2] };
         position[0] += SDL_cosf(angle) * forward * SPEED * dt;
         position[1] += SDL_sinf(angle) * forward * SPEED * dt;
+
+        /* La cellule se suit par le déplacement, et c'est l'hôte qui la garde : le
+         * moteur ne retient aucune caméra. Zéro veut dire « sorti du décor » et ne
+         * s'écrit pas — garder la dernière cellule connue laisse voir le décor
+         * depuis dehors, là où l'écraser éteindrait l'image. */
+        uint32_t found = 0;
+        if (scg_world_track(world, cell, previous_position, position, &found) >= 0
+            && found != 0) {
+            cell = found;
+        }
 
         ScgCamera camera;
         memset(&camera, 0, sizeof camera);
@@ -357,7 +394,7 @@ int main(int argc, char **argv)
         ScgMat4 model;
         memset(&model, 0, sizeof model);
         model.m[0] = model.m[5] = model.m[10] = model.m[15] = 1.0f;
-        if (scg_submit_world(ctx, &model, world, slots, materials) < 0) {
+        if (scg_submit_world_visible(ctx, &model, world, slots, materials, lighting, cell) < 0) {
             fail(ctx, "carte refusée");
             break;
         }
@@ -422,6 +459,9 @@ int main(int argc, char **argv)
     free(slots);
     scg_texture_destroy((ScgTexture *)crate_slots[0]);
     scg_mesh_destroy(crate);
+    /* Le porteur avant la carte : il en garde une référence, et l'ordre inverse
+     * marcherait aussi — le contrat le dit —, mais celui-ci se relit mieux. */
+    scg_lighting_destroy(lighting);
     scg_world_destroy(world);
     scg_destroy(ctx);
     SDL_DestroyTexture(screen);

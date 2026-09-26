@@ -21,14 +21,22 @@
 //! entièrement d'aspect sans qu'un octet du fichier bouge**, parce que rien de
 //! ce qui habille n'est dedans. Les autres hôtes y mettent des damiers, faute de
 //! décodeur PNG.
+//!
+//! **Le décor est celui à quatre cellules**, et c'est ce qui donne à cet exemple sa
+//! seconde raison d'être : il est parcouru par la traversée de portails, avec une
+//! cellule courante que l'hôte suit lui-même, et ses lightmaps sont cuites avant la
+//! première image. Un décor à deux cellules dont tout est visible ne montrerait ni
+//! l'un ni l'autre.
 
 use std::sync::Arc;
 
 use screengine_play::screengine::Angle;
-use screengine_play::{Affine3, FreeCamera, KeyCode, Mesh, Play, Texture, Vec3, World, load_png};
+use screengine_play::{
+    Affine3, FreeCamera, KeyCode, Lightmaps, Mesh, Play, Texture, Vec3, World, load_png,
+};
 
 /// La carte du dépôt, celle que les quatre autres hôtes chargent.
-const COULOIR: &[u8] = include_bytes!("../../../hosts/couloir.world");
+const SALLES: &[u8] = include_bytes!("../../../hosts/salles.world");
 
 /// Le maillage des caisses, de la même provenance.
 const CAISSE: &[u8] = include_bytes!("../../../hosts/caisse.mesh");
@@ -43,18 +51,29 @@ const SOL: &[u8] = include_bytes!("../assets/sol-pave-mousse.png");
 const MALLE: &[u8] = include_bytes!("../assets/malle-rouillee.png");
 
 /// Où sont posées les caisses : abscisse, ordonnée, et l'angle qui les tourne.
-const CRATES: [(f32, f32, f32); 3] = [(6.0, -1.2, 0.4), (11.0, 1.4, -0.7), (17.0, -0.6, 1.1)];
+///
+/// Une par cellule que la traversée peut atteindre — la salle en L, le couloir, la
+/// salle du bout —, et aucune à l'étage, qu'aucun portail ne relie au reste : une
+/// caisse qu'on ne peut pas aller voir ne prouve rien.
+const CRATES: [(f32, f32, f32); 3] = [(3.0, 2.0, 0.4), (10.0, 2.0, -0.7), (16.0, 4.0, 1.1)];
 
 /// L'échelle des caisses.
 ///
-/// Le maillage fait deux unités de côté, le couloir six de large : posée telle
-/// quelle, une caisse en occupe le tiers. Le fichier ne se redimensionne pas —
+/// Le maillage fait deux unités de côté, les salles quatre de haut : posée telle
+/// quelle, une caisse en occupe la moitié. Le fichier ne se redimensionne pas —
 /// son empreinte de conformance est figée —, donc l'échelle va dans la matrice
 /// de modèle, qui est faite pour ça.
 const CRATE_SCALE: f32 = 0.5;
 
-/// La cote du centre d'une caisse, sa demi-hauteur au-dessus du sol du couloir.
-const CRATE_Z: f32 = -1.0;
+/// La cote du centre d'une caisse, sa demi-hauteur au-dessus du sol.
+const CRATE_Z: f32 = 0.5;
+
+/// Où la caméra commence : dans la salle en L, à hauteur d'œil.
+///
+/// **Le sol est en zéro dans ce décor**, là où le couloir l'avait à `-1.5` : une
+/// caméra laissée à l'origine serait dans le plancher, hors de toute cellule, et
+/// la traversée ne rendrait rien du tout.
+const START: Vec3 = Vec3::new(2.0, 2.0, 2.0);
 
 /// La matrice d'une caisse : une rotation autour du zénith mise à l'échelle,
 /// puis une translation.
@@ -83,11 +102,22 @@ struct Scene {
     materials: Vec<Arc<Texture>>,
     /// La texture des caisses, sur leurs deux emplacements.
     crate_texture: Arc<Texture>,
+    /// Les lightmaps, cuites une fois avant la première image.
+    lightmaps: Lightmaps,
+    /// La cellule où la caméra se trouve, suivie d'une image à l'autre.
+    ///
+    /// **L'hôte la garde, le moteur ne la retient pas.** C'est ce qui permet à la
+    /// caméra d'être portée par autre chose que le moteur — ici une caméra libre au
+    /// clavier —, et c'est aussi ce qui rend l'hôte responsable de ne pas l'écraser
+    /// avec le zéro que le suivi rend quand on sort du décor.
+    cell: u32,
+    /// Où la caméra était à l'image précédente, ce dont le suivi a besoin.
+    previous: Vec3,
 }
 
 /// Ouvre la fenêtre ; Échap ferme.
 fn main() -> Result<(), screengine_play::Error> {
-    let world = World::load(COULOIR).expect("carte du dépôt valide");
+    let world = World::load(SALLES).expect("carte du dépôt valide");
     // L'hôte lit les noms et décide de ce qu'il charge : le moteur ne connaît
     // que des emplacements à remplir, dans l'ordre de la table. Un nom qu'il ne
     // reconnaît pas prend le pavé, plutôt que de laisser un trou sans texture
@@ -101,12 +131,26 @@ fn main() -> Result<(), screengine_play::Error> {
         })
         .collect();
 
+    // **Toutes les cellules sont cuites avant la première image**, et non celles
+    // que la caméra voit : une lightmap est un cache de la carte, pas de la vue, et
+    // la cuire en chemin ferait allouer un atlas au milieu d'une image.
+    let mut lightmaps = Lightmaps::new(&world).expect("porteur");
+    for index in 0..world.cell_count() {
+        if let Some(id) = world.cell_id(index) {
+            lightmaps.build(&world, id).expect("cuisson possible");
+        }
+    }
+
+    let cell = world.locate(START);
     let scene = Scene {
-        camera: FreeCamera::new(Vec3::ZERO),
+        camera: FreeCamera::new(START),
         world,
         crate_mesh: Mesh::load(CAISSE).expect("maillage du dépôt valide"),
         materials,
         crate_texture: Arc::new(load_png(MALLE)?),
+        lightmaps,
+        cell,
+        previous: START,
     };
 
     Play::new().title("Screengine — carte chargée").run(
@@ -116,15 +160,32 @@ fn main() -> Result<(), screengine_play::Error> {
                 tick.exit();
             }
             scene.camera.update(tick);
+
+            // **Le suivi se fait ici, pas au rendu** : il dépend du déplacement,
+            // donc de deux positions successives, et le rendu n'en connaît qu'une.
+            let position = scene.camera.camera().position;
+            let found = scene.world.track(scene.cell, scene.previous, position);
+            // **Zéro veut dire « sorti du décor », et ne s'écrit pas.** Une caméra
+            // libre passe à travers les murs ; garder la dernière cellule connue
+            // laisse voir le décor depuis dehors, là où l'écraser éteindrait
+            // l'image et donnerait à croire que le moteur a lâché.
+            if found != 0 {
+                scene.cell = found;
+            }
+            scene.previous = position;
         },
         |scene, context| {
             let _ = context.set_camera(scene.camera.camera());
             // Un refus ne peut venir que de la capacité, que cette scène
             // n'approche pas ; le laisser passer vaut mieux qu'arrêter la
             // boucle sur une image manquante.
-            let _ = context.submit_world(Affine3::IDENTITY, &scene.world, |rank| {
-                scene.materials.get(rank as usize)
-            });
+            let _ = context.submit_world_visible(
+                Affine3::IDENTITY,
+                &scene.world,
+                scene.cell,
+                Some(&scene.lightmaps),
+                |rank| scene.materials.get(rank as usize),
+            );
             for &(x, y, angle) in &CRATES {
                 let model = crate_model(x, y, angle);
                 // Les deux emplacements portent la même texture. Les hôtes de

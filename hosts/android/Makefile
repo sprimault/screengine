@@ -66,7 +66,7 @@ MESH := $(abspath ../../hosts/caisse.mesh)
 
 # Le décor que la démonstration parcourt. Il ne sert qu'à l'APK, où il voyage
 # avec le maillage dans les ressources : une application ne lit pas le dépôt.
-WORLD := $(abspath ../../hosts/couloir.world)
+WORLD := $(abspath ../../hosts/salles.world)
 
 triple_arm64-v8a   := aarch64-linux-android
 triple_armeabi-v7a := armv7-linux-androideabi

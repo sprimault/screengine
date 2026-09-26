@@ -491,9 +491,14 @@ static jstring world_material_name(JNIEnv *env, jclass cls, jlong world, jint ra
     return name;
 }
 
-/* scg_submit_world, les textures recomposées comme celles d'un maillage. */
-static jint submit_world(JNIEnv *env, jclass cls, jlong ctx, jfloatArray model, jlong world,
-                         jlongArray textures)
+/* scg_submit_world_visible, les textures recomposées comme celles d'un maillage.
+ *
+ * `lighting` peut être nul — l'ABI l'admet, et le décor part alors non éclairé —,
+ * ce qui laisse l'activité afficher un niveau avant que ses lightmaps soient
+ * cuites plutôt que d'attendre un écran noir. */
+static jint submit_world_visible(JNIEnv *env, jclass cls, jlong ctx, jfloatArray model,
+                                 jlong world, jlongArray textures, jlong lighting,
+                                 jint cell)
 {
     (void)cls;
     if (model == NULL || textures == NULL) {
@@ -515,12 +520,106 @@ static jint submit_world(JNIEnv *env, jclass cls, jlong ctx, jfloatArray model, 
         for (jsize i = 0; i < count; i++) {
             slots[i] = (const ScgTexture *)(intptr_t)handles[i];
         }
-        code = scg_submit_world((ScgContext *)(intptr_t)ctx, &matrix,
-                                (const ScgWorld *)(intptr_t)world, slots, (uint32_t)count);
+        code = scg_submit_world_visible((ScgContext *)(intptr_t)ctx, &matrix,
+                                        (const ScgWorld *)(intptr_t)world, slots,
+                                        (uint32_t)count,
+                                        (const ScgLighting *)(intptr_t)lighting,
+                                        (uint32_t)cell);
     }
     free(handles);
     free(slots);
     return code;
+}
+
+/* scg_world_locate : la cellule d'un point, ou zéro. */
+static jint world_locate(JNIEnv *env, jclass cls, jlong world, jfloatArray position)
+{
+    (void)cls;
+    if (position == NULL || (*env)->GetArrayLength(env, position) != 3) {
+        return 0;
+    }
+    float point[3];
+    (*env)->GetFloatArrayRegion(env, position, 0, 3, point);
+    uint32_t out = 0;
+    /* Une erreur rend zéro comme une sortie du décor : l'appelant n'a qu'un cas à
+     * traiter, et c'est le même — il garde la cellule qu'il avait. */
+    if (scg_world_locate((const ScgWorld *)(intptr_t)world, point, &out) < 0) {
+        return 0;
+    }
+    return (jint)out;
+}
+
+/* scg_world_track : la cellule où un déplacement aboutit, ou zéro. */
+static jint world_track(JNIEnv *env, jclass cls, jlong world, jint from_cell,
+                        jfloatArray from, jfloatArray to)
+{
+    (void)cls;
+    if (from == NULL || to == NULL || (*env)->GetArrayLength(env, from) != 3
+        || (*env)->GetArrayLength(env, to) != 3) {
+        return 0;
+    }
+    float a[3];
+    float b[3];
+    (*env)->GetFloatArrayRegion(env, from, 0, 3, a);
+    (*env)->GetFloatArrayRegion(env, to, 0, 3, b);
+    uint32_t out = 0;
+    if (scg_world_track((const ScgWorld *)(intptr_t)world, (uint32_t)from_cell, a, b, &out)
+        < 0) {
+        return 0;
+    }
+    return (jint)out;
+}
+
+/* scg_world_cell_count. */
+static jint world_cell_count(JNIEnv *env, jclass cls, jlong world)
+{
+    (void)env;
+    (void)cls;
+    uint32_t out = 0;
+    if (scg_world_cell_count((const ScgWorld *)(intptr_t)world, &out) < 0) {
+        return 0;
+    }
+    return (jint)out;
+}
+
+/* scg_world_cell_id : l'identifiant d'une cellule par son rang, ou zéro. */
+static jint world_cell_id(JNIEnv *env, jclass cls, jlong world, jint index)
+{
+    (void)env;
+    (void)cls;
+    uint32_t out = 0;
+    if (scg_world_cell_id((const ScgWorld *)(intptr_t)world, (uint32_t)index, &out) < 0) {
+        return 0;
+    }
+    return (jint)out;
+}
+
+/* scg_lighting_create : le porteur des lightmaps d'une carte, ou zéro. */
+static jlong lighting_create(JNIEnv *env, jclass cls, jlong world)
+{
+    (void)env;
+    (void)cls;
+    ScgLighting *lighting = NULL;
+    if (scg_lighting_create((const ScgWorld *)(intptr_t)world, &lighting) < 0) {
+        return 0;
+    }
+    return (jlong)(intptr_t)lighting;
+}
+
+/* scg_lighting_build. */
+static jint lighting_build(JNIEnv *env, jclass cls, jlong lighting, jint cell)
+{
+    (void)env;
+    (void)cls;
+    return scg_lighting_build((ScgLighting *)(intptr_t)lighting, (uint32_t)cell);
+}
+
+/* scg_lighting_destroy. */
+static void lighting_destroy(JNIEnv *env, jclass cls, jlong lighting)
+{
+    (void)env;
+    (void)cls;
+    scg_lighting_destroy((ScgLighting *)(intptr_t)lighting);
 }
 
 static jint submit_textured(JNIEnv *env, jclass cls, jlong ctx, jfloatArray model,
@@ -828,7 +927,14 @@ static const JNINativeMethod METHODS[] = {
     {"worldDestroy", "(J)V", (void *)world_destroy},
     {"worldMaterialCount", "(J)I", (void *)world_material_count},
     {"worldMaterialName", "(JI)Ljava/lang/String;", (void *)world_material_name},
-    {"submitWorld", "(J[FJ[J)I", (void *)submit_world},
+    {"submitWorldVisible", "(J[FJ[JJI)I", (void *)submit_world_visible},
+    {"worldLocate", "(J[F)I", (void *)world_locate},
+    {"worldTrack", "(JI[F[F)I", (void *)world_track},
+    {"worldCellCount", "(J)I", (void *)world_cell_count},
+    {"worldCellId", "(JI)I", (void *)world_cell_id},
+    {"lightingCreate", "(J)J", (void *)lighting_create},
+    {"lightingBuild", "(JI)I", (void *)lighting_build},
+    {"lightingDestroy", "(J)V", (void *)lighting_destroy},
     {"submitTextured", "(J[F[F[I[BJ)I", (void *)submit_textured},
     {"submitLit", "(J[F[F[I[BJJ)I", (void *)submit_lit},
     {"setResolution", "(JII)I", (void *)set_resolution},

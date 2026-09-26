@@ -17,7 +17,7 @@ HEADER  := $(abspath ../../include/screengine.h)
 # Le maillage versionné que les quatre hôtes chargent.
 MESH    := $(abspath ../../hosts/caisse.mesh)
 # Le décor que la page de démonstration parcourt.
-WORLD   := $(abspath ../../hosts/couloir.world)
+WORLD   := $(abspath ../../hosts/salles.world)
 NODE    ?= node
 PORT    ?= 8080
 

@@ -68,20 +68,28 @@ public final class DemoActivity extends Activity implements SurfaceHolder.Callba
      * tourne. Les mêmes que les trois autres hôtes.
      */
     private static final float[][] CRATES = {
-        {6.0f, -1.2f, 0.4f},
-        {11.0f, 1.4f, -0.7f},
-        {17.0f, -0.6f, 1.1f},
+        {3.0f, 2.0f, 0.4f},
+        {10.0f, 2.0f, -0.7f},
+        {16.0f, 4.0f, 1.1f},
     };
 
     /**
-     * L'échelle des caisses : le maillage fait deux unités de côté, le couloir
-     * six de large. Le fichier ne se redimensionne pas — son empreinte est
+     * L'échelle des caisses : le maillage fait deux unités de côté, les salles
+     * quatre de haut. Le fichier ne se redimensionne pas — son empreinte est
      * figée —, donc l'échelle va dans la matrice de modèle.
      */
     private static final float CRATE_SCALE = 0.5f;
 
     /** La cote du centre d'une caisse, sa demi-hauteur au-dessus du sol. */
-    private static final float CRATE_Z = -1.0f;
+    private static final float CRATE_Z = 0.5f;
+
+    /**
+     * Où la caméra commence : dans la salle en L, à hauteur d'œil.
+     *
+     * <p>Le sol de ce décor est en zéro : une caméra laissée à l'origine serait
+     * dans le plancher, hors de toute cellule, et la traversée ne rendrait rien.
+     */
+    private static final float[] START = {2.0f, 2.0f, 2.0f};
 
     /** La surface où l'image est recopiée. */
     private SurfaceView view;
@@ -341,12 +349,22 @@ public final class DemoActivity extends Activity implements SurfaceHolder.Callba
         }
         long ctx = created[0];
 
-        byte[] bytes = readAsset("couloir.world");
+        byte[] bytes = readAsset("salles.world");
         long world = bytes != null ? Screengine.worldLoad(bytes) : 0;
         if (world == 0) {
             show("carte illisible : " + Screengine.lastError(0));
             Screengine.destroy(ctx);
             return;
+        }
+
+        // Les lightmaps, cuites une fois pour toutes les cellules avant la
+        // première image : une lightmap est un cache de la carte et non de la
+        // vue, et la cuire en chemin ferait allouer un atlas au milieu d'une
+        // image. Un échec n'arrête pas la démonstration — le décor part alors
+        // non éclairé, ce que la soumission accepte.
+        long lighting = Screengine.lightingCreate(world);
+        for (int i = 0; lighting != 0 && i < Screengine.worldCellCount(world); i++) {
+            Screengine.lightingBuild(lighting, Screengine.worldCellId(world, i));
         }
 
         // Une texture par matériau, dans l'ordre que la carte déclare. L'hôte
@@ -363,7 +381,7 @@ public final class DemoActivity extends Activity implements SurfaceHolder.Callba
         long crate = bytes != null ? Screengine.meshLoad(bytes) : 0;
         if (crate == 0) {
             show("maillage illisible : " + Screengine.lastError(0));
-            release(ctx, world, 0, slots, 0);
+            release(ctx, world, 0, slots, 0, lighting);
             return;
         }
         // Le même damier sur les deux emplacements du maillage.
@@ -379,7 +397,9 @@ public final class DemoActivity extends Activity implements SurfaceHolder.Callba
         text.setTextSize(36.0f);
         Rect source = new Rect(0, 0, WIDTH, HEIGHT);
 
-        float[] position = {0.0f, 0.0f, 0.0f};
+        float[] position = {START[0], START[1], START[2]};
+        float[] previousPosition = new float[3];
+        int cell = Screengine.worldLocate(world, position);
         float angle = 0.0f;
         float[] identity = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
         long previous = System.nanoTime();
@@ -404,8 +424,17 @@ public final class DemoActivity extends Activity implements SurfaceHolder.Callba
             }
 
             angle += turn * TURN * dt;
+            System.arraycopy(position, 0, previousPosition, 0, 3);
             position[0] += (float) Math.cos(angle) * forward * SPEED * dt;
             position[1] += (float) Math.sin(angle) * forward * SPEED * dt;
+
+            // La cellule se suit par le déplacement, et c'est l'activité qui la
+            // garde : le moteur ne retient aucune caméra. Zéro veut dire « sorti
+            // du décor » et ne s'écrit pas.
+            int found = Screengine.worldTrack(world, cell, previousPosition, position);
+            if (found != 0) {
+                cell = found;
+            }
 
             float[] camera = {
                 position[0], position[1], position[2],
@@ -416,7 +445,8 @@ public final class DemoActivity extends Activity implements SurfaceHolder.Callba
                 failure = Screengine.lastError(ctx);
                 break;
             }
-            if (Screengine.submitWorld(ctx, identity, world, slots) != Screengine.OK) {
+            if (Screengine.submitWorldVisible(ctx, identity, world, slots, lighting, cell)
+                    != Screengine.OK) {
                 failure = Screengine.lastError(ctx);
                 break;
             }
@@ -460,7 +490,7 @@ public final class DemoActivity extends Activity implements SurfaceHolder.Callba
             holder.unlockCanvasAndPost(canvas);
         }
 
-        release(ctx, world, crate, slots, crateSlots[0]);
+        release(ctx, world, crate, slots, crateSlots[0], lighting);
         if (failure != null) {
             show(failure);
         }
@@ -495,13 +525,16 @@ public final class DemoActivity extends Activity implements SurfaceHolder.Callba
      * @param mesh le maillage des caisses
      * @param slots les textures de la carte
      * @param crateSlot la texture des caisses
+     * @param lighting le porteur des lightmaps, ou 0
      */
-    private static void release(long ctx, long world, long mesh, long[] slots, long crateSlot) {
+    private static void release(
+            long ctx, long world, long mesh, long[] slots, long crateSlot, long lighting) {
         for (long texture : slots) {
             Screengine.textureDestroy(texture);
         }
         Screengine.textureDestroy(crateSlot);
         Screengine.meshDestroy(mesh);
+        Screengine.lightingDestroy(lighting);
         Screengine.worldDestroy(world);
         Screengine.destroy(ctx);
     }

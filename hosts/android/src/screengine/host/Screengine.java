@@ -288,20 +288,95 @@ public final class Screengine {
     static native String worldMaterialName(long world, int rank);
 
     /**
-     * {@code scg_submit_world}.
+     * {@code scg_submit_world_visible}.
      *
      * <p>Une texture par matériau, dans l'ordre que la carte déclare : c'est
      * l'hôte qui décide ce qu'il charge derrière chaque nom, et le moteur ne
      * connaît que des emplacements à remplir.
+     *
+     * <p>Seules les cellules que la traversée atteint depuis {@code cell} sont
+     * soumises. Un {@code cell} nul n'est pas une erreur : rien n'est dessiné, ce
+     * qui est la réponse juste pour une caméra hors du décor.
      *
      * @param ctx contexte vivant
      * @param model les seize coefficients de la matrice, par colonnes
      * @param world handle rendu par {@link #worldLoad}
      * @param textures un handle par matériau, dans l'ordre, 0 pour « sans
      *     texture » ; leur nombre doit être exactement celui des matériaux
+     * @param lighting handle rendu par {@link #lightingCreate}, ou 0 pour rendre
+     *     sans lightmap — un niveau pas encore cuit reste affichable
+     * @param cell la cellule où la caméra se trouve
      * @return {@link #OK} ou un code négatif
      */
-    static native int submitWorld(long ctx, float[] model, long world, long[] textures);
+    static native int submitWorldVisible(
+            long ctx, float[] model, long world, long[] textures, long lighting, int cell);
+
+    /**
+     * {@code scg_world_locate}.
+     *
+     * @param world handle rendu par {@link #worldLoad}
+     * @param position les trois coordonnées du point
+     * @return l'identifiant de la cellule, ou 0 si le point n'est dans aucune
+     */
+    static native int worldLocate(long world, float[] position);
+
+    /**
+     * {@code scg_world_track}.
+     *
+     * <p><b>Zéro veut dire « sorti du décor », et ne s'écrase pas sur la cellule
+     * courante.</b> Garder la dernière cellule connue laisse voir le décor depuis
+     * dehors ; l'écraser éteint l'image et donne à croire que le moteur a lâché.
+     *
+     * @param world handle rendu par {@link #worldLoad}
+     * @param fromCell la cellule d'où le déplacement part
+     * @param from les trois coordonnées du départ
+     * @param to celles de l'arrivée
+     * @return l'identifiant de la cellule d'arrivée, ou 0
+     */
+    static native int worldTrack(long world, int fromCell, float[] from, float[] to);
+
+    /**
+     * {@code scg_world_cell_count}.
+     *
+     * @param world handle rendu par {@link #worldLoad}
+     * @return le nombre de cellules
+     */
+    static native int worldCellCount(long world);
+
+    /**
+     * {@code scg_world_cell_id}.
+     *
+     * @param world handle rendu par {@link #worldLoad}
+     * @param index le rang de la cellule
+     * @return son identifiant, ou 0 si le rang n'existe pas
+     */
+    static native int worldCellId(long world, int index);
+
+    /**
+     * {@code scg_lighting_create}.
+     *
+     * @param world handle rendu par {@link #worldLoad}
+     * @return le handle du porteur, ou 0 en cas d'échec
+     */
+    static native long lightingCreate(long world);
+
+    /**
+     * {@code scg_lighting_build}.
+     *
+     * <p>À appeler hors de toute image : la cuisson alloue.
+     *
+     * @param lighting handle rendu par {@link #lightingCreate}
+     * @param cell l'identifiant de la cellule à cuire
+     * @return {@link #OK} ou un code négatif
+     */
+    static native int lightingBuild(long lighting, int cell);
+
+    /**
+     * {@code scg_lighting_destroy}.
+     *
+     * @param lighting handle rendu par {@link #lightingCreate}, ou 0
+     */
+    static native void lightingDestroy(long lighting);
 
     /**
      * {@code scg_submit_textured}.

@@ -430,6 +430,22 @@ export class Screengine {
    * @param {{position: number[], orientation: number[], fovY: number,
    *   nearPlane: number}} camera la caméra à écrire
    */
+  /**
+   * Écrit trois flottants à `ptr` : une position, telle que l'ABI l'attend.
+   *
+   * La localisation et le suivi de cellule prennent des points par pointeur, et
+   * c'est le seul endroit où l'hôte en passe un sans structure autour. Sans cette
+   * aide, chaque appel recopierait son propre `DataView` — et c'est ainsi qu'un
+   * boutisme finit par diverger d'un appel à l'autre.
+   *
+   * @param {number} ptr adresse d'au moins douze octets
+   * @param {number[]} point les trois coordonnées
+   */
+  writePoint(ptr, point) {
+    const view = new DataView(this.memory.buffer, ptr, 12);
+    point.forEach((value, k) => view.setFloat32(k * 4, value, true));
+  }
+
   writeCamera(ptr, camera) {
     new Uint8Array(this.memory.buffer, ptr, CAMERA_SIZE).fill(0);
     const view = new DataView(this.memory.buffer, ptr, CAMERA_SIZE);
