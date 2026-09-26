@@ -54,10 +54,10 @@ critère est `code < 0`, et un statut inconnu se traite comme `SCG_OK`.
 `SCG_ABI_VERSION` reste à **1**, et aucune signature publiée ne change.
 
 ### Ajouté
-- Le contrat de l'étape 5 est écrit : les quatorze points d'entrée de la traversée
-  par portails, du suivi de la cellule de la caméra et du calcul des lightmaps,
-  avec les bornes de la traversée et ce qu'elle rend en les atteignant. Aucun
-  n'est encore exposé.
+- Le contrat de l'étape 5 a été écrit avant son code : les quatorze points d'entrée
+  de la traversée par portails, du suivi de la cellule de la caméra et du calcul
+  des lightmaps, avec les bornes de la traversée et ce qu'elle rend en les
+  atteignant.
 - **Le noyau traverse un décor par ses portails** et ne soumet que les cellules
   visibles, chacune une fois et dans l'ordre du fichier : le total reste donc
   borné par le nombre de triangles de la carte. Une cellule inconnue est refusée ;
@@ -138,9 +138,9 @@ status is handled as `SCG_OK`. `SCG_ABI_VERSION` stays at **1**, and no publishe
 signature changes.
 
 ### Added
-- Step 5's contract is written: the fourteen entry points for portal traversal,
-  camera cell tracking and lightmap computation, with traversal's bounds and what
-  it returns on reaching them. None is exposed yet.
+- Step 5's contract was written before its code: the fourteen entry points for
+  portal traversal, camera cell tracking and lightmap computation, with
+  traversal's bounds and what it returns on reaching them.
 - **A second reference level exercises traversal**: a non-convex room, a corridor
   with one end cut on the bias, the room that oblique portal serves, and a floor
   stacked above the ground one with no link to it. Five views walk it, and on each
