@@ -104,6 +104,19 @@ export const SCG_TEXTURE_FORMAT_RGBA8_MASKED = 2;
 export const SCG_BLEND_MODULATE = 1;
 
 /**
+ * Tourner le quadrilatère autour du seul axe vertical du monde : il reste
+ * debout.
+ *
+ * Un et non zéro, comme tout mode passé à une soumission. Dégénère quand la
+ * caméra regarde à la verticale exacte — le quadrilatère disparaît alors, sans
+ * erreur, comme un triangle qui ne se projette pas.
+ */
+export const SCG_SPRITE_AXIAL = 1;
+
+/** Mettre le quadrilatère plein face à la caméra : ce qu'une lueur veut. */
+export const SCG_SPRITE_FACING = 2;
+
+/**
  * Le tramage ordonné des coordonnées, filtrage par défaut.
  *
  * Zéro, à l'inverse du format de texture : un contexte qu'on ne configure pas
@@ -132,6 +145,7 @@ export const EXPORTS = [
   "scg_submit_textured",
   "scg_submit_blended",
   "scg_submit_shaded",
+  "scg_submit_sprites",
   "scg_submit_lit",
   "scg_set_resolution",
   "scg_set_grade",

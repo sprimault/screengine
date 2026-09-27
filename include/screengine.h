@@ -53,6 +53,21 @@
 // darkens or does nothing, and never brightens.
 #define SCG_BLEND_MODULATE 1
 
+// Turn the quad about the world's vertical axis only: it stays upright.
+//
+// One, never zero, like every mode passed to a submission.
+//
+// A standing character seen from above flattens with this one, which merely
+// loses its silhouette, where `SCG_SPRITE_FACING` lays it down, which is a
+// wrong image. It degenerates when the camera looks straight down: the quad
+// then disappears, without an error, like a triangle that does not project.
+#define SCG_SPRITE_AXIAL 1
+
+// Turn the quad to face the camera squarely.
+//
+// What a glow or a spark wants, having no up of its own.
+#define SCG_SPRITE_FACING 2
+
 // Ordered dithering of texture coordinates: the default filter.
 //
 // Zero, unlike `SCG_TEXTURE_FORMAT_RGBA8`, and for the opposite reason: a
@@ -460,6 +475,62 @@ typedef struct ScgVertexUv {
   // Texture ordinate, in texels.
   float v;
 } ScgVertexUv;
+
+// A quad the engine orients on the camera.
+//
+// Forty-four bytes, offsets 0 to 40 on every target and not one byte of
+// padding: four-byte fields throughout, then four bytes of colour.
+//
+// **A description, not a vertex form.** Downstream a sprite yields nothing but
+// textured vertices: the rasteriser has exactly three vertex forms and gains
+// no fourth. It is to `scg_submit_sprites` what `ScgTextureDesc` is to
+// `scg_texture_load`.
+//
+// The half-extents are in **world units, never pixels**: in pixels a sprite's
+// size would depend on the internal resolution, which the host changes while
+// the game runs.
+//
+// A freely oriented quad — a poster, an impact mark, a stain on the floor —
+// needs none of this and submits through the ordinary textured paths. What a
+// host cannot do without computing is orienting on the camera, which requires
+// the camera's basis: it would have to re-invert the pose it just passed in,
+// hence normalise a quaternion with its own maths library, and two bindings
+// would stop rendering the same image.
+typedef struct ScgSprite {
+  // Centre X, in object space.
+  float x;
+  // Centre Y.
+  float y;
+  // Centre Z.
+  float z;
+  // Half-width, in world units.
+  float half_width;
+  // Half-height, in world units.
+  float half_height;
+  // Texture abscissa of the bottom-left corner, in texels.
+  float u0;
+  // Texture ordinate of that corner, in texels.
+  float v0;
+  // Texture abscissa of the top-right corner, in texels.
+  float u1;
+  // Texture ordinate of that corner, in texels.
+  float v1;
+  // Roll, a binary angle where 2^32 is one turn.
+  //
+  // It turns the quad **in its own plane**, after orientation and before
+  // projection, and applies to both orientations. Zero is its neutral value.
+  // This is the engine's own angle format: the host does no trigonometry,
+  // and no libm enters the image.
+  uint32_t roll;
+  // Red, in the memory order of the output pixels.
+  uint8_t r;
+  // Green.
+  uint8_t g;
+  // Blue.
+  uint8_t b;
+  // Alpha, carried but never read, exactly as on `ScgTriangle`.
+  uint8_t a;
+} ScgSprite;
 
 // A vertex carrying its texture coordinates **and its normal**.
 //
@@ -974,6 +1045,39 @@ int32_t scg_submit_blended(struct ScgContext *ctx,
                            uint32_t triangle_count,
                            const struct ScgTexture *texture,
                            uint32_t blend);
+
+// Submits quads the engine orients on the camera.
+//
+// The host gives a centre and two half-extents; the engine builds the quad.
+// That is the one thing here a host cannot do without computing: orienting
+// requires the camera's basis, which it would have to obtain by re-inverting
+// the pose it just passed in — normalising a quaternion with its own maths
+// library, so that two bindings would no longer render the same image.
+//
+// **`model` places the centre, and nothing else.** Its linear part does not
+// orient the quad; the camera does, by definition. The parameter is there for
+// the symmetry of the submission family.
+//
+// `orientation` must be `SCG_SPRITE_AXIAL` or `SCG_SPRITE_FACING`; zero and
+// any unknown value are refused, never silently mapped onto a default. The
+// axial mode degenerates when the camera looks straight down: the quads then
+// disappear, without an error, like a triangle that does not project.
+//
+// `texture` may be null, in which case each sprite's colour fills its quad.
+// **Each sprite consumes two triangles** of the context's capacity, before
+// clipping.
+//
+// # Safety
+//
+// `ctx` is null or a live handle. `model` points at a readable `ScgMat4`.
+// `sprites` points at `sprite_count` readable `ScgSprite`. `texture` is null
+// or a live handle.
+int32_t scg_submit_sprites(struct ScgContext *ctx,
+                           const struct ScgMat4 *model,
+                           const struct ScgSprite *sprites,
+                           uint32_t sprite_count,
+                           const struct ScgTexture *texture,
+                           uint32_t orientation);
 
 // Submits a batch of triangles whose vertices carry a normal.
 //
@@ -1627,6 +1731,16 @@ SCREENGINE_LAYOUT_ASSERT(offsetof(ScgVertexUvN, v) == 16, "ScgVertexUvN.v moved"
 SCREENGINE_LAYOUT_ASSERT(offsetof(ScgVertexUvN, nx) == 20, "ScgVertexUvN.nx moved");
 SCREENGINE_LAYOUT_ASSERT(offsetof(ScgVertexUvN, ny) == 24, "ScgVertexUvN.ny moved");
 SCREENGINE_LAYOUT_ASSERT(offsetof(ScgVertexUvN, nz) == 28, "ScgVertexUvN.nz moved");
+SCREENGINE_LAYOUT_ASSERT(sizeof(ScgSprite) == 44, "ScgSprite changed size");
+SCREENGINE_LAYOUT_ASSERT(offsetof(ScgSprite, z) == 8, "ScgSprite.z moved");
+SCREENGINE_LAYOUT_ASSERT(offsetof(ScgSprite, half_width) == 12, "ScgSprite.half_width moved");
+SCREENGINE_LAYOUT_ASSERT(offsetof(ScgSprite, half_height) == 16, "ScgSprite.half_height moved");
+SCREENGINE_LAYOUT_ASSERT(offsetof(ScgSprite, u0) == 20, "ScgSprite.u0 moved");
+SCREENGINE_LAYOUT_ASSERT(offsetof(ScgSprite, v0) == 24, "ScgSprite.v0 moved");
+SCREENGINE_LAYOUT_ASSERT(offsetof(ScgSprite, u1) == 28, "ScgSprite.u1 moved");
+SCREENGINE_LAYOUT_ASSERT(offsetof(ScgSprite, v1) == 32, "ScgSprite.v1 moved");
+SCREENGINE_LAYOUT_ASSERT(offsetof(ScgSprite, roll) == 36, "ScgSprite.roll moved");
+SCREENGINE_LAYOUT_ASSERT(offsetof(ScgSprite, r) == 40, "ScgSprite.r moved");
 SCREENGINE_LAYOUT_ASSERT(sizeof(ScgLight) == 20, "ScgLight changed size");
 SCREENGINE_LAYOUT_ASSERT(offsetof(ScgLight, z) == 8, "ScgLight.z moved");
 SCREENGINE_LAYOUT_ASSERT(offsetof(ScgLight, radius) == 12, "ScgLight.radius moved");

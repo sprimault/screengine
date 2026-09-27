@@ -16,10 +16,10 @@ des lightmaps, cache compris. Chaque décision garde ci-dessous l'option écart�
 pourquoi. Un seul point reste marqué **À trancher** : la dépréciation, qui attend
 le gel de l'ABI en 1.0.
 
-**La section « Étape 6 » décrit un contrat figé que son code rattrape.** Le
-contrat précède son code sur ce projet : la section a été écrite d'un bloc avant
-le premier appelant, et les fonctions s'y exposent lot par lot. Elle dit
-laquelle manque encore.
+**La section « Étape 6 » décrit un contrat que son code a rattrapé.** Le contrat
+précède son code sur ce projet : la section a été écrite d'un bloc avant le
+premier appelant, et ses cinq fonctions se sont exposées lot par lot. Elles le
+sont toutes.
 
 `SCG_ABI_VERSION` reste à **1** : aucune signature publiée n'a changé, l'étape 5
 n'ayant fait qu'ajouter des fonctions. Ce qui change pour une liaison est ailleurs,
@@ -1366,11 +1366,11 @@ statut que la profondeur, pour la même raison : l'image est complète de ce qui
 nouveau et aucun statut.** Aucune signature publiée, aucune structure, aucune
 précondition ne bouge : `SCG_ABI_VERSION` reste à **1**.
 
-**Quatre de ces cinq fonctions sont exposées ; `scg_submit_sprites` ne l'est pas
-encore.** Le contrat s'est figé d'un bloc avant son premier appelant, pour la
-raison dite en tête de document, et le code l'a rattrapé depuis. Ce qui change
-pour un hôte, en revanche, c'est `version_format` du maillage, qui passe à **2**,
-et les maillages de version 1 sont refusés.
+**Les cinq fonctions sont exposées.** Le contrat s'est figé d'un bloc avant son
+premier appelant, pour la raison dite en tête de document, et le code l'a
+rattrapé lot par lot. Ce qui change pour un hôte, en revanche, c'est
+`version_format` du maillage, qui passe à **2**, et les maillages de version 1
+sont refusés.
 
 ```c
 /* la modulation : le seul mode d'écriture qui demande une fonction */
@@ -1644,7 +1644,7 @@ noms ne le sont pas.
 | 3 | ✓ soumission d'un lot éclairé, réglage du sur-éclairement, du brouillard, des lumières dynamiques, de la résolution interne et de la courbe de sortie |
 | 4 | ✓ chargement d'un maillage et d'une carte depuis un bloc d'octets, libération, leurs comptes, leurs noms, leurs soumissions, et les lumières et entités d'une carte |
 | 5 | ✓ rendu du monde depuis la caméra, suivi de sa cellule, calcul des lightmaps d'une cellule et reprise d'un cache |
-| 6 | contrat figé, rien d'exposé : modes d'écriture de pixel, quadrilatères orientés, trames, normale par sommet — voir « Étape 6 » |
+| 6 | ✓ modes d'écriture de pixel, quadrilatères orientés, trames, normale par sommet — voir « Étape 6 » |
 | 7 | module de collision, utilisable sans contexte de rendu |
 | 8 | tracé de lignes et de points, interrogation de la scène, modification d'une cellule par identifiant |
 

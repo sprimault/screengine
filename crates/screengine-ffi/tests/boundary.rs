@@ -651,6 +651,75 @@ fn refuse_un_mode_de_melange_inconnu() {
     unsafe { scg_destroy(ctx) };
 }
 
+/// Une orientation de sprite inconnue est refusée, **et zéro en fait partie**.
+///
+/// Même règle que pour le mode de mélange, et c'est bien une règle générale et
+/// non deux coïncidences : `orientation` décrit le lot, il ne règle pas le
+/// contexte.
+#[test]
+fn refuse_une_orientation_de_sprite_inconnue() {
+    let ctx = create(&sane());
+    let model = ScgMat4 {
+        m: [
+            1.0, 0.0, 0.0, 0.0, //
+            0.0, 1.0, 0.0, 0.0, //
+            0.0, 0.0, 1.0, 0.0, //
+            0.0, 0.0, 0.0, 1.0,
+        ],
+    };
+    let sprites = [ScgSprite {
+        x: 10.0,
+        y: 0.0,
+        z: 0.0,
+        half_width: 1.0,
+        half_height: 1.0,
+        u0: 0.0,
+        v0: 0.0,
+        u1: 1.0,
+        v1: 1.0,
+        roll: 0,
+        r: 0xFF,
+        g: 0xFF,
+        b: 0xFF,
+        a: 0xFF,
+    }];
+
+    for mode in [0, SCG_SPRITE_FACING + 1, u32::MAX] {
+        // SAFETY: handle vivant, pointeurs locaux, comptes exacts.
+        let code = unsafe {
+            scg_submit_sprites(
+                ctx,
+                &model,
+                sprites.as_ptr(),
+                sprites.len() as u32,
+                ptr::null(),
+                mode,
+            )
+        };
+        assert_eq!(code, SCG_ERR_INVALID_ARGUMENT, "orientation {mode}");
+        assert!(last_error(ctx).contains("orientation"));
+    }
+
+    // Les deux valeurs publiées, elles, passent.
+    for mode in [SCG_SPRITE_AXIAL, SCG_SPRITE_FACING] {
+        // SAFETY: handle vivant, pointeurs locaux, comptes exacts.
+        let code = unsafe {
+            scg_submit_sprites(
+                ctx,
+                &model,
+                sprites.as_ptr(),
+                sprites.len() as u32,
+                ptr::null(),
+                mode,
+            )
+        };
+        assert_eq!(code, SCG_OK, "orientation {mode}");
+    }
+
+    // SAFETY: handle vivant, détruit une seule fois.
+    unsafe { scg_destroy(ctx) };
+}
+
 /// Le format masqué se charge par la même fonction, sans entrée de plus.
 ///
 /// C'est tout ce qu'un hôte a à faire pour obtenir la transparence : la

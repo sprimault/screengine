@@ -9,6 +9,8 @@
 
 use alloc::vec;
 
+use crate::math::{Angle, Quat};
+
 use super::*;
 
 /// Une configuration qui passe, dont les tests dérivent leurs variantes.
@@ -1470,4 +1472,239 @@ fn la_table_de_textures_pleine_refuse_le_lot() {
     );
     assert_eq!(ctx.textures.len(), 2, "le lot refusé n'a rien laissé");
     assert_eq!(ctx.triangles.len(), 1, "et rien posé");
+}
+
+/// Un sprite quelconque, devant une caméra neutre.
+fn sprite(center: Vec3) -> Sprite {
+    Sprite {
+        center,
+        half_width: 1.0,
+        half_height: 2.0,
+        u0: 0.0,
+        v0: 0.0,
+        u1: 4.0,
+        v1: 4.0,
+        roll: Angle(0),
+        color: Color::new(0xFF, 0xFF, 0xFF, 0xFF),
+    }
+}
+
+/// **Un sprite consomme exactement deux triangles**, et c'est ce que la
+/// documentation promet à l'hôte qui dimensionne sa capacité.
+#[test]
+fn un_sprite_consomme_deux_triangles() {
+    let mut ctx = small();
+    ctx.submit_sprites(
+        Affine3::IDENTITY,
+        &[sprite(Vec3::new(10.0, 0.0, 0.0))],
+        None,
+        SpriteOrientation::Facing,
+    )
+    .expect("sprite soumis");
+    assert_eq!(ctx.triangles.len(), 2);
+}
+
+/// **`model` place le centre, et n'oriente pas.**
+///
+/// C'est la clause que la structure porte en propre, et celle qu'une liaison
+/// écrite de mémoire se trompera : une rotation dans `model` déplace le sprite
+/// avec le reste de l'objet, mais le quadrilatère continue de faire face à la
+/// caméra.
+///
+/// **La rotation se prend autour de l'axe de vue**, et c'est ce qui rend le test
+/// probant. Le centre y est invariant, si bien que la seule chose que `model`
+/// pourrait encore changer est l'orientation — et un sprite deux fois plus haut
+/// que large la montrerait aussitôt. Une rotation autour d'un autre axe
+/// emporterait le sprite hors du champ, et deux images vides se ressembleraient
+/// parfaitement sans rien prouver : c'est le premier état de ce test, et il
+/// passait quand la clause était violée.
+#[test]
+fn le_modele_place_le_centre_mais_n_oriente_pas() {
+    // Une caméra neutre regarde le +X du monde : une rotation autour de cet axe
+    // laisse un centre posé dessus exactement où il est.
+    let centre = Vec3::new(10.0, 0.0, 0.0);
+    let tourne = Affine3::from_rotation_translation(
+        Quat::from_axis_angle(Vec3::new(1.0, 0.0, 0.0), Angle(1 << 30)),
+        Vec3::ZERO,
+    );
+    assert_eq!(tourne.transform_point(centre), centre, "centre invariant");
+
+    let poser = |model| {
+        let mut ctx = small();
+        ctx.submit_sprites(model, &[sprite(centre)], None, SpriteOrientation::Facing)
+            .expect("sprite soumis");
+        render(&mut ctx)
+    };
+
+    assert_eq!(
+        poser(tourne),
+        poser(Affine3::IDENTITY),
+        "la partie linéaire de `model` ne doit pas tourner le quadrilatère"
+    );
+}
+
+/// **Le roulis d'un quart de tour échange largeur et hauteur.**
+///
+/// Un sprite deux fois plus haut que large, tourné d'un quart de tour dans son
+/// plan, rend la même image qu'un sprite deux fois plus large que haut — à ceci
+/// près que sa texture tourne avec lui. Le test se limite donc à la silhouette,
+/// en comptant les pixels peints sur chaque axe.
+#[test]
+fn le_roulis_tourne_le_quadrilatere_dans_son_plan() {
+    let mut droit = small();
+    droit
+        .submit_sprites(
+            Affine3::IDENTITY,
+            &[sprite(Vec3::new(10.0, 0.0, 0.0))],
+            None,
+            SpriteOrientation::Facing,
+        )
+        .expect("sprite soumis");
+    let (large_droit, haut_droit) = etendue(&render(&mut droit));
+
+    let mut couche = small();
+    let mut tourne = sprite(Vec3::new(10.0, 0.0, 0.0));
+    tourne.roll = Angle(1 << 30);
+    couche
+        .submit_sprites(
+            Affine3::IDENTITY,
+            &[tourne],
+            None,
+            SpriteOrientation::Facing,
+        )
+        .expect("sprite soumis");
+    let (large_couche, haut_couche) = etendue(&render(&mut couche));
+
+    assert!(
+        haut_droit > large_droit,
+        "debout, il est plus haut que large"
+    );
+    assert_eq!(
+        large_couche, haut_droit,
+        "sa hauteur est devenue sa largeur"
+    );
+    assert_eq!(haut_couche, large_droit, "et sa largeur sa hauteur");
+}
+
+/// **Le roulis nul est le neutre**, au bit près.
+#[test]
+fn le_roulis_nul_ne_change_rien() {
+    let poser = |roll: Angle| {
+        let mut ctx = small();
+        let mut s = sprite(Vec3::new(10.0, 0.0, 0.0));
+        s.roll = roll;
+        ctx.submit_sprites(Affine3::IDENTITY, &[s], None, SpriteOrientation::Facing)
+            .expect("sprite soumis");
+        render(&mut ctx)
+    };
+    assert_eq!(poser(Angle(0)), poser(Angle(0)));
+    assert_ne!(
+        poser(Angle(0)),
+        poser(Angle(1 << 29)),
+        "un huitième de tour se voit"
+    );
+}
+
+/// **L'axial garde le sprite debout**, là où le plein-face le couche.
+///
+/// Vu d'en haut, un quadrilatère plein-face s'aplatit dans le plan horizontal —
+/// il se « couche » — tandis que l'axial ne montre plus que sa tranche. Le test
+/// place la caméra au-dessus du sprite, inclinée, et exige que les deux modes
+/// rendent des images différentes : c'est la seule chose qui les distingue, et
+/// la raison pour laquelle les deux existent.
+#[test]
+fn les_deux_orientations_different_vu_d_en_haut() {
+    let poser = |orientation| {
+        let mut ctx = small();
+        // Au-dessus et en retrait, inclinée vers le bas d'un huitième de tour.
+        ctx.set_camera(Camera {
+            position: Vec3::new(0.0, 0.0, 8.0),
+            orientation: Quat::from_axis_angle(Vec3::new(0.0, 1.0, 0.0), Angle(1 << 29)),
+            ..Camera::DEFAULT
+        })
+        .expect("caméra valide");
+        ctx.submit_sprites(
+            Affine3::IDENTITY,
+            &[sprite(Vec3::new(10.0, 0.0, 0.0))],
+            None,
+            orientation,
+        )
+        .expect("sprite soumis");
+        render(&mut ctx)
+    };
+    assert_ne!(
+        poser(SpriteOrientation::Axial),
+        poser(SpriteOrientation::Facing),
+        "les deux modes doivent se distinguer dès que la caméra s'incline"
+    );
+}
+
+/// **L'axial dégénère à la verticale exacte, sans erreur.**
+///
+/// Le quadrilatère n'a plus de largeur : il disparaît comme un triangle qui ne
+/// se projette pas. C'est une donnée, pas un cas d'erreur — et surtout pas un
+/// code de retour, l'hôte n'ayant aucun levier sur la géométrie de sa scène.
+/// **Le plein-face dessine dans la même configuration**, et c'est ce qui rend ce
+/// test probant : sans lui, zéro triangle se lirait aussi bien comme « le sprite
+/// est hors du champ », et le test passerait quelle que soit la base construite.
+#[test]
+fn l_axial_disparait_quand_la_camera_regarde_a_la_verticale() {
+    let poser = |orientation| {
+        let mut ctx = small();
+        ctx.set_camera(Camera {
+            position: Vec3::new(0.0, 0.0, 10.0),
+            // Un quart de tour autour du Y du monde amène le regard de +X vers
+            // le bas : la caméra plonge à la verticale exacte.
+            orientation: Quat::from_axis_angle(Vec3::new(0.0, 1.0, 0.0), Angle(1 << 30)),
+            ..Camera::DEFAULT
+        })
+        .expect("caméra valide");
+        let code = ctx.submit_sprites(Affine3::IDENTITY, &[sprite(Vec3::ZERO)], None, orientation);
+        (code, ctx.triangles.len())
+    };
+
+    assert_eq!(
+        poser(SpriteOrientation::Facing),
+        (Ok(()), 2),
+        "le plein-face reste visible : le sprite est bien dans le champ"
+    );
+    assert_eq!(
+        poser(SpriteOrientation::Axial),
+        (Ok(()), 0),
+        "l'axial dégénère, et sans erreur : l'hôte n'a aucun levier là-dessus"
+    );
+}
+
+/// **Un sprite dont le centre n'est pas fini refuse le lot**, comme un sommet.
+#[test]
+fn un_centre_non_fini_refuse_le_lot() {
+    let mut ctx = small();
+    assert_eq!(
+        ctx.submit_sprites(
+            Affine3::IDENTITY,
+            &[sprite(Vec3::new(f32::NAN, 0.0, 0.0))],
+            None,
+            SpriteOrientation::Facing,
+        ),
+        Err(Error::InvalidArgument(Argument::VertexCoordinate))
+    );
+    assert_eq!(ctx.triangles.len(), 0, "le lot refusé n'a rien laissé");
+}
+
+/// L'étendue peinte d'une image, en pixels, sur chaque axe.
+fn etendue(pixels: &[u8]) -> (usize, usize) {
+    let peint = |i: usize| pixels[i * BYTES_PER_PIXEL] != 0;
+    let mut colonnes = 0;
+    for x in 0..64 {
+        if (0..64).any(|y| peint(y * 64 + x)) {
+            colonnes += 1;
+        }
+    }
+    let mut lignes = 0;
+    for y in 0..64 {
+        if (0..64).any(|x| peint(y * 64 + x)) {
+            lignes += 1;
+        }
+    }
+    (colonnes, lignes)
 }

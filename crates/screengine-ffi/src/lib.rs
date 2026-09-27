@@ -31,8 +31,8 @@ use std::slice;
 use std::sync::Arc;
 
 use screengine::{
-    Argument, Context, Error as CoreError, Lightmap, Lightmaps, Mesh, Texture, Vec3, VertexUv,
-    VertexUv2, Visibility, World,
+    Argument, Context, Error as CoreError, Lightmap, Lightmaps, Mesh, SpriteOrientation, Texture,
+    Vec3, VertexUv, VertexUv2, Visibility, World,
 };
 
 use entry::AbiError;
@@ -41,9 +41,10 @@ use output::HostRows;
 pub use context::{ScgContext, ScgContextConfig};
 pub use mesh::ScgMesh;
 pub use scene::{
-    SCG_BLEND_MODULATE, SCG_FILTER_BILINEAR, SCG_FILTER_DITHER, SCG_TEXTURE_FORMAT_RGBA8,
-    SCG_TEXTURE_FORMAT_RGBA8_MASKED, ScgCamera, ScgGrade, ScgLight, ScgMat4, ScgTextureDesc,
-    ScgTriangle, ScgVertex, ScgVertexUv, ScgVertexUv2, ScgVertexUvN,
+    SCG_BLEND_MODULATE, SCG_FILTER_BILINEAR, SCG_FILTER_DITHER, SCG_SPRITE_AXIAL,
+    SCG_SPRITE_FACING, SCG_TEXTURE_FORMAT_RGBA8, SCG_TEXTURE_FORMAT_RGBA8_MASKED, ScgCamera,
+    ScgGrade, ScgLight, ScgMat4, ScgSprite, ScgTextureDesc, ScgTriangle, ScgVertex, ScgVertexUv,
+    ScgVertexUv2, ScgVertexUvN,
 };
 pub use status::{
     SCG_ERR_FAULTED, SCG_ERR_INVALID_ARGUMENT, SCG_ERR_INVALID_FORMAT, SCG_ERR_INVALID_STATE,
@@ -948,6 +949,71 @@ pub unsafe extern "C" fn scg_submit_blended(
                 }
                 Ok((corners, triangle.color()))
             })
+            .map_err(AbiError::from)
+    };
+
+    // SAFETY: précondition de la fonction — `ctx` est nul ou un handle vivant.
+    unsafe { entry::with_context(ctx, submit) }
+}
+
+/// Submits quads the engine orients on the camera.
+///
+/// The host gives a centre and two half-extents; the engine builds the quad.
+/// That is the one thing here a host cannot do without computing: orienting
+/// requires the camera's basis, which it would have to obtain by re-inverting
+/// the pose it just passed in — normalising a quaternion with its own maths
+/// library, so that two bindings would no longer render the same image.
+///
+/// **`model` places the centre, and nothing else.** Its linear part does not
+/// orient the quad; the camera does, by definition. The parameter is there for
+/// the symmetry of the submission family.
+///
+/// `orientation` must be `SCG_SPRITE_AXIAL` or `SCG_SPRITE_FACING`; zero and
+/// any unknown value are refused, never silently mapped onto a default. The
+/// axial mode degenerates when the camera looks straight down: the quads then
+/// disappear, without an error, like a triangle that does not project.
+///
+/// `texture` may be null, in which case each sprite's colour fills its quad.
+/// **Each sprite consumes two triangles** of the context's capacity, before
+/// clipping.
+///
+/// # Safety
+///
+/// `ctx` is null or a live handle. `model` points at a readable `ScgMat4`.
+/// `sprites` points at `sprite_count` readable `ScgSprite`. `texture` is null
+/// or a live handle.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn scg_submit_sprites(
+    ctx: *mut ScgContext,
+    model: *const ScgMat4,
+    sprites: *const ScgSprite,
+    sprite_count: u32,
+    texture: *const ScgTexture,
+    orientation: u32,
+) -> i32 {
+    let submit = |mut core: entry::Core<'_>| {
+        let orientation = match orientation {
+            SCG_SPRITE_AXIAL => SpriteOrientation::Axial,
+            SCG_SPRITE_FACING => SpriteOrientation::Facing,
+            _ => return Err(AbiError::SPRITE_ORIENTATION),
+        };
+        // SAFETY: précondition de la fonction — chaque pointeur est nul ou vise
+        // une valeur lisible.
+        let model = unsafe { model.as_ref() }.ok_or(AbiError::NULL)?;
+        let model = model.to_core()?;
+        // SAFETY: précondition de la fonction — `texture` est nul ou vivant.
+        let texture = unsafe { texture.as_ref() };
+        // SAFETY: précondition de la fonction — `sprites` couvre son nombre
+        // d'éléments.
+        let sprites = unsafe { slice_of(sprites, sprite_count) };
+        core.exclusive()?
+            .submit_each_sprite(
+                model,
+                sprites.len(),
+                texture.map(|t| &t.inner),
+                orientation,
+                |i| Ok(sprites[i].to_core()),
+            )
             .map_err(AbiError::from)
     };
 
