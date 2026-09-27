@@ -908,7 +908,13 @@ impl Context {
     where
         F: Fn(u32) -> Option<&'t Arc<Texture>>,
     {
-        self.submit_mesh_with(model, mesh, texture, |i| mesh.vertices()[i])
+        // La normale de la première trame : c'est elle que le rendu non animé
+        // dessine, et `vertices()` porte déjà sa position pour la même raison.
+        let poses = mesh.frame(0);
+        self.submit_mesh_with(model, mesh, texture, |i| {
+            let normal = poses.map_or(Vec3::ZERO, |poses| poses[i].normal);
+            VertexUv2::shaded(mesh.vertices()[i], normal)
+        })
     }
 
     /// Le corps commun des trois soumissions de maillage : seule la façon de
@@ -927,20 +933,20 @@ impl Context {
     ) -> Result<()>
     where
         F: Fn(u32) -> Option<&'t Arc<Texture>>,
-        V: Fn(usize) -> VertexUv,
+        V: Fn(usize) -> VertexUv2,
     {
         let (mark, textures) = (self.triangles.len(), self.textures.len());
         let lights = self.lighting.len();
 
         for group in mesh.groups() {
             let first = group.first_triangle as usize;
-            let result = self.submit_each_uv(
+            let result = self.submit_each_shaded(
                 model,
                 group.triangle_count as usize,
                 texture(group.texture_slot),
                 |i| {
                     let triangle = mesh.triangles()[first + i];
-                    let mut corners = [VertexUv::untextured(Vec3::ZERO); 3];
+                    let mut corners = [VertexUv2::unlit(VertexUv::untextured(Vec3::ZERO)); 3];
                     for (corner, &index) in corners.iter_mut().zip(&triangle.indices) {
                         *corner = vertex(index as usize);
                     }
@@ -972,10 +978,15 @@ impl Context {
     where
         F: Fn(u32) -> Option<&'t Arc<Texture>>,
     {
-        self.submit_mesh_with(model, mesh, texture, |i| VertexUv {
-            position: poses[i].position,
-            u: mesh.vertices()[i].u,
-            v: mesh.vertices()[i].v,
+        self.submit_mesh_with(model, mesh, texture, |i| {
+            VertexUv2::shaded(
+                VertexUv {
+                    position: poses[i].position,
+                    u: mesh.vertices()[i].u,
+                    v: mesh.vertices()[i].v,
+                },
+                poses[i].normal,
+            )
         })
     }
 
@@ -1001,10 +1012,19 @@ impl Context {
     where
         F: Fn(u32) -> Option<&'t Arc<Texture>>,
     {
-        self.submit_mesh_with(model, mesh, texture, |i| VertexUv {
-            position: blend(a[i].position, b[i].position, t),
-            u: mesh.vertices()[i].u,
-            v: mesh.vertices()[i].v,
+        self.submit_mesh_with(model, mesh, texture, |i| {
+            VertexUv2::shaded(
+                VertexUv {
+                    position: blend(a[i].position, b[i].position, t),
+                    u: mesh.vertices()[i].u,
+                    v: mesh.vertices()[i].v,
+                },
+                // **La normale passe par le même mélange**, et le moteur la
+                // renormalise plus loin : une normale interpolée entre deux
+                // trames n'est plus unitaire, et c'est pourquoi rien n'exige
+                // qu'elle le soit à l'entrée.
+                blend(a[i].normal, b[i].normal, t),
+            )
         })
     }
 

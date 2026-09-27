@@ -113,14 +113,23 @@ publié, et explique les conventions du dépôt à qui y contribue.
   `SCG_ABI_VERSION` reste à 1.
 
 ### Modifié
-- Le contrat d'ABI fige l'étape 6 avant son premier code : les deux façons
+- Le contrat d'ABI a figé l'étape 6 avant son premier code : les deux façons
   d'écrire un pixel — le texel transparent et la surface modulée —, les
   quadrilatères que le moteur oriente sur la caméra, les maillages animés par
-  trames et la normale par sommet. **Rien n'en est encore exposé**, et
-  `version_format` du maillage n'a pas encore bougé. Ce qu'un auteur de liaison
-  doit en retenir dès maintenant : un mode passé à une soumission commence à 1 et
-  zéro y est refusé, là où zéro vaut défaut pour un réglage de contexte — la
-  règle valait déjà sans avoir été écrite.
+  trames et la normale par sommet. Tout y est exposé depuis, et
+  `version_format` du maillage est passé à 2. Ce qu'un auteur de liaison doit en
+  retenir : un mode passé à une soumission commence à 1 et zéro y est refusé, là
+  où zéro vaut défaut pour un réglage de contexte — la règle valait déjà sans
+  avoir été écrite.
+- **Un maillage éclairé par une lumière dynamique tient compte de la normale
+  qu'il porte.** Elle vivait dans le format depuis sa version 2 et n'allait
+  nulle part : les trois chemins de maillage — statique, posé, interpolé — la
+  portent désormais jusqu'à l'éclairage, l'interpolation la mêlant comme la
+  position et le moteur la renormalisant. **Une face qui tourne le dos à une
+  lumière ne reçoit plus rien**, là où elle recevait autant que ses voisines à
+  égale distance. Une normale nulle vaut son absence, et l'éclairage y retombe
+  sur la distance seule : un maillage dont l'export ne remplit pas ce champ rend
+  ce qu'il rendait.
 
 ### Corrigé
 - La table des textures d'une image était dimensionnée sur la capacité de
@@ -200,14 +209,22 @@ publié, et explique les conventions du dépôt à qui y contribue.
   every submission taking one inherits it. `SCG_ABI_VERSION` stays at 1.
 
 ### Changed
-- The ABI contract freezes step 6 ahead of its first code: the two ways of
+- The ABI contract froze step 6 ahead of its first code: the two ways of
   writing a pixel — the transparent texel and the modulated surface —, the
   quadrilaterals the engine orients towards the camera, frame-animated meshes and
-  the per-vertex normal. **None of it is exposed yet**, and the mesh
-  `version_format` has not moved. What a binding author should take from it now:
+  the per-vertex normal. All of it has been exposed since, and the mesh
+  `version_format` has moved to 2. What a binding author should take from it:
   a mode passed to a submission starts at 1 and zero is refused there, whereas
   zero means default for a context setting — a rule that already held without
   having been written down.
+- **A mesh lit by a dynamic light now accounts for the normal it carries.** It
+  has lived in the format since version 2 and went nowhere: the three mesh paths
+  — static, posed, interpolated — now carry it through to the lighting,
+  interpolation blending it as it does position and the engine normalising it.
+  **A face turned away from a light receives nothing**, where it used to receive
+  as much as its neighbours at the same distance. A zero normal counts as none,
+  and the lighting falls back to distance alone there: a mesh whose exporter
+  leaves that field empty renders what it rendered.
 
 ### Fixed
 - A frame's texture table was sized on the triangle capacity, although a lit
