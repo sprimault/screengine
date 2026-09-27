@@ -7,9 +7,10 @@
 //! octet de bourrage sur les quatre cibles : une liaison JavaScript les écrit à
 //! la main dans la mémoire linéaire, décalage par décalage.
 //!
-//! Aucun champ réservé. L'étape des textures apportera une structure de sommet
-//! nouvelle et une fonction nouvelle, ce que la règle d'extension prévoit — un
-//! champ qui dort en attendant ce jour-là serait un pari sur sa forme.
+//! Aucun champ réservé, et c'est la règle d'extension qui l'a permis : l'étape
+//! des textures a apporté une structure de sommet nouvelle et une fonction
+//! nouvelle plutôt que d'élargir celles-ci, et chaque étape depuis a fait de
+//! même. Un champ qui aurait dormi en attendant aurait été un pari sur sa forme.
 
 use screengine::{Affine3, Camera, Color, Filter, Light, Quat, Vec3, VertexUv, VertexUv2};
 

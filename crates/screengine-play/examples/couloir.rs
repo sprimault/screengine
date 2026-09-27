@@ -19,10 +19,11 @@
 //! donnerait une flaque peinte sur le mur, calculer par sommet ce qui ne bouge
 //! pas paierait une atténuation par image pour une valeur constante.
 //!
-//! À cette étape le moteur ne produit aucune lightmap — il n'a ni carte ni
-//! cellule pour cela — et l'ABI en fait une ressource que l'hôte fournit : les
-//! cuire ici montre donc ce que l'étape du monde fera dans le noyau, et ce
-//! qu'un intégrateur peut faire dès aujourd'hui.
+//! Le noyau calcule des lightmaps depuis l'étape du monde, mais à partir d'une
+//! carte : cet exemple n'en a pas, sa géométrie étant construite à la main. Il
+//! les cuit donc lui-même, ce que l'ABI permet toujours — une lightmap fournie
+//! par l'hôte reste une ressource comme une autre. L'exemple `carte` montre le
+//! chemin par le fichier.
 //!
 //! **La géométrie est subdivisée par l'éclairage, pas par la forme.**
 //! L'atténuation se calcule par sommet : un mur d'un seul quadrilatère ne
@@ -299,9 +300,10 @@ const AMBIENT: f32 = 0.06;
 
 /// Calcule l'éclairement d'un point : l'ambiance, et le jour des trouées.
 ///
-/// **C'est ce que l'étape 5 fera dans le noyau**, cellule par cellule. Ici
-/// l'hôte s'en charge, comme l'ABI le prévoit à cette étape : une lightmap est
-/// une ressource qu'il fournit, le moteur ne fait que l'échantillonner.
+/// **C'est ce que le noyau fait depuis l'étape 5**, cellule par cellule, pour
+/// une carte. Ici l'hôte s'en charge faute de carte, ce que l'ABI permet : une
+/// lightmap est alors une ressource qu'il fournit, le moteur ne fait que
+/// l'échantillonner.
 ///
 /// L'atténuation est celle du moteur pour ses lumières dynamiques —
 /// `(1 - d²/r²)²`, nulle et de dérivée nulle à la portée —, de sorte que les
@@ -691,11 +693,12 @@ fn crate_at(mesh: &mut Mesh, x: f32, y: f32, z: f32) {
 /// la caméra bouge. Ce que le moteur reçoit chaque image, c'est la même scène
 /// et une caméra différente.
 ///
-/// **Les lightmaps sont cuites ici**, pas chargées. À cette étape le moteur
-/// n'en calcule aucune — il n'a ni carte ni cellule pour cela, qui viennent
-/// plus tard — et l'ABI en fait une ressource que l'hôte fournit. Les cuire
-/// dans l'exemple montre donc exactement ce que l'étape du monde fera dans le
-/// noyau, et ce que n'importe quel intégrateur peut faire aujourd'hui.
+/// **Les lightmaps sont cuites ici**, pas chargées. Le noyau sait en calculer
+/// depuis l'étape du monde, mais **à partir d'une carte**, cellule par cellule :
+/// cet exemple construit sa géométrie à la main et n'en a pas. L'ABI fait d'une
+/// lightmap une ressource que l'hôte fournit, et c'est ce chemin-là qui est
+/// montré ici — celui qu'emprunte un intégrateur dont le décor ne vient pas
+/// d'un fichier de carte. L'exemple `carte` montre l'autre.
 fn corridor() -> Result<Decor, screengine_play::Error> {
     let (w, h, l) = (HALF_WIDTH, HEIGHT, LENGTH);
     let (stone, cobble) = (STONE_DENSITY, COBBLE_DENSITY);

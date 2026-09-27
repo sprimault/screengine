@@ -220,7 +220,7 @@ fn une_texture_se_charge_en_une_seule_allocation() {
 /// de textures du contexte, que `submit` ne touche jamais. Une table qui
 /// grandirait au premier lot serait une allocation par image, et la mesure
 /// voisine ne la verrait pas — alors que c'est le chemin que tout décor
-/// emprunte depuis l'étape 2, et celui par lequel l'étape 3 fera entrer les
+/// emprunte depuis l'étape 2, et celui par lequel l'étape 3 a fait entrer les
 /// lightmaps.
 ///
 /// Les deux filtrages sont mesurés parce qu'ils ne lisent pas la texture de la

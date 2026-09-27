@@ -182,8 +182,8 @@ pub struct Lighting {
     /// deux lignes de cache. Celui-ci voyage avec ce qu'il désigne.
     ///
     /// Vaut [`NO_TEXTURE`] quand seules des lumières dynamiques éclairent le
-    /// triangle : les deux sources sont indépendantes, et les lightmaps ne
-    /// viendront des cartes qu'à l'étape 5.
+    /// triangle : les deux sources sont indépendantes, et un lot éclairé
+    /// dynamiquement n'a pas à porter de lightmap.
     lightmap: u16,
     /// Ce que les lumières dynamiques ajoutent, un plan par canal, en 16.16.
     ///

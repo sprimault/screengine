@@ -1201,8 +1201,9 @@ fn torch(x: f32, radius: f32) -> Light {
 
 /// **Une lumière éclaire un triangle qui n'a pas de lightmap.**
 ///
-/// C'est la raison d'être du chemin : les lightmaps ne viendront des cartes
-/// qu'à l'étape 5, et une torche doit pouvoir éclairer un mur uni d'ici là.
+/// C'est la raison d'être du chemin : une lumière dynamique et une lightmap sont
+/// deux sources indépendantes, et une torche doit pouvoir éclairer un mur uni
+/// qu'aucune cuisson n'a touché.
 #[test]
 fn une_lumiere_eclaire_un_triangle_sans_lightmap() {
     let mut ctx = small();

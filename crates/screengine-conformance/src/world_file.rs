@@ -177,8 +177,8 @@ fn cell(id: u32, first_id: u32, from: f32, to: f32, out: &mut Vec<u8>) {
 /// Le fichier du couloir : deux cellules qui se rejoignent par un portail.
 ///
 /// Deux et non une : c'est le seul moyen de rendre visible que la soumission
-/// dessine **toutes** les cellules, ce que la traversée de l'étape suivante
-/// remplacera. Leurs portails du milieu partagent leurs sommets au bit près et
+/// dessine **toutes** les cellules, et c'est contre cette image que la traversée
+/// se valide. Leurs portails du milieu partagent leurs sommets au bit près et
 /// s'apparient donc au chargement — ce que l'image ne montre pas, mais que le
 /// décodeur vérifie.
 pub fn bytes() -> Vec<u8> {

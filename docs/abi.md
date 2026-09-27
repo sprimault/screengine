@@ -16,9 +16,10 @@ des lightmaps, cache compris. Chaque décision garde ci-dessous l'option écart�
 pourquoi. Un seul point reste marqué **À trancher** : la dépréciation, qui attend
 le gel de l'ABI en 1.0.
 
-**La section « Étape 6 » décrit un contrat figé dont rien n'est encore exposé.**
-Le contrat précède son code sur ce projet, et cette section est donc la seule du
-document à ne pas décrire la bibliothèque telle qu'elle est aujourd'hui.
+**La section « Étape 6 » décrit un contrat figé que son code rattrape.** Le
+contrat précède son code sur ce projet : la section a été écrite d'un bloc avant
+le premier appelant, et les fonctions s'y exposent lot par lot. Elle dit
+laquelle manque encore.
 
 `SCG_ABI_VERSION` reste à **1** : aucune signature publiée n'a changé, l'étape 5
 n'ayant fait qu'ajouter des fonctions. Ce qui change pour une liaison est ailleurs,
@@ -1365,10 +1366,11 @@ statut que la profondeur, pour la même raison : l'image est complète de ce qui
 nouveau et aucun statut.** Aucune signature publiée, aucune structure, aucune
 précondition ne bouge : `SCG_ABI_VERSION` reste à **1**.
 
-**Aucune de ces fonctions n'est encore exposée.** Le contrat se fige avant son
-premier appelant, pour la raison dite en tête de document ; ce qui change pour un
-hôte, en revanche, c'est `version_format` du maillage, qui passe à **2**, et les
-maillages de version 1 sont refusés.
+**Quatre de ces cinq fonctions sont exposées ; `scg_submit_sprites` ne l'est pas
+encore.** Le contrat s'est figé d'un bloc avant son premier appelant, pour la
+raison dite en tête de document, et le code l'a rattrapé depuis. Ce qui change
+pour un hôte, en revanche, c'est `version_format` du maillage, qui passe à **2**,
+et les maillages de version 1 sont refusés.
 
 ```c
 /* la modulation : le seul mode d'écriture qui demande une fonction */

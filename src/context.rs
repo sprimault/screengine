@@ -1072,11 +1072,11 @@ impl Context {
     /// carte, ou `None` pour « sans texture ». Même forme que pour un maillage,
     /// et pour la même raison : la table de l'hôte se lit sur place.
     ///
-    /// **Toutes les cellules, aucune élimination.** C'est ce que la traversée
-    /// par portails remplacera — et ce contre quoi elle se validera : une scène
-    /// où tout est visible devra rendre la même image des deux côtés. Rien ici
-    /// ne prend de cellule de départ, un paramètre qui ne servirait pas encore
-    /// étant un paramètre dont le sens changerait.
+    /// **Toutes les cellules, aucune élimination.** La traversée par portails
+    /// ne remplace pas ce chemin : elle s'ajoute, et c'est contre lui qu'elle se
+    /// valide — sur une scène où tout est visible, les deux rendent la même
+    /// image. Rien ici ne prend de cellule de départ, un paramètre qui ne
+    /// servirait pas étant un paramètre dont le sens changerait.
     ///
     /// **Refusée en entier ou pas du tout**, comme un maillage, et par le même
     /// mécanisme.
