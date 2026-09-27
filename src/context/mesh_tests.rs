@@ -808,3 +808,122 @@ fn une_trame_ou_un_facteur_hors_bornes_sont_refuses() {
     }
     assert_eq!(ctx.triangles.len(), 0, "un refus a laissé un triangle");
 }
+
+/// Le carré de `CORNERS`, dont tous les sommets portent la normale donnée.
+///
+/// Les poses se composent à la main plutôt que par `mesh_file`, qui impose sa
+/// propre normale : c'est elle qu'on fait varier ici.
+fn mesh_with_normal(normal: [f32; 3]) -> Mesh {
+    let mut poses = Vec::new();
+    let mut uvs = Vec::new();
+    for (x, y, z, u, v) in CORNERS {
+        poses.extend_from_slice(&pose_bytes([x, y, z], normal));
+        uvs.extend_from_slice(&u.to_le_bytes());
+        uvs.extend_from_slice(&v.to_le_bytes());
+    }
+    let mut triangles = triangle(QUAD[0][0], QUAD[0][1], QUAD[0][2], TINT);
+    triangles.extend_from_slice(&triangle(QUAD[1][0], QUAD[1][1], QUAD[1][2], TINT));
+    Mesh::load(&sections(
+        &frames_bytes(1, &poses),
+        &group(1, 0, 2, 0),
+        &name("mur"),
+        &triangles,
+        &uvs,
+    ))
+    .expect("maillage valide")
+}
+
+/// Une lumière posée entre la caméra et le carré, qui l'atteint largement.
+fn torch_before() -> Light {
+    Light {
+        position: Vec3::new(6.0, 0.0, 0.0),
+        radius: 40.0,
+        color: Color::new(0xFF, 0xFF, 0xFF, 0xFF),
+    }
+}
+
+/// **Le maillage porte sa normale jusqu'à l'éclairage dynamique.**
+///
+/// C'est ce que le lot ajoute : la normale existait dans le format depuis la
+/// version 2 et n'allait nulle part. Une face qui tourne le dos à la lumière ne
+/// reçoit plus rien, là où elle recevait autant que sa jumelle à égale
+/// distance.
+///
+/// Les deux maillages ne diffèrent **que** par leur normale : même géométrie,
+/// mêmes coordonnées, même couleur, même lumière. Ce que le test mesure ne peut
+/// donc venir que d'elle.
+#[test]
+fn la_normale_du_maillage_eclaire_selon_l_orientation() {
+    let rendu = |normal: [f32; 3]| {
+        let mut ctx = small_ctx();
+        ctx.set_lights(&[torch_before()]).expect("lumière valide");
+        ctx.submit_mesh(Affine3::IDENTITY, &mesh_with_normal(normal), |_| None)
+            .expect("maillage soumis");
+        pixels_of(&mut ctx)
+    };
+
+    // Le carré est dans le plan X = 10 et la caméra regarde le +X : une normale
+    // en −X fait face à la lumière, une normale en +X lui tourne le dos.
+    let face = rendu([-1.0, 0.0, 0.0]);
+    let dos = rendu([1.0, 0.0, 0.0]);
+
+    let somme = |pixels: &[u8]| pixels.iter().map(|&c| u32::from(c)).sum::<u32>();
+    assert!(
+        somme(&face) > somme(&dos),
+        "la face tournée vers la lumière doit recevoir davantage"
+    );
+}
+
+/// **Une normale nulle vaut « pas de normale »**, et l'éclairage retombe sur la
+/// distance seule.
+///
+/// C'est ce qui garde compatible un maillage dont l'export ne remplit pas ce
+/// champ, et c'est la clause que `scg_submit_shaded` porte déjà pour le chemin
+/// explicite.
+#[test]
+fn une_normale_nulle_vaut_son_absence() {
+    let rendu = |normal: [f32; 3]| {
+        let mut ctx = small_ctx();
+        ctx.set_lights(&[torch_before()]).expect("lumière valide");
+        ctx.submit_mesh(Affine3::IDENTITY, &mesh_with_normal(normal), |_| None)
+            .expect("maillage soumis");
+        pixels_of(&mut ctx)
+    };
+
+    let nulle = rendu([0.0, 0.0, 0.0]);
+    let face = rendu([-1.0, 0.0, 0.0]);
+    let dos = rendu([1.0, 0.0, 0.0]);
+    assert_ne!(
+        nulle, face,
+        "sans normale, le terme angulaire ne s'applique pas"
+    );
+    assert_ne!(nulle, dos, "et la face de dos n'est pas éteinte non plus");
+}
+
+/// **Le théorème de l'interpolation tient avec la normale branchée.**
+///
+/// `frame_a == frame_b` doit rendre exactement ce que `submit_mesh` rend de
+/// cette trame, pour tout facteur — y compris maintenant que la normale voyage
+/// avec la position et passe par le même mélange.
+#[test]
+fn deux_trames_identiques_rendent_le_chemin_statique_avec_normale() {
+    let mesh = mesh_with_normal([-1.0, 0.0, 0.0]);
+
+    let mut statique = small_ctx();
+    statique
+        .set_lights(&[torch_before()])
+        .expect("lumière valide");
+    statique
+        .submit_mesh(Affine3::IDENTITY, &mesh, |_| None)
+        .expect("maillage soumis");
+    let attendu = pixels_of(&mut statique);
+
+    for t in [0.0, 0.25, 0.5, 1.0] {
+        let mut anime = small_ctx();
+        anime.set_lights(&[torch_before()]).expect("lumière valide");
+        anime
+            .submit_mesh_frame(Affine3::IDENTITY, &mesh, |_| None, 0, 0, t)
+            .expect("maillage soumis");
+        assert_eq!(pixels_of(&mut anime), attendu, "facteur {t}");
+    }
+}
