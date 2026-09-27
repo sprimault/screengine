@@ -78,6 +78,16 @@ SCREENGINE_LAYOUT_ASSERT(offsetof(ScgVertexUvN, v) == 16, "ScgVertexUvN.v moved"
 SCREENGINE_LAYOUT_ASSERT(offsetof(ScgVertexUvN, nx) == 20, "ScgVertexUvN.nx moved");
 SCREENGINE_LAYOUT_ASSERT(offsetof(ScgVertexUvN, ny) == 24, "ScgVertexUvN.ny moved");
 SCREENGINE_LAYOUT_ASSERT(offsetof(ScgVertexUvN, nz) == 28, "ScgVertexUvN.nz moved");
+SCREENGINE_LAYOUT_ASSERT(sizeof(ScgSprite) == 44, "ScgSprite changed size");
+SCREENGINE_LAYOUT_ASSERT(offsetof(ScgSprite, z) == 8, "ScgSprite.z moved");
+SCREENGINE_LAYOUT_ASSERT(offsetof(ScgSprite, half_width) == 12, "ScgSprite.half_width moved");
+SCREENGINE_LAYOUT_ASSERT(offsetof(ScgSprite, half_height) == 16, "ScgSprite.half_height moved");
+SCREENGINE_LAYOUT_ASSERT(offsetof(ScgSprite, u0) == 20, "ScgSprite.u0 moved");
+SCREENGINE_LAYOUT_ASSERT(offsetof(ScgSprite, v0) == 24, "ScgSprite.v0 moved");
+SCREENGINE_LAYOUT_ASSERT(offsetof(ScgSprite, u1) == 28, "ScgSprite.u1 moved");
+SCREENGINE_LAYOUT_ASSERT(offsetof(ScgSprite, v1) == 32, "ScgSprite.v1 moved");
+SCREENGINE_LAYOUT_ASSERT(offsetof(ScgSprite, roll) == 36, "ScgSprite.roll moved");
+SCREENGINE_LAYOUT_ASSERT(offsetof(ScgSprite, r) == 40, "ScgSprite.r moved");
 SCREENGINE_LAYOUT_ASSERT(sizeof(ScgLight) == 20, "ScgLight changed size");
 SCREENGINE_LAYOUT_ASSERT(offsetof(ScgLight, z) == 8, "ScgLight.z moved");
 SCREENGINE_LAYOUT_ASSERT(offsetof(ScgLight, radius) == 12, "ScgLight.radius moved");

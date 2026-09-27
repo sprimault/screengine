@@ -150,6 +150,15 @@ impl AbiError {
         message: "blend mode must be SCG_BLEND_MODULATE",
     };
 
+    /// Le mode d'orientation demandé n'existe pas dans cette bibliothèque.
+    ///
+    /// Zéro y tombe comme pour le mélange, et pour la même raison : une
+    /// orientation est une description du lot, pas un réglage de contexte.
+    pub(crate) const SPRITE_ORIENTATION: Self = Self {
+        code: SCG_ERR_INVALID_ARGUMENT,
+        message: "sprite orientation must be SCG_SPRITE_AXIAL or SCG_SPRITE_FACING",
+    };
+
     /// Le niveau de filtrage demandé n'existe pas dans cette bibliothèque.
     ///
     /// Refusé plutôt que rabattu sur le défaut, et c'est ce qui rend l'ajout

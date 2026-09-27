@@ -23,7 +23,9 @@ use crate::raster::{
     Bins, Grid, Lighting, MAX_CLIP_TRIANGLES, MODULATED, NO_LIGHTING, NO_TEXTURE, Prepared, Rect,
     Vertex, clip, prepare, prepare_lit,
 };
-use crate::scene::{Camera, Color, Light, Triangle, VertexUv, VertexUv2};
+use crate::scene::{
+    Camera, Color, Light, Sprite, SpriteOrientation, Triangle, VertexUv, VertexUv2,
+};
 use crate::texture::{Filter, Texture};
 use crate::world::atlas::GUTTER;
 use crate::world::lighting::Lightmaps;
@@ -1394,6 +1396,126 @@ impl Context {
         F: Fn(usize) -> Result<([VertexUv2; 3], Color)>,
     {
         self.submit_lot(model, count, texture, None, 0, read)
+    }
+
+    /// Soumet des quadrilatères que le moteur oriente sur la caméra.
+    ///
+    /// L'hôte donne un centre et deux demi-extensions ; le moteur construit le
+    /// quadrilatère. C'est la seule chose de cette famille qu'un hôte ne peut
+    /// pas faire sans calculer — voir [`Sprite`].
+    ///
+    /// **`model` place le centre, et lui seul.** Sa partie linéaire n'oriente
+    /// pas le quadrilatère : c'est la caméra qui l'oriente, par définition. Le
+    /// paramètre reste pour la symétrie de la famille des soumissions.
+    ///
+    /// Un sprite consomme **deux triangles** de la capacité, avant découpe.
+    pub fn submit_sprites(
+        &mut self,
+        model: Affine3,
+        sprites: &[Sprite],
+        texture: Option<&Arc<Texture>>,
+        orientation: SpriteOrientation,
+    ) -> Result<()> {
+        self.submit_each_sprite(model, sprites.len(), texture, orientation, |i| {
+            Ok(sprites[i])
+        })
+    }
+
+    /// La même, par fonction d'accès : c'est la forme qu'emploie la frontière,
+    /// qui lit les structures de l'hôte sur place.
+    pub fn submit_each_sprite<F>(
+        &mut self,
+        model: Affine3,
+        count: usize,
+        texture: Option<&Arc<Texture>>,
+        orientation: SpriteOrientation,
+        read: F,
+    ) -> Result<()>
+    where
+        F: Fn(usize) -> Result<Sprite>,
+    {
+        // **La base se calcule une fois par lot, et c'est ce qui la rend
+        // gratuite.** Elle ne dépend que de la caméra : la prendre par sprite
+        // paierait la même racine inverse autant de fois qu'il y a
+        // d'étincelles dans une image.
+        let Some((right, up)) = self.sprite_basis(orientation) else {
+            // L'axial dégénéré : la caméra regarde à la verticale exacte, et le
+            // quadrilatère n'a plus de largeur. Il disparaît sans erreur, comme
+            // un triangle qui ne se projette pas — c'est une donnée, pas une
+            // faute d'appel.
+            return Ok(());
+        };
+        // Les coins **en espace monde**, que la transformation du lot portera
+        // ensuite en espace de vue comme ceux de n'importe quelle soumission :
+        // un seul chemin de validation, de capacité et de troncature. Le centre
+        // passe par `model`, les axes non — c'est la clause « `model` place le
+        // centre, et lui seul ».
+        self.submit_each_uv(Affine3::IDENTITY, count * 2, texture, |i| {
+            let sprite = read(i / 2)?;
+            let center = model.transform_point(sprite.center);
+            // Le roulis tourne les deux demi-extensions dans le plan du
+            // quadrilatère : après l'orientation, avant la projection, et sans
+            // division ni racine.
+            let (sin, cos) = (sprite.roll.sin(), sprite.roll.cos());
+            let across = (right * cos + up * sin) * sprite.half_width;
+            let along = (up * cos - right * sin) * sprite.half_height;
+
+            let corner = |sx: f32, sy: f32, u: f32, v: f32| VertexUv {
+                position: center + across * sx + along * sy,
+                u,
+                v,
+            };
+            // Deux triangles pour un quadrilatère, en sens antihoraire vus de
+            // face. Le second commence au coin déjà posé : un sprite consomme
+            // exactement deux places, ce que la documentation promet.
+            let corners = if i % 2 == 0 {
+                [
+                    corner(-1.0, -1.0, sprite.u0, sprite.v1),
+                    corner(1.0, -1.0, sprite.u1, sprite.v1),
+                    corner(1.0, 1.0, sprite.u1, sprite.v0),
+                ]
+            } else {
+                [
+                    corner(-1.0, -1.0, sprite.u0, sprite.v1),
+                    corner(1.0, 1.0, sprite.u1, sprite.v0),
+                    corner(-1.0, 1.0, sprite.u0, sprite.v0),
+                ]
+            };
+            Ok((corners, sprite.color))
+        })
+    }
+
+    /// Les axes du plan d'un sprite, en espace monde, ou `None` si l'axial
+    /// dégénère.
+    ///
+    /// La vue est rigide, donc son inverse porte les axes de la caméra dans le
+    /// monde. L'axe vertical de l'écran est le **−Y de vue**, celui-ci
+    /// descendant.
+    fn sprite_basis(&self, orientation: SpriteOrientation) -> Option<(Vec3, Vec3)> {
+        let camera = self.view.inverse_rigid();
+        let right = camera.transform_vector(Vec3::new(1.0, 0.0, 0.0));
+        match orientation {
+            SpriteOrientation::Facing => {
+                Some((right, -camera.transform_vector(Vec3::new(0.0, 1.0, 0.0))))
+            }
+            SpriteOrientation::Axial => {
+                // Debout : le haut est le Z du monde, et la largeur lui est
+                // perpendiculaire tout en restant face à la caméra. Prendre
+                // l'axe avant de la caméra plutôt que la direction vers chaque
+                // sprite garde la base commune au lot — et garde donc une seule
+                // racine inverse pour toute une nuée.
+                let up = Vec3::new(0.0, 0.0, 1.0);
+                let forward = camera.transform_vector(Vec3::new(0.0, 0.0, 1.0));
+                // `normalize` rend le vecteur nul sous le seuil de la racine
+                // inverse du noyau, et c'est exactement le cas d'une caméra à la
+                // verticale : le produit vectoriel s'y annule.
+                let across = up.cross(forward).normalize();
+                if across.dot(across) == 0.0 {
+                    return None;
+                }
+                Some((across, up))
+            }
+        }
     }
 
     /// Soumet un lot modulé par fonction d'accès, la forme que la frontière

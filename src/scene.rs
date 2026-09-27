@@ -7,7 +7,7 @@
 //! d'une scène, et chacune a son équivalent exact dans l'ABI C : ce que l'API
 //! Rust permet de décrire, une liaison le décrit aussi.
 
-use crate::math::{Affine3, Quat, Vec3};
+use crate::math::{Affine3, Angle, Quat, Vec3};
 
 /// L'orientation des axes de vue que donne le quaternion identité.
 ///
@@ -253,6 +253,73 @@ pub struct Light {
     /// Sa couleur, à pleine intensité au centre.
     ///
     /// L'alpha est ignoré : une lumière s'ajoute, elle ne se mélange pas.
+    pub color: Color,
+}
+
+/// Comment le moteur oriente un quadrilatère.
+///
+/// **Les deux servent, et le choix n'est pas affaire de goût.** Un personnage
+/// debout regardé d'en haut se couche avec [`Facing`], ce qui est une image
+/// fausse, et s'aplatit avec [`Axial`], ce qui n'est qu'une silhouette perdue.
+/// Une lueur ou une étincelle veut au contraire [`Facing`], n'ayant pas de
+/// haut.
+///
+/// [`Facing`]: SpriteOrientation::Facing
+/// [`Axial`]: SpriteOrientation::Axial
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SpriteOrientation {
+    /// Le quadrilatère tourne autour du **Z du monde** seulement : il reste
+    /// debout.
+    ///
+    /// Dégénère quand la caméra regarde à la verticale exacte — le
+    /// quadrilatère disparaît alors, sans erreur, comme un triangle qui ne se
+    /// projette pas. C'est une donnée, pas un cas d'erreur.
+    Axial,
+    /// Le quadrilatère se met plein face à la caméra.
+    Facing,
+}
+
+/// Un quadrilatère que le moteur oriente sur la caméra.
+///
+/// **C'est une description, pas une forme de sommet.** En aval un sprite ne
+/// produit que des [`VertexUv`] : le rasteriseur en a exactement trois formes et
+/// n'en gagne pas une quatrième.
+///
+/// Ce que l'hôte ne peut pas faire sans calculer, et qui justifie que le moteur
+/// s'en charge, c'est l'orientation : elle exige la base de la caméra, que
+/// l'hôte devrait obtenir en réinversant la pose qu'il vient lui-même de
+/// passer, donc en normalisant un quaternion par sa propre bibliothèque
+/// mathématique. Deux liaisons ne rendraient plus la même image. Un
+/// quadrilatère à **orientation libre** — une affiche, un impact, une tache au
+/// sol — n'a pas ce problème et se soumet par les chemins texturés ordinaires.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Sprite {
+    /// Le centre, dans le repère de l'objet.
+    pub center: Vec3,
+    /// La demi-largeur, **en unités du monde**.
+    ///
+    /// Jamais en pixels : la taille dépendrait alors de la résolution interne,
+    /// que l'hôte change en cours de partie.
+    pub half_width: f32,
+    /// La demi-hauteur, en unités du monde.
+    pub half_height: f32,
+    /// Le coin bas-gauche du rectangle de texture, en texels.
+    pub u0: f32,
+    /// L'ordonnée du même coin, en texels.
+    pub v0: f32,
+    /// Le coin haut-droit du rectangle de texture, en texels.
+    pub u1: f32,
+    /// L'ordonnée du même coin, en texels.
+    pub v1: f32,
+    /// Le roulis, angle binaire où 2³² vaut un tour.
+    ///
+    /// Il tourne le quadrilatère **dans son propre plan**, après l'orientation
+    /// et avant la projection, et vaut pour les deux modes. Zéro est son
+    /// neutre. C'est le format d'angle du noyau : l'hôte n'a aucune
+    /// trigonométrie à faire, et aucune libm n'entre dans l'image.
+    pub roll: Angle,
+    /// Sa couleur, de même sens que celle d'un [`Triangle`] — ignorée dès que
+    /// le lot porte une texture.
     pub color: Color,
 }
 

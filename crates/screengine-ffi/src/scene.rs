@@ -12,7 +12,9 @@
 //! nouvelle plutôt que d'élargir celles-ci, et chaque étape depuis a fait de
 //! même. Un champ qui aurait dormi en attendant aurait été un pari sur sa forme.
 
-use screengine::{Affine3, Camera, Color, Filter, Light, Quat, Vec3, VertexUv, VertexUv2};
+use screengine::{
+    Affine3, Angle, Camera, Color, Filter, Light, Quat, Sprite, Vec3, VertexUv, VertexUv2,
+};
 
 use crate::entry::AbiError;
 
@@ -250,6 +252,81 @@ pub struct ScgVertexUvN {
     pub nz: f32,
 }
 
+/// A quad the engine orients on the camera.
+///
+/// Forty-four bytes, offsets 0 to 40 on every target and not one byte of
+/// padding: four-byte fields throughout, then four bytes of colour.
+///
+/// **A description, not a vertex form.** Downstream a sprite yields nothing but
+/// textured vertices: the rasteriser has exactly three vertex forms and gains
+/// no fourth. It is to `scg_submit_sprites` what `ScgTextureDesc` is to
+/// `scg_texture_load`.
+///
+/// The half-extents are in **world units, never pixels**: in pixels a sprite's
+/// size would depend on the internal resolution, which the host changes while
+/// the game runs.
+///
+/// A freely oriented quad — a poster, an impact mark, a stain on the floor —
+/// needs none of this and submits through the ordinary textured paths. What a
+/// host cannot do without computing is orienting on the camera, which requires
+/// the camera's basis: it would have to re-invert the pose it just passed in,
+/// hence normalise a quaternion with its own maths library, and two bindings
+/// would stop rendering the same image.
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct ScgSprite {
+    /// Centre X, in object space.
+    pub x: f32,
+    /// Centre Y.
+    pub y: f32,
+    /// Centre Z.
+    pub z: f32,
+    /// Half-width, in world units.
+    pub half_width: f32,
+    /// Half-height, in world units.
+    pub half_height: f32,
+    /// Texture abscissa of the bottom-left corner, in texels.
+    pub u0: f32,
+    /// Texture ordinate of that corner, in texels.
+    pub v0: f32,
+    /// Texture abscissa of the top-right corner, in texels.
+    pub u1: f32,
+    /// Texture ordinate of that corner, in texels.
+    pub v1: f32,
+    /// Roll, a binary angle where 2^32 is one turn.
+    ///
+    /// It turns the quad **in its own plane**, after orientation and before
+    /// projection, and applies to both orientations. Zero is its neutral value.
+    /// This is the engine's own angle format: the host does no trigonometry,
+    /// and no libm enters the image.
+    pub roll: u32,
+    /// Red, in the memory order of the output pixels.
+    pub r: u8,
+    /// Green.
+    pub g: u8,
+    /// Blue.
+    pub b: u8,
+    /// Alpha, carried but never read, exactly as on `ScgTriangle`.
+    pub a: u8,
+}
+
+impl ScgSprite {
+    /// Le sprite du noyau.
+    pub(crate) fn to_core(self) -> Sprite {
+        Sprite {
+            center: Vec3::new(self.x, self.y, self.z),
+            half_width: self.half_width,
+            half_height: self.half_height,
+            u0: self.u0,
+            v0: self.v0,
+            u1: self.u1,
+            v1: self.v1,
+            roll: Angle(self.roll),
+            color: Color::new(self.r, self.g, self.b, self.a),
+        }
+    }
+}
+
 impl ScgVertexUvN {
     /// Le sommet du noyau, normale comprise.
     pub(crate) fn to_core(self) -> VertexUv2 {
@@ -468,6 +545,21 @@ pub const SCG_TEXTURE_FORMAT_RGBA8_MASKED: u32 = 2;
 /// darkens or does nothing, and never brightens.
 pub const SCG_BLEND_MODULATE: u32 = 1;
 
+/// Turn the quad about the world's vertical axis only: it stays upright.
+///
+/// One, never zero, like every mode passed to a submission.
+///
+/// A standing character seen from above flattens with this one, which merely
+/// loses its silhouette, where `SCG_SPRITE_FACING` lays it down, which is a
+/// wrong image. It degenerates when the camera looks straight down: the quad
+/// then disappears, without an error, like a triangle that does not project.
+pub const SCG_SPRITE_AXIAL: u32 = 1;
+
+/// Turn the quad to face the camera squarely.
+///
+/// What a glow or a spark wants, having no up of its own.
+pub const SCG_SPRITE_FACING: u32 = 2;
+
 /// Ordered dithering of texture coordinates: the default filter.
 ///
 /// Zero, unlike `SCG_TEXTURE_FORMAT_RGBA8`, and for the opposite reason: a
@@ -672,6 +764,21 @@ const _: () = {
     assert!(offset_of!(ScgVertexUvN, nx) == 20);
     assert!(offset_of!(ScgVertexUvN, ny) == 24);
     assert!(offset_of!(ScgVertexUvN, nz) == 28);
+
+    // Neuf `float`, un `u32`, puis quatre octets de couleur : la couleur tombe
+    // sur un multiple de quatre et ne fait entrer aucun bourrage, ni entre les
+    // champs ni en queue.
+    assert!(size_of::<ScgSprite>() == 44 && align_of::<ScgSprite>() == 4);
+    assert!(offset_of!(ScgSprite, z) == 8);
+    assert!(offset_of!(ScgSprite, half_width) == 12);
+    assert!(offset_of!(ScgSprite, half_height) == 16);
+    assert!(offset_of!(ScgSprite, u0) == 20);
+    assert!(offset_of!(ScgSprite, v0) == 24);
+    assert!(offset_of!(ScgSprite, u1) == 28);
+    assert!(offset_of!(ScgSprite, v1) == 32);
+    assert!(offset_of!(ScgSprite, roll) == 36);
+    assert!(offset_of!(ScgSprite, r) == 40);
+    assert!(offset_of!(ScgSprite, a) == 43);
 
     // Le seul type de l'ABI dont les champs n'ont pas tous la même largeur :
     // quatre `float` puis quatre octets. C'est donc le seul où un bourrage

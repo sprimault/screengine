@@ -47,6 +47,26 @@ publié, et explique les conventions du dépôt à qui y contribue.
 ## [Non publié]
 
 ### Ajouté
+- `scg_submit_sprites` et `ScgSprite` : **des quadrilatères que le moteur
+  oriente sur la caméra**. L'hôte donne un centre et deux demi-extensions **en
+  unités du monde** — jamais en pixels, où la taille dépendrait de la résolution
+  interne. Deux modes, `SCG_SPRITE_AXIAL` qui garde le quadrilatère debout et
+  `SCG_SPRITE_FACING` qui le met plein face ; zéro et toute valeur inconnue sont
+  **refusés**, jamais rabattus sur un défaut. Le **roulis** est un angle binaire
+  actif dès maintenant, et tourne le quadrilatère dans son propre plan.
+
+  **`model` place le centre et rien d'autre** : sa partie linéaire n'oriente pas
+  le quadrilatère, c'est la caméra qui l'oriente. L'axial dégénère quand la
+  caméra regarde à la verticale exacte — les quadrilatères disparaissent alors
+  sans erreur, comme un triangle qui ne se projette pas. Un sprite consomme
+  **deux triangles** de la capacité. Quarante-quatre octets, décalages 0 à 40 sur
+  les quatre cibles, sans bourrage ; `SCG_ABI_VERSION` reste à 1.
+
+  Un quadrilatère à orientation libre — une affiche, un impact, une tache au
+  sol — se soumet toujours par les chemins texturés : ce que cette fonction
+  ajoute est la seule chose qu'un hôte ne peut pas faire sans réinverser la pose
+  qu'il vient de passer, donc sans normaliser un quaternion avec sa propre
+  bibliothèque mathématique.
 - `ScgVertexUvN` et `scg_submit_shaded` : **la normale par sommet**, laissée
   ouverte depuis l'étape 3. Les lumières dynamiques tiennent alors compte de
   l'orientation de la surface — une face qui tourne le dos ne reçoit rien, là où
@@ -117,6 +137,25 @@ publié, et explique les conventions du dépôt à qui y contribue.
 ***
 
 ### Added
+- `scg_submit_sprites` and `ScgSprite`: **quads the engine orients on the
+  camera**. The host gives a centre and two half-extents in **world units** —
+  never pixels, where a sprite's size would depend on the internal resolution.
+  Two modes, `SCG_SPRITE_AXIAL` which keeps the quad upright and
+  `SCG_SPRITE_FACING` which turns it squarely to the camera; zero and any
+  unknown value are **refused**, never mapped onto a default. **Roll** is a
+  binary angle, live from the start, turning the quad in its own plane.
+
+  **`model` places the centre and nothing else**: its linear part does not
+  orient the quad, the camera does. The axial mode degenerates when the camera
+  looks straight down — the quads then disappear without an error, like a
+  triangle that does not project. A sprite consumes **two triangles** of the
+  capacity. Forty-four bytes, offsets 0 to 40 on all four targets, no padding;
+  `SCG_ABI_VERSION` stays at 1.
+
+  A freely oriented quad — a poster, an impact mark, a stain on the floor —
+  still submits through the textured paths: what this function adds is the one
+  thing a host cannot do without re-inverting the pose it just passed in, hence
+  normalising a quaternion with its own maths library.
 - `ScgVertexUvN` and `scg_submit_shaded`: **the per-vertex normal**, left open
   since step 3. Dynamic lights then account for surface orientation — a face
   turned away receives nothing, where it used to receive as much as its
