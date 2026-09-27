@@ -109,6 +109,10 @@ publié, et explique les conventions du dépôt à qui y contribue.
   matériau propre se voyait refuser par `SCG_ERR_INVALID_ARGUMENT`, alors que la
   capacité de triangles réglée sur `scg_world_triangle_count` suffisait
   exactement.
+- **Le périmètre de `SECURITY` ne nommait que les textures**, alors que les
+  décodeurs de maillage, de carte et de cache de lightmaps sont livrés depuis
+  les étapes 4 et 5 et constituent la surface d'attaque principale. Un rapport
+  portant sur l'un d'eux pouvait sembler hors périmètre.
 
 ***
 
@@ -172,6 +176,9 @@ publié, et explique les conventions du dépôt à qui y contribue.
   surfaces are triangles with a material of their own was refused with
   `SCG_ERR_INVALID_ARGUMENT`, although a triangle capacity set from
   `scg_world_triangle_count` was exactly enough.
+- **The `SECURITY` scope named textures alone**, although the mesh, map and
+  lightmap cache decoders have shipped since steps 4 and 5 and are the main
+  attack surface. A report about any of them could look out of scope.
 
 ## [0.5.0] — 2026-09-26 — Le monde
 

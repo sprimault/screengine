@@ -18,15 +18,23 @@ La bibliothèque décode des octets que l'hôte lui remet et qu'il n'a pas écri
 C'est la seule surface d'attaque réelle, et c'est celle qui compte — d'autant
 qu'elle s'exécute dans le processus de l'hôte, pas dans le sien.
 
-**Aujourd'hui, ce sont les blocs de texels d'une texture**, et eux seuls. Les
-formats de carte et de maillage n'existent pas encore : ils sont l'étape 4 de la
-feuille de route, et cette section les nommera quand ils arriveront plutôt que
-de les promettre d'avance — un périmètre qui annonce plus que le code ne fait
-gaspille le temps de celui qui rapporte.
+**Ce sont les blocs de texels d'une texture, les fichiers de maillage et de
+carte, et les blocs de cache de lightmaps.** Les trois derniers sont arrivés
+avec les étapes 4 et 5, et cette section les nomme désormais : un périmètre qui
+annonce moins que le code ne fait décourage un rapport utile, autant qu'un
+périmètre trop large gaspille le temps de celui qui le rédige.
+
+Tout ce qui se trouve à l'intérieur des octets remis est tenu pour hostile, sans
+exception. Que le couple pointeur-longueur couvre bien les octets annoncés reste
+en revanche une précondition de l'appelant : le moteur ne peut pas le vérifier.
 
 - Une description de texture ou un bloc de texels qui fait planter le
   chargement, lire hors bornes, ou déborder un entier sur le chemin d'une taille
   d'allocation.
+- Un fichier de maillage, de carte ou de cache de lightmaps qui obtient le même
+  effet — un compte qui ne recoupe pas la longueur de sa section, un indice hors
+  bornes, une table de sections qui se recouvre, une taille d'allocation tirée
+  d'un nombre déclaré.
 - Un dépassement de tampon, une lecture hors bornes ou un débordement d'entier
   atteignable depuis une entrée malformée.
 - Un décalage entre ce que `docs/abi.md` garantit et ce que le code fait : un
@@ -34,9 +42,9 @@ gaspille le temps de celui qui rapporte.
   panique vers l'appelant.
 - Tout ce qui ferait exécuter du code depuis un contenu chargé — **rien de ce
   que la bibliothèque charge ne le permet, et c'est un invariant** : une texture
-  est un bloc de texels, et les formats à venir ne contiendront que des
-  identifiants, des positions et des dimensions. Aucun binaire, aucun script,
-  aucun chemin de fichier.
+  est un bloc de texels, et les formats ne portent que des identifiants, des
+  positions, des dimensions et des octets que le moteur copie sans jamais les
+  lire. Aucun binaire, aucun script, aucun chemin de fichier.
 
 ## Ce qui n'y est pas
 

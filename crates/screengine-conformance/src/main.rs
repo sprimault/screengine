@@ -421,8 +421,8 @@ enum Scene {
     ///
     /// **Deux cellules et non une** : c'est le seul moyen de montrer que la
     /// soumission dessine toutes les cellules, sans élimination. La traversée
-    /// par portails remplacera ce chemin et se validera contre cette image
-    /// même — une scène où tout est visible doit rendre la même des deux côtés.
+    /// par portails ne remplace pas ce chemin, elle se valide contre cette image
+    /// même — une scène où tout est visible rend la même des deux côtés.
     ///
     /// **Deux matériaux** : les murs et le sol reçoivent des textures
     /// différentes, si bien qu'une soumission qui lierait la même à tous les
