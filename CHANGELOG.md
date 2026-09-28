@@ -142,6 +142,17 @@ publié, et explique les conventions du dépôt à qui y contribue.
   décodeurs de maillage, de carte et de cache de lightmaps sont livrés depuis
   les étapes 4 et 5 et constituent la surface d'attaque principale. Un rapport
   portant sur l'un d'eux pouvait sembler hors périmètre.
+- **Une matrice de modèle à échelle non uniforme éclairait faussement.** La
+  normale était portée par la transformation elle-même, ce qui n'est juste que
+  pour une rotation : une face à 45° étirée du double recevait sa lumière comme
+  si elle penchait de trente-sept degrés de l'autre côté. Elle passe désormais
+  par les cofacteurs de la partie linéaire. Aucune précondition nouvelle : une
+  matrice de modèle n'a toujours à être qu'affine.
+- **Une matrice de modèle réfléchie montrait l'intérieur de son objet.** Un
+  déterminant négatif retourne le sens de parcours de toutes les faces, si bien
+  que celles tournées vers la caméra étaient éliminées et celles du fond
+  dessinées. Le moteur retourne maintenant son test pour ces lots, et leurs
+  normales suivent le reflet au lieu de tourner le dos aux lumières.
 
 ***
 
@@ -235,6 +246,16 @@ publié, et explique les conventions du dépôt à qui y contribue.
 - **The `SECURITY` scope named textures alone**, although the mesh, map and
   lightmap cache decoders have shipped since steps 4 and 5 and are the main
   attack surface. A report about any of them could look out of scope.
+- **A model matrix with a non-uniform scale lit surfaces wrongly.** The normal
+  was carried by the transform itself, which only holds for a rotation: a face
+  at 45° stretched twofold received its light as though it leaned thirty-seven
+  degrees the other way. It now goes through the cofactors of the linear part.
+  No new precondition: a model matrix still only has to be affine.
+- **A mirrored model matrix showed the inside of its object.** A negative
+  determinant reverses the winding of every face, so those turned towards the
+  camera were culled and those at the back were drawn. The engine now flips its
+  test for such batches, and their normals follow the reflection instead of
+  turning their backs on every light.
 
 ## [0.5.0] — 2026-09-26 — Le monde
 

@@ -758,6 +758,19 @@ typedef struct ScgMat4 { float m[16]; } ScgMat4;
   moteur inverse la pose de la caméra sans division, ce qui n'est juste que
   pour une transformation rigide — une matrice à perspective y passerait pour
   telle.
+
+  **C'est la seule contrainte : une matrice de modèle n'a pas à être rigide.**
+  L'échelle, même non uniforme, et le miroir sont admis, et c'est voulu — un
+  tronc étiré, une caisse aplatie, un décor réfléchi sont des usages ordinaires
+  que rien ne justifierait de refuser. Le moteur porte les normales par les
+  cofacteurs de la partie linéaire, de sorte qu'une face étirée reste éclairée
+  selon l'orientation qu'elle a vraiment prise.
+
+  **Un modèle de déterminant négatif est réfléchi, et le moteur le traite comme
+  tel** : il retourne le sens de parcours de toutes ses faces, donc le moteur
+  retourne son test de face arrière pour ce lot. Un hôte n'a rien à réordonner,
+  et son objet reste vu de l'extérieur. La rigidité, elle, n'est exigée que de
+  la caméra, que `scg_set_camera` reçoit en position et quaternion.
 - **Le quaternion se range `x, y, z, w`**, la partie réelle en dernier :
   l'identité est `{0, 0, 0, 1}`. Il n'est pas exigé unitaire, le moteur le
   normalise.
