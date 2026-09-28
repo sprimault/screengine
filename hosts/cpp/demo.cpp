@@ -108,6 +108,85 @@ ScgTexture *load_checker(uint32_t side, uint32_t cell)
     return texture;
 }
 
+/// Côté de la planche de la créature et de sa tache, en texels.
+constexpr uint32_t SPRITE_SIDE = 64;
+
+/// La créature : un disque et son pied, sur fond transparent.
+///
+/// Écrite plutôt que chargée, comme les damiers : cette démonstration n'a aucun
+/// décodeur d'image, et ce qu'elle montre du moteur est la primitive, pas
+/// l'illustration.
+std::vector<uint8_t> make_creature()
+{
+    std::vector<uint8_t> texels(static_cast<size_t>(SPRITE_SIDE) * SPRITE_SIDE * 4, 0);
+    const float cx = static_cast<float>(SPRITE_SIDE) / 2.0f;
+    const float cy = static_cast<float>(SPRITE_SIDE) * 0.35f;
+    const float radius = static_cast<float>(SPRITE_SIDE) * 0.28f;
+    for (uint32_t v = 0; v < SPRITE_SIDE; v++) {
+        for (uint32_t u = 0; u < SPRITE_SIDE; u++) {
+            uint8_t *texel = texels.data() + (static_cast<size_t>(v) * SPRITE_SIDE + u) * 4;
+            const float fu = static_cast<float>(u) + 0.5f;
+            const float fv = static_cast<float>(v) + 0.5f;
+            const float dx = fu - cx;
+            const float dy = fv - cy;
+            const bool disc = dx * dx + dy * dy <= radius * radius;
+            const bool foot = fv > static_cast<float>(SPRITE_SIDE) * 0.6f
+                              && fu > static_cast<float>(SPRITE_SIDE) * 0.28f
+                              && fu < static_cast<float>(SPRITE_SIDE) * 0.52f;
+            if (disc || foot) {
+                texel[0] = static_cast<uint8_t>(
+                    0x40 + static_cast<int>(fu * 160.0f / static_cast<float>(SPRITE_SIDE)));
+                texel[1] = static_cast<uint8_t>(
+                    0xFF - static_cast<int>(fv * 140.0f / static_cast<float>(SPRITE_SIDE)));
+                texel[2] = 0x60;
+                texel[3] = 0xFF;
+            }
+        }
+    }
+    return texels;
+}
+
+/// La tache d'ombre : sombre au centre, blanche au bord, 255 étant le neutre de
+/// la modulation — un texel blanc laisse le sol intact.
+std::vector<uint8_t> make_blot()
+{
+    std::vector<uint8_t> texels(static_cast<size_t>(SPRITE_SIDE) * SPRITE_SIDE * 4, 0);
+    const float half = static_cast<float>(SPRITE_SIDE) / 2.0f;
+    for (uint32_t v = 0; v < SPRITE_SIDE; v++) {
+        for (uint32_t u = 0; u < SPRITE_SIDE; u++) {
+            uint8_t *texel = texels.data() + (static_cast<size_t>(v) * SPRITE_SIDE + u) * 4;
+            const float dx = static_cast<float>(u) + 0.5f - half;
+            const float dy = static_cast<float>(v) + 0.5f - half;
+            float q = (dx * dx + dy * dy) / (half * half);
+            if (q > 1.0f) {
+                q = 1.0f;
+            }
+            const auto level =
+                static_cast<uint8_t>(0x38 + static_cast<int>(static_cast<float>(0xFF - 0x38) * q));
+            texel[0] = level;
+            texel[1] = level;
+            texel[2] = level;
+            texel[3] = 0xFF;
+        }
+    }
+    return texels;
+}
+
+/// Charge une planche engendrée, dans le format donné.
+ScgTexture *load_sprite(const std::vector<uint8_t> &texels, uint32_t format)
+{
+    ScgTextureDesc desc{};
+    desc.width = SPRITE_SIDE;
+    desc.height = SPRITE_SIDE;
+    desc.format = format;
+
+    ScgTexture *texture = nullptr;
+    if (scg_texture_load(&desc, texels.data(), texels.size(), &texture) < 0) {
+        return nullptr;
+    }
+    return texture;
+}
+
 /// Le quaternion d'une rotation autour de l'axe vertical, rangé `x, y, z, w`.
 ///
 /// Écrit ici et non demandé au moteur : ses tables trigonométriques ne
@@ -308,6 +387,21 @@ int main(int argc, char **argv)
     unsigned frames = 0;
     bool running = true;
 
+    // La créature et sa tache : le format masqué se déclare au chargement,
+    // jamais au dessin, parce que c'est là que la chaîne de mipmaps se
+    // construit.
+    ScgTexture *creature = load_sprite(make_creature(), SCG_TEXTURE_FORMAT_RGBA8_MASKED);
+    ScgTexture *blot = load_sprite(make_blot(), SCG_TEXTURE_FORMAT_RGBA8);
+    if (creature == nullptr || blot == nullptr) {
+        fail(nullptr, "la créature ou sa tache ne se chargent pas");
+        return 1;
+    }
+    // Son va-et-vient, et la bande que la salle en L et le couloir partagent :
+    // **ce décor n'est pas centré sur l'origine**, et `y = 0` y est une paroi.
+    float walker = 8.0f;
+    float heading = 1.0f;
+    constexpr float LANE = 2.0f;
+
     while (running) {
         SDL_Event event;
         while (SDL_PollEvent(&event)) {
@@ -382,6 +476,59 @@ int main(int argc, char **argv)
             break;
         }
 
+        // La créature arpente le décor, sa tache la suit.
+        //
+        // **La tache d'abord, en surface modulée** : elle multiplie le sol au
+        // lieu de l'écraser, et teste la profondeur sans l'écrire — c'est
+        // l'ordre de soumission qui la fait gagner sur les dalles, sans biais
+        // de profondeur.
+        walker += heading * 1.1f * dt;
+        if (walker > 14.0f) {
+            walker = 14.0f;
+            heading = -1.0f;
+        } else if (walker < 6.0f) {
+            walker = 6.0f;
+            heading = 1.0f;
+        }
+
+        constexpr float BLOT = 0.55f;
+        constexpr float FLOOR_Z = 0.01f;
+        const ScgVertexUv patch[4] = {
+            { walker - BLOT, LANE - BLOT, FLOOR_Z, 0.0f, 0.0f },
+            { walker + BLOT, LANE - BLOT, FLOOR_Z, 64.0f, 0.0f },
+            { walker + BLOT, LANE + BLOT, FLOOR_Z, 64.0f, 64.0f },
+            { walker - BLOT, LANE + BLOT, FLOOR_Z, 0.0f, 64.0f },
+        };
+        static constexpr ScgTriangle PATCH_FACES[2] = {
+            { 0, 1, 2, 0xFF, 0xFF, 0xFF, 0xFF },
+            { 0, 2, 3, 0xFF, 0xFF, 0xFF, 0xFF },
+        };
+        if (scg_submit_blended(ctx.get(), &model, patch, 4, PATCH_FACES, 2, blot,
+                               SCG_BLEND_MODULATE)
+            < 0) {
+            fail(ctx.get(), "tache refusée");
+            break;
+        }
+
+        // **En mode axial**, le seul juste pour un personnage debout : plein
+        // face, il se coucherait au sol dès qu'on le regarde d'en haut.
+        ScgSprite quad{};
+        quad.x = walker;
+        quad.y = LANE;
+        quad.half_width = 0.6f;
+        quad.half_height = 0.9f;
+        quad.z = quad.half_height;
+        quad.u1 = static_cast<float>(SPRITE_SIDE);
+        quad.v1 = static_cast<float>(SPRITE_SIDE);
+        quad.r = 0xFF;
+        quad.g = 0xFF;
+        quad.b = 0xFF;
+        quad.a = 0xFF;
+        if (scg_submit_sprites(ctx.get(), &model, &quad, 1, creature, SCG_SPRITE_AXIAL) < 0) {
+            fail(ctx.get(), "créature refusée");
+            break;
+        }
+
         // Par tuiles : un hôte qui voudrait les répartir sur ses threads le
         // ferait ici, et rien d'autre ne changerait.
         uint32_t tiles = 0;
@@ -422,6 +569,8 @@ int main(int argc, char **argv)
         scg_texture_destroy(const_cast<ScgTexture *>(texture));
     }
     scg_texture_destroy(const_cast<ScgTexture *>(crate_slots[0]));
+    scg_texture_destroy(creature);
+    scg_texture_destroy(blot);
     SDL_DestroyTexture(screen);
     SDL_DestroyRenderer(renderer);
     SDL_DestroyWindow(window);
