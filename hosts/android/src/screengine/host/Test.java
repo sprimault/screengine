@@ -844,7 +844,7 @@ public final class Test {
                 float dx = u + 0.5f - half;
                 float dy = v + 0.5f - half;
                 float q = Math.min(1.0f, (dx * dx + dy * dy) / (half * half));
-                byte level = (byte) (0x38 + (int) ((0xFF - 0x38) * q));
+                byte level = (byte) (0x30 + (int) ((0xFF - 0x30) * q));
                 texels[base] = level;
                 texels[base + 1] = level;
                 texels[base + 2] = level;

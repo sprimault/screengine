@@ -1443,6 +1443,86 @@ fn une_tache_modulee_gagne_sans_laisser_sa_profondeur() {
     );
 }
 
+/// Une tache coplanaire gagne **quelle que soit la découpe** du sol et la
+/// sienne.
+///
+/// Le test précédent pose la tache sur le triangle même du sol, si bien que
+/// les deux profondeurs sortent de la même équation de plan et que l'égalité
+/// est acquise d'avance. Elle ne l'est pas : l'équation arrondit ses gradients
+/// et se trompe de moins de `DEPTH_MARGIN` unités par plan, donc de moins du
+/// double entre deux découpes du même plan. Une tache de quelques unités posée
+/// sur un sol qui en fait vingt perd alors partout ou gagne partout, selon la
+/// découpe — et une scène l'a montré en ne peignant rien.
+///
+/// Le sol **fuit**, sans quoi il n'y aurait rien à arrondir : un plan frontal
+/// a une profondeur constante, et les deux équations s'accordent trivialement.
+/// Les deux diagonales de la tache y passent, parce que l'écart change de
+/// signe avec elle : une seule laisserait le test au vert une fois sur deux.
+#[test]
+fn une_tache_gagne_quelle_que_soit_la_decoupe() {
+    let sol = [
+        Vec3::new(4.0, -8.0, -2.0),
+        Vec3::new(24.0, -8.0, -2.0),
+        Vec3::new(24.0, 8.0, -2.0),
+        Vec3::new(4.0, 8.0, -2.0),
+    ];
+    let tache = [
+        Vec3::new(8.0, -3.0, -2.0),
+        Vec3::new(14.0, -3.0, -2.0),
+        Vec3::new(14.0, 3.0, -2.0),
+        Vec3::new(8.0, 3.0, -2.0),
+    ];
+    let blanc = Color::new(0xFF, 0xFF, 0xFF, 0xFF);
+    let gris = Color::new(0x80, 0x80, 0x80, 0xFF);
+
+    let assombris = |diagonale: [[u32; 3]; 2]| {
+        let mut ctx = small();
+        let mut pixels = vec![0u8; 64 * 64 * BYTES_PER_PIXEL];
+        let quad = |corners: &[Vec3; 4]| -> alloc::vec::Vec<VertexUv> {
+            corners
+                .iter()
+                .map(|&position| VertexUv {
+                    position,
+                    u: 0.0,
+                    v: 0.0,
+                })
+                .collect()
+        };
+        let lot =
+            |indices: [[u32; 3]; 2], color| indices.map(|indices| Triangle { indices, color });
+        ctx.submit_uv(
+            Affine3::IDENTITY,
+            &quad(&sol),
+            &lot([[0, 1, 2], [0, 2, 3]], blanc),
+        )
+        .expect("sol");
+        ctx.submit_blended(
+            Affine3::IDENTITY,
+            &quad(&tache),
+            &lot(diagonale, gris),
+            None,
+        )
+        .expect("tache");
+        ctx.frame_end(&mut pixels, 64).expect("image rendue");
+        let compte = |f: fn(u8) -> bool| {
+            pixels
+                .chunks_exact(BYTES_PER_PIXEL)
+                .filter(|p| p[3] == 0xFF && f(p[0]))
+                .count()
+        };
+        (compte(|c| c != 0 && c < 0xFF), compte(|c| c == 0xFF))
+    };
+
+    for diagonale in [[[0, 1, 2], [0, 2, 3]], [[1, 2, 3], [1, 3, 0]]] {
+        let (modules, sol) = assombris(diagonale);
+        assert!(sol > 0, "le sol n'est pas peint : la scène ne dit rien");
+        assert!(
+            modules > 0,
+            "la tache n'a assombri aucun pixel avec la découpe {diagonale:?}, {sol} pixels de sol"
+        );
+    }
+}
+
 /// La table pleine refuse le lot, et c'est le seul refus qui tombe avant qu'un
 /// triangle ait été préparé : la texture s'enregistre avant que le lot soit
 /// posé.

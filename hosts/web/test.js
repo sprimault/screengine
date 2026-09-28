@@ -1252,7 +1252,7 @@ function makeShadow() {
       const dx = u + 0.5 - half;
       const dy = v + 0.5 - half;
       const q = Math.min(1.0, (dx * dx + dy * dy) / (half * half));
-      const level = Math.floor(0x38 + (0xff - 0x38) * q);
+      const level = Math.floor(0x30 + (0xff - 0x30) * q);
       texels[base] = level;
       texels[base + 1] = level;
       texels[base + 2] = level;

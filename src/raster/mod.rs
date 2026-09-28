@@ -120,6 +120,11 @@ pub trait Target {
     /// test strict la perdrait à égalité de profondeur. Le décor se soumet donc
     /// avant ses taches, ce qui ne demande aucune garantie nouvelle : l'ordre
     /// de soumission est déjà contractuel.
+    ///
+    /// **L'égalité, elle, ne va pas de soi** : deux découpes d'un même plan
+    /// n'en rendent pas les mêmes bits, et `z` arrive ici porteur de la
+    /// tolérance de pente que le rasteriseur ajoute pour ces triangles. Voir
+    /// `triangle::slope_bias`.
     fn test_modulated(&mut self, x: i32, y: i32, z: u32) -> bool;
 
     /// Multiplie le pixel déjà écrit par `factor`, **sans toucher la

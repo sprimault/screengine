@@ -988,7 +988,7 @@ std::vector<uint8_t> make_shadow()
                 q = 1.0f;
             }
             const auto level =
-                static_cast<uint8_t>(0x38 + static_cast<int>(static_cast<float>(0xFF - 0x38) * q));
+                static_cast<uint8_t>(0x30 + static_cast<int>(static_cast<float>(0xFF - 0x30) * q));
             texel[0] = level;
             texel[1] = level;
             texel[2] = level;

@@ -684,13 +684,14 @@ pub fn fill<T: Target>(
                 // de texture. L'oubli ne se voyait pas à la compilation, la
                 // tache étant simplement peinte comme une surface ordinaire.
                 let modulated = triangle.modulated();
+                let bias = if modulated { slope_bias(plane) } else { 0 };
                 for x in lo..=hi {
                     // En un pixel couvert, la valeur tient dans [0, 2³²) : les
                     // sommets sont bornés par `to_depth` avec une marge qui
                     // couvre l'arrondi des gradients.
                     let z = (depth >> GRADIENT_BITS) as u32;
                     if modulated {
-                        if target.test_modulated(x, y, z) {
+                        if target.test_modulated(x, y, z.saturating_add(bias)) {
                             target.modulate(x, y, color);
                         }
                     } else if target.test(x, y, z) {
@@ -1014,9 +1015,13 @@ impl<T: Target> Walk<'_, T> {
         // choix dans la boucle le ferait examiner à chaque pixel, ce que le
         // remplissage refuse partout ailleurs pour la même raison.
         if self.modulated {
+            let bias = slope_bias(&self.triangle.depth);
             for x in self.draw.0..=self.draw.1 {
                 let z = (depth >> GRADIENT_BITS) as u32;
-                if self.target.test_modulated(x, self.y, z) {
+                if self
+                    .target
+                    .test_modulated(x, self.y, z.saturating_add(bias))
+                {
                     let color = shade.pixel(x, self.y);
                     if !S::MASKED || (color >> 24) >= ALPHA_THRESHOLD {
                         self.target.modulate(x, self.y, color);
@@ -1411,6 +1416,44 @@ impl Crawl {
         self.value[0] += self.slope[0];
         self.value[1] += self.slope[1];
     }
+}
+
+/// Le facteur de la tolérance de pente, en pas de profondeur par pixel.
+///
+/// **Deux, au milieu d'un plateau mesuré.** Les scènes modulées rendent la
+/// même image de un à quatre pas, au pixel près : un suffit déjà, et quatre ne
+/// fait rien passer de plus. La valeur n'est donc pas critique, et deux laisse
+/// de la marge des deux côtés — ce qui compte est l'ordre de grandeur, un pas
+/// de profondeur valant l'épaisseur d'un pixel de la surface marquée.
+const SLOPE_BIAS: i64 = 2;
+
+/// La tolérance qu'une surface modulée s'accorde sur la profondeur du décor
+/// qu'elle marque, en unités du tampon.
+///
+/// **Une tache coplanaire ne rend pas les mêmes bits que le sol qu'elle
+/// marque**, et le test non strict ne suffit donc pas. Les positions écran
+/// sont quantifiées au seizième de pixel : un grand triangle, dont les sommets
+/// projetés tombent loin hors de l'image, reconstruit un plan dont la pente est
+/// légèrement fausse, et l'écart au centre de l'image croît avec la distance
+/// parcourue depuis ses sommets. Deux découpes d'un même plan divergent alors
+/// d'un écart proportionnel à leur pente — la tache perd partout, ou gagne
+/// partout, selon la découpe de l'un et de l'autre.
+///
+/// D'où une tolérance **proportionnelle à la pente**, et non une constante : la
+/// seconde serait une distance choisie dans le monde, qui vaut des millimètres
+/// de près et des mètres au loin. Celle-ci est nulle sur une surface frontale,
+/// où il n'y a rien à arrondir, et vaut quelques pas sur un sol qui fuit.
+///
+/// Saturée, parce que [`Plane::step_x`] ne l'est pas : un triangle dont l'aire
+/// se compte en sous-pixels rend un pas immense, et sa tache passerait devant
+/// un mur. Il couvre une poignée de pixels, et la saturation les lui laisse.
+fn slope_bias(plane: &Plane) -> u32 {
+    let steps = plane
+        .step_x(SUBPIXEL_SCALE)
+        .saturating_abs()
+        .saturating_add(plane.step_y(SUBPIXEL_SCALE).saturating_abs());
+    let bias = (steps >> GRADIENT_BITS).saturating_mul(SLOPE_BIAS);
+    u32::try_from(bias).unwrap_or(u32::MAX)
 }
 
 /// La réciproque de la profondeur, `2⁵⁶ / D`.

@@ -1504,23 +1504,39 @@ règle se devinait jusqu'à présent sans être énoncée.
   le tampon intact, un texel noir l'éteint. La forme entière est dans
   [`rust.md`](rust.md) ; ce qu'un hôte doit en savoir tient en une phrase : une
   surface modulée assombrit ou ne fait rien, **elle n'éclaircit jamais**.
-- **Elle teste la profondeur sans l'écrire, et le test n'est pas strict.** Les
-  deux moitiés se règlent séparément et chacune a sa raison. Le test non strict
-  parce qu'une tache est coplanaire au sol qu'elle marque, et que le test strict
-  la perdrait à égalité. L'absence d'écriture parce qu'une surface modulée
-  n'occulte rien : si elle écrivait la profondeur, deux taches superposées ne se
-  multiplieraient plus qu'une fois, dans un ordre qui dépendrait de la
-  répartition en tuiles.
+- **Elle teste la profondeur sans l'écrire, et son test tolère la pente de la
+  surface.** Les deux moitiés se règlent séparément et chacune a sa raison.
+  L'absence d'écriture parce qu'une surface modulée n'occulte rien : si elle
+  écrivait la profondeur, deux taches superposées ne se multiplieraient plus
+  qu'une fois, dans un ordre qui dépendrait de la répartition en tuiles.
+
+  La tolérance parce que **la coplanarité ne suffit pas**. Un test non strict
+  demanderait que la tache et le sol rendent les mêmes bits au même pixel ; ils
+  ne les rendent pas. Les positions écran sont quantifiées au seizième de
+  pixel, si bien qu'une surface dont les sommets projetés tombent loin hors de
+  l'image reconstruit un plan dont la pente est légèrement fausse : deux
+  découpes d'un même plan divergent d'un écart proportionnel à leur pente, et
+  la tache perd alors partout, ou gagne partout, selon la découpe de l'une et de
+  l'autre. Un moteur qui promettrait l'égalité promettrait ce qu'aucun arrondi
+  ne tient.
+
+  Ce que l'hôte doit en savoir : **une tache posée dans le plan de la surface
+  qu'elle marque la marque**, quelle que soit la découpe des deux, et une tache
+  posée derrière un mur reste derrière lui — la tolérance vaut deux pas de
+  profondeur par pixel, c'est-à-dire l'épaisseur de deux pixels de la surface.
 - **Le décor se soumet donc avant ses taches.** C'est la seule contrainte que le
   z-buffer ne supprime pas, et elle ne demande aucune garantie nouvelle : l'ordre
   de soumission est déjà contractuel, et déjà indépendant des tuiles et des
   threads.
 
-  Écarté : un biais de profondeur. La profondeur est `near/w` en 0.32, si bien
-  qu'un biais constant vaut des millimètres de près et des dizaines de mètres au
-  loin : la constante serait choisie contre l'échelle d'une scène et fausse dans
-  la suivante. Écarté : laisser l'hôte décaler sa géométrie, ce qu'il peut déjà
-  faire et qui ne lui donne aucune primitive.
+  Écarté : un biais **constant** de profondeur. La profondeur est `near/w` en
+  0.32, si bien qu'une constante vaut des millimètres de près et des dizaines de
+  mètres au loin : elle serait choisie contre l'échelle d'une scène et fausse
+  dans la suivante. La tolérance ci-dessus n'en est pas une — elle se mesure en
+  pas de profondeur du triangle lui-même, donc elle est nulle sur une surface
+  frontale, où il n'y a rien à arrondir, et suit la pente partout ailleurs.
+  Écarté : laisser l'hôte décaler sa géométrie, ce qu'il peut déjà faire et qui
+  ne lui donne aucune primitive.
 - **La modulation a lieu dans la tuile, en couleurs directes**, donc avant le
   brouillard et la courbe de sortie, qui restent à la recopie. L'inverse rendrait
   une tache visible à travers un brouillard plein.
