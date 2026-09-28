@@ -314,6 +314,73 @@ public final class DemoActivity extends Activity implements SurfaceHolder.Callba
         return Screengine.textureLoad(side, side, texels, Screengine.TEXTURE_FORMAT_RGBA8);
     }
 
+    /** Côté de la planche de la créature et de sa tache, en texels. */
+    private static final int SPRITE_SIDE = 64;
+
+    /**
+     * La créature : un disque et son pied, sur fond transparent.
+     *
+     * Écrite plutôt que chargée, comme les damiers : cette démonstration n'a
+     * aucun décodeur d'image, et ce qu'elle montre du moteur est la primitive,
+     * pas l'illustration.
+     *
+     * @return le handle de la texture masquée, ou 0
+     */
+    private static long loadCreature() {
+        byte[] texels = new byte[SPRITE_SIDE * SPRITE_SIDE * 4];
+        final float cx = SPRITE_SIDE / 2.0f;
+        final float cy = SPRITE_SIDE * 0.35f;
+        final float radius = SPRITE_SIDE * 0.28f;
+        for (int v = 0; v < SPRITE_SIDE; v++) {
+            for (int u = 0; u < SPRITE_SIDE; u++) {
+                int base = (v * SPRITE_SIDE + u) * 4;
+                float fu = u + 0.5f;
+                float fv = v + 0.5f;
+                float dx = fu - cx;
+                float dy = fv - cy;
+                boolean disc = dx * dx + dy * dy <= radius * radius;
+                boolean foot = fv > SPRITE_SIDE * 0.6f && fu > SPRITE_SIDE * 0.28f
+                        && fu < SPRITE_SIDE * 0.52f;
+                if (disc || foot) {
+                    texels[base] = (byte) (0x40 + (int) (fu * 160.0f / SPRITE_SIDE));
+                    texels[base + 1] = (byte) (0xFF - (int) (fv * 140.0f / SPRITE_SIDE));
+                    texels[base + 2] = (byte) 0x60;
+                    texels[base + 3] = (byte) 0xFF;
+                }
+            }
+        }
+        // Le format masqué se déclare au chargement, jamais au dessin : c'est
+        // là que la chaîne de mipmaps se construit.
+        return Screengine.textureLoad(SPRITE_SIDE, SPRITE_SIDE, texels,
+                Screengine.TEXTURE_FORMAT_RGBA8_MASKED);
+    }
+
+    /**
+     * La tache d'ombre : sombre au centre, blanche au bord, 255 étant le
+     * neutre de la modulation — un texel blanc laisse le sol intact.
+     *
+     * @return le handle de la texture, ou 0
+     */
+    private static long loadBlot() {
+        byte[] texels = new byte[SPRITE_SIDE * SPRITE_SIDE * 4];
+        final float half = SPRITE_SIDE / 2.0f;
+        for (int v = 0; v < SPRITE_SIDE; v++) {
+            for (int u = 0; u < SPRITE_SIDE; u++) {
+                int base = (v * SPRITE_SIDE + u) * 4;
+                float dx = u + 0.5f - half;
+                float dy = v + 0.5f - half;
+                float q = Math.min(1.0f, (dx * dx + dy * dy) / (half * half));
+                byte level = (byte) (0x38 + (int) ((0xFF - 0x38) * q));
+                texels[base] = level;
+                texels[base + 1] = level;
+                texels[base + 2] = level;
+                texels[base + 3] = (byte) 0xFF;
+            }
+        }
+        return Screengine.textureLoad(SPRITE_SIDE, SPRITE_SIDE, texels,
+                Screengine.TEXTURE_FORMAT_RGBA8);
+    }
+
     /**
      * La matrice d'une caisse : une rotation autour de la verticale mise à
      * l'échelle, puis une translation. Par colonnes, comme l'ABI l'attend.
@@ -381,7 +448,7 @@ public final class DemoActivity extends Activity implements SurfaceHolder.Callba
         long crate = bytes != null ? Screengine.meshLoad(bytes) : 0;
         if (crate == 0) {
             show("maillage illisible : " + Screengine.lastError(0));
-            release(ctx, world, 0, slots, 0, lighting);
+            release(ctx, world, 0, slots, 0, lighting, 0, 0);
             return;
         }
         // Le même damier sur les deux emplacements du maillage.
@@ -402,6 +469,23 @@ public final class DemoActivity extends Activity implements SurfaceHolder.Callba
         int cell = Screengine.worldLocate(world, position);
         float angle = 0.0f;
         float[] identity = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
+
+        long creature = loadCreature();
+        long blot = loadBlot();
+        // Son va-et-vient, dans la bande que la salle en L et le couloir
+        // partagent : **ce décor n'est pas centré sur l'origine**, et `y = 0`
+        // y est une paroi. Elle part à mi-course, sans quoi elle se
+        // trouverait sur la caméra à la première image.
+        float walker = 8.0f;
+        float heading = 1.0f;
+        final float lane = 2.0f;
+        final float blotRadius = 0.55f;
+        int[] quadFaces = {0, 1, 2, 0, 2, 3};
+        byte[] white = {
+            (byte) 0xFF, (byte) 0xFF, (byte) 0xFF, (byte) 0xFF,
+            (byte) 0xFF, (byte) 0xFF, (byte) 0xFF, (byte) 0xFF,
+        };
+        byte[] spriteTint = {(byte) 0xFF, (byte) 0xFF, (byte) 0xFF, (byte) 0xFF};
         long previous = System.nanoTime();
         long since = previous;
         int frames = 0;
@@ -457,6 +541,44 @@ public final class DemoActivity extends Activity implements SurfaceHolder.Callba
                     break;
                 }
             }
+            // La créature arpente le décor, sa tache la suit.
+            //
+            // **La tache d'abord, en surface modulée** : elle multiplie le sol
+            // au lieu de l'écraser, et teste la profondeur sans l'écrire —
+            // c'est l'ordre de soumission qui la fait gagner sur les dalles,
+            // sans biais de profondeur.
+            walker += heading * 1.1f * dt;
+            if (walker > 14.0f) {
+                walker = 14.0f;
+                heading = -1.0f;
+            } else if (walker < 6.0f) {
+                walker = 6.0f;
+                heading = 1.0f;
+            }
+
+            float[] patch = {
+                walker - blotRadius, lane - blotRadius, 0.01f, 0.0f, 0.0f,
+                walker + blotRadius, lane - blotRadius, 0.01f, 64.0f, 0.0f,
+                walker + blotRadius, lane + blotRadius, 0.01f, 64.0f, 64.0f,
+                walker - blotRadius, lane + blotRadius, 0.01f, 0.0f, 64.0f,
+            };
+            if (failure == null
+                    && Screengine.submitBlended(ctx, identity, patch, quadFaces, white, blot,
+                            Screengine.BLEND_MODULATE) != Screengine.OK) {
+                failure = Screengine.lastError(ctx);
+            }
+
+            // **En mode axial**, le seul juste pour un personnage debout :
+            // plein face, il se coucherait au sol dès qu'on le regarde d'en
+            // haut.
+            float[] quad = {walker, lane, 0.9f, 0.6f, 0.9f, 0.0f, 0.0f, SPRITE_SIDE,
+                SPRITE_SIDE, 0.0f};
+            if (failure == null
+                    && Screengine.submitSprites(ctx, identity, quad, spriteTint, creature,
+                            Screengine.SPRITE_AXIAL) != Screengine.OK) {
+                failure = Screengine.lastError(ctx);
+            }
+
             long before = System.nanoTime();
             if (failure != null || Screengine.frameBitmap(ctx, bitmap) != Screengine.OK) {
                 failure = failure != null ? failure : Screengine.lastError(ctx);
@@ -490,7 +612,7 @@ public final class DemoActivity extends Activity implements SurfaceHolder.Callba
             holder.unlockCanvasAndPost(canvas);
         }
 
-        release(ctx, world, crate, slots, crateSlots[0], lighting);
+        release(ctx, world, crate, slots, crateSlots[0], lighting, creature, blot);
         if (failure != null) {
             show(failure);
         }
@@ -526,13 +648,17 @@ public final class DemoActivity extends Activity implements SurfaceHolder.Callba
      * @param slots les textures de la carte
      * @param crateSlot la texture des caisses
      * @param lighting le porteur des lightmaps, ou 0
+     * @param creature la planche masquée de la créature, ou 0
+     * @param blot sa tache d'ombre, ou 0
      */
-    private static void release(
-            long ctx, long world, long mesh, long[] slots, long crateSlot, long lighting) {
+    private static void release(long ctx, long world, long mesh, long[] slots, long crateSlot,
+            long lighting, long creature, long blot) {
         for (long texture : slots) {
             Screengine.textureDestroy(texture);
         }
         Screengine.textureDestroy(crateSlot);
+        Screengine.textureDestroy(creature);
+        Screengine.textureDestroy(blot);
         Screengine.meshDestroy(mesh);
         Screengine.lightingDestroy(lighting);
         Screengine.worldDestroy(world);

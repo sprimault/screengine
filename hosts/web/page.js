@@ -73,6 +73,67 @@ function status(text) {
  * @param {number} cell côté d'une case
  * @returns {Uint8Array}
  */
+/** Côté de la planche de la créature et de sa tache, en texels. */
+const SPRITE_SIDE = 64;
+
+/**
+ * La créature : un disque et son pied, sur fond transparent.
+ *
+ * Écrite plutôt que chargée, comme les damiers : cette page n'a aucun décodeur
+ * d'image, et ce qu'elle montre du moteur est la primitive, pas l'illustration.
+ *
+ * @returns {Uint8Array}
+ */
+function makeCreature() {
+  const texels = new Uint8Array(SPRITE_SIDE * SPRITE_SIDE * 4);
+  const cx = SPRITE_SIDE / 2;
+  const cy = SPRITE_SIDE * 0.35;
+  const radius = SPRITE_SIDE * 0.28;
+  for (let v = 0; v < SPRITE_SIDE; v++) {
+    for (let u = 0; u < SPRITE_SIDE; u++) {
+      const base = (v * SPRITE_SIDE + u) * 4;
+      const fu = u + 0.5;
+      const fv = v + 0.5;
+      const dx = fu - cx;
+      const dy = fv - cy;
+      const disc = dx * dx + dy * dy <= radius * radius;
+      const foot = fv > SPRITE_SIDE * 0.6 && fu > SPRITE_SIDE * 0.28 && fu < SPRITE_SIDE * 0.52;
+      if (disc || foot) {
+        texels[base] = 0x40 + Math.floor((fu * 160) / SPRITE_SIDE);
+        texels[base + 1] = 0xff - Math.floor((fv * 140) / SPRITE_SIDE);
+        texels[base + 2] = 0x60;
+        texels[base + 3] = 0xff;
+      }
+    }
+  }
+  return texels;
+}
+
+/**
+ * La tache d'ombre : sombre au centre, **blanche au bord**, 255 étant le neutre
+ * de la modulation — un texel blanc laisse le sol intact.
+ *
+ * @returns {Uint8Array}
+ */
+function makeBlot() {
+  const texels = new Uint8Array(SPRITE_SIDE * SPRITE_SIDE * 4);
+  const half = SPRITE_SIDE / 2;
+  for (let v = 0; v < SPRITE_SIDE; v++) {
+    for (let u = 0; u < SPRITE_SIDE; u++) {
+      const base = (v * SPRITE_SIDE + u) * 4;
+      const dx = u + 0.5 - half;
+      const dy = v + 0.5 - half;
+      const q = Math.min(1, (dx * dx + dy * dy) / (half * half));
+      const level = Math.floor(0x38 + (0xff - 0x38) * q);
+      texels[base] = level;
+      texels[base + 1] = level;
+      texels[base + 2] = level;
+      texels[base + 3] = 0xff;
+    }
+  }
+  return texels;
+}
+
 function makeChecker(side, cell) {
   const texels = new Uint8Array(side * side * 4);
   for (let v = 0; v < side; v++) {
@@ -100,15 +161,16 @@ function makeChecker(side, cell) {
  * @param {scg.Screengine} engine
  * @param {number} side
  * @param {Uint8Array} texels
+ * @param {number} [format] `SCG_TEXTURE_FORMAT_RGBA8` ou `..._MASKED`
  * @returns {number}
  */
-function loadTexture(engine, side, texels) {
+function loadTexture(engine, side, texels, format = scg.SCG_TEXTURE_FORMAT_RGBA8) {
   const e = engine.exports;
   const desc = engine.alloc(scg.TEXTURE_DESC_SIZE);
   const block = engine.alloc(texels.length);
   const out = engine.alloc(4);
 
-  engine.writeTextureDesc(desc, side, side);
+  engine.writeTextureDesc(desc, side, side, format);
   engine.bytes().set(texels, block);
   if (e.scg_texture_load(desc, block, texels.length, out) < 0) {
     throw new Error(`texture refusée : ${engine.lastError(0)}`);
@@ -347,6 +409,27 @@ async function main() {
   let frames = 0;
   let since = previous;
 
+  // La créature et sa tache : le format masqué se déclare au chargement,
+  // jamais au dessin, parce que c'est là que la chaîne de mipmaps se construit.
+  const creature = loadTexture(
+    engine,
+    SPRITE_SIDE,
+    makeCreature(),
+    scg.SCG_TEXTURE_FORMAT_RGBA8_MASKED,
+  );
+  const blot = loadTexture(engine, SPRITE_SIDE, makeBlot());
+  const spritePtr = engine.alloc(scg.SPRITE_SIZE);
+  const patchVertices = engine.alloc(4 * scg.VERTEX_UV_SIZE);
+  const patchFaces = engine.alloc(2 * scg.TRIANGLE_SIZE);
+  engine.writeTriangles(patchFaces, [
+    { indices: [0, 1, 2], color: [0xff, 0xff, 0xff, 0xff] },
+    { indices: [0, 2, 3], color: [0xff, 0xff, 0xff, 0xff] },
+  ]);
+  // Son va-et-vient, dans la bande que la salle en L et le couloir partagent :
+  // **ce décor n'est pas centré sur l'origine**, et `y = 0` y est une paroi.
+  let walker = 8.0;
+  let heading = 1.0;
+
   /**
    * Une image : entrées, caméra, soumission, rendu.
    *
@@ -405,6 +488,55 @@ async function main() {
         status(engine.lastError(ctx));
         return;
       }
+    }
+
+    // La créature arpente le décor, sa tache la suit.
+    //
+    // **La tache d'abord, en surface modulée** : elle multiplie le sol au lieu
+    // de l'écraser, et teste la profondeur sans l'écrire — c'est l'ordre de
+    // soumission qui la fait gagner sur les dalles, sans biais de profondeur.
+    walker += heading * 1.1 * dt;
+    if (walker > 14) {
+      walker = 14;
+      heading = -1;
+    } else if (walker < 6) {
+      walker = 6;
+      heading = 1;
+    }
+
+    const blot_radius = 0.55;
+    const lane = 2.0;
+    const floorZ = 0.01;
+    engine.writeVerticesUv(patchVertices, [
+      [walker - blot_radius, lane - blot_radius, floorZ, 0, 0],
+      [walker + blot_radius, lane - blot_radius, floorZ, 64, 0],
+      [walker + blot_radius, lane + blot_radius, floorZ, 64, 64],
+      [walker - blot_radius, lane + blot_radius, floorZ, 0, 64],
+    ]);
+    if (
+      e.scg_submit_blended(ctx, model, patchVertices, 4, patchFaces, 2, blot,
+        scg.SCG_BLEND_MODULATE) < 0
+    ) {
+      status(engine.lastError(ctx));
+      return;
+    }
+
+    // **En mode axial**, le seul juste pour un personnage debout : plein face,
+    // il se coucherait au sol dès qu'on le regarde d'en haut.
+    engine.writeSprites(spritePtr, [
+      {
+        center: [walker, lane, 0.9],
+        half: [0.6, 0.9],
+        uv: [0, 0, SPRITE_SIDE, SPRITE_SIDE],
+        roll: 0,
+        color: [0xff, 0xff, 0xff, 0xff],
+      },
+    ]);
+    if (
+      e.scg_submit_sprites(ctx, model, spritePtr, 1, creature, scg.SCG_SPRITE_AXIAL) < 0
+    ) {
+      status(engine.lastError(ctx));
+      return;
     }
 
     // Par tuiles, comme un hôte qui voudrait les répartir : le web n'a qu'un

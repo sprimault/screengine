@@ -137,6 +137,91 @@ static ScgTexture *load_checker(uint32_t side, uint32_t cell)
     return texture;
 }
 
+/* Côté de la planche de la créature et de sa tache, en texels. */
+enum { SPRITE_SIDE = 64 };
+
+/* La créature : un disque et son pied, sur fond transparent.
+ *
+ * Écrite plutôt que chargée, comme les damiers : cette démonstration n'a aucun
+ * décodeur d'image, et ce qu'elle montre du moteur est la primitive, pas
+ * l'illustration. */
+static void make_creature(uint8_t *pixels)
+{
+    const float cx = (float)SPRITE_SIDE / 2.0f;
+    const float cy = (float)SPRITE_SIDE * 0.35f;
+    const float radius = (float)SPRITE_SIDE * 0.28f;
+    for (uint32_t v = 0; v < SPRITE_SIDE; v++) {
+        for (uint32_t u = 0; u < SPRITE_SIDE; u++) {
+            uint8_t *texel = pixels + ((size_t)v * SPRITE_SIDE + u) * 4;
+            float fu = (float)u + 0.5f;
+            float fv = (float)v + 0.5f;
+            float dx = fu - cx;
+            float dy = fv - cy;
+            int disc = dx * dx + dy * dy <= radius * radius;
+            int foot = fv > (float)SPRITE_SIDE * 0.6f && fu > (float)SPRITE_SIDE * 0.28f
+                       && fu < (float)SPRITE_SIDE * 0.52f;
+            if (disc || foot) {
+                texel[0] = (uint8_t)(0x40 + (int)(fu * 160.0f / (float)SPRITE_SIDE));
+                texel[1] = (uint8_t)(0xFF - (int)(fv * 140.0f / (float)SPRITE_SIDE));
+                texel[2] = 0x60;
+                texel[3] = 0xFF;
+            } else {
+                texel[0] = 0;
+                texel[1] = 0;
+                texel[2] = 0;
+                texel[3] = 0;
+            }
+        }
+    }
+}
+
+/* La tache d'ombre : sombre au centre, blanche au bord, 255 étant le neutre de
+ * la modulation — un texel blanc laisse le sol intact. */
+static void make_blot(uint8_t *pixels)
+{
+    const float half = (float)SPRITE_SIDE / 2.0f;
+    for (uint32_t v = 0; v < SPRITE_SIDE; v++) {
+        for (uint32_t u = 0; u < SPRITE_SIDE; u++) {
+            uint8_t *texel = pixels + ((size_t)v * SPRITE_SIDE + u) * 4;
+            float dx = (float)u + 0.5f - half;
+            float dy = (float)v + 0.5f - half;
+            float q = (dx * dx + dy * dy) / (half * half);
+            if (q > 1.0f) {
+                q = 1.0f;
+            }
+            uint8_t level = (uint8_t)(0x38 + (int)((float)(0xFF - 0x38) * q));
+            texel[0] = level;
+            texel[1] = level;
+            texel[2] = level;
+            texel[3] = 0xFF;
+        }
+    }
+}
+
+/* Charge une planche engendrée par `fill`, dans le format donné. */
+static ScgTexture *load_sprite(void (*fill)(uint8_t *), uint32_t format)
+{
+    size_t bytes = (size_t)SPRITE_SIDE * SPRITE_SIDE * 4;
+    uint8_t *texels = malloc(bytes);
+    if (texels == NULL) {
+        return NULL;
+    }
+    fill(texels);
+
+    ScgTextureDesc desc;
+    memset(&desc, 0, sizeof desc);
+    desc.width = SPRITE_SIDE;
+    desc.height = SPRITE_SIDE;
+    desc.format = format;
+
+    ScgTexture *texture = NULL;
+    if (scg_texture_load(&desc, texels, bytes, &texture) < 0) {
+        texture = NULL;
+    }
+    free(texels);
+    return texture;
+}
+
 /* Le quaternion d'une rotation autour de l'axe vertical, rangé `x, y, z, w`.
  *
  * Écrit ici et non demandé au moteur : ses tables trigonométriques ne
@@ -334,6 +419,19 @@ int main(int argc, char **argv)
         fail(NULL, "la caméra ne part d'aucune cellule");
         return 1;
     }
+    /* La créature et sa tache : le format masqué se déclare au chargement,
+     * jamais au dessin, parce que c'est là que la chaîne de mipmaps se
+     * construit. */
+    ScgTexture *creature = load_sprite(make_creature, SCG_TEXTURE_FORMAT_RGBA8_MASKED);
+    ScgTexture *blot = load_sprite(make_blot, SCG_TEXTURE_FORMAT_RGBA8);
+    if (creature == NULL || blot == NULL) {
+        fail(NULL, "la créature ou sa tache ne se chargent pas");
+        return 1;
+    }
+    /* Son va-et-vient le long du couloir, en abscisses de monde. */
+    float walker = 8.0f;
+    float heading = 1.0f;
+
     Uint64 previous = SDL_GetTicks();
     Uint64 since = previous;
     unsigned frames = 0;
@@ -414,6 +512,67 @@ int main(int argc, char **argv)
             break;
         }
 
+        /* La créature arpente le couloir, sa tache la suit.
+         *
+         * **La tache d'abord, en surface modulée** : elle multiplie le sol au
+         * lieu de l'écraser, et teste la profondeur sans l'écrire — c'est
+         * l'ordre de soumission qui la fait gagner sur les dalles, sans biais
+         * de profondeur. Un centimètre au-dessus du sol suffit ici, où on la
+         * voit de près ; vue en rasant il en faudrait davantage. */
+        /* Elle arpente la salle en L puis le couloir, dans la bande que les
+         * deux partagent : **le décor n'est pas centré sur l'origine**, et
+         * `y = 0` y est une paroi. */
+        walker += heading * 1.1f * dt;
+        if (walker > 14.0f) {
+            walker = 14.0f;
+            heading = -1.0f;
+        } else if (walker < 6.0f) {
+            walker = 6.0f;
+            heading = 1.0f;
+        }
+
+        const float blot_radius = 0.55f;
+        const float lane = 2.0f;
+        /* Le sol de ce décor est à zéro : un centimètre au-dessus suffit. */
+        const float floor_z = 0.01f;
+        ScgVertexUv patch[4] = {
+            { walker - blot_radius, lane - blot_radius, floor_z,  0.0f,  0.0f },
+            { walker + blot_radius, lane - blot_radius, floor_z, 64.0f,  0.0f },
+            { walker + blot_radius, lane + blot_radius, floor_z, 64.0f, 64.0f },
+            { walker - blot_radius, lane + blot_radius, floor_z,  0.0f, 64.0f },
+        };
+        static const ScgTriangle PATCH_FACES[2] = {
+            { 0, 1, 2, 0xFF, 0xFF, 0xFF, 0xFF },
+            { 0, 2, 3, 0xFF, 0xFF, 0xFF, 0xFF },
+        };
+        if (scg_submit_blended(ctx, &model, patch, 4, PATCH_FACES, 2, blot, SCG_BLEND_MODULATE)
+            < 0) {
+            fail(ctx, "tache refusée");
+            break;
+        }
+
+        /* **En mode axial**, le seul juste pour un personnage debout : plein
+         * face, il se coucherait au sol dès qu'on le regarde d'en haut. */
+        ScgSprite walker_quad;
+        memset(&walker_quad, 0, sizeof walker_quad);
+        walker_quad.x = walker;
+        walker_quad.y = lane;
+        walker_quad.half_width = 0.6f;
+        walker_quad.half_height = 0.9f;
+        /* Son centre à une demi-hauteur du sol : elle est posée dessus, pas
+         * enterrée ni flottante. */
+        walker_quad.z = walker_quad.half_height;
+        walker_quad.u1 = (float)SPRITE_SIDE;
+        walker_quad.v1 = (float)SPRITE_SIDE;
+        walker_quad.r = 0xFF;
+        walker_quad.g = 0xFF;
+        walker_quad.b = 0xFF;
+        walker_quad.a = 0xFF;
+        if (scg_submit_sprites(ctx, &model, &walker_quad, 1, creature, SCG_SPRITE_AXIAL) < 0) {
+            fail(ctx, "créature refusée");
+            break;
+        }
+
         /* Par tuiles : un hôte qui voudrait les répartir sur ses threads le
          * ferait ici, et rien d'autre ne changerait. */
         uint32_t tiles = 0;
@@ -458,6 +617,8 @@ int main(int argc, char **argv)
     }
     free(slots);
     scg_texture_destroy((ScgTexture *)crate_slots[0]);
+    scg_texture_destroy(creature);
+    scg_texture_destroy(blot);
     scg_mesh_destroy(crate);
     /* Le porteur avant la carte : il en garde une référence, et l'ordre inverse
      * marcherait aussi — le contrat le dit —, mais celui-ci se relit mieux. */
