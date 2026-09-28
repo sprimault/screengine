@@ -259,6 +259,10 @@ fn scene_chargee(context: &mut Context, texture: &std::sync::Arc<Texture>) {
     }
 }
 
+/// Joue les mesures dans l'ordre et écrit leur tableau.
+///
+/// Le minimum et non la moyenne, pour la raison écrite en tête du module : une
+/// durée n'a qu'une borne basse vraie.
 fn main() {
     let texture = std::sync::Arc::new(damier());
     let mut pixels = vec![0u8; WIDTH as usize * HEIGHT as usize * BYTES_PER_PIXEL];

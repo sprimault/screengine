@@ -1164,6 +1164,11 @@ uint64_t render_composite(bool &ok, const char *path)
     return hash;
 }
 
+// Enchaîne les scènes et écrit leurs empreintes, une par ligne.
+//
+// Le code de retour est le verdict : `make test-cpp` compare la sortie à celle
+// du chemin Rust, et un hôte qui échouerait en rendant quand même des
+// empreintes plausibles passerait pour bon.
 int main(int argc, char **argv)
 {
     if (argc != 2) {

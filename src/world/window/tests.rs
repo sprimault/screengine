@@ -185,6 +185,11 @@ fn un_portail_sans_surface_vide_la_fenetre() {
 }
 
 /// Une fenêtre déjà vide le reste.
+///
+/// **C'est ce qui arrête la traversée**, et non un cas dégénéré sans
+/// conséquence : la réduction est appelée en chaîne, un portail après l'autre,
+/// et une fenêtre vide qui reprendrait de la largeur ferait repartir la
+/// descente dans des cellules que le portail précédent avait déjà écartées.
 #[test]
 fn une_fenetre_vide_reste_vide() {
     let empty = Rect {

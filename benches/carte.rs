@@ -154,6 +154,10 @@ fn peints(pixels: &[u8]) -> usize {
         .count()
 }
 
+/// Joue les mesures dans l'ordre et écrit leur tableau.
+///
+/// Le minimum et non la moyenne : une durée n'a qu'une borne basse vraie, tout
+/// ce qui la dépasse venant de la machine et non du code.
 fn main() {
     println!("screengine — carte, {WIDTH}x{HEIGHT}, tuiles de 64, minimum sur {IMAGES} tours\n");
 

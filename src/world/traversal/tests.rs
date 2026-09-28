@@ -253,6 +253,11 @@ fn une_cellule_de_depart_inconnue_ne_visite_rien() {
 }
 
 /// Une fenêtre vide au départ ne visite rien.
+///
+/// Pas un cas d'appel tordu : une image dont la fenêtre est vide est celle
+/// qu'un hôte rend quand sa région ne couvre rien, et la traversée doit y
+/// rendre une liste vide plutôt que la cellule de départ — que le remplissage
+/// dessinerait alors hors de toute fenêtre.
 #[test]
 fn une_fenetre_vide_au_depart_ne_visite_rien() {
     let world = World::load(&two_cells()).expect("carte valide");

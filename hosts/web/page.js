@@ -134,6 +134,17 @@ function makeBlot() {
   return texels;
 }
 
+/**
+ * Un damier à liseré, les texels d'une texture carrée.
+ *
+ * Le liseré n'est pas décoratif : deux cases voisines de la même teinte se
+ * confondraient au premier niveau de mipmap, et une erreur de filtrage y
+ * passerait inaperçue.
+ *
+ * @param {number} side côté de la texture, en texels
+ * @param {number} cell côté d'une case, en texels
+ * @returns {Uint8Array} `side` au carré texels de quatre octets
+ */
 function makeChecker(side, cell) {
   const texels = new Uint8Array(side * side * 4);
   for (let v = 0; v < side; v++) {
