@@ -5,7 +5,7 @@ Français : [README.fr.md](README.fr.md)
 A software 3D rendering engine, callable from any language. No GPU, no window:
 you hand it a scene and a buffer, it fills the buffer.
 
-![Walking down a ruined corridor: mossy stone, flickering tubes, daylight falling through a hole in the ceiling](docs/couloir.webp)
+![Walking down a ruined corridor, weapon in hand: mossy stone, flickering tubes, daylight falling through a hole in the ceiling, and a creature pacing at the far end, its shadow on the floor](docs/couloir.webp)
 
 *The `couloir` example from `screengine-play`, rendered at 640×360: textures,
 mipmaps, bilinear filtering, lightmaps, dynamic lights, fog and an output
