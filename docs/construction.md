@@ -283,8 +283,9 @@ et un cycle de retour lent depuis un poste Windows.
      décalée d'un octet.
 
   **Le maillage est poussé sur l'appareil** avec les bibliothèques, et chaque
-  palier reçoit son chemin : les deux premiers le lisent depuis le dépôt, les
-  autres depuis `/data/local/tmp`. C'est le seul fichier que ces hôtes ouvrent,
+  palier reçoit son chemin : les trois exécutions du premier le lisent depuis le
+  dépôt — elles tournent sur la machine —, les deux du second depuis
+  `/data/local/tmp`. C'est le seul fichier que ces hôtes ouvrent,
   et c'est ce qui éprouve le chargement d'une ressource à travers le pont JNI.
 
   L'APK n'est pas lancé par le test, mais construit par lui.
