@@ -53,6 +53,13 @@ publié, et explique les conventions du dépôt à qui y contribue.
   ses lightmaps, la deuxième dit ce que la cuisson d'une cellule coûte, la
   troisième borne l'atlas qu'elle remplit. `SCG_ABI_VERSION` reste à 1.
 
+### Interne
+- **La preuve de « zéro allocation par image » couvre de nouveau tout ce qui
+  est exposé.** Elle s'arrêtait à l'étape 4 : ni la traversée avec ses
+  lightmaps, ni les quadrilatères orientés, ni le maillage interpolé, ni la
+  surface modulée n'entraient dans une mesure. L'invariant tenait — il n'était
+  plus vérifié.
+
 ### Corrigé
 - **Trois défauts de l'image en cours.** Un lot soumis avant
   `scg_submit_world_visible` était rogné à la fenêtre d'une cellule qui ne le
@@ -73,6 +80,12 @@ publié, et explique les conventions du dépôt à qui y contribue.
   since 0.5.0 without any of them existing. The first submits the whole level
   with its lightmaps, the second says what baking one cell costs, the third
   bounds the atlas it fills. `SCG_ABI_VERSION` stays at 1.
+
+### Internal
+- **The "zero allocation per frame" proof covers everything exposed again.** It
+  stopped at step 4: neither traversal with its lightmaps, nor engine-oriented
+  quads, nor an interpolated mesh, nor a modulated surface entered any
+  measurement. The invariant held — it was no longer verified.
 
 ### Fixed
 - **Three defects of the frame in progress.** A batch submitted before
