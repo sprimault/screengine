@@ -59,6 +59,10 @@ publié, et explique les conventions du dépôt à qui y contribue.
   lightmaps, ni les quadrilatères orientés, ni le maillage interpolé, ni la
   surface modulée n'entraient dans une mesure. L'invariant tenait — il n'était
   plus vérifié.
+- **L'orientation de la règle top-left a son test.** Les épreuves d'étanchéité
+  certifiaient la partition, jamais quel côté d'une arête gagne : règle
+  inversée, les cinq restaient au vert. Un défaut que `CLAUDE.md` désigne comme
+  le premier piège du projet n'était nommé par rien.
 
 ### Corrigé
 - **Trois défauts de l'image en cours.** Un lot soumis avant
@@ -86,6 +90,10 @@ publié, et explique les conventions du dépôt à qui y contribue.
   stopped at step 4: neither traversal with its lightmaps, nor engine-oriented
   quads, nor an interpolated mesh, nor a modulated surface entered any
   measurement. The invariant held — it was no longer verified.
+- **The top-left rule's orientation has its test.** The watertightness checks
+  certified the partition, never which side of an edge wins: with the rule
+  inverted, all five stayed green. A defect `CLAUDE.md` calls the project's
+  first pitfall was named by nothing.
 
 ### Fixed
 - **Three defects of the frame in progress.** A batch submitted before

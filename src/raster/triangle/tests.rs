@@ -113,6 +113,11 @@ impl Coverage {
         let max = self.hits.iter().copied().max().unwrap_or(0);
         (touched, total, max)
     }
+
+    /// Combien de fois ce pixel a été proposé.
+    fn at(&self, x: i32, y: i32) -> u16 {
+        self.hits[(y * W + x) as usize]
+    }
 }
 
 impl Target for Coverage {
@@ -272,6 +277,69 @@ fn partage_une_arete_horizontale() {
 fn partage_une_arete_verticale() {
     let lozenge = [p(6, 20), p(25, 6), p(44, 20), p(25, 34)];
     assert_seamless(shift(lozenge, ON_CENTERS, 0), "verticale");
+}
+
+/// La règle départage **en faveur du haut et de la gauche**, et pas seulement
+/// de façon cohérente.
+///
+/// **Ce que les tests d'étanchéité ne disent pas.** Ils comparent le
+/// remplissage à une référence qui appelle le *même* `bias` : ils certifient la
+/// partition — ni trou ni recouvrement — quel que soit le côté qui gagne.
+/// Règle inversée, les cinq restent au vert.
+///
+/// Quatre empreintes de conformance bougent, elles, mais une empreinte dit
+/// qu'*une* chose a changé, jamais laquelle : elle envoie chercher une
+/// régression dans tout ce que le lot a touché. Celui-ci nomme le défaut, et
+/// c'est la différence entre les deux.
+///
+/// Un triangle par cas, pas deux : c'est la couverture d'un seul qui dit à qui
+/// la ligne appartient, là où deux triangles ne montreraient que leur accord.
+#[test]
+fn la_regle_departage_vers_le_haut_et_la_gauche() {
+    // La colonne et la ligne dont les centres portent l'arête examinée.
+    let (col, row) = (20i32, 16i32);
+    let on = |x: i32, y: i32| Point {
+        x: x * SUBPIXEL_SCALE + PIXEL_CENTER,
+        y: y * SUBPIXEL_SCALE + PIXEL_CENTER,
+    };
+
+    // Chaque cas : le triangle, le pixel examiné, et s'il doit lui revenir.
+    // Les triangles sont des cales rectangles dont un côté tombe pile sur les
+    // centres, l'angle droit du côté opposé au pixel examiné.
+    let cases = [
+        (
+            "arête gauche",
+            [on(col, row - 8), on(col, row + 8), on(col + 14, row)],
+            true,
+        ),
+        (
+            "arête droite",
+            [on(col, row - 8), on(col - 14, row), on(col, row + 8)],
+            false,
+        ),
+        (
+            "arête haute",
+            [on(col - 8, row), on(col, row + 14), on(col + 8, row)],
+            true,
+        ),
+        (
+            "arête basse",
+            [on(col - 8, row), on(col + 8, row), on(col, row - 14)],
+            false,
+        ),
+    ];
+
+    for (label, v, owned) in cases {
+        let mut coverage = Coverage::new();
+        fill_triangle(&mut coverage, CLIP, v, 1);
+        let (touched, _, _) = coverage.stats();
+        assert!(touched > 0, "{label} : le cas de test ne couvre rien");
+        assert_eq!(
+            coverage.at(col, row) > 0,
+            owned,
+            "{label} : le pixel ({col}, {row}) ne va pas du bon côté"
+        );
+    }
 }
 
 /// Les deux cent cinquante-six positions sous-pixel.
