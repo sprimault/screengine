@@ -349,7 +349,7 @@ impl Context {
             // La fenêtre ne borne que la boucle, jamais les valeurs : c'est ce
             // qui rend l'image identique avec ou sans elle, exactement comme
             // elle l'est indépendamment du découpage en tuiles.
-            let window = if index < self.visited_end {
+            let window = if index >= self.visited_first && index < self.visited_end {
                 while cursor + 1 < self.visits.len()
                     && self.visits[cursor + 1].first_triangle <= index
                 {
