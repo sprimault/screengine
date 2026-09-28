@@ -331,6 +331,21 @@ toucher la boucle de lignes du remplissage, là où un rectangle ne demande rien
 il **ne déplace aucune empreinte** — donc il peut arriver à tout moment, sans mise
 à jour de références.
 
+**C'est ici que la matrice gagne les cibles Linux sur ARM**, et non avant : le
+projet compile `armv7-linux-androideabi` et `aarch64-linux-android`, qui sont
+des cibles Android. Un Raspberry Pi demande `armv7-unknown-linux-gnueabihf` ou
+`aarch64-unknown-linux-gnu` — même jeu d'instructions, même largeur, mais une
+autre bibliothèque C. Le noyau n'en emploie aucune et devrait s'y porter sans
+rien changer ; la couche FFI et l'étage d'accueil passent par `std`, donc rien
+ne le garantit tant qu'on ne l'a pas construit. `qemu-user` les exécute déjà
+pour Android, il n'y a donc pas de machine à acquérir pour le vérifier.
+
+Ici plutôt qu'à l'étape 0 parce que c'est le SIMD qui rend la question
+intéressante : **le Pi 1 et le Zero sont en ARMv6, sans NEON**. Une sélection à
+l'exécution doit y retomber sur le chemin scalaire, ce qui ne se vérifie qu'une
+fois ce chemin de sélection écrit — et l'ARMv6 est aussi la seule ISA de cette
+liste que rien n'éprouve aujourd'hui.
+
 **Volontairement tardive.** Optimiser avant que le pipeline soit figé revient à
 écrire trois fois le même code.
 
