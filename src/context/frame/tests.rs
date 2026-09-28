@@ -80,6 +80,17 @@ fn scene(context: &mut Context, seed: u64) {
     context
         .set_lights(if seed % 2 == 1 { &lights } else { &[] })
         .expect("hors image");
+    // **Une graine sur trois allume le brouillard**, et ses bornes ne sont pas
+    // décoratives : les profondeurs sont tirées sur tout l'intervalle du
+    // tampon, qui est `near/w` — un `z` moyen y vaut une distance de deux
+    // dixièmes d'unité, pas dix mètres. Un brouillard réglé sur des distances
+    // ordinaires sature donc partout et rend l'image inchangée, ce qui laisse
+    // son chemin hors de la comparaison sans qu'on s'en aperçoive.
+    if seed % 3 == 1 {
+        context
+            .set_fog(Color::new(0x40, 0x50, 0x70, 0xFF), 0.05, 0.3)
+            .expect("hors image");
+    }
     let span = (u32::MAX - 2 * DEPTH_MARGIN) as u64;
     for _ in 0..300 {
         let reach = if rng.next() % 4 == 0 { 400 } else { 40 };
@@ -342,6 +353,8 @@ fn l_ordre_des_tuiles_ne_change_rien() {
 /// Les motifs de tramage se répètent tous les quatre pixels, si bien qu'un
 /// index pris depuis le coin d'une tuile donne le même motif qu'un index pris
 /// dans l'image : c'est ici, et seulement ici, qu'un tel index se verrait.
+/// Vérifié en indexant le tramage du brouillard sur la tuile — celui-ci rougit,
+/// les deux comparaisons de tuiles restent vertes.
 #[test]
 fn des_colonnes_desalignees_rendent_l_image_entiere() {
     const BAND: u32 = 13;

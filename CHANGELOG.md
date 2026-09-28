@@ -74,6 +74,10 @@ publié, et explique les conventions du dépôt à qui y contribue.
   qu'elle rend n'étaient atteints par aucune carte ; le décodeur de cache
   n'avait pas son épreuve de compte démesuré ; et aucun découpage n'éprouvait
   une région à l'abscisse quelconque, que l'ABI donne pourtant à l'hôte.
+- **Les deux derniers.** La reprise d'un cache ne comparait que le premier
+  niveau de sa chaîne de mipmaps, que la reprise reconstruit ; et le tramage du
+  brouillard n'était discriminé par rien, faute d'un brouillard réglé sur les
+  distances de la scène de test.
 
 ### Corrigé
 - **Trois défauts de l'image en cours.** Un lot soumis avant
@@ -115,6 +119,9 @@ publié, et explique les conventions du dépôt à qui y contribue.
   traversal's depth bound and the status it returns were reached by no map; the
   cache decoder lacked its oversized-count trial; and no split exercised a
   region at an arbitrary abscissa, which the ABI nonetheless grants the host.
+- **The last two.** Restoring a cache compared only the first level of its
+  mipmap chain, which restoring rebuilds; and fog dithering was discriminated
+  by nothing, for want of a fog set to the distances of the test scene.
 
 ### Fixed
 - **Three defects of the frame in progress.** A batch submitted before
