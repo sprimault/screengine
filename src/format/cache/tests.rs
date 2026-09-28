@@ -74,6 +74,12 @@ fn block_with(count: u32) -> Vec<u8> {
 }
 
 /// Un bloc bien formé rend son entrée.
+///
+/// **La garde d'honnêteté de tous les autres** : ils vérifient des refus, et un
+/// décodeur qui refuserait tout les passerait ensemble. Chaque champ est
+/// asserté, pas seulement le compte d'entrées — l'empreinte sur ses deux mots,
+/// le côté de l'atlas, la surface et la longueur des luxels, parce qu'un
+/// décalage d'un mot dans l'entrée les déplace tous sans en perdre aucun.
 #[test]
 fn un_bloc_bien_forme_rend_son_entree() {
     let bytes = block();

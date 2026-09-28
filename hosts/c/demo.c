@@ -281,6 +281,10 @@ static void crate_model(const float *placement, ScgMat4 *out)
     out->m[15] = 1.0f;
 }
 
+/* Ouvre la fenêtre et rend jusqu'à ce qu'on la ferme.
+ *
+ * Les deux chemins de fichier sont des paramètres et non des constantes : le
+ * moteur n'ouvre rien, et c'est l'hôte qui sait où vivent les données. */
 int main(int argc, char **argv)
 {
     if (argc != 3) {

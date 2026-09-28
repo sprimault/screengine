@@ -247,6 +247,11 @@ ScgMat4 crate_model(const float *placement)
 
 }  // namespace
 
+// Ouvre la fenêtre et rend jusqu'à ce qu'on la ferme, les tuiles réparties sur
+// plusieurs threads.
+//
+// Les deux chemins de fichier sont des paramètres et non des constantes : le
+// moteur n'ouvre rien, et c'est l'hôte qui sait où vivent les données.
 int main(int argc, char **argv)
 {
     if (argc != 3) {

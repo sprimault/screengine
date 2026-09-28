@@ -498,18 +498,6 @@ export class Screengine {
   }
 
   /**
-   * Écrit une caméra.
-   *
-   * Le quaternion se range `x, y, z, w`, la partie réelle en dernier :
-   * l'identité est `{0, 0, 0, 1}`, et c'est la convention inverse de la plus
-   * répandue — une liaison qui écrit ces octets à la main s'y trompe une fois.
-   * Il n'est pas exigé unitaire, le moteur le normalise.
-   *
-   * @param {number} ptr adresse d'au moins `CAMERA_SIZE` octets
-   * @param {{position: number[], orientation: number[], fovY: number,
-   *   nearPlane: number}} camera la caméra à écrire
-   */
-  /**
    * Écrit trois flottants à `ptr` : une position, telle que l'ABI l'attend.
    *
    * La localisation et le suivi de cellule prennent des points par pointeur, et
@@ -525,6 +513,18 @@ export class Screengine {
     point.forEach((value, k) => view.setFloat32(k * 4, value, true));
   }
 
+  /**
+   * Écrit une caméra.
+   *
+   * Le quaternion se range `x, y, z, w`, la partie réelle en dernier :
+   * l'identité est `{0, 0, 0, 1}`, et c'est la convention inverse de la plus
+   * répandue — une liaison qui écrit ces octets à la main s'y trompe une fois.
+   * Il n'est pas exigé unitaire, le moteur le normalise.
+   *
+   * @param {number} ptr adresse d'au moins `CAMERA_SIZE` octets
+   * @param {{position: number[], orientation: number[], fovY: number,
+   *   nearPlane: number}} camera la caméra à écrire
+   */
   writeCamera(ptr, camera) {
     new Uint8Array(this.memory.buffer, ptr, CAMERA_SIZE).fill(0);
     const view = new DataView(this.memory.buffer, ptr, CAMERA_SIZE);

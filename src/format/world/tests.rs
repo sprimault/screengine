@@ -650,6 +650,12 @@ fn un_identifiant_nul_est_refuse() {
 }
 
 /// Deux cellules du même identifiant sont refusées.
+///
+/// **L'unicité se vérifie, elle ne se suppose pas** : la table des cellules est
+/// triée au chargement et lue par dichotomie, et un doublon n'y fait pas
+/// paniquer la recherche — il lui fait rendre l'une des deux, sans qu'on sache
+/// laquelle. Une carte dont l'éditeur aurait dupliqué une cellule rendrait
+/// alors une image plausible et fausse.
 #[test]
 fn deux_cellules_du_meme_identifiant_sont_refusees() {
     let one = cell_bytes(

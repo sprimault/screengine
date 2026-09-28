@@ -12,6 +12,11 @@
 
 use std::env;
 
+/// Pose le `soname` sur les cibles ELF, et ne fait rien ailleurs.
+///
+/// Un script de construction plutôt qu'un réglage de `Cargo.toml` : cargo n'a
+/// pas de champ pour cela, et l'argument doit atteindre le linker de la seule
+/// bibliothèque dynamique du dépôt.
 fn main() {
     if matches!(
         env::var("CARGO_CFG_TARGET_OS").as_deref(),

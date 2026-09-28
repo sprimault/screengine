@@ -419,6 +419,15 @@ fn dilate(texels: &mut [u32], level: Level) {
     }
 }
 
+/// Réduit un niveau de mipmap dans le suivant, par moyenne des texels source.
+///
+/// **Les deux décalages sont indépendants** : un niveau garde un côté qui vaut
+/// déjà un, et la moyenne porte alors sur deux texels au lieu de quatre. C'est
+/// ce qui permet aux textures non carrées de descendre jusqu'à 1×1 sans cas
+/// particulier, et ce qui interdit de supposer quatre sources dans le corps.
+///
+/// `masked` change la moyenne du RGB, pas celle de l'alpha : la raison est
+/// écrite là où elle s'applique.
 fn reduce(src: &[u32], src_level: Level, dst: &mut [u32], dst_level: Level, masked: bool) {
     let shift_x = u32::from(src_level.width > dst_level.width);
     let shift_y = u32::from(src_level.height > dst_level.height);
