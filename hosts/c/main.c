@@ -259,13 +259,13 @@ static void make_gradient(uint8_t *pixels)
  * Le motif est recopié de la suite de conformance, teinte pour teinte : c'est
  * lui qui décide de l'empreinte, et un liseré décalé d'un texel la ferait
  * diverger — ce qui est exactement l'objet de cette comparaison. */
-static void make_checker(uint8_t *pixels)
+static void make_checker_sized(uint8_t *pixels, uint32_t side, uint32_t cell)
 {
-    for (uint32_t v = 0; v < FLOOR_SIDE; v++) {
-        for (uint32_t u = 0; u < FLOOR_SIDE; u++) {
-            uint8_t *texel = pixels + ((size_t)v * FLOOR_SIDE + u) * 4;
-            int edge = (u % FLOOR_CELL) == 0 || (v % FLOOR_CELL) == 0;
-            int dark = ((u / FLOOR_CELL) + (v / FLOOR_CELL)) % 2 == 0;
+    for (uint32_t v = 0; v < side; v++) {
+        for (uint32_t u = 0; u < side; u++) {
+            uint8_t *texel = pixels + ((size_t)v * side + u) * 4;
+            int edge = (u % cell) == 0 || (v % cell) == 0;
+            int dark = ((u / cell) + (v / cell)) % 2 == 0;
             if (edge) {
                 texel[0] = 0xF0; texel[1] = 0xE0; texel[2] = 0xA0;
             } else if (dark) {
@@ -276,6 +276,35 @@ static void make_checker(uint8_t *pixels)
             texel[3] = 0xFF;
         }
     }
+}
+
+static void make_checker(uint8_t *pixels)
+{
+    make_checker_sized(pixels, FLOOR_SIDE, FLOOR_CELL);
+}
+
+/* Charge un damier de `side` texels de côté, ou rend NULL. */
+static ScgTexture *load_checker(uint32_t side, uint32_t cell)
+{
+    size_t bytes = (size_t)side * side * 4;
+    uint8_t *texels = malloc(bytes);
+    if (texels == NULL) {
+        return NULL;
+    }
+    make_checker_sized(texels, side, cell);
+
+    ScgTextureDesc desc;
+    memset(&desc, 0, sizeof desc);
+    desc.width = side;
+    desc.height = side;
+    desc.format = SCG_TEXTURE_FORMAT_RGBA8;
+
+    ScgTexture *texture = NULL;
+    if (scg_texture_load(&desc, texels, bytes, &texture) < 0) {
+        texture = NULL;
+    }
+    free(texels);
+    return texture;
 }
 
 /* Vrai si le message est non nul, terminé, non vide si `expect_text`, et fait
@@ -1329,6 +1358,137 @@ static uint64_t render_composite(int *ok, const char *path)
     return hash;
 }
 
+/* La scène `salles` : un décor chargé d'un fichier, cuit cellule par cellule,
+ * parcouru par sa traversée.
+ *
+ * **Treize points d'entrée que les dix scènes précédentes n'atteignent pas**,
+ * et dont deux ont manqué au code pendant une version entière sans que rien ne
+ * le dise : un symbole que personne n'appelle s'exporte aussi bien qu'il
+ * manque. C'est aussi le seul endroit où un hôte lit un second fichier, et où
+ * il rend une image dont la géométrie ne vient pas de lui.
+ *
+ * La vue est la première de la scène de conformance : dans la salle en L, face
+ * à l'ouverture du couloir. */
+static uint64_t render_rooms(int *ok, const char *path)
+{
+    /* Les deux damiers de la scène de référence : le mur est plus fin que le
+     * sol, et c'est le nom du matériau qui décide lequel va où. */
+    enum { WALL_SIDE = 512, WALL_CELL = 128, ROOM_FLOOR_SIDE = 256, ROOM_FLOOR_CELL = 32 };
+
+    ScgContextConfig config = scene_config();
+    ScgContext *ctx = NULL;
+    ScgWorld *world = NULL;
+    ScgLighting *lighting = NULL;
+    const ScgTexture **slots = NULL;
+    uint32_t materials = 0;
+    uint8_t *pixels = malloc((size_t)STRIDE * HEIGHT * 4);
+    size_t len = 0;
+    uint8_t *bytes = read_file(path, &len);
+    uint64_t hash = 0;
+
+    *ok = 0;
+    if (pixels == NULL || bytes == NULL) {
+        check(0, "lecture du fichier de carte et allocation du tampon");
+        free(pixels);
+        free(bytes);
+        return 0;
+    }
+
+    int32_t loaded = scg_world_load(bytes, len, &world);
+    check(loaded == SCG_OK, "le fichier de carte se charge");
+    /* Libéré tout de suite : le moteur copie ce qu'il garde, et un hôte qui
+     * devrait conserver le bloc l'apprendrait ici. */
+    free(bytes);
+    bytes = NULL;
+
+    if (loaded == SCG_OK) {
+        check(scg_world_material_count(world, &materials) == SCG_OK && materials == 2,
+              "la carte declare deux materiaux");
+        slots = calloc(materials ? materials : 1, sizeof *slots);
+    }
+
+    if (slots != NULL) {
+        for (uint32_t i = 0; i < materials; i++) {
+            char name[32];
+            size_t needed = 0;
+            int named = scg_world_material_name(world, i, NULL, 0, &needed) == SCG_OK
+                        && needed + 1 <= sizeof name
+                        && scg_world_material_name(world, i, name, sizeof name, &needed) == SCG_OK;
+            check(named, "le nom du materiau se lit en deux temps");
+            int wall = named && strcmp(name, "mur") == 0;
+            slots[i] = load_checker(wall ? WALL_SIDE : ROOM_FLOOR_SIDE,
+                                    wall ? WALL_CELL : ROOM_FLOOR_CELL);
+            check(slots[i] != NULL, "le damier du materiau se charge");
+        }
+
+        check(scg_lighting_create(world, &lighting) == SCG_OK, "le porteur de lightmaps se cree");
+    }
+
+    if (lighting != NULL) {
+        /* **Toutes les cellules, pas seulement celles que la vue montre** :
+         * une lightmap est un cache de la carte et non du point de vue. */
+        uint32_t cells = 0;
+        check(scg_world_cell_count(world, &cells) == SCG_OK && cells == 4,
+              "la carte porte quatre cellules");
+        for (uint32_t i = 0; i < cells; i++) {
+            uint32_t id = 0;
+            uint32_t luxels = 0;
+            check(scg_world_cell_id(world, i, &id) == SCG_OK, "le rang rend un identifiant");
+            /* Ce qu'un hôte lit avant de cuire, pour pondérer sa progression :
+             * le compte de cellules ne dit rien du coût de chacune. */
+            check(scg_world_cell_luxel_count(world, id, &luxels) == SCG_OK && luxels > 0,
+                  "la cellule annonce ses luxels");
+            check(scg_lighting_build(lighting, id) == SCG_OK, "la cellule se cuit");
+        }
+
+        check(scg_create(&config, &ctx) == SCG_OK, "creation du contexte du decor");
+    }
+
+    if (ctx != NULL) {
+        const float position[3] = { 2.0f, 2.0f, 2.0f };
+        ScgCamera camera;
+        memset(&camera, 0, sizeof camera);
+        camera.position[0] = position[0];
+        camera.position[1] = position[1];
+        camera.position[2] = position[2];
+        /* Sans rotation : la vue regarde le +X du monde, et le quaternion
+         * identité range sa partie réelle en dernier. */
+        camera.orientation[3] = 1.0f;
+        camera.fov_y = 1.0471976f;
+        camera.near_plane = 0.1f;
+        check(scg_set_camera(ctx, &camera) == SCG_OK, "la camera du decor se regle");
+
+        /* La cellule se trouve, elle ne se devine pas : zéro veut dire « nulle
+         * part », ce qui est une clause et non une erreur. */
+        uint32_t cell = 0;
+        check(scg_world_locate(world, position, &cell) == SCG_OK && cell != 0,
+              "la camera est dans une cellule");
+
+        int32_t code = scg_submit_world_visible(ctx, &IDENTITY, world, slots, materials,
+                                                lighting, cell);
+        check(code == SCG_OK, "la traversee accepte le decor");
+
+        code = scg_frame_end(ctx, pixels, STRIDE);
+        check(code == SCG_OK, "l'image du decor se rend");
+        *ok = code == SCG_OK;
+        hash = fingerprint(pixels, WIDTH, HEIGHT, STRIDE);
+    }
+
+    if (slots != NULL) {
+        for (uint32_t i = 0; i < materials; i++) {
+            scg_texture_destroy((ScgTexture *)slots[i]);
+        }
+        free(slots);
+    }
+    /* La carte part avant le porteur, qui en garde une référence : l'ordre est
+     * libre, et c'est ce que cette destruction éprouve. */
+    scg_world_destroy(world);
+    scg_lighting_destroy(lighting);
+    scg_destroy(ctx);
+    free(pixels);
+    return hash;
+}
+
 /* Toutes les vérifications, puis les empreintes sur la sortie standard, une
  * par ligne et dans l'ordre que le Makefile attend.
  *
@@ -1337,8 +1497,8 @@ static uint64_t render_composite(int *ok, const char *path)
  * un hôte lancé depuis un autre répertoire ne le trouverait pas. */
 int main(int argc, char **argv)
 {
-    if (argc != 2) {
-        fprintf(stderr, "usage : %s <fichier de maillage>\n", argv[0]);
+    if (argc != 3) {
+        fprintf(stderr, "usage : %s <fichier de maillage> <fichier de carte>\n", argv[0]);
         return 2;
     }
 
@@ -1389,8 +1549,11 @@ int main(int argc, char **argv)
     int composite_ok = 0;
     uint64_t composite = render_composite(&composite_ok, argv[1]);
 
+    int rooms_ok = 0;
+    uint64_t rooms = render_rooms(&rooms_ok, argv[2]);
+
     if (failures > 0 || !ok || !textured_ok || !bilinear_ok || !graded_ok || !lit_ok
-        || !overbright_ok || !fog_ok || !lights_ok || !mesh_ok || !composite_ok) {
+        || !overbright_ok || !fog_ok || !lights_ok || !mesh_ok || !composite_ok || !rooms_ok) {
         fprintf(stderr, "%d vérification(s) en échec\n", failures);
         return 1;
     }
@@ -1404,5 +1567,6 @@ int main(int argc, char **argv)
     printf("%016llx\n", (unsigned long long)lights);
     printf("%016llx\n", (unsigned long long)mesh);
     printf("%016llx\n", (unsigned long long)composite);
+    printf("%016llx\n", (unsigned long long)rooms);
     return 0;
 }

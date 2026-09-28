@@ -78,6 +78,11 @@ publié, et explique les conventions du dépôt à qui y contribue.
   niveau de sa chaîne de mipmaps, que la reprise reconstruit ; et le tramage du
   brouillard n'était discriminé par rien, faute d'un brouillard réglé sur les
   distances de la scène de test.
+- **Les quatre hôtes chargent enfin une carte.** Treize points d'entrée —
+  traversée, localisation, cuisson, cache — n'étaient franchis par aucun
+  programme de test, et deux d'entre eux ont pu manquer au code pendant une
+  version entière. Le pont JNI y gagne `worldCellLuxelCount`, qui lui manquait
+  déjà.
 - **`scg_lighting_destroy` ne passait par aucune enveloppe**, seule des cinq
   destructeurs. Deux fonctions s'en passent légitimement — `scg_abi_version` et
   `scg_last_error` —, et `docs/abi.md` dit désormais qu'elles sont deux et
@@ -136,6 +141,10 @@ publié, et explique les conventions du dépôt à qui y contribue.
 - **The last two.** Restoring a cache compared only the first level of its
   mipmap chain, which restoring rebuilds; and fog dithering was discriminated
   by nothing, for want of a fog set to the distances of the test scene.
+- **The four hosts finally load a map.** Thirteen entry points — traversal,
+  location, baking, cache — were crossed by no test program, and two of them
+  could go missing from the code for a whole release. The JNI bridge gains
+  `worldCellLuxelCount`, which it was already lacking.
 - **`scg_lighting_destroy` went through no wrapper**, alone among the five
   destructors. Two functions legitimately skip it — `scg_abi_version` and
   `scg_last_error` — and `docs/abi.md` now states that they are two, and why.

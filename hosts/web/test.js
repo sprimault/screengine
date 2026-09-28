@@ -147,15 +147,17 @@ const FLOOR_TRIANGLES = [
  * Le damier procédural, teinte pour teinte comme la suite de conformance
  * l'écrit : c'est lui qui décide de l'empreinte.
  *
- * @returns {Uint8Array} `FLOOR_SIDE` au carré texels de quatre octets
+ * @param {number} [side] côté de la texture, en texels
+ * @param {number} [cell] côté d'une case, en texels
+ * @returns {Uint8Array} `side` au carré texels de quatre octets
  */
-function makeChecker() {
-  const texels = new Uint8Array(FLOOR_SIDE * FLOOR_SIDE * 4);
-  for (let v = 0; v < FLOOR_SIDE; v++) {
-    for (let u = 0; u < FLOOR_SIDE; u++) {
-      const base = (v * FLOOR_SIDE + u) * 4;
-      const edge = u % FLOOR_CELL === 0 || v % FLOOR_CELL === 0;
-      const dark = (Math.floor(u / FLOOR_CELL) + Math.floor(v / FLOOR_CELL)) % 2 === 0;
+function makeChecker(side = FLOOR_SIDE, cell = FLOOR_CELL) {
+  const texels = new Uint8Array(side * side * 4);
+  for (let v = 0; v < side; v++) {
+    for (let u = 0; u < side; u++) {
+      const base = (v * side + u) * 4;
+      const edge = u % cell === 0 || v % cell === 0;
+      const dark = (Math.floor(u / cell) + Math.floor(v / cell)) % 2 === 0;
       const rgb = edge ? [0xf0, 0xe0, 0xa0] : dark ? [0x30, 0x38, 0x50] : [0x90, 0x70, 0x50];
       texels.set(rgb, base);
       texels[base + 3] = 0xff;
@@ -1501,11 +1503,161 @@ function renderComposite(engine, meshBytes) {
   return compositeHash;
 }
 
+/**
+ * La scène `salles` : un décor chargé d'un fichier, cuit cellule par cellule,
+ * parcouru par sa traversée.
+ *
+ * **Treize points d'entrée que les dix scènes précédentes n'atteignent pas**,
+ * et dont deux ont manqué au code pendant une version entière sans que rien ne
+ * le dise : un symbole que personne n'appelle s'exporte aussi bien qu'il
+ * manque.
+ *
+ * La vue est la première de la scène de conformance : dans la salle en L, face
+ * à l'ouverture du couloir.
+ *
+ * @param {scg.Screengine} engine le module chargé
+ * @param {Uint8Array} worldBytes le contenu de `salles.world`
+ * @returns {string|null} l'empreinte, ou `null` en cas d'échec
+ */
+function renderRooms(engine, worldBytes) {
+  // Les deux damiers de la scène de référence : le mur est plus fin que le
+  // sol, et c'est le nom du matériau qui décide lequel va où.
+  const WALL_SIDE = 512;
+  const WALL_CELL = 128;
+  const ROOM_FLOOR_SIDE = 256;
+  const ROOM_FLOOR_CELL = 32;
+
+  const e = engine.exports;
+  const out = engine.alloc(4);
+
+  const block = engine.alloc(worldBytes.length);
+  engine.bytes().set(worldBytes, block);
+  if (e.scg_world_load(block, worldBytes.length, out) < 0) {
+    check(false, "le fichier de carte se charge");
+    return null;
+  }
+  const world = engine.readU32(out);
+  engine.free(block, worldBytes.length);
+
+  check(
+    e.scg_world_material_count(world, out) === scg.SCG_OK && engine.readU32(out) === 2,
+    "la carte déclare deux matériaux",
+  );
+  const materials = engine.readU32(out);
+
+  // Le nom en deux temps : mesure, puis remplissage. Un hôte qui devinerait la
+  // longueur se tromperait le jour où elle change.
+  const textures = [];
+  for (let i = 0; i < materials; i++) {
+    const len = engine.alloc(4);
+    e.scg_world_material_name(world, i, 0, 0, len);
+    const size = engine.readU32(len);
+    const name = engine.alloc(size + 1);
+    check(
+      e.scg_world_material_name(world, i, name, size + 1, len) === scg.SCG_OK,
+      "le nom du matériau se lit en deux temps",
+    );
+    const text = new TextDecoder().decode(engine.bytes().subarray(name, name + size));
+    engine.free(name, size + 1);
+    engine.free(len, 4);
+
+    const wall = text === "mur";
+    const side = wall ? WALL_SIDE : ROOM_FLOOR_SIDE;
+    const texels = makeChecker(side, wall ? WALL_CELL : ROOM_FLOOR_CELL);
+    const desc = engine.alloc(scg.TEXTURE_DESC_SIZE);
+    const bytes = engine.alloc(texels.length);
+    engine.writeTextureDesc(desc, side, side);
+    engine.bytes().set(texels, bytes);
+    const code = e.scg_texture_load(desc, bytes, texels.length, out);
+    check(code === scg.SCG_OK, "le damier du matériau se charge");
+    textures.push(code === scg.SCG_OK ? engine.readU32(out) : 0);
+  }
+
+  check(e.scg_lighting_create(world, out) === scg.SCG_OK, "le porteur de lightmaps se crée");
+  const lighting = engine.readU32(out);
+
+  // **Toutes les cellules, pas seulement celles que la vue montre** : une
+  // lightmap est un cache de la carte et non du point de vue.
+  check(
+    e.scg_world_cell_count(world, out) === scg.SCG_OK && engine.readU32(out) === 4,
+    "la carte porte quatre cellules",
+  );
+  const cells = engine.readU32(out);
+  for (let i = 0; i < cells; i++) {
+    e.scg_world_cell_id(world, i, out);
+    const id = engine.readU32(out);
+    // Ce qu'un hôte lit avant de cuire, pour pondérer sa progression : le
+    // compte de cellules ne dit rien du coût de chacune.
+    check(
+      e.scg_world_cell_luxel_count(world, id, out) === scg.SCG_OK && engine.readU32(out) > 0,
+      "la cellule annonce ses luxels",
+    );
+    check(e.scg_lighting_build(lighting, id) === scg.SCG_OK, "la cellule se cuit");
+  }
+
+  const config = engine.alloc(scg.CONFIG_SIZE);
+  engine.writeConfig(config, sceneConfig());
+  check(e.scg_create(config, out) === scg.SCG_OK, "création du contexte du décor");
+  const ctx = engine.readU32(out);
+
+  const position = [2.0, 2.0, 2.0];
+  const camera = engine.alloc(scg.CAMERA_SIZE);
+  engine.writeCamera(camera, {
+    position,
+    // Sans rotation : la vue regarde le +X du monde, et le quaternion identité
+    // range sa partie réelle en dernier.
+    orientation: [0, 0, 0, 1],
+    fovY: 1.0471976,
+    nearPlane: 0.1,
+  });
+  check(e.scg_set_camera(ctx, camera) === scg.SCG_OK, "la caméra du décor se règle");
+
+  // La cellule se trouve, elle ne se devine pas : zéro veut dire « nulle
+  // part », ce qui est une clause et non une erreur.
+  const point = engine.alloc(12);
+  engine.writePoint(point, position);
+  check(
+    e.scg_world_locate(world, point, out) === scg.SCG_OK && engine.readU32(out) !== 0,
+    "la caméra est dans une cellule",
+  );
+  const cell = engine.readU32(out);
+
+  // La vue se construit après les chargements : chacun a pu agrandir la
+  // mémoire, ce qui détache toute vue prise avant.
+  const slots = engine.alloc(materials * 4);
+  const table = new DataView(engine.memory.buffer, slots, materials * 4);
+  textures.forEach((texture, i) => table.setUint32(i * 4, texture, true));
+
+  const model = engine.alloc(scg.MAT4_SIZE);
+  engine.writeIdentity(model);
+  check(
+    e.scg_submit_world_visible(ctx, model, world, slots, materials, lighting, cell) === scg.SCG_OK,
+    "la traversée accepte le décor",
+  );
+
+  const pixels = engine.alloc(STRIDE * HEIGHT * scg.BYTES_PER_PIXEL);
+  const code = e.scg_frame_end(ctx, pixels, STRIDE);
+  check(code === scg.SCG_OK, "l'image du décor se rend");
+  const hash = code === scg.SCG_OK
+    ? engine.fingerprint(pixels, WIDTH, HEIGHT, STRIDE)
+    : null;
+
+  textures.forEach((texture) => e.scg_texture_destroy(texture));
+  // La carte part avant le porteur, qui en garde une référence : l'ordre est
+  // libre, et c'est ce que cette destruction éprouve.
+  e.scg_world_destroy(world);
+  e.scg_lighting_destroy(lighting);
+  e.scg_destroy(ctx);
+  return hash;
+}
+
 /** Toutes les vérifications, puis l'empreinte sur la sortie standard. */
 async function main() {
-  const [wasmPath, headerPath, meshPath] = process.argv.slice(2);
-  if (!wasmPath || !headerPath || !meshPath) {
-    process.stderr.write("usage : node test.js <module.wasm> <screengine.h> <caisse.mesh>\n");
+  const [wasmPath, headerPath, meshPath, worldPath] = process.argv.slice(2);
+  if (!wasmPath || !headerPath || !meshPath || !worldPath) {
+    process.stderr.write(
+      "usage : node test.js <module.wasm> <screengine.h> <caisse.mesh> <salles.world>\n",
+    );
     return 2;
   }
 
@@ -1540,8 +1692,10 @@ async function main() {
   const meshBytes = new Uint8Array(await readFile(meshPath));
   const mesh = renderMesh(engine, meshBytes);
   const composite = renderComposite(engine, meshBytes);
+  const rooms = renderRooms(engine, new Uint8Array(await readFile(worldPath)));
   if (
     failures > 0 ||
+    rooms === null ||
     composite === null ||
     textured === null ||
     bilinear === null ||
@@ -1558,7 +1712,7 @@ async function main() {
 
   process.stdout.write(
     `${hash}\n${textured}\n${bilinear}\n${graded}\n${lit}\n${overbright}\n${fog}\n${lights}\n` +
-      `${mesh}\n${composite}\n`,
+      `${mesh}\n${composite}\n${rooms}\n`,
   );
   return 0;
 }

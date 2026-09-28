@@ -105,4 +105,4 @@ demo-run: $(DEMO)
 
 # Écrit l'empreinte sur la sortie standard, les échecs sur la sortie d'erreur.
 run: $(EXE)
-	@$(EXE) "$(MESH)"
+	@$(EXE) "$(MESH)" "$(WORLD)"

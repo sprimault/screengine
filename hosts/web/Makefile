@@ -44,7 +44,7 @@ all: $(WASM)
 
 # Écrit l'empreinte sur la sortie standard, les échecs sur la sortie d'erreur.
 run: all
-	@$(NODE) $(OUT)/test.js $(OUT)/screengine.wasm $(HEADER) $(MESH)
+	@$(NODE) $(OUT)/test.js $(OUT)/screengine.wasm $(HEADER) $(MESH) $(WORLD)
 
 serve: all
 	$(NODE) $(OUT)/serve.js $(OUT) $(PORT)

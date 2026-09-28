@@ -112,12 +112,23 @@ public final class Test {
      * @return les texels, quatre octets chacun, lignes jointives
      */
     private static byte[] makeChecker() {
-        byte[] texels = new byte[FLOOR_SIDE * FLOOR_SIDE * 4];
-        for (int v = 0; v < FLOOR_SIDE; v++) {
-            for (int u = 0; u < FLOOR_SIDE; u++) {
-                int base = (v * FLOOR_SIDE + u) * 4;
-                boolean edge = u % FLOOR_CELL == 0 || v % FLOOR_CELL == 0;
-                boolean dark = (u / FLOOR_CELL + v / FLOOR_CELL) % 2 == 0;
+        return makeChecker(FLOOR_SIDE, FLOOR_CELL);
+    }
+
+    /**
+     * Le même, à la taille demandée.
+     *
+     * @param side côté de la texture, en texels
+     * @param cell côté d'une case, en texels
+     * @return les texels, quatre octets chacun, lignes jointives
+     */
+    private static byte[] makeChecker(int side, int cell) {
+        byte[] texels = new byte[side * side * 4];
+        for (int v = 0; v < side; v++) {
+            for (int u = 0; u < side; u++) {
+                int base = (v * side + u) * 4;
+                boolean edge = u % cell == 0 || v % cell == 0;
+                boolean dark = (u / cell + v / cell) % 2 == 0;
                 if (edge) {
                     texels[base] = (byte) 0xF0;
                     texels[base + 1] = (byte) 0xE0;
@@ -991,9 +1002,124 @@ public final class Test {
     }
 
     /**
+     * La scène {@code salles} : un décor chargé d'un fichier, cuit cellule par
+     * cellule, parcouru par sa traversée.
+     *
+     * <p><b>Treize points d'entrée que les dix scènes précédentes n'atteignent
+     * pas</b>, et dont deux ont manqué au code pendant une version entière sans
+     * que rien ne le dise : un symbole que personne n'appelle s'exporte aussi
+     * bien qu'il manque. C'est aussi la seule scène qui éprouve le pont JNI sur
+     * un second fichier.
+     *
+     * <p>La vue est la première de la scène de conformance : dans la salle en L,
+     * face à l'ouverture du couloir.
+     *
+     * @param path le fichier de carte
+     * @return l'empreinte, ou {@code null}
+     */
+    private static String renderRooms(String path) {
+        // Les deux damiers de la scène de référence : le mur est plus fin que
+        // le sol, et c'est le nom du matériau qui décide lequel va où.
+        final int wallSide = 512;
+        final int wallCell = 128;
+        final int roomFloorSide = 256;
+        final int roomFloorCell = 32;
+
+        byte[] bytes;
+        try {
+            bytes = java.nio.file.Files.readAllBytes(java.nio.file.Paths.get(path));
+        } catch (java.io.IOException error) {
+            check(false, "le fichier de carte se lit : " + error);
+            return null;
+        }
+
+        long world = Screengine.worldLoad(bytes);
+        check(world != 0, "le fichier de carte se charge");
+        if (world == 0) {
+            return null;
+        }
+
+        int materials = Screengine.worldMaterialCount(world);
+        check(materials == 2, "la carte déclare deux matériaux");
+
+        long[] textures = new long[materials];
+        for (int i = 0; i < materials; i++) {
+            String name = Screengine.worldMaterialName(world, i);
+            check(name != null, "le nom du matériau se lit");
+            boolean wall = "mur".equals(name);
+            int side = wall ? wallSide : roomFloorSide;
+            textures[i] = Screengine.textureLoad(side, side,
+                    makeChecker(side, wall ? wallCell : roomFloorCell),
+                    Screengine.TEXTURE_FORMAT_RGBA8);
+            check(textures[i] != 0, "le damier du matériau se charge");
+        }
+
+        long lighting = Screengine.lightingCreate(world);
+        check(lighting != 0, "le porteur de lightmaps se crée");
+
+        // Toutes les cellules, pas seulement celles que la vue montre : une
+        // lightmap est un cache de la carte et non du point de vue.
+        int cells = Screengine.worldCellCount(world);
+        check(cells == 4, "la carte porte quatre cellules");
+        for (int i = 0; i < cells && lighting != 0; i++) {
+            int id = Screengine.worldCellId(world, i);
+            // Ce qu'un hôte lit avant de cuire, pour pondérer sa progression :
+            // le compte de cellules ne dit rien du coût de chacune.
+            check(Screengine.worldCellLuxelCount(world, id) > 0,
+                    "la cellule annonce ses luxels");
+            check(Screengine.lightingBuild(lighting, id) == Screengine.OK,
+                    "la cellule se cuit");
+        }
+
+        long[] out = {0};
+        if (lighting == 0 || Screengine.create(sceneConfig(), out) != Screengine.OK) {
+            check(false, "création du contexte du décor");
+            Screengine.worldDestroy(world);
+            Screengine.lightingDestroy(lighting);
+            return null;
+        }
+        long ctx = out[0];
+
+        // Sans rotation : la vue regarde le +X du monde, et le quaternion
+        // identité range sa partie réelle en dernier.
+        float[] position = {2.0f, 2.0f, 2.0f};
+        float[] camera = {
+            position[0], position[1], position[2], 0, 0, 0, 1.0f, 1.0471976f, 0.1f,
+        };
+        check(Screengine.setCamera(ctx, camera) == Screengine.OK,
+                "la caméra du décor se règle");
+
+        // La cellule se trouve, elle ne se devine pas : zéro veut dire « nulle
+        // part », ce qui est une clause et non une erreur.
+        int cell = Screengine.worldLocate(world, position);
+        check(cell != 0, "la caméra est dans une cellule");
+
+        float[] model = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
+        check(Screengine.submitWorldVisible(ctx, model, world, textures, lighting, cell)
+                == Screengine.OK, "la traversée accepte le décor");
+
+        int body = STRIDE * HEIGHT * Screengine.BYTES_PER_PIXEL;
+        ByteBuffer block = ByteBuffer.allocateDirect(body);
+        int code = Screengine.frameEnd(ctx, block, 0, STRIDE);
+        check(code == Screengine.OK, "l'image du décor se rend");
+        String hash = fingerprint(block, 0, STRIDE);
+
+        for (long texture : textures) {
+            Screengine.textureDestroy(texture);
+        }
+        // La carte part avant le porteur, qui en garde une référence : l'ordre
+        // est libre, et c'est ce que cette destruction éprouve.
+        Screengine.worldDestroy(world);
+        Screengine.lightingDestroy(lighting);
+        Screengine.destroy(ctx);
+        return code == Screengine.OK ? hash : null;
+    }
+
+    /**
      * Toutes les vérifications, puis l'empreinte sur la sortie standard.
      *
      * @param args le répertoire des bibliothèques, qui porte aussi le maillage
+     *     et la carte
      */
     public static void main(String[] args) {
         if (args.length != 1) {
@@ -1020,10 +1146,11 @@ public final class Test {
         String lights = renderLights();
         String mesh = renderMesh(args[0] + "/caisse.mesh");
         String composite = renderComposite(args[0] + "/caisse.mesh");
+        String rooms = renderRooms(args[0] + "/salles.world");
 
         if (failures > 0 || hash == null || textured == null || bilinear == null
                 || graded == null || lit == null || overbright == null || fog == null
-                || lights == null || mesh == null || composite == null) {
+                || lights == null || mesh == null || composite == null || rooms == null) {
             System.err.println(failures + " vérification(s) en échec");
             System.exit(1);
         }
@@ -1037,6 +1164,7 @@ public final class Test {
         System.out.println(lights);
         System.out.println(mesh);
         System.out.println(composite);
+        System.out.println(rooms);
         System.exit(0);
     }
 }
