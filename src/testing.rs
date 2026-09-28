@@ -19,8 +19,21 @@ pub(crate) struct Rng(u64);
 
 impl Rng {
     /// La graine ne peut pas être nulle : la suite y resterait bloquée.
+    ///
+    /// **Zéro seul est remplacé, et le reste passe intact.** Forcer le bit de
+    /// poids faible écartait zéro aussi, mais envoyait `2n` et `2n + 1` sur la
+    /// même suite : une boucle sur des graines consécutives jouait chaque
+    /// tirage deux fois, pour moitié moins de cas distincts, et la garde qui
+    /// compte les itérations n'y voyait rien.
     pub(crate) fn new(seed: u64) -> Self {
-        Self(seed | 1)
+        // Un nombre quelconque assez grand pour que la suite parte mêlée, et
+        // qui n'est la graine de personne : les autres valeurs se représentent
+        // elles-mêmes.
+        Self(if seed == 0 {
+            0x9E37_79B9_7F4A_7C15
+        } else {
+            seed
+        })
     }
 
     /// L'entier suivant.
@@ -177,3 +190,6 @@ pub(crate) fn mesh_sections(
     }
     bytes
 }
+
+#[cfg(test)]
+mod tests;

@@ -132,6 +132,43 @@ fn visits() -> Vec<Visit> {
     Vec::with_capacity(MAX_VISITS)
 }
 
+/// Une enfilade droite de `count` tronçons, chacun joint au suivant.
+///
+/// **Des tronçons courts et larges**, et c'est ce qui rend le cas atteignable :
+/// un couloir de huit unités par tronçon place le soixante-cinquième à cinq
+/// cents unités, où son portail se projette sur moins d'un pixel et où la
+/// fenêtre se ferme bien avant la borne de profondeur. À un demi-unité, les
+/// soixante-cinq tiennent dans trente-cinq unités, et un portail large de
+/// quatre y couvre encore assez de pixels pour que la fenêtre reste ouverte.
+///
+/// Pas plus court non plus : le premier portail doit rester devant le plan
+/// proche de la caméra, faute de quoi la traversée s'arrête au premier
+/// tronçon pour une raison qui n'a rien à voir avec la borne.
+pub(crate) fn corridor(count: u32) -> Vec<u8> {
+    let mut cells = Vec::new();
+    for index in 0..count {
+        let id = index + 7;
+        let points = section(index as f32 * 0.5, (index + 1) as f32 * 0.5);
+        // Les extrémités n'ont qu'un portail : un portail qui n'apparie rien
+        // est une incohérence que le chargement refuse.
+        let mut portals = Vec::new();
+        if index + 1 < count {
+            portals.push(portal_bytes(id * 10 + 1, &[4, 5, 6, 7]));
+        }
+        if index > 0 {
+            portals.push(portal_bytes(id * 10 + 2, &[0, 1, 2, 3]));
+        }
+        cells.extend_from_slice(&cell_bytes(
+            id,
+            0,
+            &points,
+            &[surface_bytes(id * 10, 0, 1, &FLOOR)],
+            &portals,
+        ));
+    }
+    file(&cells, &[], &[], &material(1, "mur"))
+}
+
 /// Une cellule seule se visite une fois, par la fenêtre reçue.
 #[test]
 fn une_cellule_seule_se_visite_entiere() {
@@ -323,4 +360,50 @@ fn un_portail_non_apparie_est_un_mur() {
     let mut out = visits();
     traverse(&world, 0, full(), at(2.0), &projection(), &mut out);
     assert_eq!(out.len(), 1);
+}
+
+/// Au-delà de la borne de profondeur, la traversée s'arrête et le dit.
+///
+/// **La branche n'était atteinte par aucun test** : aucune carte d'épreuve
+/// n'enchaînait plus de soixante-quatre cellules, si bien que la seule borne
+/// que l'ABI publie à l'hôte — et le statut qu'elle lui rend — n'était vérifiée
+/// nulle part.
+///
+/// Ce que la borne coupe est une cellule **plus loin** qu'elle : la
+/// soixante-cinquième est enregistrée, seuls ses portails ne sont pas dépliés.
+#[test]
+fn la_borne_de_profondeur_tronque_et_le_dit() {
+    let world = World::load(&corridor(MAX_DEPTH as u32 + 8)).expect("carte valide");
+    let mut out = visits();
+    let truncated = traverse(&world, 0, full(), at(0.25), &projection(), &mut out);
+
+    assert!(truncated, "la borne n'a pas été atteinte");
+    assert_eq!(
+        out.len(),
+        MAX_DEPTH + 1,
+        "la cellule de la borne est dessinée, ses portails seuls sont coupés"
+    );
+}
+
+/// En deçà de la borne, le même couloir se traverse entier et sans troncature.
+///
+/// La garde de la précédente : sans elle, un couloir dont la fenêtre se
+/// refermerait au dixième tronçon rendrait `truncated` faux pour une tout
+/// autre raison, et le cas passerait pour couvert.
+#[test]
+fn un_couloir_plus_court_que_la_borne_se_traverse_entier() {
+    let count = MAX_DEPTH as u32 - 4;
+    let world = World::load(&corridor(count)).expect("carte valide");
+    let mut out = visits();
+    let truncated = traverse(&world, 0, full(), at(0.25), &projection(), &mut out);
+
+    assert!(
+        !truncated,
+        "troncature sur un couloir plus court que la borne"
+    );
+    assert_eq!(
+        out.len(),
+        count as usize,
+        "toutes les cellules sont visibles"
+    );
 }

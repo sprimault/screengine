@@ -767,6 +767,48 @@ fn une_cellule_nulle_ne_soumet_rien() {
     assert_eq!(pixels_of(&mut ctx), pixels_of(&mut vierge));
 }
 
+/// Une traversée que la borne de profondeur coupe rend `Incomplete`.
+///
+/// **Le troisième statut n'était asserté nulle part** : ni dans le noyau, ni à
+/// la frontière, ni dans un hôte. C'est pourtant le seul moyen qu'a un hôte
+/// d'apprendre que son image ne montre pas tout, et le contrat le publie comme
+/// un succès accompagné d'un statut — donc comme quelque chose qu'une liaison
+/// doit savoir distinguer d'une erreur.
+#[test]
+fn une_traversee_tronquee_rend_incomplete() {
+    use crate::world::traversal::MAX_DEPTH;
+    use crate::world::traversal::tests::corridor;
+
+    let world = World::load(&corridor(MAX_DEPTH as u32 + 8)).expect("carte valide");
+    let texture = plain_texture(0x80, 0x40, 0x20);
+    let mut ctx = small_ctx();
+    ctx.set_camera(Camera {
+        position: Vec3::new(0.25, 0.0, 0.0),
+        ..Camera::DEFAULT
+    })
+    .expect("hors image");
+
+    let status = ctx
+        .submit_world_visible(Affine3::IDENTITY, &world, 7, None, |_| Some(&texture))
+        .expect("capacité");
+    assert_eq!(status, Visibility::Incomplete);
+
+    // La garde : le même couloir plus court rend `Complete`, sans quoi un
+    // décor qui casserait la traversée pour une autre raison passerait ici.
+    let court = World::load(&corridor(MAX_DEPTH as u32 - 4)).expect("carte valide");
+    let mut autre = small_ctx();
+    autre
+        .set_camera(Camera {
+            position: Vec3::new(0.25, 0.0, 0.0),
+            ..Camera::DEFAULT
+        })
+        .expect("hors image");
+    let status = autre
+        .submit_world_visible(Affine3::IDENTITY, &court, 7, None, |_| Some(&texture))
+        .expect("capacité");
+    assert_eq!(status, Visibility::Complete);
+}
+
 /// Une cellule qui n'existe pas est une erreur, elle.
 ///
 /// La différence avec la précédente est celle entre « la caméra n'est nulle

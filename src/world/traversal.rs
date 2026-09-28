@@ -239,5 +239,9 @@ fn cover(a: Rect, b: Rect) -> Rect {
     }
 }
 
+// `pub(crate)` pour la même raison que celui de `format::world` : son
+// générateur de couloir sert aux tests du contexte, qui ont besoin d'un décor
+// plus long que la borne de profondeur et n'ont aucune raison d'en écrire un
+// second.
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;

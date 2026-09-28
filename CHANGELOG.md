@@ -63,6 +63,12 @@ publié, et explique les conventions du dépôt à qui y contribue.
   certifiaient la partition, jamais quel côté d'une arête gagne : règle
   inversée, les cinq restaient au vert. Un défaut que `CLAUDE.md` désigne comme
   le premier piège du projet n'était nommé par rien.
+- **Quatre contrôles qui ne pouvaient pas rougir.** La graine du générateur de
+  test envoyait deux graines consécutives sur la même suite, pour moitié moins
+  de cas distincts ; la borne de profondeur de la traversée et le statut
+  qu'elle rend n'étaient atteints par aucune carte ; le décodeur de cache
+  n'avait pas son épreuve de compte démesuré ; et aucun découpage n'éprouvait
+  une région à l'abscisse quelconque, que l'ABI donne pourtant à l'hôte.
 
 ### Corrigé
 - **Trois défauts de l'image en cours.** Un lot soumis avant
@@ -94,6 +100,11 @@ publié, et explique les conventions du dépôt à qui y contribue.
   certified the partition, never which side of an edge wins: with the rule
   inverted, all five stayed green. A defect `CLAUDE.md` calls the project's
   first pitfall was named by nothing.
+- **Four checks that could not fail.** The test generator's seed sent two
+  consecutive seeds down the same sequence, for half as many distinct cases;
+  traversal's depth bound and the status it returns were reached by no map; the
+  cache decoder lacked its oversized-count trial; and no split exercised a
+  region at an arbitrary abscissa, which the ABI nonetheless grants the host.
 
 ### Fixed
 - **Three defects of the frame in progress.** A batch submitted before
