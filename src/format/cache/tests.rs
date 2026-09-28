@@ -28,6 +28,15 @@ fn words(values: &[u32]) -> Vec<u8> {
 
 /// Un bloc valide : une entrée, un atlas de deux luxels de côté, une surface.
 fn block() -> Vec<u8> {
+    block_with(1)
+}
+
+/// Le même, dont l'entrée **annonce** `count` rectangles et n'en porte qu'un.
+///
+/// Un seul paramètre, et c'est le seul qui puisse mentir sans que la table des
+/// sections s'en aperçoive : c'est lui qui dimensionne les deux listes que le
+/// décodeur réserve avant de lire quoi que ce soit.
+fn block_with(count: u32) -> Vec<u8> {
     let record = {
         let mut body = words(&[
             7,           // identifiant de cellule
@@ -36,7 +45,7 @@ fn block() -> Vec<u8> {
             2,           // côté de l'atlas
             0,           // position des luxels
             16,          // leur longueur : 2 × 2 × 4
-            1,           // un rectangle
+            count,       // le compte de rectangles, annoncé
         ]);
         body.extend_from_slice(&words(&[11, 0, 0, 2, 2]));
         let mut out = words(&[body.len() as u32]);
@@ -168,4 +177,41 @@ fn deux_entrees_hors_d_ordre_sont_refusees() {
         read(&bytes),
         Err(Error::InvalidFormat(Malformation::SectionOrder))
     ));
+}
+
+/// Un compte de rectangles démesuré est refusé.
+///
+/// **C'est la bombe d'allocation du format de cache**, et le seul nombre de son
+/// entrée qui puisse mentir sans que la table des sections le contredise : il
+/// dimensionne deux listes que le décodeur réserve avant de lire un seul
+/// rectangle. Les deux autres décodeurs ont leur épreuve, celui-ci ne l'avait
+/// pas.
+///
+/// Quatre milliards de rectangles **et** un compte qui déborde son produit :
+/// le second est le cas propre à `usize` sur 32 bits, largeur de deux des
+/// quatre cibles, où le produit se replie au lieu de croître.
+///
+/// **Ce qu'il ne prouve pas** : que le refus tombe *avant* la réservation. Le
+/// recoupement du compte avec ce qui reste du record est ce qui l'assure, et
+/// sans lui la lecture finirait par échouer de toute façon — plus tard, et
+/// après avoir demandé la mémoire. Le voir demanderait de compter les
+/// allocations, ce que seul le binaire de conformance sait faire.
+#[test]
+fn un_compte_de_rectangles_demesure_est_refuse() {
+    for count in [u32::MAX, u32::MAX / SLOT_LEN as u32 + 1, 2] {
+        assert!(
+            matches!(
+                read(&block_with(count)),
+                Err(Error::InvalidFormat(Malformation::Truncated))
+            ),
+            "compte {count} accepté"
+        );
+    }
+
+    // La garde : le compte honnête passe, sans quoi la boucle ci-dessus
+    // refuserait pour une raison qui n'aurait rien à voir avec le compte.
+    assert!(
+        read(&block_with(1)).is_ok(),
+        "le bloc bien formé est refusé"
+    );
 }

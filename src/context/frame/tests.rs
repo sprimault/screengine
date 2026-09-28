@@ -331,6 +331,54 @@ fn l_ordre_des_tuiles_ne_change_rien() {
     }
 }
 
+/// Des colonnes **désalignées** rendent l'image entière, pixel pour pixel.
+///
+/// **Ce qu'aucun autre découpage n'éprouve.** Les tuiles commencent toutes à un
+/// multiple de leur taille, et les régions du dépôt couvrent l'image entière :
+/// rien n'y tombe sur une abscisse quelconque. Une région, pourtant, est
+/// quelconque — l'ABI la donne ainsi à l'hôte, et un hôte qui rend par bandes
+/// de treize pixels est en droit de retrouver la même image.
+///
+/// Les motifs de tramage se répètent tous les quatre pixels, si bien qu'un
+/// index pris depuis le coin d'une tuile donne le même motif qu'un index pris
+/// dans l'image : c'est ici, et seulement ici, qu'un tel index se verrait.
+#[test]
+fn des_colonnes_desalignees_rendent_l_image_entiere() {
+    const BAND: u32 = 13;
+
+    for seed in 1..=12 {
+        let mut context = context(32);
+        scene(&mut context, seed);
+        let expected = reference(&mut context);
+
+        let mut out = pixels();
+        let frame = open(&mut context);
+        let mut color = vec![0u32; (BAND * H) as usize];
+        let mut depth = color.clone();
+        let mut x = 0;
+        while x < W {
+            let width = BAND.min(W - x);
+            let rect = Rect {
+                x,
+                y: 0,
+                width,
+                height: H,
+            };
+            let pixels = (width * H) as usize;
+            frame
+                .region(
+                    rect,
+                    &mut color[..pixels],
+                    &mut depth[..pixels],
+                    &mut Rows::new(&mut out, W),
+                )
+                .expect("région");
+            x += width;
+        }
+        assert!(out == expected, "graine {seed}");
+    }
+}
+
 /// Des bandes rendues sur des threads distincts, chacune ses tuiles : le
 /// partage de la `Frame` ne change aucun pixel.
 #[test]
