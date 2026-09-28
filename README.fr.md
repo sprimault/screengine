@@ -49,14 +49,17 @@ ces hôtes, écrit en Rust pour qui fait un jeu, et le moteur ignore son existen
 
 ## État
 
-**Étape 5 franchie, publiée en 0.5.0 : le monde.** Un décor se parcourt par ses
-portails : la traversée réduit une fenêtre de clipping de cellule en cellule et ne
-soumet que ce qui est visible, la cellule de la caméra se suit par ses traversées,
-et le noyau calcule les lightmaps d'une cellule sur appel de l'hôte — avec un cache
-que celui-ci garde et rend au chargement suivant. Rien ne se compile : ce que
-l'éditeur écrit, le moteur le charge tel quel, et les liens de portails se
-déduisent. Cinq hôtes parcourent le même décor dans une fenêtre : C, C++,
-navigateur, Android, et l'étage d'accueil Rust.
+**Étape 6 franchie, publiée en 0.6.0 : l'animation et les sprites.** Un maillage
+s'interpole entre deux trames, et le moteur oriente un quadrilatère sur la
+caméra — debout autour de l'axe vertical, ou plein face. C'est la seule chose ici
+qu'un hôte ne peut pas faire lui-même : il devrait réinverser la pose qu'il vient
+de passer, et deux liaisons ne rendraient plus la même image. Avec viennent deux
+façons d'écrire un pixel : le texel transparent, qu'on n'écrit pas, et la surface
+modulée, qui multiplie ce qui est déjà dans le tampon plutôt que de l'écraser —
+de quoi poser sous un ennemi qui marche une tache d'ombre qui assombrit le décor
+au lieu de le recouvrir. Le z-buffer fait l'ordre, sans tri. Les cinq hôtes
+rendent tout cela dans une fenêtre : C, C++, navigateur, Android, et l'étage
+d'accueil Rust.
 
 La feuille de route compte dix étapes, publiées à chacune.
 

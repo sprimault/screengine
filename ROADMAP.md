@@ -277,6 +277,12 @@ C'est son seul demandeur — un quadrilatère orienté caméra n'en est pas un, 
 normale étant la direction de vue : l'éclairage d'un sprite immobile changerait
 quand le joueur en fait le tour.
 
+**Franchie, publiée en 0.6.0.** Une scène de référence réunit les cinq chemins —
+maillage entre deux trames, texture masquée, les deux orientations de
+quadrilatère, roulis, surface modulée — et les quatre hôtes en rendent l'empreinte
+du chemin Rust. La tache d'ombre sous un ennemi qui marche est ce qui les fait
+tenir ensemble, et c'est elle que montrent les démonstrations.
+
 ## 7 — Collision
 
 Balayage de boîte englobante contre les cellules. Module séparé, propres entrées

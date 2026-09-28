@@ -47,13 +47,16 @@ for those making a game, and the engine does not know it exists.
 
 ## Status
 
-**Step 5 cleared, released as 0.5.0: the world.** A level is walked through its
-portals: traversal narrows a clipping window from cell to cell and submits only
-what is visible, the camera's cell is tracked through the portals it crosses, and
-the core computes a cell's lightmaps on the host's call — with a cache the host
-keeps and hands back on the next load. Nothing is compiled: what the editor writes
-is what the engine loads, and portal links are derived. Five hosts walk through the
-same decor in a window: C, C++, the browser, Android, and the Rust host layer.
+**Step 6 cleared, released as 0.6.0: animation and sprites.** A mesh interpolates
+between two frames, and the engine orients a quad towards the camera — upright
+about the vertical axis, or fully facing. That is the one thing here a host
+cannot do itself: it would have to reverse the pose it has just passed, and two
+bindings would stop rendering the same image. Two ways of writing a pixel come
+with it: the transparent texel, which is not written, and the modulated surface,
+which multiplies what is already in the buffer instead of overwriting it —
+enough to lay under a walking enemy a shadow blot that darkens the decor rather
+than covering it. The z-buffer does the ordering, with no sort. Five hosts render
+all of it in a window: C, C++, the browser, Android, and the Rust host layer.
 
 The roadmap has ten steps, each one published.
 
