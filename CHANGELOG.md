@@ -78,6 +78,11 @@ publié, et explique les conventions du dépôt à qui y contribue.
   niveau de sa chaîne de mipmaps, que la reprise reconstruit ; et le tramage du
   brouillard n'était discriminé par rien, faute d'un brouillard réglé sur les
   distances de la scène de test.
+- **`scg_lighting_destroy` ne passait par aucune enveloppe**, seule des cinq
+  destructeurs. Deux fonctions s'en passent légitimement — `scg_abi_version` et
+  `scg_last_error` —, et `docs/abi.md` dit désormais qu'elles sont deux et
+  pourquoi. `scg_submit_shaded`, qu'aucun appelant n'exerçait, a son test à la
+  frontière.
 - **Treize déclarations sans documentation**, dont `writeCamera` de la liaison
   web — son bloc n'était pas absent mais posé sur la fonction voisine, qui en
   portait deux. Quatre documentations de test disaient leur nom au lieu de ce
@@ -131,6 +136,10 @@ publié, et explique les conventions du dépôt à qui y contribue.
 - **The last two.** Restoring a cache compared only the first level of its
   mipmap chain, which restoring rebuilds; and fog dithering was discriminated
   by nothing, for want of a fog set to the distances of the test scene.
+- **`scg_lighting_destroy` went through no wrapper**, alone among the five
+  destructors. Two functions legitimately skip it — `scg_abi_version` and
+  `scg_last_error` — and `docs/abi.md` now states that they are two, and why.
+  `scg_submit_shaded`, which no caller exercised, has its boundary test.
 - **Thirteen undocumented declarations**, including the web binding's
   `writeCamera` — its block was not missing but sitting on the neighbouring
   function, which carried two. Four test docs stated their own name instead of

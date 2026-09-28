@@ -5,11 +5,15 @@
 
 /// Une erreur du noyau.
 ///
-/// Sans chaîne de caractères : le message se formate dans `screengine-ffi`, qui
-/// traduit aussi chaque variante en code d'ABI. L'énumération n'est
-/// volontairement pas `non_exhaustive` — c'est ce qui fait échouer la
-/// compilation de la couche FFI le jour où une variante y est ajoutée sans
-/// traduction, au lieu de la laisser tomber dans un bras générique.
+/// **Sans chaîne de caractères**, et c'est ce qui la rend utilisable sans
+/// `std` : formater un message demanderait d'allouer, donc d'échouer une
+/// seconde fois là où la première échoue déjà. Ce qui l'enveloppe traduit
+/// chaque variante dans les termes de son appelant.
+///
+/// L'énumération n'est volontairement pas `non_exhaustive` : un traducteur
+/// écrit dehors cesse alors de compiler le jour où une variante apparaît, au
+/// lieu de la laisser tomber dans un bras générique et de rendre une erreur
+/// pour une autre.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Error {
     /// Une valeur reçue est hors de ce que le moteur accepte, et [`Argument`]

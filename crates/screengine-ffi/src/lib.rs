@@ -73,6 +73,15 @@ pub const SCG_BUFFER_ALIGNMENT: usize = 16;
 /// integer — JNI `jint`, JavaScript on wasm — must compare the unsigned value.
 #[unsafe(no_mangle)]
 pub extern "C" fn scg_abi_version() -> u32 {
+    // **Sans enveloppe, et c'est l'une des deux exceptions de la frontière**,
+    // avec `scg_last_error`. Son corps rend une constante : rien n'y alloue,
+    // rien n'y calcule, rien n'y panique. L'envelopper sauverait et
+    // restaurerait l'environnement flottant pour retourner un entier — sur
+    // l'appel que toute liaison fait en premier, avant même de savoir si la
+    // bibliothèque lui convient.
+    //
+    // Sa signature l'interdit d'ailleurs : elle rend la version, pas un code de
+    // retour, et n'a donc aucune valeur à donner à une panique.
     SCG_ABI_VERSION
 }
 
@@ -1861,12 +1870,14 @@ pub unsafe extern "C" fn scg_lighting_create(
 /// been destroyed yet.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn scg_lighting_destroy(lighting: *mut ScgLighting) {
-    if lighting.is_null() {
-        return;
-    }
-    // SAFETY: précondition de la fonction — le handle vient de `Box::into_raw` et
-    // n'a pas encore été repris.
-    drop(unsafe { Box::from_raw(lighting) });
+    entry::nothing(|| {
+        if lighting.is_null() {
+            return;
+        }
+        // SAFETY: précondition de la fonction — le handle vient de
+        // `Box::into_raw` et n'a pas encore été repris.
+        drop(unsafe { Box::from_raw(lighting) });
+    });
 }
 
 /// Computes the lightmaps of one cell, named by its stable identifier.
