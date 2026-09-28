@@ -45,6 +45,27 @@ public final class Screengine {
     /** Bilinéaire, qui remplace le tramage au lieu de s'y ajouter. */
     public static final int FILTER_BILINEAR = 1;
 
+    /** Quatre octets par texel, l'alpha ignoré. */
+    public static final int TEXTURE_FORMAT_RGBA8 = 1;
+
+    /**
+     * Le même, l'alpha ramené à 0 ou 255 au chargement, et un texel
+     * transparent qui ne s'écrit pas.
+     *
+     * Le format se déclare ici et non au dessin : c'est au chargement que la
+     * chaîne de mipmaps se construit.
+     */
+    public static final int TEXTURE_FORMAT_RGBA8_MASKED = 2;
+
+    /** La surface modulée multiplie le tampon au lieu de l'écraser. */
+    public static final int BLEND_MODULATE = 1;
+
+    /** Le quadrilatère tourne autour du seul axe vertical : il reste debout. */
+    public static final int SPRITE_AXIAL = 1;
+
+    /** Le quadrilatère se met plein face à la caméra. */
+    public static final int SPRITE_FACING = 2;
+
     /** Pas d'instance : des fonctions, comme l'ABI. */
     private Screengine() {}
 
@@ -180,9 +201,72 @@ public final class Screengine {
      * @param width largeur en texels, puissance de deux de 1 à 2048
      * @param height hauteur en texels, même contrainte
      * @param texels quatre octets R, G, B, A par texel, lignes jointives
+     * @param format {@link #TEXTURE_FORMAT_RGBA8} ou {@code ..._MASKED}
      * @return le handle, ou 0 en cas d'échec
      */
-    static native long textureLoad(int width, int height, byte[] texels);
+    static native long textureLoad(int width, int height, byte[] texels, int format);
+
+    /**
+     * {@code scg_mesh_frame_count}.
+     *
+     * @param mesh handle rendu par {@link #meshLoad}
+     * @return le nombre de trames, ou −1 si le maillage est nul
+     */
+    static native int meshFrameCount(long mesh);
+
+    /**
+     * {@code scg_submit_mesh_frame} : {@link #submitMesh} entre deux trames.
+     *
+     * Un facteur hors de {@code [0, 1]} est **refusé et jamais ramené** :
+     * l'extrapolation est une décision de jeu, que le moteur ne prend pas.
+     *
+     * @param ctx le contexte
+     * @param model seize {@code float}, par colonnes
+     * @param mesh handle rendu par {@link #meshLoad}
+     * @param slots un handle de texture par emplacement, 0 pour « sans »
+     * @param first l'indice de la première trame
+     * @param second celui de la seconde
+     * @param factor la position entre les deux, de 0 à 1
+     * @return un code de retour de l'ABI
+     */
+    static native int submitMeshFrame(long ctx, float[] model, long mesh, long[] slots,
+            int first, int second, float factor);
+
+    /**
+     * {@code scg_submit_blended} : {@link #submitTextured} avec un mode.
+     *
+     * @param ctx le contexte
+     * @param model seize {@code float}, par colonnes
+     * @param vertices cinq {@code float} par sommet
+     * @param indices trois par triangle
+     * @param colors quatre octets par triangle
+     * @param texture le handle de la texture modulante, ou 0
+     * @param blend {@link #BLEND_MODULATE} ; zéro est refusé
+     * @return un code de retour de l'ABI
+     */
+    static native int submitBlended(long ctx, float[] model, float[] vertices, int[] indices,
+            byte[] colors, long texture, int blend);
+
+    /**
+     * {@code scg_submit_sprites} : des quadrilatères que le moteur oriente.
+     *
+     * **Dix {@code float} par sprite** — centre, demi-extensions, rectangle de
+     * texture, puis le roulis —, et quatre octets de couleur à part. Le roulis
+     * voyage en {@code float} faute d'entier non signé en Java, et la couche
+     * JNI le reconvertit : il reste exact jusqu'à 2²⁴, ce qui couvre les
+     * fractions de tour qu'un hôte écrit.
+     *
+     * @param ctx le contexte
+     * @param model seize {@code float}, qui place le centre et lui seul
+     * @param sprites dix {@code float} par sprite
+     * @param colors quatre octets par sprite
+     * @param texture le handle de la planche, ou 0
+     * @param orientation {@link #SPRITE_AXIAL} ou {@link #SPRITE_FACING} ;
+     *     zéro est refusé, jamais rabattu sur un défaut
+     * @return un code de retour de l'ABI
+     */
+    static native int submitSprites(long ctx, float[] model, float[] sprites, byte[] colors,
+            long texture, int orientation);
 
     /**
      * {@code scg_texture_destroy}.

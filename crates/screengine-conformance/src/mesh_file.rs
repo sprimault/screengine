@@ -118,24 +118,32 @@ fn corners(face: &Face) -> [([f32; 3], (f32, f32)); 4] {
     ]
 }
 
-/// Le fichier de la caisse : six faces, deux groupes, deux emplacements.
+/// Le fichier de la caisse : six faces, deux groupes, deux emplacements, et
+/// **deux trames**.
 ///
 /// Les faces latérales forment le premier groupe et réclament l'emplacement
 /// zéro ; le dessus et le dessous forment le second et réclament le premier
 /// emplacement, auquel la scène ne lie aucune texture — c'est ainsi qu'un groupe
 /// se dessine à la couleur de ses triangles.
-pub fn bytes() -> Vec<u8> {
-    build(&[[1.0, 1.0, 1.0]])
-}
-
-/// La même caisse, **à deux trames** : au repos, puis écrasée.
+///
+/// **La trame zéro est la caisse au repos**, si bien que `scg_submit_mesh` en
+/// rend exactement la même image qu'avant qu'elle en porte deux. La seconde
+/// l'écrase, et sert aux chemins animés.
+///
+/// **Un seul fichier plutôt que deux**, et ce n'est pas une économie d'octets :
+/// le chemin du maillage circule par une variable dans six endroits — le
+/// `Makefile`, le workflow de publication, et les Makefile des hôtes C, C++ et
+/// Android. Un second fichier versionné les toucherait tous. Ici, les quatre
+/// hôtes éprouvent en plus le décodage multi-trames et `scg_mesh_frame_count`
+/// sur le fichier qu'ils chargent déjà, ce qu'un `frame_count = 1` ne peut pas
+/// faire.
 ///
 /// Ce que la seconde trame doit à l'écriture plutôt qu'au hasard : elle change
 /// les trois axes d'un facteur différent, si bien qu'une trame lue à la place
 /// de l'autre, un facteur d'interpolation ignoré ou pris à l'envers rend une
 /// caisse d'une autre taille sur **chacun** de ses côtés. Un écrasement sur un
 /// seul axe laisserait deux dimensions identiques d'une trame à l'autre.
-pub fn animated_bytes() -> Vec<u8> {
+pub fn bytes() -> Vec<u8> {
     build(&[[1.0, 1.0, 1.0], [1.35, 1.15, 0.55]])
 }
 

@@ -162,7 +162,13 @@ HOST_OUT = $(abspath $(SORTIE))/host-$(host_dir_$*)
 # Une scène ajoutée ici est une scène à écrire dans les quatre hôtes, et c'est
 # voulu : c'est ce qui rend leur comparaison possible.
 #   maillage              la caisse chargée depuis hosts/caisse.mesh
-HOST_SCENES := arete texture texture-bilineaire gamma lumiere lumiere-surbrillance brouillard lumieres maillage
+#   composite             les cinq chemins de l'étape 6 dans une seule image :
+#                         maillage entre deux trames, texture masquée, les deux
+#                         modes d'orientation de sprite, le roulis, la surface
+#                         modulée. Une seule, parce qu'une scène coûte quatre
+#                         descriptions ; les scènes séparées de la conformance
+#                         disent lequel des chemins a bougé
+HOST_SCENES := arete texture texture-bilineaire gamma lumiere lumiere-surbrillance brouillard lumieres maillage composite
 
 # Sans l'outillage de l'hôte, la cible saute et dit pourquoi. En intégration
 # continue (CI défini), le même saut est une erreur : un contrôle qui ne tourne

@@ -57,7 +57,7 @@ ABIS := arm64-v8a armeabi-v7a x86_64
 # Un seul nombre pour les cinq paliers : ceux qui rendraient un nombre
 # différent de scènes ne se compareraient plus ligne à ligne, et la divergence
 # passerait pour une égalité.
-SCENE_COUNT ?= 9
+SCENE_COUNT ?= 10
 
 # Le maillage versionné que les quatre hôtes chargent. Les deux premiers paliers
 # le lisent depuis le dépôt ; le troisième et le quatrième depuis l'appareil, où

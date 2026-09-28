@@ -491,6 +491,26 @@ enum Scene {
     /// trame lue à la place de l'autre, ou un facteur pris à l'envers, rend une
     /// caisse d'une autre taille sur chacun de ses côtés.
     MeshAnimated,
+    /// **La scène que les quatre hôtes rendent pour l'étape 6**, et la seule
+    /// qui emprunte ses cinq chemins dans la même image.
+    ///
+    /// Une par chemin aurait été plus lisible en cas de divergence ; c'est une
+    /// seule, parce que chaque scène de `HOST_SCENES` se paie en **quatre**
+    /// descriptions — une par langage —, et que les scènes séparées existent
+    /// déjà côté Rust pour dire lequel des chemins a bougé.
+    ///
+    /// **Ce qu'elle ferme, et ce n'est pas ce qu'on croit d'abord.** Les
+    /// `_Static_assert` du header couvrent déjà la disposition de `ScgSprite`
+    /// pour les hôtes C et C++, donc aussi pour le pont JNI, qui est en C. Le
+    /// seul hôte qui écrive les structures **octet par octet** est le web, et
+    /// c'est là que les onze champs du sprite sont réellement à risque.
+    ///
+    /// Elle porte, dans l'ordre de soumission : la caisse **entre ses deux
+    /// trames**, deux emblèmes **masqués** — un axial, un plein face, le second
+    /// avec un **roulis** non nul —, et une tache **modulée** au sol. Deux
+    /// lumières dynamiques éclairent la caisse, qui porte des normales : le
+    /// terme de Lambert entre donc aussi dans l'empreinte.
+    Composite,
     /// Un couloir de deux cellules, **chargé depuis un fichier de carte**.
     ///
     /// Ce que l'étape 1 demandait à voir et que rien ne rendait encore : la
@@ -930,7 +950,7 @@ impl View {
 
 impl Scene {
     /// Toutes les scènes, dans l'ordre où `--check` les rejoue.
-    const ALL: [Self; 25] = [
+    const ALL: [Self; 26] = [
         Self::Edge,
         Self::Guard,
         Self::Lateral,
@@ -956,6 +976,7 @@ impl Scene {
         Self::Modulated,
         Self::WorldFile,
         Self::Rooms,
+        Self::Composite,
     ];
 
     /// La passe que `--print` utilise, celle des hôtes.
@@ -1000,6 +1021,7 @@ impl Scene {
             Self::MeshMirrored => "maillage-miroir",
             Self::MeshLit => "maillage-lumiere",
             Self::MeshAnimated => "maillage-anime",
+            Self::Composite => "composite",
             Self::SpriteAxial => "sprite-axial",
             Self::SpriteFacing => "sprite-face",
             Self::SpriteRoll => "sprite-roulis",
@@ -1053,6 +1075,26 @@ impl Scene {
                 Light {
                     position: Vec3::new(38.0, 12.0, 6.0),
                     radius: 60.0,
+                    color: Color::new(0x40, 0x80, 0xFF, 0xFF),
+                },
+            ],
+            // **Placées pour le sol autant que pour la caisse.** Une surface
+            // modulée n'assombrit que ce qui est éclairé : posée sur un sol
+            // que rien n'atteint, elle ne changerait aucun pixel et ne serait
+            // dans aucune empreinte. Deux teintes opposées, pour qu'un canal
+            // échangé se voie.
+            Self::Composite => vec![
+                // **Devant la caisse, pas au-dessus.** Ses faces visibles
+                // regardent vers la caméra ; une lumière passée derrière elle
+                // est rejetée sur le signe du Lambert, et la caisse sort noire.
+                Light {
+                    position: Vec3::new(2.0, -3.0, 1.5),
+                    radius: 24.0,
+                    color: Color::new(0xFF, 0xC0, 0x60, 0xFF),
+                },
+                Light {
+                    position: Vec3::new(2.0, 3.0, 3.0),
+                    radius: 24.0,
                     color: Color::new(0x40, 0x80, 0xFF, 0xFF),
                 },
             ],
@@ -1457,10 +1499,137 @@ impl Scene {
                     _ => None,
                 })
             }
+            // Les cinq chemins de l'étape dans une seule image, dans l'ordre
+            // que les quatre hôtes devront reproduire : la caisse animée et
+            // éclairée, les deux emblèmes masqués, puis la tache modulée.
+            Self::Composite => {
+                // **La caméra plonge, et c'est la tache qui l'exige.** Un sol
+                // vu en rasant comprime sa texture en profondeur, si bien que
+                // le moteur y choisit un niveau de mipmap élevé : une tache
+                // douce y est moyennée vers une teinte presque neutre et ne
+                // module plus rien. Vue de biais, elle porte.
+                context.set_camera(Camera {
+                    position: Vec3::new(0.0, 0.0, 3.0),
+                    orientation: Quat::from_axis_angle(Vec3::new(0.0, 1.0, 0.0), Angle(1 << 28)),
+                    ..Camera::DEFAULT
+                })?;
+
+                // **Le sol d'abord, et il n'est pas décoratif** : une surface
+                // modulée multiplie ce qui est déjà dans le tampon, et sur le
+                // fond noir d'une scène sans sol elle ne rendrait rien. La
+                // tache ne se voit que posée sur quelque chose.
+                //
+                // **Petit, et c'est ce qui compte** : l'atténuation d'une
+                // lumière dynamique se calcule par sommet, donc un sol d'un
+                // seul quadrilatère n'est éclairé qu'autant que ses quatre
+                // coins le sont. Étendu à trente unités, il sortait noir en son
+                // milieu et la tache n'y changeait aucun pixel — un chemin de
+                // l'étape aurait été dans la scène sans être dans l'empreinte.
+                textured_quad(
+                    context,
+                    [
+                        Vec3::new(4.0, -6.0, -2.6),
+                        Vec3::new(14.0, -6.0, -2.6),
+                        Vec3::new(14.0, 6.0, -2.6),
+                        Vec3::new(4.0, 6.0, -2.6),
+                    ],
+                    8.0,
+                    &checker(64, 8),
+                )?;
+
+                let mesh = Mesh::load(&mesh_file::bytes())
+                    .unwrap_or_else(|_| unreachable!("le fichier de la caisse est bien formé"));
+                let sides = checker(64, 8);
+                context.submit_mesh_frame(
+                    CRATE_MODEL,
+                    &mesh,
+                    |slot| match slot {
+                        0 => Some(&sides),
+                        _ => None,
+                    },
+                    0,
+                    1,
+                    0.35,
+                )?;
+
+                let side = 64;
+                let emblem_texture = emblem(side);
+                // Un sprite de chaque mode, et le plein face porte le roulis :
+                // une seule soumission par mode, puisqu'un lot ne porte qu'une
+                // orientation.
+                let axial = Sprite {
+                    center: Vec3::new(9.0, -3.5, 0.0),
+                    half_width: 2.0,
+                    half_height: 2.4,
+                    u0: 0.0,
+                    v0: 0.0,
+                    u1: side as f32,
+                    v1: side as f32,
+                    roll: Angle(0),
+                    color: Color::new(0xFF, 0xFF, 0xFF, 0xFF),
+                };
+                context.submit_sprites(
+                    Affine3::IDENTITY,
+                    &[axial],
+                    Some(&emblem_texture),
+                    SpriteOrientation::Axial,
+                )?;
+                context.submit_sprites(
+                    Affine3::IDENTITY,
+                    &[Sprite {
+                        center: Vec3::new(9.0, 3.5, 0.0),
+                        roll: Angle(5 << 29),
+                        ..axial
+                    }],
+                    Some(&emblem_texture),
+                    SpriteOrientation::Facing,
+                )?;
+
+                // La tache au sol, en dernier : elle module ce que les lots
+                // précédents ont écrit, donc l'ordre de soumission décide.
+                let shadow = shadow_blob(64);
+                // Coplanaire au sol, comme la scène `modulation` : le test non
+                // strict sans écriture de profondeur suffit, et un biais en `z`
+                // vaudrait des millimètres de près et des mètres au loin.
+                //
+                // **Elle marque treize mille pixels et ne se voit presque pas.**
+                // Un assombrissement doux sur un damier contrasté se lit mal à
+                // l'œil, et c'est un piège de cette scène : ce qui dit qu'un
+                // chemin entre dans l'empreinte est la comparaison des images,
+                // jamais l'impression qu'elles donnent.
+                let corners = [
+                    Vec3::new(4.5, -5.5, -2.6),
+                    Vec3::new(9.5, -5.5, -2.6),
+                    Vec3::new(9.5, -0.5, -2.6),
+                    Vec3::new(4.5, -0.5, -2.6),
+                ];
+                let uv = [(0.0, 0.0), (64.0, 0.0), (64.0, 64.0), (0.0, 64.0)];
+                let vertices: Vec<VertexUv> = corners
+                    .iter()
+                    .zip(uv)
+                    .map(|(&position, (u, v))| VertexUv { position, u, v })
+                    .collect();
+                let white = Color::new(0xFF, 0xFF, 0xFF, 0xFF);
+                context.submit_blended(
+                    Affine3::IDENTITY,
+                    &vertices,
+                    &[
+                        Triangle {
+                            indices: [0, 1, 2],
+                            color: white,
+                        },
+                        Triangle {
+                            indices: [0, 2, 3],
+                            color: white,
+                        },
+                    ],
+                    Some(&shadow),
+                )
+            }
             // La caisse à deux trames, prise entre les deux.
             Self::MeshAnimated => {
-                let mesh = Mesh::load(&mesh_file::animated_bytes())
-                    .unwrap_or_else(|_| unreachable!("le fichier animé est bien formé"));
+                let mesh = Mesh::load(&mesh_file::bytes())
+                    .unwrap_or_else(|_| unreachable!("le fichier de la caisse est bien formé"));
                 let sides = checker(64, 8);
                 context.submit_mesh_frame(
                     CRATE_MODEL,

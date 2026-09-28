@@ -230,6 +230,16 @@ export const CAMERA_SIZE = 36;
 /** Taille de `ScgTriangle` : trois `uint32_t` puis quatre `uint8_t`. */
 export const TRIANGLE_SIZE = 16;
 
+/**
+ * Taille de `ScgSprite` : dix `float`, un angle, puis quatre canaux.
+ *
+ * Quarante-quatre octets, décalages 0 à 40, sans un octet de bourrage. C'est la
+ * structure la plus longue que cette liaison écrive à la main, et la seule que
+ * rien ne vérifie pour elle : les assertions statiques du header sont compilées
+ * par les hôtes C et C++, jamais ici.
+ */
+export const SPRITE_SIZE = 44;
+
 /** Taille de `ScgMat4` : seize `float`, par colonnes. */
 export const MAT4_SIZE = 64;
 
@@ -388,6 +398,30 @@ export class Screengine {
   }
 
   /**
+   * Écrit un tableau de `ScgSprite`.
+   *
+   * Dix `float` — centre, demi-extensions, rectangle de texture —, puis le
+   * roulis en **angle binaire non signé** et quatre canaux de couleur. Le
+   * roulis est le seul champ entier au milieu de flottants, et c'est là qu'une
+   * liaison se trompe : écrit en `float`, il rendrait un angle quelconque sans
+   * qu'aucun contrôle ne le refuse.
+   *
+   * @param {number} ptr adresse d'au moins `sprites.length * SPRITE_SIZE` octets
+   * @param {{center: number[], half: number[], uv: number[], roll: number, color: number[]}[]} sprites
+   */
+  writeSprites(ptr, sprites) {
+    const view = new DataView(this.memory.buffer, ptr, sprites.length * SPRITE_SIZE);
+    sprites.forEach(({ center, half, uv, roll, color }, i) => {
+      const base = i * SPRITE_SIZE;
+      [...center, ...half, ...uv].forEach((value, k) => {
+        view.setFloat32(base + k * 4, value, true);
+      });
+      view.setUint32(base + 36, roll >>> 0, true);
+      color.forEach((channel, k) => view.setUint8(base + 40 + k, channel));
+    });
+  }
+
+  /**
    * Écrit un tableau de sommets texturés : trois `float` de position, puis
    * `u` et `v` en texels.
    *
@@ -503,16 +537,21 @@ export class Screengine {
    * La structure est mise à zéro d'abord : ses champs réservés doivent l'être,
    * et c'est ce qui permettra d'en employer un sans casser cette liaison.
    *
+   * Le **format se donne**, et sa valeur par défaut est `RGBA8` : le masqué
+   * n'est pas une variante du dessin mais du chargement, puisque c'est là que
+   * la chaîne de mipmaps se construit.
+   *
    * @param {number} ptr adresse d'au moins `TEXTURE_DESC_SIZE` octets
    * @param {number} width largeur en texels, puissance de deux
    * @param {number} height hauteur en texels, puissance de deux
+   * @param {number} [format] `SCG_TEXTURE_FORMAT_RGBA8` ou `..._MASKED`
    */
-  writeTextureDesc(ptr, width, height) {
+  writeTextureDesc(ptr, width, height, format = SCG_TEXTURE_FORMAT_RGBA8) {
     new Uint8Array(this.memory.buffer, ptr, TEXTURE_DESC_SIZE).fill(0);
     const view = new DataView(this.memory.buffer, ptr, TEXTURE_DESC_SIZE);
     view.setUint32(0, width, true);
     view.setUint32(4, height, true);
-    view.setUint32(8, SCG_TEXTURE_FORMAT_RGBA8, true);
+    view.setUint32(8, format, true);
   }
 
   /**
