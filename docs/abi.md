@@ -7,25 +7,20 @@ Un auteur de liaison qui ne lit pas le français trouve l'essentiel dans
 `include/screengine.h`, dont la documentation est en anglais : ce qui ne peut pas
 être ignoré à l'appel y figure, fonction par fonction.
 
-**État : l'étape 5 est publiée en 0.5.0** — les sept points d'entrée de l'étape 0,
+**État : l'étape 6 est publiée en 0.6.0** — les sept points d'entrée de l'étape 0,
 le rendu par tuiles, les textures avec leur niveau de filtrage, la lumière
 (lightmaps fournies par l'hôte, lumières dynamiques, brouillard, résolution
-interne, courbe de sortie), les deux formats de données avec leurs accesseurs, et
-la traversée par portails avec le suivi de la cellule de la caméra et le calcul
-des lightmaps, cache compris. Chaque décision garde ci-dessous l'option écartée et
-pourquoi. Un seul point reste marqué **À trancher** : la dépréciation, qui attend
-le gel de l'ABI en 1.0.
+interne, courbe de sortie), les deux formats de données avec leurs accesseurs, la
+traversée par portails avec le suivi de la cellule de la caméra et le calcul des
+lightmaps, cache compris, et les quadrilatères orientés, les maillages entre deux
+trames, le texel transparent et la surface modulée. Chaque décision garde ci-dessous
+l'option écartée et pourquoi. Un seul point reste marqué **À trancher** : la
+dépréciation, qui attend le gel de l'ABI en 1.0.
 
-**La section « Étape 6 » décrit un contrat que son code a rattrapé.** Le contrat
-précède son code sur ce projet : la section a été écrite d'un bloc avant le
-premier appelant, et ses cinq fonctions se sont exposées lot par lot. Elles le
-sont toutes.
-
-`SCG_ABI_VERSION` reste à **1** : aucune signature publiée n'a changé, l'étape 5
-n'ayant fait qu'ajouter des fonctions. Ce qui change pour une liaison est ailleurs,
-et c'est le premier point des notes de la 0.5.0 : les deux premiers **codes de
-retour positifs** du projet, qui font d'un test « différent de zéro » un refus de
-succès.
+`SCG_ABI_VERSION` reste à **1** : aucune signature publiée n'a changé, l'étape 6
+n'ayant fait qu'ajouter des fonctions. Ce qui change pour une liaison est ailleurs :
+les deux premiers **codes de retour positifs** du projet, apparus en 0.5.0, qui
+font d'un test « différent de zéro » un refus de succès.
 
 **Elle rend les deux premiers codes positifs du projet**, ce que la section
 « Codes de retour » avait réservé sans l'employer. Une liaison qui juge un appel

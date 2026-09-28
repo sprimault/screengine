@@ -46,6 +46,19 @@ publié, et explique les conventions du dépôt à qui y contribue.
 
 ## [Non publié]
 
+## [0.6.0] — 2026-09-28 — Animation et sprites
+
+**Ce qu'un hôte de la 0.5.0 doit reprendre : ses maillages.** `version_format`
+du maillage passe à **2** — des trames et une normale par sommet —, et un
+fichier en version 1 est refusé par `SCG_ERR_UNSUPPORTED_FORMAT_VERSION`. **La
+migration est un réexport** : il n'y a pas de convertisseur, il devrait inventer
+les normales. Les cartes ne changent pas.
+
+`SCG_ABI_VERSION` reste à **1**, aucune signature publiée ne change, et les cinq
+points d'entrée de l'étape s'ajoutent sans toucher aux précédents. **Une scène
+inchangée rend exactement la même image** : aucune empreinte de conformance
+existante ne bouge.
+
 ### Ajouté
 - `scg_submit_sprites` et `ScgSprite` : **des quadrilatères que le moteur
   oriente sur la caméra**. L'hôte donne un centre et deux demi-extensions **en
@@ -159,7 +172,37 @@ publié, et explique les conventions du dépôt à qui y contribue.
   et sans erreur. Le mode axial est inutilisable dans toute version qui l'expose
   avant celle-ci.
 
+### Interne
+
+Rien de ce qui suit ne change un appel : c'est ce qu'un lecteur du dépôt
+trouvera modifié, et non un intégrateur qui consomme la bibliothèque.
+
+- **Les quatre hôtes rendent une scène qui emprunte les cinq chemins de
+  l'étape** — maillage entre deux trames, texture masquée, les deux
+  orientations de sprite, le roulis, la surface modulée. Aucun n'en employait
+  une seule auparavant, et le pont JNI n'en exposait aucune : il gagne quatre
+  entrées.
+- **`hosts/caisse.mesh` porte deux trames.** Sa première reste la pose au
+  repos, de sorte qu'une soumission statique en rend la même image ; la seconde
+  sert les chemins animés. Un seul fichier plutôt que deux, le chemin du
+  maillage circulant par une variable dans six endroits.
+- **Les scènes de conformance couvrent l'étape** : sept nouvelles, dont aucune
+  ne déplace une empreinte existante.
+- **Les démonstrations à fenêtre montrent une créature et son ombre**, et
+  l'étage d'accueil l'arme du joueur — l'animation du `README` est refaite
+  avec.
+
 ***
+
+**What a 0.5.0 host must revisit: its meshes.** The mesh `version_format` moves
+to **2** — frames and a per-vertex normal — and a version 1 file is refused with
+`SCG_ERR_UNSUPPORTED_FORMAT_VERSION`. **Migration is a re-export**: there is no
+converter, it would have to invent the normals. Maps are unchanged.
+
+`SCG_ABI_VERSION` stays at **1**, no published signature changes, and the step's
+five entry points are added without touching the earlier ones. **An unchanged
+scene renders exactly the same image**: no existing conformance fingerprint
+moves.
 
 ### Added
 - `scg_submit_sprites` and `ScgSprite`: **quads the engine orients on the
@@ -265,6 +308,24 @@ publié, et explique les conventions du dépôt à qui y contribue.
   to the camera-facing one, so the quad turned its back on the camera and the
   back-face test culled it — in any scene, and without an error. The axial mode
   is unusable in any release exposing it before this one.
+
+### Internal
+
+None of the following changes a call: it is what a reader of the repository
+will find altered, not an integrator consuming the library.
+
+- **The four hosts render a scene taking the five paths of the step** — a mesh
+  between two frames, a masked texture, both sprite orientations, roll, and a
+  modulated surface. None used a single one of them before, and the JNI bridge
+  exposed none: it gains four entry points.
+- **`hosts/caisse.mesh` carries two frames.** Its first one stays the rest
+  pose, so a static submission renders the same image; the second serves the
+  animated paths. One file rather than two, the mesh path travelling through a
+  variable in six places.
+- **The conformance scenes cover the step**: seven new ones, none of which
+  moves an existing fingerprint.
+- **The windowed demonstrations show a creature and its shadow**, and the host
+  stage the player's weapon — the `README` animation is redone with them.
 
 ## [0.5.0] — 2026-09-26 — Le monde
 
