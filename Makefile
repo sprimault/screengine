@@ -218,6 +218,84 @@ $(addsuffix -run,$(addprefix test-,$(TEST_HOSTS))): test-%-run:
 	done; \
 	echo "test-$* : $(words $(HOST_SCENES)) empreinte(s) identiques au chemin Rust"
 
+# Éprouve une archive décompressée : les hôtes qu'elle permet de lier rendent-ils
+# les empreintes du chemin Rust ?
+#
+#   make test-archive PAQUET=<répertoire décompressé, qui porte lib/ et include/>
+#
+# **Ici plutôt que dans le workflow de release**, qui le tenait à la main. Les
+# scènes, les fichiers qu'elles chargent et ce à quoi on compare vivent déjà
+# dans ce fichier ; une copie s'en écarte, et celle-là l'a fait deux fois — une
+# scène ajoutée que le workflow ne passait pas à l'hôte, puis une comparaison
+# aux références versionnées là où un hôte ne rend que la première vue. Un
+# contrôle qui ne tourne qu'au tag ne surveille personne d'autre que lui-même.
+#
+# Les Makefile des hôtes font la liaison, pointés sur le paquet : recopier leurs
+# lignes — bibliothèques système, rpath, copie de la DLL — les ferait diverger
+# sans que rien ne le voie.
+ARCHIVE_OUT = $(abspath $(SORTIE))/archive
+
+# Les trois hôtes qu'une archive peut porter, et ce qu'il faut y trouver pour
+# qu'ils s'y lient. L'hôte Android n'en est pas : son paquet ne contient que des
+# `.so` pour une autre machine, qui se lisent dans leur en-tête ELF sans rien
+# exécuter.
+ARCHIVE_HOSTS_ALL := abi cpp wasm
+
+# Les hôtes que *ce* paquet permet d'éprouver, déduits de ce que `lib/` porte
+# plutôt que nommés par l'appelant, qui finirait par en oublier un : le paquet
+# Windows n'a pas d'archive `.a`, celui de wasm aucune bibliothèque native.
+archive_lib   = $(wildcard $(PAQUET)/lib/$(1))
+ARCHIVE_HOSTS = $(strip \
+  $(if $(call archive_lib,libscreengine.a)$(call archive_lib,screengine.lib),abi) \
+  $(if $(call archive_lib,libscreengine.so)$(call archive_lib,screengine.dll.lib),cpp) \
+  $(if $(call archive_lib,screengine.wasm),wasm))
+
+# Chaque hôte se pointe sur le paquet à sa façon : les deux natifs par le couple
+# TARGET/PROFILE, dont `lib/` tient lieu ici, l'hôte wasm par le module et le
+# header, qu'il prend tels quels.
+archive_vars_abi   = TARGET=$(abspath $(PAQUET)) PROFILE=lib INCLUDE=$(abspath $(PAQUET))/include
+archive_vars_cpp   = $(archive_vars_abi)
+archive_vars_wasm  = WASM=$(abspath $(PAQUET))/lib/screengine.wasm HEADER=$(abspath $(PAQUET))/include/screengine.h
+
+ARCHIVE_TARGETS := test-archive archive-empreintes $(addprefix test-archive-,$(ARCHIVE_HOSTS_ALL))
+.PHONY: $(ARCHIVE_TARGETS)
+
+# La recette ne tourne qu'une fois les hôtes passés : elle ne sert qu'à refuser
+# le silence. Sans elle, un PAQUET absent ou un paquet dont rien ne se lie
+# rendrait une cible sans prérequis, donc un succès.
+test-archive: $(addprefix test-archive-,$(ARCHIVE_HOSTS))
+	@if [ -z "$(PAQUET)" ]; then \
+	  echo "test-archive : PAQUET manquant, le repertoire decompresse qui porte lib/ et include/"; exit 1; \
+	elif [ -z "$(ARCHIVE_HOSTS)" ]; then \
+	  echo "test-archive : aucune bibliotheque a lier dans $(PAQUET)/lib"; exit 1; \
+	fi
+
+# Phony, et donc jouée une fois pour tous les hôtes de l'appel : un fichier
+# daterait de l'exécution précédente et ferait comparer l'archive à des
+# empreintes d'avant le dernier changement.
+archive-empreintes:
+	@mkdir -p $(ARCHIVE_OUT)
+	@: > $(ARCHIVE_OUT)/rust.txt
+	@for scene in $(HOST_SCENES); do \
+	  cargo run -q -p screengine-conformance --release -- --print $$scene \
+	    >> $(ARCHIVE_OUT)/rust.txt || exit 1; \
+	done
+
+$(addprefix test-archive-,$(ARCHIVE_HOSTS_ALL)): test-archive-%: archive-empreintes
+	$(MAKE) -s --no-print-directory -C hosts/$(host_dir_$*) $(archive_vars_$*) \
+	  OUT=$(ARCHIVE_OUT)/$* all
+	@attendu=$$(tr -d '\r' < $(ARCHIVE_OUT)/rust.txt); \
+	obtenu=$$($(MAKE) -s --no-print-directory -C hosts/$(host_dir_$*) $(archive_vars_$*) \
+	  OUT=$(ARCHIVE_OUT)/$* SCENE_COUNT=$(words $(HOST_SCENES)) \
+	  WORLD=$(abspath hosts/salles.world) MESH=$(abspath hosts/caisse.mesh) run | tr -d '\r'); \
+	if [ -z "$$obtenu" ]; then \
+	  echo "test-archive : l'hote $(host_name_$*) n'a rien ecrit"; exit 1; \
+	fi; \
+	if [ "$$obtenu" != "$$attendu" ]; then \
+	  echo "test-archive : hote $(host_name_$*) '$$obtenu', chemin Rust '$$attendu'"; exit 1; \
+	fi; \
+	echo "test-archive : hote $(host_name_$*), $(words $(HOST_SCENES)) empreinte(s) identiques au chemin Rust"
+
 # Les bibliothèques système que réclame la bibliothèque statique sur ce poste.
 # Elles sont figées dans hosts/c : on relance ceci quand la liaison de l'hôte C
 # casse sur un symbole introuvable après une montée de Rust.

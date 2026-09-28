@@ -531,10 +531,19 @@ leurs empreintes se comparent par leurs hôtes.
   et son libm, et la libunwind de LLVM sur Android. Un seul fichier pour toutes
   les cibles. Écarté : `cargo-about`, qui ne lit que le graphe de Cargo — vide
   ici — et ne verrait rien de la bibliothèque standard.
-- **L'archive est éprouvée avant d'être publiée**, sous Windows et Linux : un
-  hôte C lié à la bibliothèque statique et un hôte C++ lié à la dynamique,
-  contre le seul contenu du paquet, doivent rendre l'empreinte de référence ;
-  sous Linux, le SONAME et l'entrée DT_NEEDED se vérifient aussi.
+- **L'archive est éprouvée avant d'être publiée**, par `make test-archive
+  PAQUET=<répertoire décompressé>` : la cible déduit de `lib/` les hôtes que ce
+  paquet permet de lier — C contre la statique, C++ contre la dynamique, Node
+  contre le module wasm —, les construit contre le seul contenu du paquet et
+  compare leurs empreintes à celles du chemin Rust. Sous Linux, le SONAME et
+  l'entrée `DT_NEEDED` se vérifient en plus. L'archive Android n'a pas d'hôte à
+  lier : son architecture, son SONAME et son alignement de pages se lisent dans
+  l'en-tête ELF, sans rien exécuter.
+
+  La cible vit dans le `Makefile` et non dans le workflow **parce que la liste
+  des scènes y vit déjà** : recopiée là où elle ne tourne qu'au tag, elle a
+  divergé deux fois, et les deux fois l'échec est apparu une fois la version
+  posée.
 - **Un tag `vX.Y.Z-essai.N` éprouve le workflow** sans occuper le vrai tag : même
   section du `CHANGELOG`, release en brouillon marquée préversion, à supprimer
   avec le tag.

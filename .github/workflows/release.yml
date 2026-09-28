@@ -213,46 +213,6 @@ jobs:
           fi
           echo "PAQUET=paquets/$paquet" >> "$GITHUB_ENV"
 
-      # L'archive elle-même, pas l'arbre de construction : un hôte C lié à la
-      # bibliothèque statique et un hôte C++ lié à la dynamique, contre le seul
-      # contenu du paquet, doivent rendre l'empreinte de référence. C'est la
-      # seule preuve qu'un intégrateur qui ouvre l'archive obtient une
-      # bibliothèque qui se lie, se charge sous son nom, et rend la même image.
-      # Le module publié passe par le profil `release-wasm`, le seul à porter
-      # `strip = true` ; `make test-wasm` instancie `wasm-test`. Sans cette
-      # étape, le fichier distribué n'est chargé par personne avant de partir —
-      # et un `strip` qui emporterait un export ne se verrait que chez un
-      # intégrateur, dans un langage sans pile Rust à afficher.
-      - name: Éprouver l'archive wasm
-        if: matrix.cible == 'wasm32'
-        run: |
-          # Les empreintes du module publié, comparées au chemin Rust : l'étape
-          # les produisait sans que personne ne les lise, et seuls les contrôles
-          # internes de `test.js` décidaient du succès. Une image fausse aurait
-          # donc passé le tag. Même liste et même ordre que l'épreuve des hôtes
-          # C et C++ plus bas, lue dans le Makefile.
-          #
-          # **`--print` et non les références versionnées**, qui ne sont pas ce
-          # qu'un hôte reproduit : une scène à plusieurs vues y porte l'empreinte
-          # de toutes, quand un hôte n'en rend qu'une — la première. Les deux
-          # coïncidaient tant que chaque scène d'hôte n'avait qu'une vue, et la
-          # première qui en a eu cinq a fait échouer le tag.
-          attendu=$(for scene in $(make -s print-HOST_SCENES); do
-            cargo run -q -p screengine-conformance --release -- --print "$scene"
-          done | tr -d '\r')
-          # Les deux fichiers versionnés en argument : deux des scènes les
-          # chargent, et l'hôte n'en fabrique aucun. Leur nombre suit celui des
-          # scènes — c'est ici que l'ajout d'une scène à `HOST_SCENES` se paie,
-          # et l'oubli ne se voit qu'au tag.
-          obtenu=$(node hosts/web/test.js \
-            "$PAQUET/lib/screengine.wasm" "$PAQUET/include/screengine.h" \
-            hosts/caisse.mesh hosts/salles.world | tr -d '\r')
-          if [ "$obtenu" != "$attendu" ]; then
-            echo "archive wasm : $obtenu, chemin Rust $attendu" >&2
-            exit 1
-          fi
-          echo "archive wasm : $obtenu"
-
       # Pas l'émulateur une seconde fois : ce que l'archive peut cacher et que
       # les tests ne voient pas, c'est un `.so` d'une autre architecture rangé
       # sous la mauvaise ABI, ou un alignement de pages qui refuse l'appareil.
@@ -276,53 +236,32 @@ jobs:
             echo "archive Android, $abi : architecture, SONAME et alignement"
           done
 
+      # L'archive elle-même, pas l'arbre de construction : les hôtes que son
+      # contenu permet de lier — C contre la bibliothèque statique, C++ contre
+      # la dynamique, Node contre le module wasm — doivent rendre les empreintes
+      # du chemin Rust. C'est la seule preuve qu'un intégrateur qui ouvre
+      # l'archive obtient une bibliothèque qui se lie, se charge sous son nom et
+      # rend la même image. Le module publié passe d'ailleurs par un profil que
+      # `make test` n'emprunte pas, le seul à porter `strip = true` : un export
+      # emporté au passage ne se verrait sinon que chez lui.
+      #
+      # `make test-archive` et non les commandes ici : la liste des scènes, les
+      # fichiers qu'elles chargent et la façon de lier chaque hôte vivent dans
+      # le Makefile. Recopiées ici, elles divergeaient — deux fois, et chaque
+      # fois l'échec n'est apparu qu'au tag, cette étape ne tournant nulle part
+      # ailleurs.
       - name: Éprouver l'archive
-        if: matrix.cible == 'windows_x64' || matrix.cible == 'linux_x64'
+        if: matrix.cible != 'android'
+        run: make test-archive PAQUET="$PAQUET"
+
+      # Ce que les empreintes ne disent pas : sous quel nom la bibliothèque se
+      # charge. Un SONAME absent, et l'exécutable de l'intégrateur réclame le
+      # chemin de construction au lieu de `libscreengine.so`.
+      - name: Nom de chargement de la bibliothèque
+        if: matrix.cible == 'linux_x64'
         run: |
-          # Les mêmes scènes que `make test`, dans le même ordre et comparées à
-          # la même chose : les hôtes en écrivent une empreinte par ligne, et la
-          # liste vit dans le Makefile racine. La lire là plutôt que la recopier
-          # ici — une copie de plus a déjà divergé le jour où une scène s'est
-          # ajoutée, et l'échec n'est apparu qu'au tag.
-          #
-          # **`--print` et non les références versionnées** : une scène à
-          # plusieurs vues y porte l'empreinte de toutes, quand un hôte n'en
-          # rend qu'une. Voir l'épreuve wasm plus haut.
-          attendu=$(for scene in $(make -s print-HOST_SCENES); do
-            cargo run -q -p screengine-conformance --release -- --print "$scene"
-          done | tr -d '\r')
-          mkdir -p essai
-          if [ "$RUNNER_OS" = "Windows" ]; then
-            w() { cygpath -w "$1"; }
-            hosts/c/build.cmd "$(w essai/c.exe)" "$(w essai)" "$(w "$PAQUET/lib/screengine.lib")" "$(w "$PAQUET/include")" hosts/c/main.c
-            hosts/cpp/build.cmd "$(w essai/cpp.exe)" "$(w essai)" "$(w "$PAQUET/lib/screengine.dll.lib")" "$(w "$PAQUET/include")" hosts/cpp/main.cpp
-            cp "$PAQUET/lib/screengine.dll" essai/
-          else
-            # Les Makefile des hôtes, pointés sur le contenu du paquet : leur
-            # `TARGET/PROFILE` désigne le répertoire de la bibliothèque, et
-            # `lib/` en tient lieu ici. Recopier leurs lignes de liaison — la
-            # liste des bibliothèques système, le rpath — les ferait diverger
-            # sans que rien ne le voie, puisque cette étape ne tourne qu'au tag.
-            for hote in c cpp; do
-              make -C "hosts/$hote" \
-                TARGET="$PWD/$PAQUET" PROFILE=lib \
-                INCLUDE="$PWD/$PAQUET/include" OUT="$PWD/essai/$hote" all
-            done
-            cp essai/c/screengine-abi essai/c.exe
-            cp essai/cpp/screengine-cpp essai/cpp.exe
-            readelf -d "$PAQUET/lib/libscreengine.so" | grep -q 'SONAME.*\[libscreengine.so\]'
-            readelf -d essai/cpp.exe | grep -q 'NEEDED.*\[libscreengine.so\]'
-          fi
-          # Les deux fichiers en argument, pour la même raison que du côté
-          # wasm : l'hôte lit les fichiers, et deux des scènes en chargent un.
-          for hote in c cpp; do
-            obtenu=$(./essai/$hote.exe hosts/caisse.mesh hosts/salles.world | tr -d '\r')
-            if [ "$obtenu" != "$attendu" ]; then
-              echo "archive, hôte $hote : $obtenu, chemin Rust $attendu" >&2
-              exit 1
-            fi
-            echo "archive, hôte $hote : $obtenu"
-          done
+          readelf -d "$PAQUET/lib/libscreengine.so" | grep -q 'SONAME.*\[libscreengine.so\]'
+          readelf -d "$(make -s print-ARCHIVE_OUT)/cpp/screengine-cpp" | grep -q 'NEEDED.*\[libscreengine.so\]'
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
