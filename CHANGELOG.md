@@ -46,12 +46,37 @@ publié, et explique les conventions du dépôt à qui y contribue.
 
 ## [Non publié]
 
+## [0.6.1] — 2026-09-28
+
+**Ce qu'un hôte de la 0.6.0 doit reprendre pour compiler : rien.**
+`SCG_ABI_VERSION` reste à **1**, aucune signature publiée ne change, et les
+trois déclarations qui apparaissent s'ajoutent sans toucher aux précédentes —
+elles étaient dans le contrat depuis la 0.5.0 et n'existaient nulle part, si
+bien qu'un hôte qui les appelait échouait à l'édition de liens.
+
+**Le rendu, lui, change.** Une tache modulée posée au ras de la surface qu'elle
+marque y écrit désormais, ce qu'elle ne faisait pas dès que les deux n'étaient
+pas découpées en triangles de la même façon : **une scène qui module rend autre
+chose**, et deux empreintes de conformance bougent. Les autres sont inchangées.
+
 ### Ajouté
 - `scg_submit_world_lit`, `scg_world_cell_luxel_count` et
   `SCG_MAX_LIGHTMAP_SIZE` : les trois déclarations que le contrat publiait
   depuis la 0.5.0 sans qu'aucune existe. La première soumet le décor entier avec
   ses lightmaps, la deuxième dit ce que la cuisson d'une cellule coûte, la
   troisième borne l'atlas qu'elle remplit. `SCG_ABI_VERSION` reste à 1.
+
+### Corrigé
+- **Trois défauts de l'image en cours.** Un lot soumis avant
+  `scg_submit_world_visible` était rogné à la fenêtre d'une cellule qui ne le
+  contenait pas ; une traversée refusée après une réussie faisait paniquer le
+  rendu ; un maillage ou un décor refusé par un contexte qui venait de rendre
+  restait à moitié posé.
+- **Une tache modulée posée au ras de la surface qu'elle marque n'y écrivait
+  rien**, dès que les deux n'étaient pas découpées de la même façon. Le test de
+  profondeur exigeait l'égalité, que deux découpes d'un même plan ne rendent
+  pas ; il tolère désormais la pente du triangle modulé. **Deux empreintes de
+  conformance bougent.**
 
 ### Interne
 - **La preuve de « zéro allocation par image » couvre de nouveau tout ce qui
@@ -98,19 +123,17 @@ publié, et explique les conventions du dépôt à qui y contribue.
   déclare. L'hôte C++ refuse d'être compilé sous C++98, où le header saute ses
   assertions de disposition en silence.
 
-### Corrigé
-- **Trois défauts de l'image en cours.** Un lot soumis avant
-  `scg_submit_world_visible` était rogné à la fenêtre d'une cellule qui ne le
-  contenait pas ; une traversée refusée après une réussie faisait paniquer le
-  rendu ; un maillage ou un décor refusé par un contexte qui venait de rendre
-  restait à moitié posé.
-- **Une tache modulée posée au ras de la surface qu'elle marque n'y écrivait
-  rien**, dès que les deux n'étaient pas découpées de la même façon. Le test de
-  profondeur exigeait l'égalité, que deux découpes d'un même plan ne rendent
-  pas ; il tolère désormais la pente du triangle modulé. **Deux empreintes de
-  conformance bougent.**
-
 ***
+
+**What a 0.6.0 host must revisit to compile: nothing.** `SCG_ABI_VERSION` stays
+at **1**, no published signature changes, and the three declarations that
+appear are added without touching the earlier ones — they had been in the
+contract since 0.5.0 and existed nowhere, so a host calling them failed to link.
+
+**Rendering, however, changes.** A modulated blot laid flush against the
+surface it marks now writes to it, which it did not as soon as the two were not
+cut into triangles the same way: **a scene that modulates renders something
+else**, and two conformance fingerprints move. The others are unchanged.
 
 ### Added
 - `scg_submit_world_lit`, `scg_world_cell_luxel_count` and
@@ -118,6 +141,17 @@ publié, et explique les conventions du dépôt à qui y contribue.
   since 0.5.0 without any of them existing. The first submits the whole level
   with its lightmaps, the second says what baking one cell costs, the third
   bounds the atlas it fills. `SCG_ABI_VERSION` stays at 1.
+
+### Fixed
+- **Three defects of the frame in progress.** A batch submitted before
+  `scg_submit_world_visible` was clipped to the window of a cell that did not
+  contain it; a traversal refused after a successful one made rendering panic;
+  a mesh or a level refused by a context that had just rendered stayed
+  half-submitted.
+- **A modulated blot laid flush against the surface it marks wrote nothing to
+  it**, as soon as the two were not cut the same way. The depth test demanded
+  equality, which two cuts of one plane do not render; it now tolerates the
+  modulated triangle's slope. **Two conformance fingerprints move.**
 
 ### Internal
 - **The "zero allocation per frame" proof covers everything exposed again.** It
@@ -158,17 +192,6 @@ publié, et explique les conventions du dépôt à qui y contribue.
   field by field; its table now compares against what it declares. The C++ host
   refuses to be compiled under C++98, where the header silently skips its
   layout assertions.
-
-### Fixed
-- **Three defects of the frame in progress.** A batch submitted before
-  `scg_submit_world_visible` was clipped to the window of a cell that did not
-  contain it; a traversal refused after a successful one made rendering panic;
-  a mesh or a level refused by a context that had just rendered stayed
-  half-submitted.
-- **A modulated blot laid flush against the surface it marks wrote nothing to
-  it**, as soon as the two were not cut the same way. The depth test demanded
-  equality, which two cuts of one plane do not render; it now tolerates the
-  modulated triangle's slope. **Two conformance fingerprints move.**
 
 ## [0.6.0] — 2026-09-28 — Animation et sprites
 
