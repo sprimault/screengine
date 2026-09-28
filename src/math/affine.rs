@@ -105,6 +105,84 @@ impl Affine3 {
         )
     }
 
+    /// Le déterminant de la partie linéaire, négatif pour une matrice miroir.
+    ///
+    /// Dérivé de [`Self::cofactors`] et non calculé à part : les deux doivent
+    /// s'accorder, et c'est l'unique façon de garantir qu'ils s'accordent
+    /// encore le jour où l'un des deux bouge.
+    pub fn determinant(self) -> f32 {
+        self.cofactors().1
+    }
+
+    /// La matrice qui porte les normales — `signe(det) · Cof` de la partie
+    /// linéaire, translation nulle — et le déterminant dont elle tient son
+    /// signe.
+    ///
+    /// **Les deux sortent du même appel parce qu'ils doivent s'accorder.** Le
+    /// déterminant décide aussi du sens de parcours attendu des faces ; calculé
+    /// deux fois, un déterminant assez proche de zéro pour changer de signe
+    /// selon la forme de l'expression retournerait les normales sans retourner
+    /// les faces, ou l'inverse.
+    ///
+    /// Une normale n'est pas une direction ordinaire — elle est définie par ce
+    /// à quoi elle est perpendiculaire. Une échelle non uniforme incline les
+    /// tangentes d'un côté et la normale de l'autre, si bien que la porter par
+    /// [`Self::transform_vector`] la fait pencher du mauvais côté : sur une
+    /// face à 45° étirée du double en x, trente-sept degrés d'écart, de quoi
+    /// éteindre une surface éclairée.
+    ///
+    /// **Les cofacteurs plutôt que l'inverse-transposée**, qui n'en diffère que
+    /// du facteur `det` : la renormalisation l'efface, et trois produits
+    /// vectoriels n'ont ni division ni cas dégénéré.
+    ///
+    /// **Le signe du déterminant, lui, ne s'efface pas.** Une matrice miroir le
+    /// rend négatif et retournerait chaque normale. Elle retourne aussi le sens
+    /// de parcours à l'écran, si bien que les faces qu'elle laisse voir sont
+    /// celles qui étaient de dos dans les données : normales retournées, elles
+    /// tourneraient le dos à toutes les lumières, et l'objet entier serait noir
+    /// sous un éclairage dynamique.
+    ///
+    /// Un déterminant nul n'est pas un cas d'erreur : les normales aplaties en
+    /// sortent nulles, et une normale nulle est déjà une normale absente pour
+    /// [`crate::light::dynamic`], qui retombe sur l'atténuation par la distance.
+    pub fn cofactors(self) -> (Self, f32) {
+        let m = &self.m;
+        let columns = [
+            Vec3::new(m[0], m[1], m[2]),
+            Vec3::new(m[3], m[4], m[5]),
+            Vec3::new(m[6], m[7], m[8]),
+        ];
+        let cof = [
+            columns[1].cross(columns[2]),
+            columns[2].cross(columns[0]),
+            columns[0].cross(columns[1]),
+        ];
+        // Le déterminant est le produit scalaire de la première colonne par la
+        // première colonne des cofacteurs : il est déjà calculé.
+        let determinant = columns[0].dot(cof[0]);
+        // Écrit plutôt que `signum`, qui rend −1 sur le zéro négatif : un lot
+        // dont le déterminant est −0.0 n'est pas un miroir, et ses normales ne
+        // se retournent pas plus que ses faces.
+        let sign = if determinant < 0.0 { -1.0 } else { 1.0 };
+        let carried = Self {
+            m: [
+                sign * cof[0].x,
+                sign * cof[0].y,
+                sign * cof[0].z,
+                sign * cof[1].x,
+                sign * cof[1].y,
+                sign * cof[1].z,
+                sign * cof[2].x,
+                sign * cof[2].y,
+                sign * cof[2].z,
+                0.0,
+                0.0,
+                0.0,
+            ],
+        };
+        (carried, determinant)
+    }
+
     /// L'inverse d'une transformation rigide — rotation et translation seules.
     ///
     /// La transposée de la rotation, puis la translation ramenée par elle :

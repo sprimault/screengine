@@ -1646,6 +1646,26 @@ impl Context {
         F: Fn(usize) -> Result<([VertexUv2; 3], Color)>,
     {
         let transform = self.view.product(model);
+        // Une fois par lot, comme les lumières : trois produits vectoriels ne
+        // se mesurent pas devant le nombre de sommets qu'ils vont porter. La
+        // vue étant rigide et directe, ses cofacteurs sont elle-même et son
+        // déterminant vaut un : les prendre sur la composée revient à les
+        // prendre sur la seule matrice modèle, sans la composer à part.
+        // **Une matrice miroir retourne le sens de parcours de toutes les
+        // faces**, et le test de dos du rasteriseur n'a alors plus rien à
+        // départager : les faces tournées vers la caméra y passent pour des
+        // faces arrière, celles du fond pour des faces avant, et on voit
+        // l'intérieur de l'objet. Le lot se soumet donc avec deux de ses
+        // sommets échangés, ce qui rend au sens de parcours ce que le miroir
+        // lui a pris. Échanger ici plutôt que lever le test au rasteriseur :
+        // la négation des fonctions de bord doit valoir pour tous les
+        // triangles, sans quoi deux voisins revendiqueraient leur arête commune
+        // deux fois ou pas du tout.
+        //
+        // Le déterminant vient du même appel que les normales : il décide des
+        // deux, et deux calculs pourraient en diverger sur un lot presque plat.
+        let (normals, determinant) = transform.cofactors();
+        let mirrored = determinant < 0.0;
         // Une fois par lot : la vue ne change pas pendant une image, et huit
         // transformations rigides ne se mesurent pas devant le nombre de
         // sommets qu'elles vont éclairer.
@@ -1673,36 +1693,29 @@ impl Context {
             {
                 return Err(Error::InvalidArgument(Argument::TextureCoordinate));
             }
-            self.submit_view(
-                corners.map(|c| {
-                    let view = transform.transform_point(c.position);
-                    ClipSource {
-                        view,
-                        u: c.u,
-                        v: c.v,
-                        u2: c.u2,
-                        v2: c.v2,
-                        // **Les lumières sont déjà en espace de vue** : la
-                        // transformation a eu lieu une fois pour le lot, et la
-                        // distance y est la même qu'en monde puisque la vue
-                        // est rigide.
-                        // La normale passe en espace de vue par la partie
-                        // linéaire de la même transformation : elle est rigide,
-                        // donc elle préserve les angles, et il n'y a ni
-                        // cofacteurs ni inverse-transposée à former. Une
-                        // matrice modèle à échelle non uniforme les demanderait,
-                        // et la soumission n'en accepte pas.
-                        light: dynamic::sum(
-                            &self.placed,
-                            view,
-                            transform.transform_vector(c.normal),
-                        ),
-                    }
-                }),
-                color,
-                texture,
-                lit,
-            )?;
+            let mut sources = corners.map(|c| {
+                let view = transform.transform_point(c.position);
+                ClipSource {
+                    view,
+                    u: c.u,
+                    v: c.v,
+                    u2: c.u2,
+                    v2: c.v2,
+                    // **Les lumières sont déjà en espace de vue** : la
+                    // transformation a eu lieu une fois pour le lot, et la
+                    // distance y est la même qu'en monde puisque la vue
+                    // est rigide.
+                    // La normale passe par les cofacteurs et non par la
+                    // transformation elle-même : la matrice modèle n'est
+                    // tenue qu'à être affine, et une échelle non uniforme
+                    // inclinerait la normale du mauvais côté.
+                    light: dynamic::sum(&self.placed, view, normals.transform_vector(c.normal)),
+                }
+            });
+            if mirrored {
+                sources.swap(1, 2);
+            }
+            self.submit_view(sources, color, texture, lit)?;
         }
         Ok(())
     }

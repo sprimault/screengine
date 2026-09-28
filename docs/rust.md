@@ -414,10 +414,10 @@ aux fonctions de bord.
 - **L'atténuation d'une lumière dynamique se calcule dans cet ordre**, qui est
   contractuel parce qu'il est celui de la cuisson :
   1. une fois par lot — les positions des lumières en espace de vue, la
-     réciproque du rayon au carré, et la matrice des cofacteurs de la partie
-     linéaire ;
-  2. par sommet — `n_vue = cofacteurs · n`, puis `n̂ = n_vue · rsqrt(n_vue·n_vue)`
-     par la table du noyau ;
+     réciproque du rayon au carré, et la matrice `signe(det) · Cof` de la partie
+     linéaire, avec son déterminant ;
+  2. par sommet — `n_vue = signe(det)·cofacteurs · n`, puis
+     `n̂ = n_vue · rsqrt(n_vue·n_vue)` par la table du noyau ;
   3. par sommet et par lumière — `offset = position − point`, **dans ce sens**,
      le produit scalaire du terme de Lambert en dépendant ; `square =
      offset·offset` ; rejet si `square ≥ r²` ; rejet sur le signe de `n̂·offset`,
@@ -428,6 +428,34 @@ aux fonctions de bord.
   Jamais de `mul_add`, saturation après la somme, comparaisons écrites. Le sens
   d'`offset` était l'inverse tant que seul son carré servait : sans normale, le
   signe ne se voyait pas.
+
+- **Le déterminant du lot décide de deux choses, et il n'en existe qu'un.** Il
+  donne son signe aux normales, et il dit si le sens de parcours des faces a été
+  retourné. Il sort donc du même appel que les cofacteurs : calculé deux fois,
+  un lot presque plat pourrait en tirer deux signes contraires, et retourner ses
+  normales sans retourner ses faces.
+
+  Le signe s'écrit `si det < 0`, jamais par `signum` : celui-ci rend −1 sur le
+  zéro négatif, alors qu'un lot de déterminant nul n'est pas un miroir.
+
+- **Une matrice modèle de déterminant négatif voit ses faces soumises dans
+  l'ordre `v0, v2, v1`.** Un miroir retourne le sens de parcours de toutes les
+  faces, et le test de dos n'a alors plus rien à départager : les faces tournées
+  vers la caméra y passent pour des faces arrière et disparaissent, celles du
+  fond passent, et l'hôte voit l'intérieur de son objet.
+
+  L'échange a lieu **à la soumission, avant le découpage**, et non en levant le
+  test au rasteriseur : la négation des fonctions de bord doit valoir pour tous
+  les triangles sans exception, sans quoi deux voisins revendiqueraient leur
+  arête commune deux fois ou pas du tout — c'est ce que la règle top-left
+  garantit et que rien d'autre ne rattrape. `v0` reste en place pour qu'un
+  attribut lu sur le premier sommet garde sa source.
+
+  **La matrice modèle n'est tenue qu'à être affine**, dernière ligne
+  `0, 0, 0, 1` : ni l'échelle non uniforme ni le miroir n'y sont refusés, et
+  c'est la caméra seule qui est rigide par construction. Une précondition de
+  rigidité sur le modèle aurait refusé un tronc étiré ou une caisse aplatie,
+  que tout le reste du pipeline rend sans difficulté.
 
 ### Repère et transformations
 
@@ -548,7 +576,7 @@ la création du contexte rend une erreur plutôt que de déborder en silence.
 | Sur-éclairement | décalage de contexte `k ∈ {0, 1, 2}` dans la combinaison : `min(255, t·(l+1) >> (8 − k))` | sans lui, toute surface éclairée est plus sombre que sa texture et la scène entière est terne. Dans la combinaison et non dans le post-traitement : appliqué après coup, un doublement ne rendrait que des valeurs paires, et éclaircirait aussi ce qui n'est pas éclairé. Un décalage plutôt qu'un facteur quelconque, pour que l'expression reste exacte et sans division. Saturation **écrite**, jamais laissée à une conversion |
 | Surface modulée | `(d·(s+1)) >> 8` par canal, `d` le pixel déjà écrit dans la tuile, `s` le texel modulant sur 8 bits où **255 est le neutre** | c'est la combinaison texel × lightmap avec le tampon à la place du texel et le sur-éclairement forcé à zéro : une tache assombrit ou ne fait rien, elle n'éclaircit jamais. On étend l'utilitaire existant, on n'en écrit pas un second. `(d·s + 128) >> 8` est faux ici pour la raison déjà donnée deux lignes plus haut — 254 sous facteur blanc —, et ce deux-cent-cinquante-sixième de voile dessinerait le rectangle du quadrilatère sur son bord neutre, précisément là où la tache doit disparaître |
 | Transparence binaire | alpha ramené à 0 ou 255 **au niveau zéro seulement**, seuil à 128 ; les niveaux réduits portent une **couverture**, jamais reseuillée ; l'alpha du niveau choisi se compare au même seuil, lu **au plus proche** quel que soit le filtrage | un test binaire n'a pas de valeur intermédiaire à prendre, et le tramage n'y remplacerait qu'un bord franc par du bruit. La réduction d'un mipmap masqué pondère le RGB par l'alpha — un texel transparent ne teinte pas ses voisins — et moyenne l'alpha en couverture. Le RGB est **dilaté** dans les zones transparentes avant que la chaîne se construise : sans cela le bilinéaire mêle au bord la couleur laissée sous les texels invisibles, et cerne la silhouette d'un liseré. **La couverture ne se reseuille pas de niveau en niveau** : un niveau serait alors calculé depuis un niveau déjà seuillé, et un détail fin — une grille, une antenne — disparaîtrait d'un coup dès que sa couverture passe sous la moitié, pour revenir en approchant. C'est un clignotement en profondeur, et il ne se voit qu'en mouvement |
-| Terme de Lambert d'une lumière dynamique | `max(0, n̂·l̂)` en `f32`, par sommet, **dans l'ordre de la cuisson** | c'est cet ordre, et non un ordre plus commode, qui rend les deux modes comparables. La normale passe en espace de vue par la **matrice des cofacteurs** de la partie linéaire, jamais par l'inverse-transposée : les deux diffèrent d'un facteur que la renormalisation efface, donc aucune division, et une échelle non uniforme reste juste sans imposer de précondition nouvelle à l'hôte. Le rejet se fait sur le **signe** du produit scalaire, avant la racine inverse : même signe, donc gratuit |
+| Terme de Lambert d'une lumière dynamique | `max(0, n̂·l̂)` en `f32`, par sommet, **dans l'ordre de la cuisson** | c'est cet ordre, et non un ordre plus commode, qui rend les deux modes comparables. La normale passe en espace de vue par la **matrice des cofacteurs** de la partie linéaire, jamais par l'inverse-transposée : les deux diffèrent d'un facteur que la renormalisation efface, donc aucune division, et une échelle non uniforme reste juste sans imposer de précondition nouvelle à l'hôte. **Le signe du déterminant, lui, ne s'efface pas et se rétablit** : un miroir le rend négatif, et des normales retournées tourneraient le dos à toutes les lumières — l'objet entier serait noir. Le rejet se fait sur le **signe** du produit scalaire, avant la racine inverse : même signe, donc gratuit |
 | Roulis d'un quadrilatère orienté | angle binaire `u32`, sinus et cosinus par la table du noyau, appliqué aux deux demi-extensions dans le plan du quadrilatère | même format d'angle que le reste du noyau, donc aucune trigonométrie chez l'hôte et aucune libm. Après l'orientation, avant la projection : c'est une rotation dans le plan du quadrilatère, elle vaut pour les deux modes d'orientation |
 | Facteur de brouillard | `u16` valant `f ∈ [0, 256]`, **256 = brouillard plein** | neuf bits et non huit, pour que le mélange soit exact **aux deux bouts** : une surface non embrumée doit sortir identique au rendu sans brouillard, et un décalage d'un seul niveau entre la géométrie lointaine et le fond effacé *est* la couture d'horizon. Mélange à deux voies dans `0x00FF00FF`, sans retenue entre elles — chaque voie vaut au plus `255·256 + 255`, soit 65 535, **et la marge est donc nulle** : l'arrondi porte aussi le tramage, qui monte jusqu'à 255, et non le seul demi de l'arrondi au plus proche. Rien ne peut s'ajouter à ce mélange sans élargir l'accumulateur | 
 | Index de brouillard | exposant et mantisse de la profondeur, par `leading_zeros`, table de 2048 entrées | indexer linéairement une profondeur 0.32 est inutilisable : tout le monde visible vit sous 2²⁶. La table se remplit **linéairement en distance** — un brouillard linéaire en `near/w`, pourtant gratuit, atteint 56 % à un dixième de sa rampe et cesse d'être un indice de profondeur. L'index se prend comme celui du mipmap, et le reste de quantification se trame par la même table ordonnée, transposée pour ne pas se corréler avec celle des texels |

@@ -411,6 +411,25 @@ enum Scene {
     /// fois, si bien qu'une matrice de modèle ignorée, ou appliquée après la
     /// vue, ne rendrait pas cette image.
     MeshFile,
+    /// La même caisse, retournée par une échelle négative sur un axe, sous deux
+    /// lumières dynamiques.
+    ///
+    /// **La seule scène du dépôt dont la matrice de modèle soit un miroir**, et
+    /// c'est tout son objet : rien d'autre n'emprunte les deux chemins qu'un
+    /// déterminant négatif ouvre, si bien qu'une régression y serait invisible.
+    ///
+    /// Elle en fige deux d'un coup, et ils se tiennent. Le **sens de parcours**
+    /// d'abord : un miroir l'inverse sur toutes les faces, et sans correction on
+    /// voit l'intérieur de la caisse — les faces qui regardent la caméra passent
+    /// pour des faces arrière, celles du fond passent pour des faces avant. Le
+    /// **signe des normales** ensuite : les faces alors visibles sont celles qui
+    /// étaient de dos dans les données, et une normale non retournée les
+    /// laisserait tourner le dos à toutes les lumières, donc noires.
+    ///
+    /// L'échelle ne porte que sur un axe, et non sur deux : deux axes niés font
+    /// une rotation d'un demi-tour, de déterminant positif, qui ne prouverait
+    /// rien.
+    MeshMirrored,
     /// Un couloir de deux cellules, **chargé depuis un fichier de carte**.
     ///
     /// Ce que l'étape 1 demandait à voir et que rien ne rendait encore : la
@@ -454,6 +473,22 @@ const CRATE_MODEL: Affine3 = Affine3 {
     m: [
         0.64, 0.48, 0.6, //
         -0.6, 0.8, 0.0, //
+        -0.48, -0.36, 0.8, //
+        5.0, 0.0, 0.0,
+    ],
+};
+
+/// La même pose, réfléchie : la deuxième colonne niée, donc l'axe `y` du modèle
+/// retourné et le déterminant négatif.
+///
+/// Écrite en littéraux pour la même raison que [`CRATE_MODEL`] : un hôte qui la
+/// composerait lui-même n'obtiendrait pas les mêmes bits, donc pas la même
+/// empreinte. Nier une seule colonne, parce que deux en nieraient l'effet — un
+/// demi-tour a le déterminant d'une rotation.
+const CRATE_MIRROR: Affine3 = Affine3 {
+    m: [
+        0.64, 0.48, 0.6, //
+        0.6, -0.8, 0.0, //
         -0.48, -0.36, 0.8, //
         5.0, 0.0, 0.0,
     ],
@@ -712,7 +747,7 @@ impl View {
 
 impl Scene {
     /// Toutes les scènes, dans l'ordre où `--check` les rejoue.
-    const ALL: [Self; 18] = [
+    const ALL: [Self; 19] = [
         Self::Edge,
         Self::Guard,
         Self::Lateral,
@@ -729,6 +764,7 @@ impl Scene {
         Self::Fog,
         Self::Lights,
         Self::MeshFile,
+        Self::MeshMirrored,
         Self::WorldFile,
         Self::Rooms,
     ];
@@ -772,6 +808,7 @@ impl Scene {
             Self::Fog => "brouillard",
             Self::Lights => "lumieres",
             Self::MeshFile => "maillage",
+            Self::MeshMirrored => "maillage-miroir",
             Self::WorldFile => "carte",
             Self::Rooms => "salles",
         }
@@ -821,6 +858,23 @@ impl Scene {
                 Light {
                     position: Vec3::new(38.0, 12.0, 6.0),
                     radius: 60.0,
+                    color: Color::new(0x40, 0x80, 0xFF, 0xFF),
+                },
+            ],
+            // Deux lumières serrées autour de la caisse, de part et d'autre :
+            // le miroir échange les côtés, et deux teintes franches rendent
+            // l'échange lisible à l'œil autant qu'à l'empreinte. Leur rayon
+            // couvre la caisse entière — l'atténuation est par sommet, et une
+            // portée trop courte n'atteindrait aucun de ses coins.
+            Self::MeshMirrored => vec![
+                Light {
+                    position: Vec3::new(3.5, -4.5, -1.5),
+                    radius: 16.0,
+                    color: Color::new(0xFF, 0xC0, 0x60, 0xFF),
+                },
+                Light {
+                    position: Vec3::new(3.5, 3.5, 4.5),
+                    radius: 16.0,
                     color: Color::new(0x40, 0x80, 0xFF, 0xFF),
                 },
             ],
@@ -1178,6 +1232,16 @@ impl Scene {
                     .unwrap_or_else(|_| unreachable!("le fichier de la caisse est bien formé"));
                 let sides = checker(64, 8);
                 context.submit_mesh(CRATE_MODEL, &mesh, |slot| match slot {
+                    0 => Some(&sides),
+                    _ => None,
+                })
+            }
+            // La même caisse et le même damier, sous le modèle nié en y.
+            Self::MeshMirrored => {
+                let mesh = Mesh::load(&mesh_file::bytes())
+                    .unwrap_or_else(|_| unreachable!("le fichier de la caisse est bien formé"));
+                let sides = checker(64, 8);
+                context.submit_mesh(CRATE_MIRROR, &mesh, |slot| match slot {
                     0 => Some(&sides),
                     _ => None,
                 })
