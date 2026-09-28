@@ -46,38 +46,44 @@ publié, et explique les conventions du dépôt à qui y contribue.
 
 ## [Non publié]
 
+### Ajouté
+- `scg_submit_world_lit`, `scg_world_cell_luxel_count` et
+  `SCG_MAX_LIGHTMAP_SIZE` : les trois déclarations que le contrat publiait
+  depuis la 0.5.0 sans qu'aucune existe. La première soumet le décor entier avec
+  ses lightmaps, la deuxième dit ce que la cuisson d'une cellule coûte, la
+  troisième borne l'atlas qu'elle remplit. `SCG_ABI_VERSION` reste à 1.
+
 ### Corrigé
-- **Trois défauts de l'image en cours, qu'une image faisant plus d'une chose
-  réveille.** Un lot soumis **avant** `scg_submit_world_visible` était rogné à
-  la fenêtre d'une cellule qui ne le contenait pas ; une traversée refusée
-  après une traversée réussie faisait paniquer le rendu de l'image ; et un
-  maillage ou un décor refusé par un contexte qui venait d'en rendre une
-  restait à moitié posé, contre « refusé en entier ou pas du tout ». Aucune
-  empreinte ne bouge.
+- **Trois défauts de l'image en cours.** Un lot soumis avant
+  `scg_submit_world_visible` était rogné à la fenêtre d'une cellule qui ne le
+  contenait pas ; une traversée refusée après une réussie faisait paniquer le
+  rendu ; un maillage ou un décor refusé par un contexte qui venait de rendre
+  restait à moitié posé.
 - **Une tache modulée posée au ras de la surface qu'elle marque n'y écrivait
-  rien**, dès que les deux n'étaient pas découpées en triangles de la même
-  façon — une ombre sous un objet mobile, donc, le cas d'usage de la primitive.
-  Le test de profondeur exigeait l'égalité, que deux découpes d'un même plan ne
-  rendent pas ; il tolère désormais la pente du triangle modulé, nulle sur une
-  surface frontale. **Une scène qui module rend donc autre chose** : deux
-  empreintes de conformance bougent, les autres sont inchangées.
+  rien**, dès que les deux n'étaient pas découpées de la même façon. Le test de
+  profondeur exigeait l'égalité, que deux découpes d'un même plan ne rendent
+  pas ; il tolère désormais la pente du triangle modulé. **Deux empreintes de
+  conformance bougent.**
 
 ***
 
+### Added
+- `scg_submit_world_lit`, `scg_world_cell_luxel_count` and
+  `SCG_MAX_LIGHTMAP_SIZE`: the three declarations the contract had published
+  since 0.5.0 without any of them existing. The first submits the whole level
+  with its lightmaps, the second says what baking one cell costs, the third
+  bounds the atlas it fills. `SCG_ABI_VERSION` stays at 1.
+
 ### Fixed
-- **Three defects of the frame in progress, woken by any frame that does more
-  than one thing.** A batch submitted **before** `scg_submit_world_visible` was
-  clipped to the window of a cell that did not contain it; a traversal refused
-  after a successful one made rendering the frame panic; and a mesh or a level
-  refused by a context that had just rendered one stayed half-submitted,
-  against "refused whole or not at all". No fingerprint moves.
+- **Three defects of the frame in progress.** A batch submitted before
+  `scg_submit_world_visible` was clipped to the window of a cell that did not
+  contain it; a traversal refused after a successful one made rendering panic;
+  a mesh or a level refused by a context that had just rendered stayed
+  half-submitted.
 - **A modulated blot laid flush against the surface it marks wrote nothing to
-  it**, as soon as the two were not cut into triangles the same way — a shadow
-  under a moving object, that is, the primitive's whole use case. The depth
-  test demanded equality, which two cuts of one plane do not render; it now
-  tolerates the modulated triangle's slope, zero on a head-on surface. **A
-  scene that modulates therefore renders something else**: two conformance
-  fingerprints move, the others are unchanged.
+  it**, as soon as the two were not cut the same way. The depth test demanded
+  equality, which two cuts of one plane do not render; it now tolerates the
+  modulated triangle's slope. **Two conformance fingerprints move.**
 
 ## [0.6.0] — 2026-09-28 — Animation et sprites
 

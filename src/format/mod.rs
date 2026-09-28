@@ -27,6 +27,7 @@ pub(crate) mod world;
 pub(crate) use cursor::Cursor;
 pub use mesh::Mesh;
 pub(crate) use mesh::Pose;
+pub(crate) use world::Cell;
 pub use world::World;
 
 use crate::error::{Error, Malformation, Result};

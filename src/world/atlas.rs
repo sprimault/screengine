@@ -41,7 +41,10 @@ use crate::format::world::Cell;
 pub(crate) const GUTTER: u32 = 1;
 
 /// Le côté maximal d'un atlas, en luxels.
-pub(crate) const MAX_ATLAS: u32 = 1024;
+///
+/// Publié par l'ABI, où il dit à un hôte ce qu'une cellule peut coûter en
+/// mémoire de lightmaps : quatre octets par luxel, chaîne de mipmaps comprise.
+pub const MAX_ATLAS: u32 = 1024;
 
 /// Où la lightmap d'une surface est rangée dans l'atlas de sa cellule.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

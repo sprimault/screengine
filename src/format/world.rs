@@ -257,6 +257,12 @@ pub(crate) struct Cell {
     pub(crate) surfaces: Vec<Surface>,
     /// Ses portails.
     pub(crate) portals: Vec<Portal>,
+    /// Combien de luxels sa cuisson calcule, gouttières exclues.
+    ///
+    /// Ce que coûte sa lightmap, et la seule mesure qui permette à un hôte de
+    /// pondérer une cuisson cellule par cellule : le nombre de surfaces ne dit
+    /// rien, un mur de vingt mètres et une marche en comptant chacun une.
+    luxel_count: u32,
 }
 
 impl Cell {
@@ -406,6 +412,18 @@ impl World {
     /// désigne.
     pub fn cell_id(&self, index: u32) -> Option<u32> {
         self.cells.get(index as usize).map(|cell| cell.id)
+    }
+
+    /// Combien de luxels la cuisson de cette cellule calcule, ou `None` si
+    /// l'identifiant n'en désigne aucune.
+    ///
+    /// **La mesure du coût d'une cuisson**, que l'hôte appelle avant elle : le
+    /// calcul est par cellule et synchrone, et sans cela une barre de
+    /// progression avancerait par cellules, donc par pas de tailles sans
+    /// rapport entre eux.
+    pub fn cell_luxel_count(&self, id: u32) -> Option<u32> {
+        let index = self.cell_of(id)?;
+        self.cells.get(index as usize).map(|cell| cell.luxel_count)
     }
 
     /// L'index de la cellule que cet identifiant désigne, s'il en désigne une.
@@ -760,6 +778,18 @@ fn cell(record: &[u8], materials: &[u32]) -> Result<Cell> {
         return Err(Error::InvalidFormat(Malformation::Count));
     }
 
+    // **Dérivé ici**, comme l'étendue dont il vient : l'hôte s'en sert pour
+    // pondérer une barre de progression avant d'appeler la cuisson, et le
+    // recalculer à chaque appel ferait parcourir les surfaces pour une valeur
+    // que le chargement connaît déjà. Les surfaces qui refusent la lightmap n'y
+    // comptent pas — la cuisson ne les visite pas.
+    let luxel_count = surfaces
+        .iter()
+        .filter(|surface| !surface.skips_lightmap())
+        .map(|surface| u64::from(surface.luxels.width) * u64::from(surface.luxels.height))
+        .sum::<u64>()
+        .min(u64::from(u32::MAX)) as u32;
+
     Ok(Cell {
         id,
         flags,
@@ -767,6 +797,7 @@ fn cell(record: &[u8], materials: &[u32]) -> Result<Cell> {
         triangles,
         surfaces,
         portals,
+        luxel_count,
     })
 }
 

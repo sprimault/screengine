@@ -904,6 +904,70 @@ fn les_triangles_se_comptent_sur_toute_la_carte() {
     assert_eq!(world.triangle_count(), 6);
 }
 
+/// Le compte de luxels d'une cellule est la somme de ce que ses surfaces
+/// couvrent, et il se désigne par identifiant.
+///
+/// **C'est la mesure du coût d'une cuisson**, que l'hôte lit avant d'appeler
+/// `scg_lighting_build` — synchrone et par cellule. Deux cellules identiques
+/// doivent donc rendre la même valeur, et deux surfaces coûter le double d'une.
+#[test]
+fn une_cellule_compte_les_luxels_de_ses_surfaces() {
+    let une = cell_bytes(
+        7,
+        0,
+        &SQUARE,
+        &[surface_bytes(11, 0, 1, &[0, 1, 2, 3])],
+        &[],
+    );
+    let mut deux = cell_bytes(
+        8,
+        0,
+        &SQUARE,
+        &[
+            surface_bytes(12, 0, 1, &[0, 1, 2, 3]),
+            surface_bytes(13, 0, 1, &[0, 1, 2, 3]),
+        ],
+        &[],
+    );
+    let mut cells = une;
+    cells.append(&mut deux);
+    let world = World::load(&file(&cells, &[], &[], &material(1, "mur"))).expect("carte valide");
+
+    let simple = world.cell_luxel_count(7).expect("cellule connue");
+    assert_ne!(simple, 0, "une surface couvre au moins un luxel");
+    assert_eq!(
+        world.cell_luxel_count(8),
+        Some(simple * 2),
+        "deux surfaces du même carré coûtent le double"
+    );
+    // L'identifiant désigne, le rang énumère : un identifiant absent n'est pas
+    // un compte nul, c'est une absence de réponse.
+    assert_eq!(world.cell_luxel_count(9), None);
+
+    // **Une aire, et non un périmètre** : un carré deux fois plus large coûte
+    // quatre fois plus, pas deux. Sans cette comparaison, une somme des deux
+    // côtés passerait tout ce qui précède.
+    let double: [[f32; 3]; 4] = SQUARE.map(|[x, y, z]| [x * 2.0, y * 2.0, z]);
+    let large = World::load(&file(
+        &cell_bytes(
+            7,
+            0,
+            &double,
+            &[surface_bytes(11, 0, 1, &[0, 1, 2, 3])],
+            &[],
+        ),
+        &[],
+        &[],
+        &material(1, "mur"),
+    ))
+    .expect("carte valide");
+    let quadruple = large.cell_luxel_count(7).expect("cellule connue");
+    assert!(
+        quadruple >= simple * 3,
+        "un carré de côté double ne coûte que {quadruple} contre {simple}"
+    );
+}
+
 /// Les triangles d'une surface indexent ses propres sommets.
 ///
 /// Deux surfaces d'une même cellule ont chacune les siens, parce que leurs
