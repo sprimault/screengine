@@ -15,6 +15,15 @@
 
 #include "screengine.h"
 
+// Sans C++11, le header saute ses assertions de disposition sans rien dire, et
+// c'est précisément ce que cet hôte existe pour vérifier. Le pendant de la
+// garde de l'hôte C, qui exige C11 pour la même raison. `_MSVC_LANG` parce que
+// MSVC laisse `__cplusplus` à 199711L sans un drapeau qu'un intégrateur n'a
+// aucune raison de passer.
+#if __cplusplus < 201103L && !(defined(_MSVC_LANG) && _MSVC_LANG >= 201103L)
+#error "C++11 requis : sans lui, les assertions de disposition du header ne sont pas compilées"
+#endif
+
 #include <atomic>
 #include <cstdint>
 #include <cstdio>

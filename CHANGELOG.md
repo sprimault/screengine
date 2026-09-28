@@ -78,6 +78,11 @@ publié, et explique les conventions du dépôt à qui y contribue.
   niveau de sa chaîne de mipmaps, que la reprise reconstruit ; et le tramage du
   brouillard n'était discriminé par rien, faute d'un brouillard réglé sur les
   distances de la scène de test.
+- **Deux gardes des hôtes.** La liaison web vérifiait neuf de ses onze tailles
+  de structures contre le header, `ScgSprite` et `ScgCamera` manquant — les deux
+  qu'elle écrit champ par champ ; sa table se compare désormais à ce qu'elle
+  déclare. L'hôte C++ refuse d'être compilé sous C++98, où le header saute ses
+  assertions de disposition en silence.
 
 ### Corrigé
 - **Trois défauts de l'image en cours.** Un lot soumis avant
@@ -122,6 +127,11 @@ publié, et explique les conventions du dépôt à qui y contribue.
 - **The last two.** Restoring a cache compared only the first level of its
   mipmap chain, which restoring rebuilds; and fog dithering was discriminated
   by nothing, for want of a fog set to the distances of the test scene.
+- **Two host guards.** The web binding checked nine of its eleven struct sizes
+  against the header, `ScgSprite` and `ScgCamera` missing — the two it writes
+  field by field; its table now compares against what it declares. The C++ host
+  refuses to be compiled under C++98, where the header silently skips its
+  layout assertions.
 
 ### Fixed
 - **Three defects of the frame in progress.** A batch submitted before
