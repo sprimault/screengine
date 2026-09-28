@@ -292,6 +292,20 @@ sans jamais allouer de tampon d'image.
 C'est la partie que les documents de format ne couvrent qu'à moitié, et celle où
 il faudra réellement réfléchir plutôt que transposer.
 
+**C'est ici qu'un hôte Go prend son sens**, et pas avant : « utilisable sans
+rendu » veut dire un serveur, et c'est là que ces serveurs s'écrivent. Il
+éprouverait deux choses qu'aucun hôte actuel ne touche — les règles de `cgo` sur
+le passage de pointeurs, qu'aucun document du projet n'énonce, et un
+ordonnanceur qui réserve un thread système par appel C, ce qui décide de la
+forme qu'un rendu par tuiles y prendra.
+
+**Un hôte de démonstration, pas un hôte de garantie** : il charge la
+bibliothèque, vérifie `scg_abi_version`, rend une scène et compare son
+empreinte. Les quatre hôtes de `HOST_SCENES` décrivent chacun toutes les scènes
+— c'est ce qui les rend comparables, et ce qui fait qu'une scène ajoutée coûte
+quatre descriptions. Un cinquième à ce prix n'apporterait rien que les quatre
+ne disent déjà ; ce qu'on veut de Go, c'est que sa liaison tienne.
+
 ## 8 — Ce qu'il faut pour éditer
 
 Le moteur n'a pas d'éditeur : il expose ce qu'un éditeur réclame — tracé de

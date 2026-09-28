@@ -1612,9 +1612,9 @@ teste quelque chose.
   minuscules. Elle hache la largeur puis la hauteur en `u32` petit-boutiste, puis
   la zone utile ligne par ligne, `largeur × 4` octets alpha compris ; le `stride`
   n'y entre pas. Chaque hôte la recalcule dans son langage : elle tient en dix
-  lignes partout, et elle est native en PHP (`hash('fnv1a64')`). Écartés : xxHash, à
-  réimplémenter en JavaScript et en Java ; SHA-256, asynchrone dans un
-  navigateur, pour un détecteur de régression qui n'a rien à sécuriser.
+  lignes partout, sans dépendance ni table. Écartés : xxHash, à réimplémenter en
+  JavaScript et en Java ; SHA-256, asynchrone dans un navigateur, pour un
+  détecteur de régression qui n'a rien à sécuriser.
 - **L'environnement flottant de l'hôte ne change pas l'image.** L'hôte C démasque
   les exceptions, active le zéro forcé et l'arrondi vers le haut avant d'appeler
   le moteur, compare l'empreinte à celle du chemin Rust, et vérifie que son
