@@ -20,9 +20,17 @@ use std::cell::Cell;
 use std::sync::Arc;
 
 use screengine::{
-    Affine3, BYTES_PER_PIXEL, Color, Config, Context, Filter, Light, Mesh, Rows, Texture, Triangle,
-    Vec3, VertexUv, VertexUv2,
+    Affine3, Angle, BYTES_PER_PIXEL, Color, Config, Context, Filter, Light, Lightmaps, Mesh, Rows,
+    Sprite, SpriteOrientation, Texture, Triangle, Vec3, VertexUv, VertexUv2, World,
 };
+
+/// Le décor versionné que les hôtes parcourent, intégré à la compilation.
+///
+/// Celui du dépôt plutôt qu'un décor écrit ici : c'est lui que la traversée
+/// rencontre en vrai, avec ses quatre cellules, son portail oblique et son
+/// étage — un couloir d'une cellule ne remplirait ni la liste des visites ni
+/// l'atlas de lightmaps, donc ne mesurerait rien.
+const SALLES: &[u8] = include_bytes!("../../../hosts/salles.world");
 
 /// Le quadrilatère de la scène de référence, resoumis à chaque image.
 ///
@@ -55,9 +63,9 @@ const TRIANGLES: [Triangle; 2] = [
 /// binaire de test ne voit pas les modules du binaire de conformance, et un
 /// quadrilatère est assez court pour que la recopie coûte moins qu'une
 /// bibliothèque ouverte pour lui.
-fn quad_mesh() -> Vec<u8> {
+fn quad_mesh(frames: u32) -> Vec<u8> {
     // Deux sections : les poses animent, les coordonnées de texture non.
-    let mut poses = 1u32.to_le_bytes().to_vec();
+    let mut poses = frames.to_le_bytes().to_vec();
     let mut uvs = Vec::new();
     for (i, position) in VERTICES.iter().enumerate() {
         for value in [position.x, position.y, position.z] {
@@ -68,6 +76,19 @@ fn quad_mesh() -> Vec<u8> {
         }
         for value in [((i & 1) * 64) as f32, ((i >> 1) * 64) as f32] {
             uvs.extend_from_slice(&value.to_le_bytes());
+        }
+    }
+    // Les trames suivantes déplacent le quadrilatère : l'interpolation ne
+    // s'éprouve pas entre deux poses identiques, que le moteur rendrait comme
+    // la soumission statique.
+    for frame in 1..frames {
+        for position in VERTICES {
+            for value in [position.x + frame as f32 * 0.25, position.y, position.z] {
+                poses.extend_from_slice(&value.to_le_bytes());
+            }
+            for value in [0.0f32, 0.0, 1.0] {
+                poses.extend_from_slice(&value.to_le_bytes());
+            }
         }
     }
 
@@ -293,7 +314,7 @@ fn aucune_image_de_maillage_n_alloue() {
     let mut pixels = vec![0u8; width as usize * height as usize * BYTES_PER_PIXEL];
 
     // Hors mesure : le chargement d'une ressource est un appel nommé.
-    let mesh = Mesh::load(&quad_mesh()).expect("maillage valide");
+    let mesh = Mesh::load(&quad_mesh(1)).expect("maillage valide");
     let texture = Arc::new(
         Texture::load(64, 64, &vec![0x80u8; 64 * 64 * BYTES_PER_PIXEL]).expect("texture valide"),
     );
@@ -521,5 +542,142 @@ fn aucune_image_eclairee_n_alloue() {
             }
         });
         assert_eq!(seen, 0, "{seen} allocation(s), texture : {avec_texture}");
+    }
+}
+
+/// Aucune image n'alloue sur les chemins de l'étape 6 : quadrilatères orientés,
+/// maillage interpolé, surface modulée.
+///
+/// **Aucun des trois n'était mesuré**, et chacun a de quoi allouer sans qu'on
+/// le voie : le premier construit sa base et ses quatre sommets par sprite, le
+/// deuxième mêle deux poses sommet par sommet, le troisième passe par une
+/// seconde table de textures. Un tampon intermédiaire y serait invisible à la
+/// lecture et ne coûterait qu'une image sur soixante.
+#[test]
+fn aucune_image_de_l_etape_6_n_alloue() {
+    let (width, height) = (640, 360);
+    let mut context = Context::new(Config {
+        max_width: width,
+        max_height: height,
+        width,
+        height,
+        tile_size: 64,
+        max_triangles: 0,
+    })
+    .expect("configuration valide");
+    let mut pixels = vec![0u8; width as usize * height as usize * BYTES_PER_PIXEL];
+
+    // Hors mesure : trois ressources, donc trois appels nommés. La texture
+    // masquée est du lot — c'est elle qui engendre sa chaîne de mipmaps, et un
+    // niveau construit au premier affichage serait le défaut type.
+    let mesh = Mesh::load(&quad_mesh(2)).expect("maillage valide");
+    let texture = Arc::new(
+        Texture::load(64, 64, &vec![0x80u8; 64 * 64 * BYTES_PER_PIXEL]).expect("texture valide"),
+    );
+    let masked = Arc::new(
+        Texture::load_masked(64, 64, &vec![0xC0u8; 64 * 64 * BYTES_PER_PIXEL])
+            .expect("texture masquée valide"),
+    );
+
+    let sprites = [Sprite {
+        center: Vec3::new(3.0, 0.0, 0.0),
+        half_width: 0.6,
+        half_height: 0.8,
+        u0: 0.0,
+        v0: 0.0,
+        u1: 64.0,
+        v1: 64.0,
+        roll: Angle(1 << 29),
+        color: Color::new(0xFF, 0xFF, 0xFF, 0xFF),
+    }];
+    let blended: Vec<VertexUv> = VERTICES
+        .iter()
+        .enumerate()
+        .map(|(i, position)| VertexUv {
+            position: *position,
+            u: ((i & 1) * 64) as f32,
+            v: ((i >> 1) * 64) as f32,
+        })
+        .collect();
+
+    // Les deux orientations, parce que leurs bases ne se construisent pas de la
+    // même façon, et un facteur d'interpolation strictement entre les deux
+    // trames, le seul qui mêle vraiment les poses.
+    for orientation in [SpriteOrientation::Axial, SpriteOrientation::Facing] {
+        let seen = allocations(|| {
+            for _ in 0..3 {
+                context
+                    .submit_mesh_frame(Affine3::IDENTITY, &mesh, |_| Some(&texture), 0, 1, 0.35)
+                    .expect("maillage animé soumis");
+                context
+                    .submit_sprites(Affine3::IDENTITY, &sprites, Some(&masked), orientation)
+                    .expect("quadrilatères soumis");
+                context
+                    .submit_blended(Affine3::IDENTITY, &blended, &TRIANGLES, Some(&texture))
+                    .expect("surface modulée soumise");
+                context.frame_end(&mut pixels, width).expect("image rendue");
+            }
+        });
+        assert_eq!(
+            seen, 0,
+            "{seen} allocation(s), orientation : {orientation:?}"
+        );
+    }
+}
+
+/// Aucune image de traversée n'alloue, avec ses lightmaps et sur un vrai décor.
+///
+/// **C'est l'invariant le plus exposé de l'étape 5.** La traversée remplit une
+/// liste de visites à chaque image, la soumission lit l'atlas de la cellule, et
+/// `.claude/critical-rules.md` nomme lui-même l'atlas agrandi comme le défaut
+/// type. La cuisson, elle, alloue et le dit : elle est hors mesure, comme tout
+/// appel nommé.
+///
+/// Les cinq images ne partent pas de la même cellule : une seule ne remplirait
+/// la liste des visites qu'une fois, et une liste qui grandirait au deuxième
+/// décor visité ne se verrait pas.
+#[test]
+fn aucune_image_de_traversee_n_alloue() {
+    let (width, height) = (640, 360);
+    let mut context = Context::new(Config {
+        max_width: width,
+        max_height: height,
+        width,
+        height,
+        tile_size: 64,
+        max_triangles: 0,
+    })
+    .expect("configuration valide");
+    let mut pixels = vec![0u8; width as usize * height as usize * BYTES_PER_PIXEL];
+
+    // Hors mesure : le décor, ses textures et la cuisson de toutes ses cellules.
+    let world = World::load(SALLES).expect("décor versionné valide");
+    let texture = Arc::new(
+        Texture::load(64, 64, &vec![0x80u8; 64 * 64 * BYTES_PER_PIXEL]).expect("texture valide"),
+    );
+    let mut lightmaps = Lightmaps::new(&world).expect("atlas alloués");
+    let mut cells = Vec::new();
+    for index in 0..world.cell_count() {
+        let id = world.cell_id(index).expect("rang dans le compte");
+        lightmaps.build(&world, id).expect("cuisson");
+        cells.push(id);
+    }
+
+    for lit in [true, false] {
+        let seen = allocations(|| {
+            for &cell in &cells {
+                context
+                    .submit_world_visible(
+                        Affine3::IDENTITY,
+                        &world,
+                        cell,
+                        lit.then_some(&lightmaps),
+                        |_| Some(&texture),
+                    )
+                    .expect("décor soumis");
+                context.frame_end(&mut pixels, width).expect("image rendue");
+            }
+        });
+        assert_eq!(seen, 0, "{seen} allocation(s), éclairé : {lit}");
     }
 }
