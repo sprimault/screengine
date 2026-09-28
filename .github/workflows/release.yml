@@ -234,11 +234,13 @@ jobs:
           attendu=$(for scene in $(make -s print-HOST_SCENES); do
             cat "crates/screengine-conformance/references/$scene"
           done)
-          # Le maillage versionné en troisième argument : une des scènes le
-          # charge depuis un fichier, et l'hôte n'en fabrique aucun.
+          # Les deux fichiers versionnés en argument : deux des scènes les
+          # chargent, et l'hôte n'en fabrique aucun. Leur nombre suit celui des
+          # scènes — c'est ici que l'ajout d'une scène à `HOST_SCENES` se paie,
+          # et l'oubli ne se voit qu'au tag.
           obtenu=$(node hosts/web/test.js \
             "$PAQUET/lib/screengine.wasm" "$PAQUET/include/screengine.h" \
-            hosts/caisse.mesh | tr -d '\r')
+            hosts/caisse.mesh hosts/salles.world | tr -d '\r')
           if [ "$obtenu" != "$attendu" ]; then
             echo "archive wasm : $obtenu, référence $attendu" >&2
             exit 1
@@ -301,10 +303,10 @@ jobs:
             readelf -d "$PAQUET/lib/libscreengine.so" | grep -q 'SONAME.*\[libscreengine.so\]'
             readelf -d essai/cpp.exe | grep -q 'NEEDED.*\[libscreengine.so\]'
           fi
-          # Le maillage en argument, pour la même raison que du côté wasm :
-          # l'hôte lit les fichiers, et une des scènes en charge un.
+          # Les deux fichiers en argument, pour la même raison que du côté
+          # wasm : l'hôte lit les fichiers, et deux des scènes en chargent un.
           for hote in c cpp; do
-            obtenu=$(./essai/$hote.exe hosts/caisse.mesh | tr -d '\r')
+            obtenu=$(./essai/$hote.exe hosts/caisse.mesh hosts/salles.world | tr -d '\r')
             if [ "$obtenu" != "$attendu" ]; then
               echo "archive, hôte $hote : $obtenu, référence $attendu" >&2
               exit 1
