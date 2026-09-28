@@ -8,11 +8,15 @@ GPU, pas de fenêtre : on lui donne une scène et un tampon, il remplit le tampo
 ![Traversée d'un couloir en ruine, arme au poing : pierre moussue, tubes qui clignotent, jour tombant par une trouée du plafond, et une créature qui arpente le fond du couloir, son ombre au sol](docs/couloir.webp)
 
 *L'exemple `couloir` de `screengine-play`, rendu en 640×360 : textures,
-mipmaps, filtrage bilinéaire, lightmaps, lumières dynamiques, brouillard et
-courbe de sortie. Le jour vient des lightmaps que l'exemple cuit, les tubes
-sont des lumières dynamiques et clignotent. Le filtrage par défaut, lui, est le
-tramage ordonné des coordonnées, et l'exemple bascule de l'un à l'autre —
-c'est en marchant que les deux se départagent.*
+mipmaps, filtrage bilinéaire, lightmaps, lumières dynamiques, brouillard,
+courbe de sortie, et des quadrilatères que le moteur oriente sur la caméra.
+Le jour vient des lightmaps que l'exemple cuit, les tubes sont des lumières
+dynamiques et clignotent. L'arme et la créature sont des sprites à
+transparence binaire : la créature choisit sa vue parmi huit selon l'angle
+sous lequel on la regarde, et la tache qui la suit au sol est une surface
+modulée, qui assombrit les dalles au lieu de les recouvrir. Le filtrage par
+défaut, lui, est le tramage ordonné des coordonnées, et l'exemple bascule de
+l'un à l'autre — c'est en marchant que les deux se départagent.*
 
 MIT ou Apache-2.0, au choix — voir [`LICENSE-MIT`](LICENSE-MIT) et
 [`LICENSE-APACHE`](LICENSE-APACHE). Sauf mention contraire de son auteur, toute
