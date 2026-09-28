@@ -1411,3 +1411,122 @@ fn refuse_de_changer_le_sur_eclairement_pendant_une_image() {
     // SAFETY: le handle est vivant et détruit une seule fois.
     unsafe { scg_destroy(ctx) };
 }
+
+/// `scg_submit_shaded` traverse la frontière, et la normale y décide.
+///
+/// **Le seul point d'entrée que personne n'appelait** : aucun hôte, aucune
+/// scène de conformance, aucun test. Son symbole était exporté sans que rien
+/// ne le lie jamais, et sa structure de sommet — huit flottants, la seule qui
+/// en porte autant — n'était écrite par personne à travers l'ABI.
+///
+/// Deux lots identiques sauf leur normale, l'une vers la lumière et l'autre à
+/// l'opposé : le second doit sortir plus sombre. C'est la propriété que cette
+/// fonction ajoute à `scg_submit_textured`, et la seule qu'un test puisse
+/// vérifier sans figer une empreinte.
+#[test]
+fn soumet_un_lot_a_normales_et_la_normale_decide() {
+    let peint = |nx: f32| -> u32 {
+        let ctx = create(&sane());
+        let texture = load(&desc(2, 2), &[0xFF; 16]);
+
+        // **Entre la caméra et la géométrie**, qui est à `x = 10` : la
+        // direction vers la lumière est donc le `-X`, et c'est une normale
+        // tournée par là qui la reçoit.
+        let lights = [ScgLight {
+            x: 4.0,
+            y: 0.0,
+            z: 0.0,
+            radius: 32.0,
+            r: 0xFF,
+            g: 0xFF,
+            b: 0xFF,
+            // Réservé, et le contrat exige zéro : une lumière ajoute, elle ne
+            // mélange pas, donc l'octet n'est pas un alpha.
+            _reserved: 0,
+        }];
+        assert_eq!(
+            // SAFETY: contexte vivant, le tableau couvre le compte annoncé.
+            unsafe { scg_set_lights(ctx, lights.as_ptr(), 1) },
+            SCG_OK,
+            "lumières refusées : {}",
+            last_error(ctx)
+        );
+
+        let vertex = |y: f32, z: f32, u: f32, v: f32| ScgVertexUvN {
+            x: 10.0,
+            y,
+            z,
+            u,
+            v,
+            nx,
+            ny: 0.0,
+            nz: 0.0,
+        };
+        let vertices = [
+            vertex(-2.0, -2.0, 0.0, 0.0),
+            vertex(0.0, 2.0, 4.0, 0.0),
+            vertex(2.0, -2.0, 4.0, 4.0),
+        ];
+        let triangles = [ScgTriangle {
+            i0: 0,
+            i1: 1,
+            i2: 2,
+            r: 0xFF,
+            g: 0xFF,
+            b: 0xFF,
+            a: 0xFF,
+        }];
+        let identity = ScgMat4 {
+            m: [
+                1.0, 0.0, 0.0, 0.0, //
+                0.0, 1.0, 0.0, 0.0, //
+                0.0, 0.0, 1.0, 0.0, //
+                0.0, 0.0, 0.0, 1.0,
+            ],
+        };
+
+        // SAFETY: contexte et texture vivants, les deux tableaux couvrent les
+        // comptes annoncés.
+        let code = unsafe {
+            scg_submit_shaded(
+                ctx,
+                &identity,
+                vertices.as_ptr(),
+                3,
+                triangles.as_ptr(),
+                1,
+                texture,
+            )
+        };
+        assert_eq!(code, SCG_OK, "soumission refusée : {}", last_error(ctx));
+
+        // SAFETY: handle vivant ; le moteur en garde sa propre référence.
+        unsafe { scg_texture_destroy(texture) };
+
+        let mut pixels = vec![0u8; 64 * 32 * 4];
+        assert_eq!(
+            // SAFETY: contexte vivant, tampon de la taille annoncée par le
+            // stride.
+            unsafe { scg_frame_end(ctx, pixels.as_mut_ptr(), 64) },
+            SCG_OK
+        );
+        // SAFETY: le handle est vivant et détruit une seule fois.
+        unsafe { scg_destroy(ctx) };
+
+        // Le pixel le plus clair de l'image : la géométrie est la même dans les
+        // deux cas, seule sa réponse à la lumière change.
+        pixels
+            .chunks_exact(4)
+            .map(|p| u32::from(p[0]) + u32::from(p[1]) + u32::from(p[2]))
+            .max()
+            .unwrap_or(0)
+    };
+
+    let face = peint(-1.0);
+    let dos = peint(1.0);
+    assert!(face > 0, "le lot n'a rien peint");
+    assert!(
+        dos < face,
+        "la normale n'a rien changé : face {face}, dos {dos}"
+    );
+}

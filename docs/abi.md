@@ -46,6 +46,13 @@ Arrêtés. Ils découlent des invariants du projet et ne se rediscutent pas ici.
 - **Toute erreur est un code de retour.** Chaque point d'entrée est enveloppé de
   `catch_unwind` : une panique qui atteindrait l'appelant serait un comportement
   indéfini, pas un plantage propre.
+
+  **Deux fonctions s'en passent, et elles se comptent** : `scg_abi_version`, qui
+  rend une constante, et `scg_last_error`, qui rend un pointeur sur un tampon
+  déjà écrit. Aucune des deux n'alloue ni ne calcule, aucune ne rend de code de
+  retour où loger une panique, et la seconde doit rester permise sur un objet
+  défaillant — c'est là qu'un hôte vient chercher la cause. Toute autre
+  fonction, y compris celles qui ne rendent rien, passe par l'enveloppe.
 - **On ajoute des fonctions, on ne modifie jamais une signature publiée.** Un hôte
   compilé contre un `screengine.h` d'il y a six mois doit continuer à se lier.
 - **Le moteur n'ouvre rien.** Cartes, maillages et textures arrivent en blocs
