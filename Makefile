@@ -158,9 +158,6 @@ HOST_OUT = $(abspath $(SORTIE))/host-$(host_dir_$*)
 #   lumiere-surbrillance  même scène, donc scg_set_overbright seul
 #   brouillard            le fond que nul triangle ne peint, et sa couture
 #   lumieres              les lumières dynamiques, sans lightmap
-#
-# Une scène ajoutée ici est une scène à écrire dans les quatre hôtes, et c'est
-# voulu : c'est ce qui rend leur comparaison possible.
 #   maillage              la caisse chargée depuis hosts/caisse.mesh
 #   composite             les cinq chemins de l'étape 6 dans une seule image :
 #                         maillage entre deux trames, texture masquée, les deux
@@ -168,6 +165,9 @@ HOST_OUT = $(abspath $(SORTIE))/host-$(host_dir_$*)
 #                         modulée. Une seule, parce qu'une scène coûte quatre
 #                         descriptions ; les scènes séparées de la conformance
 #                         disent lequel des chemins a bougé
+#
+# Une scène ajoutée ici est une scène à écrire dans les quatre hôtes, et c'est
+# voulu : c'est ce qui rend leur comparaison possible.
 HOST_SCENES := arete texture texture-bilineaire gamma lumiere lumiere-surbrillance brouillard lumieres maillage composite
 
 # Sans l'outillage de l'hôte, la cible saute et dit pourquoi. En intégration
@@ -276,8 +276,13 @@ lint-doc-tests:
 # Le noyau seul, sur une cible sans std. Les autres crates en sont dispensés :
 # l'étage d'accueil ouvre une fenêtre, la conformance écrit des fichiers, la
 # couche FFI formate des messages d'erreur.
+#
+# Sans `--no-default-features` : aucun crate du dépôt ne déclare de
+# fonctionnalité, le drapeau n'a donc rien à désactiver, et le laisser ferait
+# croire à un `std` optionnel qui n'existe pas. C'est la cible bare-metal qui
+# prouve, comme le dit la définition de CIBLE_NOSTD.
 nostd:
-	cargo build -p screengine --no-default-features --target $(CIBLE_NOSTD)
+	cargo build -p screengine --target $(CIBLE_NOSTD)
 
 # La référence de performance, prise avant que l'étape 3 touche au remplissage.
 #
@@ -411,9 +416,10 @@ clean:
 	rm -rf $(SORTIE)
 
 # Les versions sont épinglées ici et nulle part ailleurs : le workflow appelle
-# make tools plutôt que de réécrire ses cargo install, et l'action qui lance le
-# lint lit CBINDGEN_VERSION par print-%, faute de quoi les deux définitions
-# divergent sans que rien ne le signale.
+# make tools plutôt que de réécrire ses cargo install, si bien qu'il n'existe
+# aucune seconde définition à tenir d'accord avec celle-ci. Ce que la CI lit par
+# print-%, ce sont les cibles de compilation, qu'elle doit installer avant
+# d'appeler quoi que ce soit.
 #
 # cbindgen est épinglable parce que c'est un générateur : une version différente
 # produit un header différent, donc header-verif échouerait sur un dépôt propre.

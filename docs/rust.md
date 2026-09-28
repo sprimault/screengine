@@ -43,11 +43,14 @@ recopie. Harnais maison, `#[bench]` n'existant qu'en nightly et le noyau
 n'admettant aucune dépendance.
 
 **Un fichier par chemin qu'une étape va changer**, et non un fichier qui grossit.
-`carte.rs` mesure le chargement d'une carte et sa soumission par image, prise
-avant que la traversée par portails remplace l'une des deux ; il intègre
-`hosts/couloir.world` par `include_bytes!`, le noyau n'ouvrant aucun fichier et
-un bench qui encoderait sa propre carte ne mesurant qu'un encodeur écrit pour
-lui.
+`carte.rs` mesure le chargement d'une carte, sa soumission par image et **ce que
+la traversée par portails coûte ou rapporte** face au chemin brut ; il intègre
+`hosts/couloir.world` et `hosts/salles.world` par `include_bytes!`, le noyau
+n'ouvrant aucun fichier et un bench qui encoderait sa propre carte ne mesurant
+qu'un encodeur écrit pour lui. Le couloir y reste alors que les hôtes ne le
+parcourent plus : c'est le décor où tout est visible, donc celui où
+l'élimination ne peut que perdre, et le retirer ne laisserait que le cas
+favorable.
 
 **`make bench` est hors de la liste fixe, et rien n'y échoue.** Une durée dépend
 de la charge de la machine : en faire un contrôle le rendrait rouge pour des
@@ -1324,7 +1327,13 @@ chose à ses sommets.
 de la section des lumières statiques, `total += canal × atténuation`, jamais de
 `mul_add`. Suréchantillonnage **fixé à 2×2** à des décalages d'un quart de luxel,
 sommés dans un ordre écrit, moyennés par une division par quatre — exacte. Puis
-`v × 255 + 0,5`, borné par des comparaisons écrites, converti par `as`. **Le
+`v + 0,5`, borné par des comparaisons écrites, converti par `as`.
+
+**Et non `v × 255 + 0,5`** : le canal accumulé est déjà l'octet de la lumière,
+pondéré, jamais une fraction de un. Le facteur rendrait tout blanc, et c'est le
+genre d'écart qu'un chemin vectoriel écrit d'après ce paragraphe reproduirait
+sans que rien ne l'arrête — la conformance comparant les deux chemins entre eux,
+pas au texte. **Le
 nombre d'échantillons n'est pas un réglage** : configurable, il changerait
 l'image, devrait entrer dans l'ABI et dans l'empreinte du cache. Le jour où il
 faut le changer, c'est une constante de plus dans la révision du calcul.
@@ -1500,10 +1509,12 @@ teste quelque chose.
   un compilateur C, ni l'environnement flottant d'un vrai hôte n'y passent.
 - **L'hôte C, dans `make test-abi`**, franchit réellement la frontière : lié à la
   bibliothèque statique, sans fenêtre, il vérifie refus, sentinelles autour du
-  tampon, alignement et registre flottant, puis compare son empreinte du triangle
-  à celle du chemin Rust (`screengine-conformance --print arete`). Il fait
-  partie de `make test` ; sans compilateur C il saute en le disant, et ce saut
-  est une erreur en intégration continue.
+  tampon, alignement et registre flottant, puis compare ses empreintes à celles
+  du chemin Rust sur les scènes que `HOST_SCENES` énumère — **chacune est là
+  pour un chemin d'ABI que les autres n'empruntent pas**, et c'est le seul
+  critère d'entrée dans cette liste, qui s'allongerait sinon d'une scène à
+  chaque étape. Il fait partie de `make test` ; sans compilateur C il saute en
+  le disant, et ce saut est une erreur en intégration continue.
 - **Les hôtes rendent aussi par tuiles** : une partie des tuiles, dans un ordre
   qui n'est pas celui des index, puis la fin qui complète, et l'empreinte doit
   être celle de la fin seule. L'hôte C++ les rend sur plusieurs threads.
@@ -1560,13 +1571,20 @@ teste quelque chose.
   le défaut le plus coûteux du projet : invisible à l'arrêt, visible en
   mouvement.
 - **Chaque scène se rend en tuiles de 32, en tuiles de 64, en image entière, en
-  tuiles dans un ordre mélangé à graine fixe et en tuiles réparties sur plusieurs
-  threads**, et les cinq empreintes doivent être identiques. Une couture de
-  tuile ne se voit que dans une configuration : sans ce contrôle, la conformance
-  ne vaudrait que pour la sienne. L'image entière passe par l'API Rust du noyau,
-  qui rend une région quelconque sans passer par la répartition ; l'ABI
-  n'accepte que 32 et 64. Les tests du noyau font la même comparaison octet pour
-  octet sur des scènes tirées au hasard, où les triangles se recouvrent.
+  tuiles dans un ordre mélangé à graine fixe, en tuiles réparties sur plusieurs
+  threads, et dans un contexte redimensionné** — six empreintes, qui doivent
+  être identiques. Une couture de tuile ne se voit que dans une configuration :
+  sans ce contrôle, la conformance ne vaudrait que pour la sienne. L'image
+  entière passe par l'API Rust du noyau, qui rend une région quelconque sans
+  passer par la répartition ; l'ABI n'accepte que 32 et 64. Les tests du noyau
+  font la même comparaison octet pour octet sur des scènes tirées au hasard, où
+  les triangles se recouvrent.
+
+  **La sixième n'est pas une redite des cinq autres** : toutes ouvrent leur
+  contexte à la résolution de la vue, qui est aussi son maximum, si bien que le
+  cas « sous le maximum » n'y est jamais joué et le changement de résolution
+  encore moins. Celle-ci rend la même image par un contexte dont l'histoire
+  diffère.
 - **Une scène, une référence**, `references/<scène>` : seize chiffres et un saut
   de ligne, comparés octet pour octet. Toutes les configurations se comparent à
   la même. Une référence absente fait échouer `--check`, jamais un « rien à

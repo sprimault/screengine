@@ -63,6 +63,11 @@ publié, et explique les conventions du dépôt à qui y contribue.
   certifiaient la partition, jamais quel côté d'une arête gagne : règle
   inversée, les cinq restaient au vert. Un défaut que `CLAUDE.md` désigne comme
   le premier piège du projet n'était nommé par rien.
+- **Huit textes que le code démentait**, dont l'ordre d'opérations figé de la
+  cuisson : il annonçait une multiplication par 255 qui rendrait tout blanc, et
+  c'est d'après ce paragraphe qu'un chemin vectoriel s'écrira. La cible `nostd`
+  perd au passage un `--no-default-features` qui ne désactivait rien, aucun
+  crate du dépôt ne déclarant de fonctionnalité.
 - **Quatre contrôles qui ne pouvaient pas rougir.** La graine du générateur de
   test envoyait deux graines consécutives sur la même suite, pour moitié moins
   de cas distincts ; la borne de profondeur de la traversée et le statut
@@ -100,6 +105,11 @@ publié, et explique les conventions du dépôt à qui y contribue.
   certified the partition, never which side of an edge wins: with the rule
   inverted, all five stayed green. A defect `CLAUDE.md` calls the project's
   first pitfall was named by nothing.
+- **Eight texts the code contradicted**, including the frozen operation order of
+  lightmap baking: it announced a multiplication by 255 that would render
+  everything white, and it is from that paragraph that a vector path will be
+  written. The `nostd` target loses a `--no-default-features` that disabled
+  nothing along the way, no crate here declaring a feature.
 - **Four checks that could not fail.** The test generator's seed sent two
   consecutive seeds down the same sequence, for half as many distinct cases;
   traversal's depth bound and the status it returns were reached by no map; the
