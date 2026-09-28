@@ -125,26 +125,59 @@ fn corners(face: &Face) -> [([f32; 3], (f32, f32)); 4] {
 /// emplacement, auquel la scène ne lie aucune texture — c'est ainsi qu'un groupe
 /// se dessine à la couleur de ses triangles.
 pub fn bytes() -> Vec<u8> {
+    build(&[[1.0, 1.0, 1.0]])
+}
+
+/// La même caisse, **à deux trames** : au repos, puis écrasée.
+///
+/// Ce que la seconde trame doit à l'écriture plutôt qu'au hasard : elle change
+/// les trois axes d'un facteur différent, si bien qu'une trame lue à la place
+/// de l'autre, un facteur d'interpolation ignoré ou pris à l'envers rend une
+/// caisse d'une autre taille sur **chacun** de ses côtés. Un écrasement sur un
+/// seul axe laisserait deux dimensions identiques d'une trame à l'autre.
+pub fn animated_bytes() -> Vec<u8> {
+    build(&[[1.0, 1.0, 1.0], [1.35, 1.15, 0.55]])
+}
+
+/// Assemble le fichier, une pose par facteur d'échelle donné.
+///
+/// **Chaque trame porte la normale que son échelle impose**, par les cofacteurs
+/// de celle-ci — pour une échelle, `(sy·sz, sx·sz, sx·sy)`. Écrire la normale
+/// du repos dans toutes les trames serait un défaut du fichier, pas du moteur,
+/// et la scène de conformance mesurerait alors l'export au lieu du rendu.
+fn build(frame_scales: &[[f32; 3]]) -> Vec<u8> {
     let faces: Vec<&Face> = SIDES.iter().chain(CAPS.iter()).collect();
 
     // Ce qui anime et ce qui n'anime pas vivent dans deux sections : les
     // coordonnées de texture sont constantes sur toutes les trames, les poses
-    // changent. La caisse n'en a qu'une, et le décodeur n'a pas deux chemins.
+    // changent. Un maillage statique est une animation d'une pose, et le
+    // décodeur n'a pas deux chemins.
     let mut uvs = Vec::new();
     let mut poses = Vec::new();
     let mut triangles = Vec::new();
+    for scale in frame_scales {
+        let cofactors = [
+            scale[1] * scale[2],
+            scale[0] * scale[2],
+            scale[0] * scale[1],
+        ];
+        for face in &faces {
+            for (position, _) in corners(face) {
+                for (axis, value) in position.iter().enumerate() {
+                    f32_bytes(value * scale[axis], &mut poses);
+                }
+                // La normale de la face, la même pour ses quatre coins : une
+                // caisse a des arêtes vives, et c'est précisément ce qu'une
+                // normale dérivée des sommets voisins arrondirait.
+                for (axis, value) in face.normal.iter().enumerate() {
+                    f32_bytes(value * cofactors[axis], &mut poses);
+                }
+            }
+        }
+    }
     for (index, face) in faces.iter().enumerate() {
         let first = (index * 4) as u32;
-        for (position, (u, v)) in corners(face) {
-            for value in position {
-                f32_bytes(value, &mut poses);
-            }
-            // La normale de la face, la même pour ses quatre coins : une caisse
-            // a des arêtes vives, et c'est précisément ce qu'une normale
-            // dérivée des sommets voisins arrondirait.
-            for value in face.normal {
-                f32_bytes(value, &mut poses);
-            }
+        for (_, (u, v)) in corners(face) {
             f32_bytes(u, &mut uvs);
             f32_bytes(v, &mut uvs);
         }
@@ -180,9 +213,9 @@ pub fn bytes() -> Vec<u8> {
         names.extend_from_slice(name.as_bytes());
     }
 
-    // Une seule trame, écrite en tête de sa section : la caisse ne s'anime pas,
-    // et un maillage statique est une animation d'une pose.
-    let mut frames = 1u32.to_le_bytes().to_vec();
+    // Le nombre de trames en tête de sa section, les poses à la suite, une
+    // tranche contiguë par trame.
+    let mut frames = (frame_scales.len() as u32).to_le_bytes().to_vec();
     frames.extend_from_slice(&poses);
 
     file(&frames, &groups, &names, &triangles, &uvs)

@@ -1639,6 +1639,33 @@ fn les_deux_orientations_different_vu_d_en_haut() {
     );
 }
 
+/// **L'axial dessine, caméra à l'horizontale.**
+///
+/// Le cas ordinaire, et celui qu'aucun test ne tenait : les deux modes rendaient
+/// des images différentes parce que l'axial n'en rendait **aucune**, sa base
+/// portant un axe de largeur opposé à celui du plein-face. Le quadrilatère
+/// tournait le dos à la caméra et le test de face arrière l'éliminait, si bien
+/// que « les deux modes diffèrent » passait pour la mauvaise raison.
+///
+/// Le test exige donc les deux triangles, et non une différence : c'est la seule
+/// forme qui ne se satisfasse pas d'une image vide.
+#[test]
+fn l_axial_dessine_camera_a_l_horizontale() {
+    let poser = |orientation| {
+        let mut ctx = small();
+        ctx.submit_sprites(
+            Affine3::IDENTITY,
+            &[sprite(Vec3::new(10.0, 0.0, 0.0))],
+            None,
+            orientation,
+        )
+        .expect("sprite soumis");
+        ctx.triangles.len()
+    };
+    assert_eq!(poser(SpriteOrientation::Facing), 2);
+    assert_eq!(poser(SpriteOrientation::Axial), 2);
+}
+
 /// **L'axial dégénère à la verticale exacte, sans erreur.**
 ///
 /// Le quadrilatère n'a plus de largeur : il disparaît comme un triangle qui ne

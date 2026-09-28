@@ -153,6 +153,11 @@ publié, et explique les conventions du dépôt à qui y contribue.
   que celles tournées vers la caméra étaient éliminées et celles du fond
   dessinées. Le moteur retourne maintenant son test pour ces lots, et leurs
   normales suivent le reflet au lieu de tourner le dos aux lumières.
+- **`SCG_SPRITE_AXIAL` ne dessinait rien.** Sa base portait un axe de largeur
+  opposé à celui du plein face, si bien que le quadrilatère tournait le dos à la
+  caméra et que le test de face arrière l'éliminait — quelle que soit la scène,
+  et sans erreur. Le mode axial est inutilisable dans toute version qui l'expose
+  avant celle-ci.
 
 ***
 
@@ -256,6 +261,10 @@ publié, et explique les conventions du dépôt à qui y contribue.
   camera were culled and those at the back were drawn. The engine now flips its
   test for such batches, and their normals follow the reflection instead of
   turning their backs on every light.
+- **`SCG_SPRITE_AXIAL` drew nothing.** Its basis carried a width axis opposite
+  to the camera-facing one, so the quad turned its back on the camera and the
+  back-face test culled it — in any scene, and without an error. The axial mode
+  is unusable in any release exposing it before this one.
 
 ## [0.5.0] — 2026-09-26 — Le monde
 

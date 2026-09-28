@@ -1526,10 +1526,15 @@ impl Context {
                 // racine inverse pour toute une nuée.
                 let up = Vec3::new(0.0, 0.0, 1.0);
                 let forward = camera.transform_vector(Vec3::new(0.0, 0.0, 1.0));
+                // **`forward × up`, et non l'inverse** : celui-ci rendrait un
+                // axe de largeur opposé à celui du plein-face, donc un
+                // quadrilatère dont la normale fuit la caméra — vu de dos, il
+                // serait éliminé, et l'axial ne dessinerait jamais rien.
+                //
                 // `normalize` rend le vecteur nul sous le seuil de la racine
                 // inverse du noyau, et c'est exactement le cas d'une caméra à la
                 // verticale : le produit vectoriel s'y annule.
-                let across = up.cross(forward).normalize();
+                let across = forward.cross(up).normalize();
                 if across.dot(across) == 0.0 {
                     return None;
                 }
