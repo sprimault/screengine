@@ -139,6 +139,11 @@ impl Target for Scratch<'_> {
         // Non strict, à l'inverse de `test` : une tache coplanaire avec la
         // surface qu'elle marque doit gagner, et c'est l'ordre de soumission
         // qui la départage — le décor d'abord, sa tache ensuite.
+        //
+        // La profondeur reçue porte déjà la tolérance de pente que le
+        // rasteriseur ajoute pour les triangles modulés : l'égalité seule ne
+        // suffit pas, deux découpes d'un même plan ne rendant pas les mêmes
+        // bits. Voir `raster::triangle::slope_bias`.
         z >= self.depth[self.index(x, y)]
     }
 

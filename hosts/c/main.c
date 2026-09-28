@@ -1138,7 +1138,7 @@ static void make_shadow(uint8_t *pixels)
             if (q > 1.0f) {
                 q = 1.0f;
             }
-            uint8_t level = (uint8_t)(0x38 + (int)((float)(0xFF - 0x38) * q));
+            uint8_t level = (uint8_t)(0x30 + (int)((float)(0xFF - 0x30) * q));
             texel[0] = level;
             texel[1] = level;
             texel[2] = level;

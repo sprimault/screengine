@@ -46,6 +46,26 @@ publié, et explique les conventions du dépôt à qui y contribue.
 
 ## [Non publié]
 
+### Corrigé
+- **Une tache modulée posée au ras de la surface qu'elle marque n'y écrivait
+  rien**, dès que les deux n'étaient pas découpées en triangles de la même
+  façon — une ombre sous un objet mobile, donc, le cas d'usage de la primitive.
+  Le test de profondeur exigeait l'égalité, que deux découpes d'un même plan ne
+  rendent pas ; il tolère désormais la pente du triangle modulé, nulle sur une
+  surface frontale. **Une scène qui module rend donc autre chose** : deux
+  empreintes de conformance bougent, les autres sont inchangées.
+
+***
+
+### Fixed
+- **A modulated blot laid flush against the surface it marks wrote nothing to
+  it**, as soon as the two were not cut into triangles the same way — a shadow
+  under a moving object, that is, the primitive's whole use case. The depth
+  test demanded equality, which two cuts of one plane do not render; it now
+  tolerates the modulated triangle's slope, zero on a head-on surface. **A
+  scene that modulates therefore renders something else**: two conformance
+  fingerprints move, the others are unchanged.
+
 ## [0.6.0] — 2026-09-28 — Animation et sprites
 
 **Ce qu'un hôte de la 0.5.0 doit reprendre : ses maillages.** `version_format`

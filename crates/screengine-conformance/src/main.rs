@@ -1592,11 +1592,14 @@ impl Scene {
                 // strict sans écriture de profondeur suffit, et un biais en `z`
                 // vaudrait des millimètres de près et des mètres au loin.
                 //
-                // **Elle marque treize mille pixels et ne se voit presque pas.**
+                // **Elle marque vingt mille pixels et ne se voit presque pas.**
                 // Un assombrissement doux sur un damier contrasté se lit mal à
                 // l'œil, et c'est un piège de cette scène : ce qui dit qu'un
                 // chemin entre dans l'empreinte est la comparaison des images,
-                // jamais l'impression qu'elles donnent.
+                // jamais l'impression qu'elles donnent. Elle n'en marquait
+                // aucun jusqu'à la tolérance de pente du rasteriseur, et ni
+                // l'œil ni l'empreinte ne pouvaient le dire — seule la
+                // comparaison avec la même scène privée de sa tache.
                 let corners = [
                     Vec3::new(4.5, -5.5, -2.6),
                     Vec3::new(9.5, -5.5, -2.6),
