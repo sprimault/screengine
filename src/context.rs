@@ -205,6 +205,15 @@ pub struct Context {
     /// n'a pas le droit d'allouer. La liste sort de la traversée triée par index
     /// de cellule, fenêtres d'une même cellule déjà fusionnées.
     visits: Vec<Visit>,
+    /// Le premier triangle que la traversée a produit.
+    ///
+    /// Symétrique de [`Context::visited_end`], et pour la même raison dans
+    /// l'autre sens : un lot soumis **avant** la traversée dans la même image
+    /// porte un index plus petit que tous les siens, et la première plage le
+    /// rognerait à la fenêtre d'une cellule qui ne le contient pas. La fenêtre
+    /// ne borne que la boucle et jamais les valeurs, si bien que ne pas
+    /// l'appliquer est toujours juste — l'appliquer à tort supprime des pixels.
+    visited_first: u32,
     /// Le premier triangle que la traversée n'a pas produit.
     ///
     /// Un lot soumis autrement dans la même image ne se borne par aucune
@@ -370,6 +379,7 @@ impl Context {
             lights: reserved(MAX_LIGHTS)?,
             placed: reserved(MAX_LIGHTS)?,
             visits: reserved(MAX_VISITS)?,
+            visited_first: 0,
             visited_end: 0,
             fog: Fog::new()?,
             fog_range: (0.0, 0.0),
@@ -709,6 +719,7 @@ impl Context {
             // Et les fenêtres avec eux : gardées, elles borneraient les triangles
             // d'une image suivante que la traversée n'a pas produits.
             self.visits.clear();
+            self.visited_first = 0;
             self.visited_end = 0;
             *self.stale.get_mut() = false;
         }
@@ -935,6 +946,12 @@ impl Context {
         F: Fn(u32) -> Option<&'t Arc<Texture>>,
         V: Fn(usize) -> VertexUv2,
     {
+        // **Avant de prendre la marque**, et c'est tout l'intérêt de la prendre :
+        // les listes d'une image close ne sont vidées qu'au premier triangle
+        // posé, si bien qu'une marque lue avant désigne une longueur que la
+        // liste n'a plus. Le `truncate` du refus ne ferait alors rien, et un
+        // maillage refusé resterait à moitié posé.
+        self.drop_closed_frame();
         let (mark, textures) = (self.triangles.len(), self.textures.len());
         let lights = self.lighting.len();
 
@@ -1106,6 +1123,8 @@ impl Context {
     where
         F: Fn(u32) -> Option<&'t Arc<Texture>>,
     {
+        // Avant la marque, pour la raison écrite dans `submit_mesh_with`.
+        self.drop_closed_frame();
         let (mark, textures) = (self.triangles.len(), self.textures.len());
         let lights = self.lighting.len();
 
@@ -1195,6 +1214,8 @@ impl Context {
         let (mark, textures) = (self.triangles.len(), self.textures.len());
         let lights = self.lighting.len();
         let cells = world.cells();
+        // Ce que l'image porte déjà n'appartient à aucune cellule visitée.
+        self.visited_first = mark as u32;
 
         for rank in 0..self.visits.len() {
             let visit = self.visits[rank];
@@ -1276,7 +1297,14 @@ impl Context {
                     self.triangles.truncate(mark);
                     self.lighting.truncate(lights);
                     self.textures.truncate(textures);
+                    // **Les trois ensemble, ou le remplissage lit une liste
+                    // vidée.** Une plage laissée derrière par une traversée
+                    // précédente de la même image désignerait encore des
+                    // triangles, et le curseur irait chercher leur fenêtre dans
+                    // la liste que cette ligne efface.
                     self.visits.clear();
+                    self.visited_first = 0;
+                    self.visited_end = 0;
                     return Err(error);
                 }
             }

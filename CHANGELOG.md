@@ -47,6 +47,13 @@ publié, et explique les conventions du dépôt à qui y contribue.
 ## [Non publié]
 
 ### Corrigé
+- **Trois défauts de l'image en cours, qu'une image faisant plus d'une chose
+  réveille.** Un lot soumis **avant** `scg_submit_world_visible` était rogné à
+  la fenêtre d'une cellule qui ne le contenait pas ; une traversée refusée
+  après une traversée réussie faisait paniquer le rendu de l'image ; et un
+  maillage ou un décor refusé par un contexte qui venait d'en rendre une
+  restait à moitié posé, contre « refusé en entier ou pas du tout ». Aucune
+  empreinte ne bouge.
 - **Une tache modulée posée au ras de la surface qu'elle marque n'y écrivait
   rien**, dès que les deux n'étaient pas découpées en triangles de la même
   façon — une ombre sous un objet mobile, donc, le cas d'usage de la primitive.
@@ -58,6 +65,12 @@ publié, et explique les conventions du dépôt à qui y contribue.
 ***
 
 ### Fixed
+- **Three defects of the frame in progress, woken by any frame that does more
+  than one thing.** A batch submitted **before** `scg_submit_world_visible` was
+  clipped to the window of a cell that did not contain it; a traversal refused
+  after a successful one made rendering the frame panic; and a mesh or a level
+  refused by a context that had just rendered one stayed half-submitted,
+  against "refused whole or not at all". No fingerprint moves.
 - **A modulated blot laid flush against the surface it marks wrote nothing to
   it**, as soon as the two were not cut into triangles the same way — a shadow
   under a moving object, that is, the primitive's whole use case. The depth

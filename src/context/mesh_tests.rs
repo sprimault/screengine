@@ -11,7 +11,7 @@ use alloc::vec;
 use alloc::vec::Vec;
 
 use super::*;
-use crate::math::Quat;
+use crate::math::{Angle, Quat};
 use crate::testing::{
     frames_bytes, group_bytes as group, mesh_file as file, mesh_sections as sections,
     name_bytes as name, pose_bytes, triangle_bytes as triangle, vertex_bytes as vertex,
@@ -604,6 +604,153 @@ fn deux_images_de_suite_par_la_traversee_rendent_la_meme_chose() {
     let seconde = pixels_of(&mut ctx);
 
     assert_eq!(premiere, seconde);
+}
+
+/// Un lot soumis **avant** la traversée dessine la même chose que soumis après.
+///
+/// La fenêtre d'une visite ne doit borner que les triangles de cette visite.
+/// Elle bornait tout ce qui la précédait dans l'image : la plage n'avait qu'une
+/// borne haute, et un décor posé à la main avant l'appel se voyait rogner à la
+/// fenêtre de la première cellule visitée. Le z-buffer rendant l'image
+/// indépendante de l'ordre de soumission, les deux doivent coïncider au bit
+/// près.
+#[test]
+fn un_lot_soumis_avant_la_traversee_n_est_pas_rogne() {
+    let world = two_cell_world();
+    let texture = plain_texture(0x80, 0x40, 0x20);
+
+    // **La caméra part de la cellule 8 et regarde la 7**, et c'est ce qui fait
+    // mordre : les visites sortent triées par index de cellule, la cellule de
+    // départ a toujours la fenêtre pleine, et un lot d'index zéro tombe
+    // toujours sur la première visite. Partir de la plus petite mettrait donc
+    // la fenêtre pleine en tête, et rien ne serait rogné.
+    let camera = Camera {
+        position: Vec3::new(14.0, 0.0, 0.0),
+        orientation: Quat::from_axis_angle(Vec3::new(0.0, 0.0, 1.0), Angle(1 << 31)),
+        ..Camera::DEFAULT
+    };
+    // Devant la caméra, **dans un coin de l'image** : la fenêtre du portail est
+    // un petit rectangle central, et c'est en dehors qu'un rognage se voit. En
+    // avant du décor, aussi, pour que seule la fenêtre puisse retirer des
+    // pixels — une occultation les retirerait dans les deux cas.
+    let tache = [
+        Vec3::new(10.0, 0.8, 0.8),
+        Vec3::new(10.0, 2.2, 0.8),
+        Vec3::new(10.0, 2.2, 2.2),
+    ];
+    let lot = [Triangle {
+        indices: [0, 1, 2],
+        color: Color::new(0xFF, 0x20, 0x20, 0xFF),
+    }];
+    let pose = |ctx: &mut Context| {
+        ctx.set_camera(camera).expect("hors image");
+        ctx.submit(Affine3::IDENTITY, &tache, &lot).expect("lot");
+    };
+
+    let mut avant = small_ctx();
+    pose(&mut avant);
+    avant
+        .submit_world_visible(Affine3::IDENTITY, &world, 8, None, |_| Some(&texture))
+        .expect("capacité");
+
+    let mut apres = small_ctx();
+    apres.set_camera(camera).expect("hors image");
+    apres
+        .submit_world_visible(Affine3::IDENTITY, &world, 8, None, |_| Some(&texture))
+        .expect("capacité");
+    apres.submit(Affine3::IDENTITY, &tache, &lot).expect("lot");
+
+    // Sans la garde, un lot hors champ rendrait le test toujours vert.
+    let mut seule = small_ctx();
+    pose(&mut seule);
+    let mut vierge = small_ctx();
+    assert_ne!(
+        pixels_of(&mut seule),
+        pixels_of(&mut vierge),
+        "le lot ne peint rien"
+    );
+
+    assert_eq!(pixels_of(&mut avant), pixels_of(&mut apres));
+}
+
+/// Une traversée refusée après une traversée réussie laisse un contexte qui
+/// rend encore.
+///
+/// Le refus vidait la liste des visites sans remettre la plage qui la désigne :
+/// les triangles de la traversée réussie y renvoyaient encore, et le
+/// remplissage allait chercher leur fenêtre dans une liste vide —
+/// `index out of bounds: the len is 0`, dans le noyau, sur un chemin d'erreur
+/// que l'hôte croyait avoir traité. C'est le seul des trois défauts de ce lot
+/// qui **panique** au lieu de mal dessiner.
+///
+/// **Les deux corrections du lot le ferment, chacune de son côté** : la borne
+/// basse de la plage écarte ces triangles de la fenêtre, et la remise à zéro
+/// vide l'état en entier. Le test ne distingue donc pas laquelle le tient — il
+/// tient le scénario, et il échoue sur le code qui précède les deux.
+#[test]
+fn une_traversee_refusee_ne_laisse_pas_sa_plage() {
+    let world = two_cell_world();
+    let texture = plain_texture(0x80, 0x40, 0x20);
+
+    // La capacité se mesure, elle ne se devine pas : il en faut exactement
+    // celle d'une traversée, pour que la seconde déborde.
+    let mut mesure = small_ctx();
+    mesure
+        .submit_world_visible(Affine3::IDENTITY, &world, 7, None, |_| Some(&texture))
+        .expect("capacité");
+    let mut ctx = Context::new(Config {
+        max_width: 64,
+        max_height: 64,
+        width: 64,
+        height: 64,
+        tile_size: 32,
+        max_triangles: mesure.triangles.len() as u32,
+    })
+    .expect("configuration saine");
+
+    ctx.submit_world_visible(Affine3::IDENTITY, &world, 7, None, |_| Some(&texture))
+        .expect("capacité");
+    ctx.submit_world_visible(Affine3::IDENTITY, &world, 7, None, |_| Some(&texture))
+        .expect_err("la capacité restante ne suffit pas");
+
+    // Rendre est le test : sans la remise à zéro, l'indexation part hors borne.
+    let rendue = pixels_of(&mut ctx);
+    let mut vierge = small_ctx();
+    assert_ne!(rendue, pixels_of(&mut vierge), "la première a bien peint");
+}
+
+/// Un maillage refusé sur un contexte qui vient de rendre ne laisse rien.
+///
+/// La marque de troncature était lue **avant** le nettoyage de l'image close,
+/// donc sur une liste qui portait encore les triangles de l'image précédente :
+/// `truncate` recevait une longueur supérieure à la longueur courante et ne
+/// faisait rien, laissant posés les groupes déjà passés. Le refus n'est en
+/// entier que si la marque est prise après le nettoyage.
+#[test]
+fn un_maillage_refuse_apres_une_image_ne_laisse_rien() {
+    let mesh = one_group();
+    let texture = plain_texture(0x20, 0x80, 0x40);
+    let mut ctx = Context::new(Config {
+        max_width: 64,
+        max_height: 64,
+        width: 64,
+        height: 64,
+        tile_size: 32,
+        // Un groupe passe, deux ne passent pas : c'est ce qui fait refuser le
+        // second maillage après que le premier a été rendu et jeté, et refuser
+        // sur son second groupe, donc après en avoir posé un.
+        max_triangles: 1,
+    })
+    .expect("configuration saine");
+
+    ctx.submit_mesh(Affine3::IDENTITY, &mesh, |_| Some(&texture))
+        .expect("capacité");
+    let _ = pixels_of(&mut ctx);
+
+    let trop = two_groups();
+    ctx.submit_mesh(Affine3::IDENTITY, &trop, |_| Some(&texture))
+        .expect_err("deux groupes ne tiennent pas");
+    assert_eq!(ctx.triangles.len(), 0, "le maillage refusé a laissé un lot");
 }
 
 /// Une cellule nulle ne soumet rien et le dit.
