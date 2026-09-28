@@ -226,14 +226,20 @@ jobs:
       - name: Éprouver l'archive wasm
         if: matrix.cible == 'wasm32'
         run: |
-          # Les empreintes du module publié, comparées aux références
-          # versionnées : l'étape les produisait sans que personne ne les lise,
-          # et seuls les contrôles internes de `test.js` décidaient du succès.
-          # Une image fausse aurait donc passé le tag. Même liste et même ordre
-          # que l'épreuve des hôtes C et C++ plus bas, lue dans le Makefile.
+          # Les empreintes du module publié, comparées au chemin Rust : l'étape
+          # les produisait sans que personne ne les lise, et seuls les contrôles
+          # internes de `test.js` décidaient du succès. Une image fausse aurait
+          # donc passé le tag. Même liste et même ordre que l'épreuve des hôtes
+          # C et C++ plus bas, lue dans le Makefile.
+          #
+          # **`--print` et non les références versionnées**, qui ne sont pas ce
+          # qu'un hôte reproduit : une scène à plusieurs vues y porte l'empreinte
+          # de toutes, quand un hôte n'en rend qu'une — la première. Les deux
+          # coïncidaient tant que chaque scène d'hôte n'avait qu'une vue, et la
+          # première qui en a eu cinq a fait échouer le tag.
           attendu=$(for scene in $(make -s print-HOST_SCENES); do
-            cat "crates/screengine-conformance/references/$scene"
-          done)
+            cargo run -q -p screengine-conformance --release -- --print "$scene"
+          done | tr -d '\r')
           # Les deux fichiers versionnés en argument : deux des scènes les
           # chargent, et l'hôte n'en fabrique aucun. Leur nombre suit celui des
           # scènes — c'est ici que l'ajout d'une scène à `HOST_SCENES` se paie,
@@ -242,7 +248,7 @@ jobs:
             "$PAQUET/lib/screengine.wasm" "$PAQUET/include/screengine.h" \
             hosts/caisse.mesh hosts/salles.world | tr -d '\r')
           if [ "$obtenu" != "$attendu" ]; then
-            echo "archive wasm : $obtenu, référence $attendu" >&2
+            echo "archive wasm : $obtenu, chemin Rust $attendu" >&2
             exit 1
           fi
           echo "archive wasm : $obtenu"
@@ -273,14 +279,18 @@ jobs:
       - name: Éprouver l'archive
         if: matrix.cible == 'windows_x64' || matrix.cible == 'linux_x64'
         run: |
-          # Les mêmes scènes que `make test`, dans le même ordre : les hôtes en
-          # écrivent une empreinte par ligne, et la liste vit dans le Makefile
-          # racine. La lire là plutôt que la recopier ici — une copie de plus a
-          # déjà divergé le jour où une scène s'est ajoutée, et l'échec n'est
-          # apparu qu'au tag.
+          # Les mêmes scènes que `make test`, dans le même ordre et comparées à
+          # la même chose : les hôtes en écrivent une empreinte par ligne, et la
+          # liste vit dans le Makefile racine. La lire là plutôt que la recopier
+          # ici — une copie de plus a déjà divergé le jour où une scène s'est
+          # ajoutée, et l'échec n'est apparu qu'au tag.
+          #
+          # **`--print` et non les références versionnées** : une scène à
+          # plusieurs vues y porte l'empreinte de toutes, quand un hôte n'en
+          # rend qu'une. Voir l'épreuve wasm plus haut.
           attendu=$(for scene in $(make -s print-HOST_SCENES); do
-            cat "crates/screengine-conformance/references/$scene"
-          done)
+            cargo run -q -p screengine-conformance --release -- --print "$scene"
+          done | tr -d '\r')
           mkdir -p essai
           if [ "$RUNNER_OS" = "Windows" ]; then
             w() { cygpath -w "$1"; }
@@ -308,7 +318,7 @@ jobs:
           for hote in c cpp; do
             obtenu=$(./essai/$hote.exe hosts/caisse.mesh hosts/salles.world | tr -d '\r')
             if [ "$obtenu" != "$attendu" ]; then
-              echo "archive, hôte $hote : $obtenu, référence $attendu" >&2
+              echo "archive, hôte $hote : $obtenu, chemin Rust $attendu" >&2
               exit 1
             fi
             echo "archive, hôte $hote : $obtenu"
