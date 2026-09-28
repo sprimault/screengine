@@ -69,8 +69,8 @@
 use std::sync::Arc;
 
 use screengine_play::{
-    Affine3, Color, Filter, FreeCamera, KeyCode, Light, MouseButton, Play, Texture, Triangle, Vec3,
-    VertexUv, VertexUv2, load_png,
+    Affine3, Angle, Color, Filter, FreeCamera, KeyCode, Light, MouseButton, Play, Sprite,
+    SpriteOrientation, Texture, Triangle, Vec3, VertexUv, VertexUv2, load_png, load_png_masked,
 };
 
 /// Demi-largeur du couloir, en unités de monde. Une unité vaut un mètre : la
@@ -847,6 +847,189 @@ struct World {
     /// machines de vitesses différentes voient alors le même battement, ce
     /// qu'une mesure de temps réel ne garantirait pas.
     time: f32,
+    /// La phase du pas, qui fait balancer l'arme.
+    ///
+    /// **Elle avance avec la distance parcourue, jamais avec le temps** : une
+    /// arme qui se balance à l'arrêt est le défaut le plus visible de ce genre
+    /// de mouvement, et le seul que personne ne pardonne.
+    stride: f32,
+    /// Le débattement latéral que la rotation laisse derrière elle.
+    ///
+    /// Une moyenne qui rattrape le lacet avec du retard : c'est l'inertie de
+    /// l'arme, ce qui la fait traîner quand on tourne vite puis revenir au
+    /// centre. Sans elle, l'arme est clouée au milieu de l'écran et tout le
+    /// reste du mouvement paraît faux.
+    drag: f32,
+    /// Le lacet de l'image précédente, dont `drag` se nourrit.
+    last_yaw: f32,
+    /// Ce qui reste de la trame de tir, en secondes.
+    ///
+    /// Un compte à rebours plutôt qu'un drapeau : l'éclair doit durer le même
+    /// temps quelle que soit la cadence, et il est plus court qu'une image sur
+    /// une machine rapide.
+    flash: f32,
+    /// L'ennemi qui arpente le couloir.
+    demon: Demon,
+}
+
+/// Combien de temps l'éclair de bouche reste à l'écran, en secondes.
+///
+/// Court — deux images à soixante par seconde. Un éclair qui s'attarde se lit
+/// comme une lampe allumée, pas comme un départ de coup.
+const FLASH_TIME: f32 = 0.034;
+
+/// La distance parcourue pour un pas complet, en unités de monde.
+const STRIDE_LENGTH: f32 = 1.7;
+
+/// À quelle distance de l'œil l'arme est posée, en unités de monde.
+///
+/// **Au-delà du plan proche et en deçà de ce que le décor peut approcher.**
+/// Un mur ne masque l'arme que si la caméra s'en approche à moins de cette
+/// distance, ce que la collision interdira ; en attendant, le couloir est
+/// assez large pour que le cas ne se présente pas.
+const WEAPON_DISTANCE: f32 = 0.35;
+
+/// La demi-largeur et la demi-hauteur de l'arme, en unités de monde.
+///
+/// Prises à la distance ci-dessus, elles décident de la part d'écran qu'elle
+/// occupe — et **jamais en pixels**, sans quoi elle changerait de taille avec
+/// la résolution interne, qui est un réglage.
+///
+/// `0,075` pour `0,35` de distance sous-tend une douzaine de degrés de
+/// demi-angle, soit environ un tiers de la largeur de l'image. Le double,
+/// essayé d'abord, en mangeait les deux tiers.
+const WEAPON_HALF: (f32, f32) = (0.12, 0.12);
+
+/// Où le centre de l'arme se pose dans le repère de la caméra, en unités de
+/// monde : vers la droite, et sous l'axe du regard.
+///
+/// **Assez bas pour que le quadrilatère sorte de l'image par le bas.** Centré,
+/// il donne des mains qui flottent au milieu de l'écran et paraissent
+/// lointaines ; ce qui les met devant l'œil, c'est qu'on n'en voie pas le bas.
+const WEAPON_OFFSET: (f32, f32) = (0.045, -0.130);
+
+/// Le débattement du balancement, en unités de monde à la distance de l'arme.
+const SWAY: (f32, f32) = (0.022, 0.014);
+
+/// Le côté d'une case des planches du démon, en texels.
+const FRAME_SIDE: f32 = 64.0;
+
+/// Le nombre de vues d'une planche : une ligne par direction, de 0° à 315°.
+const VIEWS: u32 = 8;
+
+/// Le nombre de trames d'un cycle de marche, une colonne chacune.
+const WALK_FRAMES: u32 = 8;
+
+/// La demi-hauteur du démon, en unités de monde.
+///
+/// Sa planche est carrée et son cadrage identique d'une vue à l'autre, mesuré
+/// à un pixel près : une seule demi-extension suffit donc pour les deux axes,
+/// et le quadrilatère ne se déforme pas quand il tourne.
+const DEMON_HALF: f32 = 0.95;
+
+/// Le va-et-vient du démon le long du couloir, en abscisses de monde.
+const DEMON_RANGE: (f32, f32) = (6.0, 26.0);
+
+/// Sa vitesse, en unités de monde par seconde.
+///
+/// Elle découle de la foulée ci-dessous : à `1,1`, il fait deux pas et demi
+/// par seconde, ce qui est une marche soutenue. Plus vite, la planche doit
+/// défiler si vite que les poses se confondent.
+const DEMON_SPEED: f32 = 1.1;
+
+/// La distance parcourue pour un cycle de marche complet, en unités de monde.
+///
+/// **Mesurée sur la planche, pas choisie.** Sur une vue de profil, le pied
+/// d'appui y balaie quinze texels sur soixante-quatre ; la case valant
+/// `2 × DEMON_HALF` de haut, cela fait une foulée de `0,45` unité, donc `0,9`
+/// pour le cycle de deux pas que portent les huit trames.
+///
+/// C'est ce nombre qui décide si le démon marche ou glisse, et rien d'autre :
+/// il lie la cadence des trames à la distance parcourue plutôt qu'au temps.
+/// Posé à `2,2` au jugé, il faisait patiner les pieds sur plus du double de
+/// leur course.
+const DEMON_STRIDE: f32 = 0.9;
+
+/// Le rayon de la tache d'ombre du démon, en unités de monde.
+const SHADOW_RADIUS: f32 = 0.55;
+
+/// La texture de la tache d'ombre : sombre au centre, **blanche au bord**.
+///
+/// Blanche et non transparente, parce que 255 est le neutre de la modulation :
+/// un texel blanc laisse le sol intact, et la tache s'éteint sur son pourtour
+/// sans qu'on ait à la découper. Engendrée ici plutôt que chargée — c'est une
+/// forme, et une forme s'écrit.
+fn shadow_texture(side: u32) -> Texture {
+    let mut bytes = Vec::with_capacity((side * side) as usize * 4);
+    let half = side as f32 / 2.0;
+    for v in 0..side {
+        for u in 0..side {
+            let (dx, dy) = (u as f32 + 0.5 - half, v as f32 + 0.5 - half);
+            // Le carré du rayon normalisé : la racine ne servirait à rien, la
+            // courbe voulue étant justement quadratique.
+            let q = ((dx * dx + dy * dy) / (half * half)).min(1.0);
+            let level = (0x38 as f32 + (0xFF - 0x38) as f32 * q) as u8;
+            bytes.extend_from_slice(&[level, level, level, 0xFF]);
+        }
+    }
+    Texture::load(side, side, &bytes).unwrap_or_else(|_| unreachable!("carré, puissance de deux"))
+}
+
+/// Un ennemi qui arpente le couloir.
+///
+/// **Son orientation apparente vient de la trame choisie, jamais de la
+/// géométrie.** Incliner son quadrilatère le montrerait par la tranche dès
+/// qu'il marche vers la caméra ; c'est la planche qui porte les huit vues, et
+/// le moteur ne fait que tenir le quadrilatère debout.
+struct Demon {
+    /// Son abscisse le long du couloir.
+    x: f32,
+    /// Le sens de sa marche : `1` vers le fond, `-1` vers l'entrée.
+    heading: f32,
+}
+
+impl Demon {
+    /// Avance d'un pas de la boucle, et se retourne au bout du couloir.
+    fn update(&mut self, dt: f32) {
+        self.x += self.heading * DEMON_SPEED * dt;
+        if self.x > DEMON_RANGE.1 {
+            self.x = DEMON_RANGE.1;
+            self.heading = -1.0;
+        } else if self.x < DEMON_RANGE.0 {
+            self.x = DEMON_RANGE.0;
+            self.heading = 1.0;
+        }
+    }
+
+    /// Le rectangle de texture de sa vue courante, en texels.
+    ///
+    /// La **ligne** vient de l'angle sous lequel on le regarde : l'écart entre
+    /// sa direction de marche et celle qui va de lui vers l'œil, ramené sur
+    /// huit secteurs. La **colonne** vient de la distance qu'il a parcourue.
+    fn view(&self, eye: Vec3) -> (f32, f32, f32, f32) {
+        // Son cap, puis le cap de l'œil vu de lui : leur différence est l'angle
+        // sous lequel on le voit, et c'est cette différence — jamais l'un des
+        // deux seul — qui choisit la vue.
+        let facing = if self.heading > 0.0 {
+            0.0
+        } else {
+            core::f32::consts::PI
+        };
+        let to_eye = (eye.y - 0.0).atan2(eye.x - self.x);
+        let mut relative = to_eye - facing;
+        let turn = core::f32::consts::TAU;
+        relative = relative.rem_euclid(turn);
+        // L'arrondi au secteur le plus proche, et non la troncature : celle-ci
+        // décalerait chaque vue d'un demi-secteur, et le démon paraîtrait
+        // marcher de travers.
+        let row = ((relative / turn * VIEWS as f32) + 0.5) as u32 % VIEWS;
+        // La trame suit la distance parcourue depuis l'origine du va-et-vient,
+        // pas le temps : à l'arrêt il n'y en aurait aucune qui défile.
+        let walked = (self.x - DEMON_RANGE.0).abs() / DEMON_STRIDE;
+        let column = (walked * WALK_FRAMES as f32) as u32 % WALK_FRAMES;
+        let (u, v) = (column as f32 * FRAME_SIDE, row as f32 * FRAME_SIDE);
+        (u, v, u + FRAME_SIDE, v + FRAME_SIDE)
+    }
 }
 
 /// Le titre de la fenêtre, qui porte les commandes et le filtrage actif.
@@ -868,10 +1051,33 @@ fn main() -> Result<(), screengine_play::Error> {
     let cobble = Arc::new(load_png(include_bytes!("../assets/sol-pave-mousse.png"))?);
     let sky = Arc::new(load_png(include_bytes!("../assets/ciel-jour.png"))?);
     let plate = Arc::new(load_png(include_bytes!("../assets/malle-rouillee.png"))?);
+    // **Masquées, comme le démon** : sans ce format l'alpha est ignoré, le
+    // quadrilatère entier se dessine, et les texels que le détourage avait
+    // vidés reparaissent avec leur couleur — la flamme effacée du canon en
+    // tête.
+    let shadow = Arc::new(shadow_texture(64));
+    let hands = Arc::new(load_png_masked(include_bytes!(
+        "../assets/mains-repos.png"
+    ))?);
+    let firing = Arc::new(load_png_masked(include_bytes!("../assets/mains-tir.png"))?);
+    // La planche de marche, **chargée en masqué** : c'est le format qui fait
+    // que les texels d'alpha nul ne s'écrivent pas, et il se déclare au
+    // chargement parce que c'est là que la chaîne de mipmaps se construit.
+    let demon = Arc::new(load_png_masked(include_bytes!(
+        "../assets/demon-marche.png"
+    ))?);
     let world = World {
         camera: FreeCamera::new(Vec3::new(0.0, 0.0, 1.6)),
         filter: Filter::Dither,
         time: 0.0,
+        stride: 0.0,
+        drag: 0.0,
+        last_yaw: 0.0,
+        flash: 0.0,
+        demon: Demon {
+            x: DEMON_RANGE.0,
+            heading: 1.0,
+        },
     };
     // Le tampon des lumières vit hors de la boucle et se vide par `clear` :
     // l'hôte n'est tenu par aucun invariant du noyau, mais réallouer douze
@@ -904,7 +1110,38 @@ fn main() -> Result<(), screengine_play::Error> {
             // L'index du pas et non un temps cumulé : c'est lui qui rejoue une
             // partie à l'identique, et le battement du néon doit en être.
             world.time = tick.index() as f32 * tick.dt();
+            let before = world.camera.position;
             world.camera.update(tick);
+
+            // **La phase du pas avance avec la distance, pas avec le temps.**
+            // Le déplacement se mesure après coup plutôt que se déduire des
+            // touches : la caméra peut être freinée, et c'est ce qu'elle a
+            // vraiment parcouru qui fait marcher.
+            let moved = world.camera.position - before;
+            let travel = moved.dot(moved);
+            if travel > 0.0 {
+                // La racine n'entre ici que pour un balancement d'affichage,
+                // et l'étage d'accueil n'est tenu par aucune empreinte.
+                world.stride += travel.sqrt() / STRIDE_LENGTH;
+            }
+
+            // Le lacet traîne derrière la caméra : la différence des deux est
+            // ce qui décale l'arme quand on tourne. Le facteur est le rappel —
+            // trop bas, l'arme colle au centre ; trop haut, elle part et ne
+            // revient jamais.
+            let yaw = world.camera.yaw;
+            world.drag += (yaw - world.last_yaw - world.drag) * 0.25;
+            world.last_yaw = yaw;
+
+            // Le clic droit tire : le gauche prend déjà la souris, et Échap
+            // ferme.
+            if tick.input().button_pressed(MouseButton::Right) {
+                world.flash = FLASH_TIME;
+            }
+            if world.flash > 0.0 {
+                world.flash -= tick.dt();
+            }
+            world.demon.update(tick.dt());
         },
         move |world, context| {
             // Un refus ne peut venir que de la capacité, que cette scène
@@ -1017,6 +1254,121 @@ fn main() -> Result<(), screengine_play::Error> {
                     lightmap,
                 );
             }
+
+            // Le démon, **en mode axial** : c'est son seul emploi juste. Plein
+            // face, un personnage debout regardé d'en haut se coucherait au
+            // sol ; l'axial le garde debout et ne lui fait perdre que de la
+            // hauteur apparente, ce qui est moindre.
+            // **La tache d'ombre avant le démon**, et au ras du sol : elle
+            // teste la profondeur sans l'écrire, et le test n'est pas strict,
+            // si bien qu'elle gagne sur les dalles par le seul ordre de
+            // soumission — sans biais de profondeur, qui vaudrait des
+            // millimètres de près et des mètres au loin.
+            // Un centimètre au-dessus du sol, qui est à zéro : pas un biais de
+            // profondeur mais un décalage de géométrie, que l'hôte choisit et
+            // que le moteur n'a pas à connaître.
+            let shade = |dx: f32, dy: f32| Vec3::new(world.demon.x + dx, dy, 0.01);
+            let corners = [
+                shade(-SHADOW_RADIUS, -SHADOW_RADIUS),
+                shade(SHADOW_RADIUS, -SHADOW_RADIUS),
+                shade(SHADOW_RADIUS, SHADOW_RADIUS),
+                shade(-SHADOW_RADIUS, SHADOW_RADIUS),
+            ];
+            let uv = [(0.0, 0.0), (64.0, 0.0), (64.0, 64.0), (0.0, 64.0)];
+            let shadow_vertices: Vec<VertexUv> = corners
+                .iter()
+                .zip(uv)
+                .map(|(&position, (u, v))| VertexUv { position, u, v })
+                .collect();
+            let white = Color::new(0xFF, 0xFF, 0xFF, 0xFF);
+            let shadow_faces = [
+                Triangle {
+                    indices: [0, 1, 2],
+                    color: white,
+                },
+                Triangle {
+                    indices: [0, 2, 3],
+                    color: white,
+                },
+            ];
+            let _ = context.submit_blended(
+                Affine3::IDENTITY,
+                &shadow_vertices,
+                &shadow_faces,
+                Some(&shadow),
+            );
+
+            let eye = world.camera.camera().position;
+            let (u0, v0, u1, v1) = world.demon.view(eye);
+            let _ = context.submit_sprites(
+                Affine3::IDENTITY,
+                &[Sprite {
+                    center: Vec3::new(world.demon.x, 0.0, DEMON_HALF - 0.05),
+                    half_width: DEMON_HALF,
+                    half_height: DEMON_HALF,
+                    u0,
+                    v0,
+                    u1,
+                    v1,
+                    // Pas de roulis : un personnage penché se lit comme une
+                    // chute, et rien ici ne le fait tomber.
+                    roll: Angle(0),
+                    color: Color::new(0xFF, 0xFF, 0xFF, 0xFF),
+                }],
+                Some(&demon),
+                SpriteOrientation::Axial,
+            );
+
+            // **L'arme en dernier**, et c'est le seul ordre qui vaille : elle
+            // est la plus proche de l'œil, donc le tampon de profondeur la
+            // laisserait de toute façon gagner — mais la soumettre en dernier
+            // évite qu'un décor très proche la rejette à égalité.
+            //
+            // **Un sprite du monde et non une image posée sur le tampon fini.**
+            // L'arme reçoit ainsi le brouillard, les néons et la courbe de
+            // sortie comme le reste : dans un couloir sombre, des mains
+            // composées par-dessus resteraient à pleine lumière, et les
+            // rattraper obligerait cet hôte à refaire une part du pipeline.
+            let camera = world.camera.camera();
+            let pose = Affine3::from_rotation_translation(camera.orientation, Vec3::ZERO);
+            let ahead = pose.transform_vector(Vec3::new(1.0, 0.0, 0.0));
+            let right = pose.transform_vector(Vec3::new(0.0, -1.0, 0.0));
+            let up = pose.transform_vector(Vec3::new(0.0, 0.0, 1.0));
+
+            // La figure de Lissajous du pas : le latéral à la fréquence du
+            // pas, le vertical au double — un pas gauche et un pas droit
+            // descendent tous deux. C'est ce rapport de deux, et non
+            // l'amplitude, qui fait lire une marche plutôt qu'un flottement.
+            let phase = world.stride * core::f32::consts::TAU;
+            let swing = phase.sin() * SWAY.0 - world.drag * 0.5;
+            let bob = (phase * 2.0).cos() * SWAY.1;
+
+            let centre = camera.position
+                + ahead * WEAPON_DISTANCE
+                + right * (WEAPON_OFFSET.0 + swing)
+                + up * (WEAPON_OFFSET.1 + bob);
+
+            // Le roulis porte l'inclinaison, et c'est son premier emploi réel :
+            // l'arme penche du côté vers lequel on tourne, ce qu'aucun
+            // déplacement du centre ne rend.
+            let roll = Angle::from_radians(world.drag * 0.8 + phase.sin() * 0.02);
+            let texture = if world.flash > 0.0 { &firing } else { &hands };
+            let _ = context.submit_sprites(
+                Affine3::IDENTITY,
+                &[Sprite {
+                    center: centre,
+                    half_width: WEAPON_HALF.0,
+                    half_height: WEAPON_HALF.1,
+                    u0: 0.0,
+                    v0: 0.0,
+                    u1: 512.0,
+                    v1: 512.0,
+                    roll,
+                    color: Color::new(0xFF, 0xFF, 0xFF, 0xFF),
+                }],
+                Some(texture),
+                SpriteOrientation::Facing,
+            );
         },
     )
 }

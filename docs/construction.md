@@ -413,6 +413,18 @@ contrôle : ni `make test`, ni l'intégration continue ne le construisent.
   Il est déclaré binaire dans `.gitattributes`. Aucun hôte ne réécrit sa
   disposition : leur faire poser ces octets dans quatre langages serait la même
   liste à quatre endroits.
+- **Les images de `crates/screengine-play/assets/` sont produites pour le
+  projet et publiées sous sa double licence**, MIT ou Apache 2.0, comme le
+  reste du dépôt. Aucune ne provient d'une œuvre existante, et c'est une
+  contrainte et non une préférence : un moteur de cette famille a pour
+  tentation permanente de reprendre les données des titres qui l'ont inspiré,
+  qui ne sont pas redistribuables.
+
+  Chaque fichier porte en plus ses champs `Author`, `Copyright` et `License`
+  dans ses métadonnées PNG, pour qu'une image séparée du dépôt garde sa
+  provenance. **Cette phrase-ci fait foi, pas ces champs** : des métadonnées se
+  réécrivent sans laisser de trace, un fichier versionné se relit dans
+  l'historique.
 - **Sa documentation est en anglais.** Ce qu'un auteur de liaison ne peut pas
   ignorer y figure, fonction par fonction.
 

@@ -29,6 +29,24 @@ use crate::Error;
 /// et supprime la question du répertoire courant à l'exécution ; rien n'empêche
 /// de passer ce qu'on vient de lire sur le disque ou de recevoir du réseau.
 pub fn load_png(bytes: &[u8]) -> Result<Texture, Error> {
+    decode(bytes, false)
+}
+
+/// La même chose, en **texture masquée** : un texel d'alpha nul ne s'écrit pas.
+///
+/// C'est le format d'un sprite, et il se déclare au chargement et non au
+/// dessin, parce que c'est là que la chaîne de mipmaps se construit : décidé
+/// plus tard, il faudrait en tenir deux, ou en tenir une fausse.
+///
+/// Une fonction de plus plutôt qu'un drapeau sur [`load_png`] : les appels
+/// existants ne changent pas, et `load_png_masked` se lit à l'appel là où un
+/// booléen se lirait dans la signature.
+pub fn load_png_masked(bytes: &[u8]) -> Result<Texture, Error> {
+    decode(bytes, true)
+}
+
+/// Le corps commun des deux, `masked` décidant du format.
+fn decode(bytes: &[u8], masked: bool) -> Result<Texture, Error> {
     let mut decoder = Decoder::new(Cursor::new(bytes));
     decoder.set_transformations(Transformations::normalize_to_color8() | Transformations::ALPHA);
     let mut reader = decoder.read_info()?;
@@ -59,7 +77,11 @@ pub fn load_png(bytes: &[u8]) -> Result<Texture, Error> {
         ColorType::Grayscale | ColorType::Indexed => expand(&raw, 1, |p| [p[0], p[0], p[0], 0xFF]),
     };
 
-    Ok(Texture::load(width, height, &rgba)?)
+    Ok(if masked {
+        Texture::load_masked(width, height, &rgba)?
+    } else {
+        Texture::load(width, height, &rgba)?
+    })
 }
 
 /// Recompose un bloc RGBA depuis des pixels de `samples` octets.
