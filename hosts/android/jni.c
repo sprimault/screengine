@@ -262,7 +262,8 @@ static void buffer_free(JNIEnv *env, jclass cls, jlong ptr, jlong len)
  * réservés sont écrits par cette couche, qui est la seule à connaître le
  * header. La description est mise à zéro d'abord, comme l'ABI l'exige.
  */
-static jlong texture_load(JNIEnv *env, jclass cls, jint width, jint height, jbyteArray texels)
+static jlong texture_load(JNIEnv *env, jclass cls, jint width, jint height, jbyteArray texels,
+                          jint format)
 {
     (void)cls;
     if (texels == NULL) {
@@ -279,7 +280,10 @@ static jlong texture_load(JNIEnv *env, jclass cls, jint width, jint height, jbyt
         memset(&desc, 0, sizeof desc);
         desc.width = (uint32_t)width;
         desc.height = (uint32_t)height;
-        desc.format = SCG_TEXTURE_FORMAT_RGBA8;
+        /* Le format vient de l'appelant : le masqué se déclare au chargement,
+         * jamais au dessin, parce que c'est là que la chaîne de mipmaps se
+         * construit. */
+        desc.format = (uint32_t)format;
         if (scg_texture_load(&desc, block, (size_t)len, &texture) < 0) {
             texture = NULL;
         }
@@ -678,6 +682,186 @@ static jint submit_textured(JNIEnv *env, jclass cls, jlong ctx, jfloatArray mode
 }
 
 /*
+ * scg_submit_blended : les tableaux de `submitTextured`, plus un mode.
+ *
+ * Le mode commence à 1 et zéro est refusé — c'est une description, pas un
+ * réglage de contexte —, et ce pont ne le rabat sur rien : il passe la valeur
+ * telle quelle, et c'est le moteur qui la juge.
+ */
+static jint submit_blended(JNIEnv *env, jclass cls, jlong ctx, jfloatArray model,
+                           jfloatArray vertices, jintArray indices, jbyteArray colors,
+                           jlong texture, jint blend)
+{
+    (void)cls;
+    if (model == NULL || vertices == NULL || indices == NULL || colors == NULL) {
+        return SCG_ERR_NULL;
+    }
+
+    jsize floats = (*env)->GetArrayLength(env, vertices);
+    jsize index_count = (*env)->GetArrayLength(env, indices);
+    jsize channels = (*env)->GetArrayLength(env, colors);
+    if ((*env)->GetArrayLength(env, model) != 16 || floats % 5 != 0 || index_count % 3 != 0
+        || channels != index_count / 3 * 4) {
+        return SCG_ERR_INVALID_ARGUMENT;
+    }
+
+    uint32_t vertex_count = (uint32_t)(floats / 5);
+    uint32_t triangle_count = (uint32_t)(index_count / 3);
+    ScgMat4 matrix;
+    ScgVertexUv *points = calloc(vertex_count ? vertex_count : 1, sizeof *points);
+    ScgTriangle *faces = calloc(triangle_count ? triangle_count : 1, sizeof *faces);
+    jint *raw_indices = calloc(index_count ? (size_t)index_count : 1, sizeof *raw_indices);
+    jbyte *raw_colors = calloc(channels ? (size_t)channels : 1, sizeof *raw_colors);
+    int32_t code = SCG_ERR_OUT_OF_MEMORY;
+
+    if (points != NULL && faces != NULL && raw_indices != NULL && raw_colors != NULL) {
+        (*env)->GetFloatArrayRegion(env, model, 0, 16, matrix.m);
+        (*env)->GetFloatArrayRegion(env, vertices, 0, floats, (jfloat *)points);
+        (*env)->GetIntArrayRegion(env, indices, 0, index_count, raw_indices);
+        (*env)->GetByteArrayRegion(env, colors, 0, channels, raw_colors);
+
+        for (uint32_t i = 0; i < triangle_count; i++) {
+            faces[i].i0 = (uint32_t)raw_indices[i * 3];
+            faces[i].i1 = (uint32_t)raw_indices[i * 3 + 1];
+            faces[i].i2 = (uint32_t)raw_indices[i * 3 + 2];
+            faces[i].r = (uint8_t)raw_colors[i * 4];
+            faces[i].g = (uint8_t)raw_colors[i * 4 + 1];
+            faces[i].b = (uint8_t)raw_colors[i * 4 + 2];
+            faces[i].a = (uint8_t)raw_colors[i * 4 + 3];
+        }
+        code = scg_submit_blended((ScgContext *)(intptr_t)ctx, &matrix, points, vertex_count,
+                                  faces, triangle_count, (ScgTexture *)(intptr_t)texture,
+                                  (uint32_t)blend);
+    }
+
+    free(points);
+    free(faces);
+    free(raw_indices);
+    free(raw_colors);
+    return code;
+}
+
+/*
+ * scg_submit_sprites : un tableau de `float` de onze valeurs par sprite, une
+ * couleur par sprite, et le mode d'orientation.
+ *
+ * **Le roulis passe en `float` dans ce tableau et se reconvertit ici en entier
+ * non signé.** Java n'a pas d'entier non signé, et mêler un `int` aux
+ * flottants aurait demandé un second tableau : la valeur reste donc exacte
+ * jusqu'à 2²⁴, ce qui suffit aux fractions de tour qu'un hôte écrit. Un pont
+ * qui la passerait telle quelle au moteur donnerait un angle quelconque.
+ */
+static jint submit_sprites(JNIEnv *env, jclass cls, jlong ctx, jfloatArray model,
+                           jfloatArray sprites, jbyteArray colors, jlong texture,
+                           jint orientation)
+{
+    (void)cls;
+    if (model == NULL || sprites == NULL || colors == NULL) {
+        return SCG_ERR_NULL;
+    }
+
+    jsize floats = (*env)->GetArrayLength(env, sprites);
+    jsize channels = (*env)->GetArrayLength(env, colors);
+    if ((*env)->GetArrayLength(env, model) != 16 || floats % 10 != 0
+        || channels != floats / 10 * 4) {
+        return SCG_ERR_INVALID_ARGUMENT;
+    }
+
+    uint32_t count = (uint32_t)(floats / 10);
+    ScgMat4 matrix;
+    ScgSprite *quads = calloc(count ? count : 1, sizeof *quads);
+    jfloat *raw = calloc(floats ? (size_t)floats : 1, sizeof *raw);
+    jbyte *raw_colors = calloc(channels ? (size_t)channels : 1, sizeof *raw_colors);
+    int32_t code = SCG_ERR_OUT_OF_MEMORY;
+
+    if (quads != NULL && raw != NULL && raw_colors != NULL) {
+        (*env)->GetFloatArrayRegion(env, model, 0, 16, matrix.m);
+        (*env)->GetFloatArrayRegion(env, sprites, 0, floats, raw);
+        (*env)->GetByteArrayRegion(env, colors, 0, channels, raw_colors);
+
+        /* Champ par champ, et non par recopie du bloc : le roulis est un
+         * entier au milieu de flottants, et `ScgSprite` n'est donc pas une
+         * suite de `float` comme `ScgVertexUv` l'est. */
+        for (uint32_t i = 0; i < count; i++) {
+            const jfloat *s = raw + (size_t)i * 10;
+            quads[i].x = s[0];
+            quads[i].y = s[1];
+            quads[i].z = s[2];
+            quads[i].half_width = s[3];
+            quads[i].half_height = s[4];
+            quads[i].u0 = s[5];
+            quads[i].v0 = s[6];
+            quads[i].u1 = s[7];
+            quads[i].v1 = s[8];
+            quads[i].roll = (uint32_t)(int64_t)s[9];
+            quads[i].r = (uint8_t)raw_colors[i * 4];
+            quads[i].g = (uint8_t)raw_colors[i * 4 + 1];
+            quads[i].b = (uint8_t)raw_colors[i * 4 + 2];
+            quads[i].a = (uint8_t)raw_colors[i * 4 + 3];
+        }
+        code = scg_submit_sprites((ScgContext *)(intptr_t)ctx, &matrix, quads, count,
+                                  (ScgTexture *)(intptr_t)texture, (uint32_t)orientation);
+    }
+
+    free(quads);
+    free(raw);
+    free(raw_colors);
+    return code;
+}
+
+/* scg_mesh_frame_count : le nombre de trames, ou −1 si le maillage est nul. */
+static jint mesh_frame_count(JNIEnv *env, jclass cls, jlong mesh)
+{
+    (void)env;
+    (void)cls;
+    uint32_t count = 0;
+    if (scg_mesh_frame_count((const ScgMesh *)(intptr_t)mesh, &count) < 0) {
+        return -1;
+    }
+    return (jint)count;
+}
+
+/*
+ * scg_submit_mesh_frame : `submitMesh` avec deux indices de trame et un
+ * facteur.
+ *
+ * Le facteur hors de `[0, 1]` est **refusé et jamais ramené** par le moteur :
+ * l'extrapolation est une décision de jeu, et ce pont n'en prend aucune.
+ */
+static jint submit_mesh_frame(JNIEnv *env, jclass cls, jlong ctx, jfloatArray model, jlong mesh,
+                              jlongArray slots, jint first, jint second, jfloat factor)
+{
+    (void)cls;
+    if (model == NULL || slots == NULL) {
+        return SCG_ERR_NULL;
+    }
+    if ((*env)->GetArrayLength(env, model) != 16) {
+        return SCG_ERR_INVALID_ARGUMENT;
+    }
+
+    jsize count = (*env)->GetArrayLength(env, slots);
+    ScgMat4 matrix;
+    jlong *raw = calloc(count ? (size_t)count : 1, sizeof *raw);
+    const ScgTexture **bound = calloc(count ? (size_t)count : 1, sizeof *bound);
+    int32_t code = SCG_ERR_OUT_OF_MEMORY;
+
+    if (raw != NULL && bound != NULL) {
+        (*env)->GetFloatArrayRegion(env, model, 0, 16, matrix.m);
+        (*env)->GetLongArrayRegion(env, slots, 0, count, raw);
+        for (jsize i = 0; i < count; i++) {
+            bound[i] = (const ScgTexture *)(intptr_t)raw[i];
+        }
+        code = scg_submit_mesh_frame((ScgContext *)(intptr_t)ctx, &matrix,
+                                     (const ScgMesh *)(intptr_t)mesh, bound, (uint32_t)count,
+                                     (uint32_t)first, (uint32_t)second, factor);
+    }
+
+    free(raw);
+    free(bound);
+    return code;
+}
+
+/*
  * scg_submit_lit : mêmes tableaux que `submitTextured`, les sommets portant
  * sept `float` au lieu de cinq, et deux handles d'image au lieu d'un.
  *
@@ -915,7 +1099,7 @@ static const JNINativeMethod METHODS[] = {
     {"lastError", "(J)Ljava/lang/String;", (void *)last_error},
     {"bufferAlloc", "(J)J", (void *)buffer_alloc},
     {"bufferFree", "(JJ)V", (void *)buffer_free},
-    {"textureLoad", "(II[B)J", (void *)texture_load},
+    {"textureLoad", "(II[BI)J", (void *)texture_load},
     {"textureDestroy", "(J)V", (void *)texture_destroy},
     {"meshLoad", "([B)J", (void *)mesh_load},
     {"meshDestroy", "(J)V", (void *)mesh_destroy},
@@ -923,6 +1107,10 @@ static const JNINativeMethod METHODS[] = {
     {"meshTextureCount", "(J)I", (void *)mesh_texture_count},
     {"meshTextureName", "(JI)Ljava/lang/String;", (void *)mesh_texture_name},
     {"submitMesh", "(J[FJ[J)I", (void *)submit_mesh},
+    {"meshFrameCount", "(J)I", (void *)mesh_frame_count},
+    {"submitMeshFrame", "(J[FJ[JIIF)I", (void *)submit_mesh_frame},
+    {"submitBlended", "(J[F[F[I[BJI)I", (void *)submit_blended},
+    {"submitSprites", "(J[F[F[BJI)I", (void *)submit_sprites},
     {"worldLoad", "([B)J", (void *)world_load},
     {"worldDestroy", "(J)V", (void *)world_destroy},
     {"worldMaterialCount", "(J)I", (void *)world_material_count},

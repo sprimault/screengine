@@ -555,6 +555,10 @@ fn le_fichier_de_maillage_versionne_porte_la_caisse() {
     assert_eq!(mesh.texture_count(), 2);
     assert_eq!(mesh.texture_name(0), Some("cote"));
     assert_eq!(mesh.texture_name(1), Some("chapeau"));
+    // **Deux trames, et la première est la caisse au repos.** C'est ce qui
+    // laisse `scg_submit_mesh` rendre la même image qu'avant, et c'est ce que
+    // les hôtes éprouvent du décodage multi-trames sur le fichier versionné.
+    assert_eq!(mesh.frame_count(), 2, "le repos, puis la pose écrasée");
 }
 
 /// Le décor de validation se charge, et il porte ce qu'il annonce.

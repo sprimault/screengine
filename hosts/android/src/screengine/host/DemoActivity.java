@@ -311,7 +311,7 @@ public final class DemoActivity extends Activity implements SurfaceHolder.Callba
                 texels[base + 3] = (byte) 0xFF;
             }
         }
-        return Screengine.textureLoad(side, side, texels);
+        return Screengine.textureLoad(side, side, texels, Screengine.TEXTURE_FORMAT_RGBA8);
     }
 
     /**

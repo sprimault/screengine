@@ -934,6 +934,227 @@ uint64_t render_mesh(bool &ok, const char *path)
     return hash;
 }
 
+/// Le côté de la planche d'emblèmes masqués, et celui de la tache.
+constexpr uint32_t EMBLEM_SIDE = 64;
+
+/// L'emblème masqué : un disque et son pied, sur fond transparent.
+///
+/// Mêmes valeurs que la scène de conformance, écrites ici plutôt que chargées :
+/// ce que cet hôte doit reproduire est la disposition des structures, pas une
+/// texture qui viendrait d'ailleurs.
+std::vector<uint8_t> make_emblem()
+{
+    std::vector<uint8_t> texels(static_cast<size_t>(EMBLEM_SIDE) * EMBLEM_SIDE * 4, 0);
+    const float cx = static_cast<float>(EMBLEM_SIDE) / 2.0f;
+    const float cy = static_cast<float>(EMBLEM_SIDE) * 0.35f;
+    const float radius = static_cast<float>(EMBLEM_SIDE) * 0.28f;
+    for (uint32_t v = 0; v < EMBLEM_SIDE; v++) {
+        for (uint32_t u = 0; u < EMBLEM_SIDE; u++) {
+            uint8_t *texel = texels.data() + (static_cast<size_t>(v) * EMBLEM_SIDE + u) * 4;
+            const float fu = static_cast<float>(u) + 0.5f;
+            const float fv = static_cast<float>(v) + 0.5f;
+            const float dx = fu - cx;
+            const float dy = fv - cy;
+            const bool disc = dx * dx + dy * dy <= radius * radius;
+            const bool foot = fv > static_cast<float>(EMBLEM_SIDE) * 0.6f
+                              && fu > static_cast<float>(EMBLEM_SIDE) * 0.28f
+                              && fu < static_cast<float>(EMBLEM_SIDE) * 0.52f;
+            if (disc || foot) {
+                texel[0] = static_cast<uint8_t>(
+                    0x40 + static_cast<int>(fu * 160.0f / static_cast<float>(EMBLEM_SIDE)));
+                texel[1] = static_cast<uint8_t>(
+                    0xFF - static_cast<int>(fv * 140.0f / static_cast<float>(EMBLEM_SIDE)));
+                texel[2] = 0x60;
+                texel[3] = 0xFF;
+            }
+        }
+    }
+    return texels;
+}
+
+/// La tache d'ombre : sombre au centre, blanche au bord, 255 étant le neutre de
+/// la modulation.
+std::vector<uint8_t> make_shadow()
+{
+    std::vector<uint8_t> texels(static_cast<size_t>(EMBLEM_SIDE) * EMBLEM_SIDE * 4, 0);
+    const float half = static_cast<float>(EMBLEM_SIDE) / 2.0f;
+    for (uint32_t v = 0; v < EMBLEM_SIDE; v++) {
+        for (uint32_t u = 0; u < EMBLEM_SIDE; u++) {
+            uint8_t *texel = texels.data() + (static_cast<size_t>(v) * EMBLEM_SIDE + u) * 4;
+            const float dx = static_cast<float>(u) + 0.5f - half;
+            const float dy = static_cast<float>(v) + 0.5f - half;
+            float q = (dx * dx + dy * dy) / (half * half);
+            if (q > 1.0f) {
+                q = 1.0f;
+            }
+            const auto level =
+                static_cast<uint8_t>(0x38 + static_cast<int>(static_cast<float>(0xFF - 0x38) * q));
+            texel[0] = level;
+            texel[1] = level;
+            texel[2] = level;
+            texel[3] = 0xFF;
+        }
+    }
+    return texels;
+}
+
+/// Les deux lumières de la scène composite.
+constexpr ScgLight COMPOSITE_LIGHTS[2] = {
+    { 2.0f, -3.0f, 1.5f, 24.0f, 0xFF, 0xC0, 0x60, 0 },
+    { 2.0f,  3.0f, 3.0f, 24.0f, 0x40, 0x80, 0xFF, 0 },
+};
+
+/// Le sol de la composite, à huit texels par unité de monde.
+constexpr ScgVertexUv COMPOSITE_FLOOR[4] = {
+    {  4.0f, -6.0f, -2.6f,  4.0f * 8.0f, -6.0f * 8.0f },
+    { 14.0f, -6.0f, -2.6f, 14.0f * 8.0f, -6.0f * 8.0f },
+    { 14.0f,  6.0f, -2.6f, 14.0f * 8.0f,  6.0f * 8.0f },
+    {  4.0f,  6.0f, -2.6f,  4.0f * 8.0f,  6.0f * 8.0f },
+};
+
+/// La tache modulée, coplanaire au sol.
+constexpr ScgVertexUv COMPOSITE_SHADOW[4] = {
+    { 4.5f, -5.5f, -2.6f,  0.0f,  0.0f },
+    { 9.5f, -5.5f, -2.6f, 64.0f,  0.0f },
+    { 9.5f, -0.5f, -2.6f, 64.0f, 64.0f },
+    { 4.5f, -0.5f, -2.6f,  0.0f, 64.0f },
+};
+
+/// Rend la scène composite de l'étape 6 et en donne l'empreinte.
+///
+/// La seule scène que cet hôte rende pour les cinq chemins de l'étape :
+/// maillage entre deux trames, texture masquée, les deux modes d'orientation de
+/// sprite, le roulis, et la surface modulée. Une par chemin aurait été plus
+/// lisible en cas de divergence ; c'est une seule, parce que chacune se paie en
+/// quatre descriptions — une par langage — et que les scènes séparées de la
+/// conformance disent déjà lequel a bougé.
+uint64_t render_composite(bool &ok, const char *path)
+{
+    ok = false;
+    const std::vector<uint8_t> bytes = read_file(path);
+    if (bytes.empty()) {
+        check(false, "le fichier de la composite se lit");
+        return 0;
+    }
+
+    ScgMesh *raw = nullptr;
+    check(scg_mesh_load(bytes.data(), bytes.size(), &raw) == SCG_OK,
+          "le maillage de la composite se charge");
+    if (raw == nullptr) {
+        return 0;
+    }
+    std::unique_ptr<ScgMesh, decltype(&scg_mesh_destroy)> mesh(raw, &scg_mesh_destroy);
+
+    uint32_t frames = 0;
+    check(scg_mesh_frame_count(mesh.get(), &frames) == SCG_OK && frames == 2,
+          "le maillage versionné porte deux trames");
+
+    const std::vector<uint8_t> checker = make_checker();
+    const std::vector<uint8_t> emblem_texels = make_emblem();
+    const std::vector<uint8_t> shadow_texels = make_shadow();
+
+    ScgTextureDesc desc{};
+    desc.width = FLOOR_SIDE;
+    desc.height = FLOOR_SIDE;
+    desc.format = SCG_TEXTURE_FORMAT_RGBA8;
+    ScgTexture *sides = nullptr;
+    check(scg_texture_load(&desc, checker.data(), checker.size(), &sides) == SCG_OK,
+          "le damier de la composite se charge");
+
+    // Le format masqué se déclare au chargement, jamais au dessin : c'est là
+    // que la chaîne de mipmaps se construit.
+    desc.width = EMBLEM_SIDE;
+    desc.height = EMBLEM_SIDE;
+    desc.format = SCG_TEXTURE_FORMAT_RGBA8_MASKED;
+    ScgTexture *emblem = nullptr;
+    check(scg_texture_load(&desc, emblem_texels.data(), emblem_texels.size(), &emblem) == SCG_OK,
+          "l'emblème masqué se charge");
+
+    desc.format = SCG_TEXTURE_FORMAT_RGBA8;
+    ScgTexture *shadow = nullptr;
+    check(scg_texture_load(&desc, shadow_texels.data(), shadow_texels.size(), &shadow) == SCG_OK,
+          "la tache se charge");
+
+    ScgContextConfig config = scene_config();
+    ScgContext *ctx = nullptr;
+    check(scg_create(&config, &ctx) == SCG_OK, "création du contexte de la composite");
+    if (ctx == nullptr || sides == nullptr || emblem == nullptr || shadow == nullptr) {
+        scg_texture_destroy(sides);
+        scg_texture_destroy(emblem);
+        scg_texture_destroy(shadow);
+        scg_destroy(ctx);
+        return 0;
+    }
+
+    // La caméra plonge d'un seizième de tour : le quaternion se range
+    // x, y, z, w, un demi-angle sur l'axe et le cosinus en dernier.
+    ScgCamera camera{};
+    camera.position[2] = 3.0f;
+    camera.orientation[1] = 0.19509032f;
+    camera.orientation[3] = 0.98078528f;
+    camera.fov_y = 1.0471976f;
+    camera.near_plane = 0.1f;
+    check(scg_set_camera(ctx, &camera) == SCG_OK, "la caméra plongeante se règle");
+    check(scg_set_lights(ctx, COMPOSITE_LIGHTS, 2) == SCG_OK, "les deux lumières se règlent");
+
+    // Le sol d'abord : une surface modulée multiplie ce qui est déjà écrit, et
+    // n'aurait rien à assombrir sans lui.
+    check(scg_submit_textured(ctx, &IDENTITY, COMPOSITE_FLOOR, 4, FLOOR_TRIANGLES, 2, sides)
+              == SCG_OK,
+          "le sol de la composite est accepté");
+
+    const ScgTexture *bound[2] = { sides, nullptr };
+    check(scg_submit_mesh_frame(ctx, &CRATE_MODEL, mesh.get(), bound, 2, 0, 1, 0.35f) == SCG_OK,
+          "la caisse interpolée est acceptée");
+
+    // Les deux modes d'orientation, le second avec un roulis non nul : un lot
+    // ne porte qu'une orientation, donc deux soumissions.
+    ScgSprite sprite{};
+    sprite.x = 9.0f;
+    sprite.y = -3.5f;
+    sprite.half_width = 2.0f;
+    sprite.half_height = 2.4f;
+    sprite.u1 = static_cast<float>(EMBLEM_SIDE);
+    sprite.v1 = static_cast<float>(EMBLEM_SIDE);
+    sprite.r = 0xFF;
+    sprite.g = 0xFF;
+    sprite.b = 0xFF;
+    sprite.a = 0xFF;
+    check(scg_submit_sprites(ctx, &IDENTITY, &sprite, 1, emblem, SCG_SPRITE_AXIAL) == SCG_OK,
+          "le sprite axial est accepté");
+    check(scg_submit_sprites(ctx, &IDENTITY, &sprite, 1, emblem, 0) == SCG_ERR_INVALID_ARGUMENT,
+          "une orientation nulle est refusée, jamais rabattue sur un défaut");
+
+    sprite.y = 3.5f;
+    // Cinq huitièmes de tour, en angle binaire.
+    sprite.roll = 5u * 0x20000000u;
+    check(scg_submit_sprites(ctx, &IDENTITY, &sprite, 1, emblem, SCG_SPRITE_FACING) == SCG_OK,
+          "le sprite plein face et son roulis sont acceptés");
+
+    // La tache en dernier : elle multiplie ce que les lots précédents ont
+    // écrit, donc l'ordre de soumission décide.
+    check(scg_submit_blended(ctx, &IDENTITY, COMPOSITE_SHADOW, 4, FLOOR_TRIANGLES, 2, shadow, 0)
+              == SCG_ERR_INVALID_ARGUMENT,
+          "un mode de mélange nul est refusé");
+    check(scg_submit_blended(ctx, &IDENTITY, COMPOSITE_SHADOW, 4, FLOOR_TRIANGLES, 2, shadow,
+                             SCG_BLEND_MODULATE)
+              == SCG_OK,
+          "la tache modulée est acceptée");
+
+    mesh.reset();
+    scg_texture_destroy(sides);
+    scg_texture_destroy(emblem);
+    scg_texture_destroy(shadow);
+
+    std::vector<uint8_t> pixels(static_cast<size_t>(STRIDE) * HEIGHT * 4, 0);
+    const int32_t code = scg_frame_end(ctx, pixels.data(), STRIDE);
+    check(code == SCG_OK, "l'image composite se rend");
+    ok = code == SCG_OK;
+    const uint64_t hash = fingerprint(pixels.data(), WIDTH, HEIGHT, STRIDE);
+    scg_destroy(ctx);
+    return hash;
+}
+
 int main(int argc, char **argv)
 {
     if (argc != 2) {
@@ -985,8 +1206,11 @@ int main(int argc, char **argv)
     bool mesh_ok = false;
     const uint64_t mesh = render_mesh(mesh_ok, argv[1]);
 
+    bool composite_ok = false;
+    const uint64_t composite = render_composite(composite_ok, argv[1]);
+
     if (failures > 0 || !ok || !textured_ok || !bilinear_ok || !graded_ok || !lit_ok
-        || !overbright_ok || !fog_ok || !lights_ok || !mesh_ok) {
+        || !overbright_ok || !fog_ok || !lights_ok || !mesh_ok || !composite_ok) {
         std::fprintf(stderr, "%d vérification(s) en échec\n", failures);
         return 1;
     }
@@ -999,5 +1223,6 @@ int main(int argc, char **argv)
     std::printf("%016llx\n", static_cast<unsigned long long>(fog));
     std::printf("%016llx\n", static_cast<unsigned long long>(lights));
     std::printf("%016llx\n", static_cast<unsigned long long>(mesh));
+    std::printf("%016llx\n", static_cast<unsigned long long>(composite));
     return 0;
 }

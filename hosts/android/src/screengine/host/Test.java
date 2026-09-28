@@ -151,7 +151,8 @@ public final class Test {
      * @return l'empreinte
      */
     private static String renderTextured(int filter) {
-        long texture = Screengine.textureLoad(FLOOR_SIDE, FLOOR_SIDE, makeChecker());
+        long texture = Screengine.textureLoad(FLOOR_SIDE, FLOOR_SIDE, makeChecker(),
+                Screengine.TEXTURE_FORMAT_RGBA8);
         check(texture != 0, "la texture se charge sans contexte");
 
         long[] out = {0};
@@ -201,7 +202,8 @@ public final class Test {
      * @return l'empreinte, ou {@code null}
      */
     private static String renderGraded() {
-        long texture = Screengine.textureLoad(FLOOR_SIDE, FLOOR_SIDE, makeChecker());
+        long texture = Screengine.textureLoad(FLOOR_SIDE, FLOOR_SIDE, makeChecker(),
+                Screengine.TEXTURE_FORMAT_RGBA8);
         check(texture != 0, "la texture de la scène étalonnée se charge");
 
         long[] out = {0};
@@ -339,7 +341,8 @@ public final class Test {
      * @return l'empreinte
      */
     private static String renderFog() {
-        long texture = Screengine.textureLoad(FLOOR_SIDE, FLOOR_SIDE, makeChecker());
+        long texture = Screengine.textureLoad(FLOOR_SIDE, FLOOR_SIDE, makeChecker(),
+                Screengine.TEXTURE_FORMAT_RGBA8);
         check(texture != 0, "la texture du sol embrumé se charge");
 
         long[] out = {0};
@@ -422,9 +425,11 @@ public final class Test {
      * @return l'empreinte
      */
     private static String renderLit(int overbright) {
-        long texture = Screengine.textureLoad(FLOOR_SIDE, FLOOR_SIDE, makeChecker());
+        long texture = Screengine.textureLoad(FLOOR_SIDE, FLOOR_SIDE, makeChecker(),
+                Screengine.TEXTURE_FORMAT_RGBA8);
         check(texture != 0, "la texture du sol se charge");
-        long lightmap = Screengine.textureLoad(LIGHT_SIDE, LIGHT_SIDE, makeGradient());
+        long lightmap = Screengine.textureLoad(LIGHT_SIDE, LIGHT_SIDE, makeGradient(),
+                Screengine.TEXTURE_FORMAT_RGBA8);
         check(lightmap != 0, "la lightmap se charge par le meme chemin");
 
         long[] out = {0};
@@ -755,7 +760,8 @@ public final class Test {
         check(Screengine.meshTextureName(mesh, 2) == null,
                 "un emplacement au-delà du dernier ne rend rien");
 
-        long texture = Screengine.textureLoad(FLOOR_SIDE, FLOOR_SIDE, makeChecker());
+        long texture = Screengine.textureLoad(FLOOR_SIDE, FLOOR_SIDE, makeChecker(),
+                Screengine.TEXTURE_FORMAT_RGBA8);
         check(texture != 0, "le damier des faces se charge");
 
         long[] out = {0};
@@ -782,6 +788,205 @@ public final class Test {
 
         String hash = fingerprint(block, 0, STRIDE);
         Screengine.destroy(out[0]);
+        return code == Screengine.OK ? hash : null;
+    }
+
+    /** Le côté de la planche d'emblèmes masqués, et celui de la tache. */
+    private static final int EMBLEM_SIDE = 64;
+
+    /**
+     * L'emblème masqué : un disque et son pied, sur fond transparent.
+     *
+     * Mêmes valeurs que la scène de conformance, écrites ici plutôt que
+     * chargées : ce que cet hôte doit reproduire est la disposition des
+     * structures, pas une texture qui viendrait d'ailleurs.
+     *
+     * @return les texels, quatre octets chacun
+     */
+    private static byte[] makeEmblem() {
+        byte[] texels = new byte[EMBLEM_SIDE * EMBLEM_SIDE * 4];
+        final float cx = EMBLEM_SIDE / 2.0f;
+        final float cy = EMBLEM_SIDE * 0.35f;
+        final float radius = EMBLEM_SIDE * 0.28f;
+        for (int v = 0; v < EMBLEM_SIDE; v++) {
+            for (int u = 0; u < EMBLEM_SIDE; u++) {
+                int base = (v * EMBLEM_SIDE + u) * 4;
+                float fu = u + 0.5f;
+                float fv = v + 0.5f;
+                float dx = fu - cx;
+                float dy = fv - cy;
+                boolean disc = dx * dx + dy * dy <= radius * radius;
+                boolean foot = fv > EMBLEM_SIDE * 0.6f && fu > EMBLEM_SIDE * 0.28f
+                        && fu < EMBLEM_SIDE * 0.52f;
+                if (disc || foot) {
+                    texels[base] = (byte) (0x40 + (int) (fu * 160.0f / EMBLEM_SIDE));
+                    texels[base + 1] = (byte) (0xFF - (int) (fv * 140.0f / EMBLEM_SIDE));
+                    texels[base + 2] = (byte) 0x60;
+                    texels[base + 3] = (byte) 0xFF;
+                }
+            }
+        }
+        return texels;
+    }
+
+    /**
+     * La tache d'ombre : sombre au centre, blanche au bord, 255 étant le
+     * neutre de la modulation.
+     *
+     * @return les texels, quatre octets chacun
+     */
+    private static byte[] makeShadow() {
+        byte[] texels = new byte[EMBLEM_SIDE * EMBLEM_SIDE * 4];
+        final float half = EMBLEM_SIDE / 2.0f;
+        for (int v = 0; v < EMBLEM_SIDE; v++) {
+            for (int u = 0; u < EMBLEM_SIDE; u++) {
+                int base = (v * EMBLEM_SIDE + u) * 4;
+                float dx = u + 0.5f - half;
+                float dy = v + 0.5f - half;
+                float q = Math.min(1.0f, (dx * dx + dy * dy) / (half * half));
+                byte level = (byte) (0x38 + (int) ((0xFF - 0x38) * q));
+                texels[base] = level;
+                texels[base + 1] = level;
+                texels[base + 2] = level;
+                texels[base + 3] = (byte) 0xFF;
+            }
+        }
+        return texels;
+    }
+
+    /**
+     * Rend la scène composite de l'étape 6, ou {@code null} en cas d'échec.
+     *
+     * La seule scène que cet hôte rende pour les cinq chemins de l'étape :
+     * maillage entre deux trames, texture masquée, les deux modes
+     * d'orientation de sprite, le roulis, et la surface modulée. Une par
+     * chemin aurait été plus lisible en cas de divergence ; c'est une seule,
+     * parce que chacune se paie en quatre descriptions — une par langage — et
+     * que les scènes séparées de la conformance disent déjà lequel a bougé.
+     *
+     * @param path le fichier de maillage, à deux trames
+     * @return l'empreinte, ou {@code null}
+     */
+    private static String renderComposite(String path) {
+        byte[] bytes;
+        try {
+            bytes = java.nio.file.Files.readAllBytes(java.nio.file.Paths.get(path));
+        } catch (java.io.IOException error) {
+            check(false, "le fichier de la composite se lit : " + error);
+            return null;
+        }
+
+        long mesh = Screengine.meshLoad(bytes);
+        check(mesh != 0, "le maillage de la composite se charge");
+        if (mesh == 0) {
+            return null;
+        }
+        check(Screengine.meshFrameCount(mesh) == 2, "le maillage versionné porte deux trames");
+
+        long sides = Screengine.textureLoad(FLOOR_SIDE, FLOOR_SIDE, makeChecker(),
+                Screengine.TEXTURE_FORMAT_RGBA8);
+        long emblem = Screengine.textureLoad(EMBLEM_SIDE, EMBLEM_SIDE, makeEmblem(),
+                Screengine.TEXTURE_FORMAT_RGBA8_MASKED);
+        long shadow = Screengine.textureLoad(EMBLEM_SIDE, EMBLEM_SIDE, makeShadow(),
+                Screengine.TEXTURE_FORMAT_RGBA8);
+        check(sides != 0 && emblem != 0 && shadow != 0, "les trois textures se chargent");
+
+        long[] out = {0};
+        if (sides == 0 || emblem == 0 || shadow == 0
+                || Screengine.create(sceneConfig(), out) != Screengine.OK) {
+            check(false, "création du contexte de la composite");
+            Screengine.meshDestroy(mesh);
+            return null;
+        }
+        long ctx = out[0];
+
+        // La caméra plonge d'un seizième de tour. Le quaternion se range
+        // x, y, z, w : un demi-angle sur l'axe, le cosinus en dernier.
+        float[] camera = {0, 0, 3.0f, 0, 0.19509032f, 0, 0.98078528f, 1.0471976f, 0.1f};
+        check(Screengine.setCamera(ctx, camera) == Screengine.OK,
+                "la caméra plongeante se règle");
+
+        float[] poses = {
+            2.0f, -3.0f, 1.5f, 24.0f,
+            2.0f, 3.0f, 3.0f, 24.0f,
+        };
+        byte[] tints = {
+            (byte) 0xFF, (byte) 0xC0, (byte) 0x60,
+            (byte) 0x40, (byte) 0x80, (byte) 0xFF,
+        };
+        check(Screengine.setLights(ctx, poses, tints) == Screengine.OK,
+                "les deux lumières se règlent");
+
+        float[] model = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
+        byte[] white = {
+            (byte) 0xFF, (byte) 0xFF, (byte) 0xFF, (byte) 0xFF,
+            (byte) 0xFF, (byte) 0xFF, (byte) 0xFF, (byte) 0xFF,
+        };
+        int[] quad = {0, 1, 2, 0, 2, 3};
+
+        // Le sol d'abord : une surface modulée multiplie ce qui est déjà
+        // écrit, et n'aurait rien à assombrir sans lui.
+        float[] floor = {
+            4.0f, -6.0f, -2.6f, 4.0f * 8.0f, -6.0f * 8.0f,
+            14.0f, -6.0f, -2.6f, 14.0f * 8.0f, -6.0f * 8.0f,
+            14.0f, 6.0f, -2.6f, 14.0f * 8.0f, 6.0f * 8.0f,
+            4.0f, 6.0f, -2.6f, 4.0f * 8.0f, 6.0f * 8.0f,
+        };
+        check(Screengine.submitTextured(ctx, model, floor, quad, white, sides) == Screengine.OK,
+                "le sol de la composite est accepté");
+
+        long[] slots = {sides, 0};
+        check(Screengine.submitMeshFrame(ctx, CRATE_MODEL, mesh, slots, 0, 1, 0.35f)
+                == Screengine.OK, "la caisse interpolée est acceptée");
+
+        // Les deux modes d'orientation, le second avec un roulis non nul : un
+        // lot ne porte qu'une orientation, donc deux soumissions.
+        byte[] spriteTint = {(byte) 0xFF, (byte) 0xFF, (byte) 0xFF, (byte) 0xFF};
+        float[] axial = {
+            9.0f, -3.5f, 0.0f, 2.0f, 2.4f, 0.0f, 0.0f, EMBLEM_SIDE, EMBLEM_SIDE, 0.0f,
+        };
+        check(Screengine.submitSprites(ctx, model, axial, spriteTint, emblem,
+                Screengine.SPRITE_AXIAL) == Screengine.OK, "le sprite axial est accepté");
+        check(Screengine.submitSprites(ctx, model, axial, spriteTint, emblem, 0)
+                == Screengine.ERR_INVALID_ARGUMENT,
+                "une orientation nulle est refusée, jamais rabattue sur un défaut");
+
+        // Cinq huitièmes de tour, en angle binaire porté par un float : la
+        // valeur reste exacte, 0xA0000000 tenant sur vingt-quatre bits une fois
+        // ses zéros de poids faible ôtés.
+        float[] facing = {
+            9.0f, 3.5f, 0.0f, 2.0f, 2.4f, 0.0f, 0.0f, EMBLEM_SIDE, EMBLEM_SIDE,
+            5.0f * 0x20000000L,
+        };
+        check(Screengine.submitSprites(ctx, model, facing, spriteTint, emblem,
+                Screengine.SPRITE_FACING) == Screengine.OK,
+                "le sprite plein face et son roulis sont acceptés");
+
+        // La tache en dernier : elle multiplie ce que les lots précédents ont
+        // écrit, donc l'ordre de soumission décide.
+        float[] patch = {
+            4.5f, -5.5f, -2.6f, 0.0f, 0.0f,
+            9.5f, -5.5f, -2.6f, 64.0f, 0.0f,
+            9.5f, -0.5f, -2.6f, 64.0f, 64.0f,
+            4.5f, -0.5f, -2.6f, 0.0f, 64.0f,
+        };
+        check(Screengine.submitBlended(ctx, model, patch, quad, white, shadow, 0)
+                == Screengine.ERR_INVALID_ARGUMENT, "un mode de mélange nul est refusé");
+        check(Screengine.submitBlended(ctx, model, patch, quad, white, shadow,
+                Screengine.BLEND_MODULATE) == Screengine.OK, "la tache modulée est acceptée");
+
+        Screengine.meshDestroy(mesh);
+        Screengine.textureDestroy(sides);
+        Screengine.textureDestroy(emblem);
+        Screengine.textureDestroy(shadow);
+
+        int body = STRIDE * HEIGHT * Screengine.BYTES_PER_PIXEL;
+        ByteBuffer block = ByteBuffer.allocateDirect(body);
+        int code = Screengine.frameEnd(ctx, block, 0, STRIDE);
+        check(code == Screengine.OK, "l'image composite se rend");
+
+        String hash = fingerprint(block, 0, STRIDE);
+        Screengine.destroy(ctx);
         return code == Screengine.OK ? hash : null;
     }
 
@@ -814,10 +1019,11 @@ public final class Test {
         String fog = renderFog();
         String lights = renderLights();
         String mesh = renderMesh(args[0] + "/caisse.mesh");
+        String composite = renderComposite(args[0] + "/caisse.mesh");
 
         if (failures > 0 || hash == null || textured == null || bilinear == null
                 || graded == null || lit == null || overbright == null || fog == null
-                || lights == null || mesh == null) {
+                || lights == null || mesh == null || composite == null) {
             System.err.println(failures + " vérification(s) en échec");
             System.exit(1);
         }
@@ -830,6 +1036,7 @@ public final class Test {
         System.out.println(fog);
         System.out.println(lights);
         System.out.println(mesh);
+        System.out.println(composite);
         System.exit(0);
     }
 }

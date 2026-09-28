@@ -1199,6 +1199,281 @@ function renderMesh(engine, meshBytes) {
   return hash;
 }
 
+/** Le côté de la planche d'emblèmes masqués, et celui de la tache. */
+const EMBLEM_SIDE = 64;
+
+/**
+ * L'emblème masqué de la scène composite : un disque et son pied, sur fond
+ * transparent.
+ *
+ * Mêmes valeurs que la scène de conformance, écrites ici plutôt que chargées :
+ * ce que cet hôte doit reproduire est la **disposition** des structures, pas
+ * une texture qui viendrait d'ailleurs.
+ *
+ * @returns {Uint8Array}
+ */
+function makeEmblem() {
+  const texels = new Uint8Array(EMBLEM_SIDE * EMBLEM_SIDE * 4);
+  const cx = EMBLEM_SIDE / 2;
+  const cy = EMBLEM_SIDE * 0.35;
+  const radius = EMBLEM_SIDE * 0.28;
+  for (let v = 0; v < EMBLEM_SIDE; v++) {
+    for (let u = 0; u < EMBLEM_SIDE; u++) {
+      const base = (v * EMBLEM_SIDE + u) * 4;
+      const fu = u + 0.5;
+      const fv = v + 0.5;
+      const dx = fu - cx;
+      const dy = fv - cy;
+      const disc = dx * dx + dy * dy <= radius * radius;
+      const foot = fv > EMBLEM_SIDE * 0.6 && fu > EMBLEM_SIDE * 0.28 && fu < EMBLEM_SIDE * 0.52;
+      if (disc || foot) {
+        texels[base] = 0x40 + Math.floor((fu * 160.0) / EMBLEM_SIDE);
+        texels[base + 1] = 0xff - Math.floor((fv * 140.0) / EMBLEM_SIDE);
+        texels[base + 2] = 0x60;
+        texels[base + 3] = 0xff;
+      }
+    }
+  }
+  return texels;
+}
+
+/**
+ * La tache d'ombre : sombre au centre, **blanche au bord**, 255 étant le neutre
+ * de la modulation.
+ *
+ * @returns {Uint8Array}
+ */
+function makeShadow() {
+  const texels = new Uint8Array(EMBLEM_SIDE * EMBLEM_SIDE * 4);
+  const half = EMBLEM_SIDE / 2;
+  for (let v = 0; v < EMBLEM_SIDE; v++) {
+    for (let u = 0; u < EMBLEM_SIDE; u++) {
+      const base = (v * EMBLEM_SIDE + u) * 4;
+      const dx = u + 0.5 - half;
+      const dy = v + 0.5 - half;
+      const q = Math.min(1.0, (dx * dx + dy * dy) / (half * half));
+      const level = Math.floor(0x38 + (0xff - 0x38) * q);
+      texels[base] = level;
+      texels[base + 1] = level;
+      texels[base + 2] = level;
+      texels[base + 3] = 0xff;
+    }
+  }
+  return texels;
+}
+
+/** Les deux lumières de la scène composite. */
+const COMPOSITE_LIGHTS = [
+  { position: [2.0, -3.0, 1.5], radius: 24.0, color: [0xff, 0xc0, 0x60] },
+  { position: [2.0, 3.0, 3.0], radius: 24.0, color: [0x40, 0x80, 0xff] },
+];
+
+/**
+ * La caméra en plongée de la scène composite, d'un seizième de tour.
+ *
+ * Le quaternion se range `x, y, z, w` : un demi-angle sur l'axe, le cosinus en
+ * dernier. Les valeurs sont écrites plutôt que calculées par une bibliothèque
+ * tierce, comme le reste de cet hôte.
+ */
+const COMPOSITE_CAMERA = {
+  position: [0, 0, 3],
+  orientation: [0, 0.19509032, 0, 0.98078528],
+  fovY: 1.0471976,
+  nearPlane: 0.1,
+};
+
+/** Le sol de la scène composite, à huit texels par unité de monde. */
+const COMPOSITE_FLOOR = [
+  [4.0, -6.0, -2.6, 4.0 * 8.0, -6.0 * 8.0],
+  [14.0, -6.0, -2.6, 14.0 * 8.0, -6.0 * 8.0],
+  [14.0, 6.0, -2.6, 14.0 * 8.0, 6.0 * 8.0],
+  [4.0, 6.0, -2.6, 4.0 * 8.0, 6.0 * 8.0],
+];
+
+/** La tache modulée, coplanaire au sol. */
+const COMPOSITE_SHADOW = [
+  [4.5, -5.5, -2.6, 0.0, 0.0],
+  [9.5, -5.5, -2.6, 64.0, 0.0],
+  [9.5, -0.5, -2.6, 64.0, 64.0],
+  [4.5, -0.5, -2.6, 0.0, 64.0],
+];
+
+/** Les deux triangles d'un quadrilatère, blancs. */
+const QUAD_FACES = [
+  { indices: [0, 1, 2], color: [0xff, 0xff, 0xff, 0xff] },
+  { indices: [0, 2, 3], color: [0xff, 0xff, 0xff, 0xff] },
+];
+
+/**
+ * Rend la scène composite de l'étape 6, ou `null` en cas d'échec.
+ *
+ * **La seule scène que cet hôte rende pour les cinq chemins de l'étape** :
+ * maillage entre deux trames, texture masquée, les deux modes d'orientation de
+ * sprite, le roulis, et la surface modulée. Une scène par chemin aurait été
+ * plus lisible en cas de divergence ; c'est une seule, parce que chacune se
+ * paie en quatre descriptions — une par langage — et que les scènes séparées
+ * existent déjà côté Rust pour dire lequel a bougé.
+ *
+ * **Ce qu'elle ferme ici et nulle part ailleurs** : les quarante-quatre octets
+ * de `ScgSprite`, que cette liaison écrit à la main. Les hôtes C et C++
+ * compilent les assertions statiques du header, et le pont JNI est en C ; ce
+ * fichier n'a rien de tel.
+ *
+ * @param {scg.Screengine} engine
+ * @param {Uint8Array} meshBytes le fichier versionné, à deux trames
+ * @returns {bigint | null}
+ */
+function renderComposite(engine, meshBytes) {
+  const e = engine.exports;
+  const out = engine.alloc(4);
+
+  const block = engine.alloc(meshBytes.length);
+  engine.bytes().set(meshBytes, block);
+  if (e.scg_mesh_load(block, meshBytes.length, out) < 0) {
+    check(false, "le maillage de la composite se charge");
+    return null;
+  }
+  const mesh = engine.readU32(out);
+  engine.free(block, meshBytes.length);
+
+  // **Deux trames**, ce qu'un maillage statique ne pourrait pas éprouver.
+  check(
+    e.scg_mesh_frame_count(mesh, out) === scg.SCG_OK && engine.readU32(out) === 2,
+    "le maillage versionné porte deux trames",
+  );
+
+  const desc = engine.alloc(scg.TEXTURE_DESC_SIZE);
+  const loadTexture = (texels, format) => {
+    const bytes = engine.alloc(texels.length);
+    engine.writeTextureDesc(desc, EMBLEM_SIDE, EMBLEM_SIDE, format);
+    engine.bytes().set(texels, bytes);
+    const code = e.scg_texture_load(desc, bytes, texels.length, out);
+    check(code === scg.SCG_OK, "la texture de la composite se charge");
+    return code === scg.SCG_OK ? engine.readU32(out) : 0;
+  };
+  const sides = loadTexture(makeChecker(), scg.SCG_TEXTURE_FORMAT_RGBA8);
+  const emblem = loadTexture(makeEmblem(), scg.SCG_TEXTURE_FORMAT_RGBA8_MASKED);
+  const shadow = loadTexture(makeShadow(), scg.SCG_TEXTURE_FORMAT_RGBA8);
+
+  const config = engine.alloc(scg.CONFIG_SIZE);
+  engine.writeConfig(config, sceneConfig());
+  if (e.scg_create(config, out) < 0) {
+    check(false, "création du contexte de la composite");
+    return null;
+  }
+  const ctx = engine.readU32(out);
+
+  const camera = engine.alloc(scg.CAMERA_SIZE);
+  engine.writeCamera(camera, COMPOSITE_CAMERA);
+  check(e.scg_set_camera(ctx, camera) === scg.SCG_OK, "la caméra plongeante se règle");
+
+  const lights = engine.alloc(COMPOSITE_LIGHTS.length * scg.LIGHT_SIZE);
+  engine.writeLights(lights, COMPOSITE_LIGHTS);
+  check(
+    e.scg_set_lights(ctx, lights, COMPOSITE_LIGHTS.length) === scg.SCG_OK,
+    "les deux lumières se règlent",
+  );
+
+  const identity = engine.alloc(scg.MAT4_SIZE);
+  engine.writeIdentity(identity);
+  const quadVertices = engine.alloc(4 * scg.VERTEX_UV_SIZE);
+  const quadFaces = engine.alloc(2 * scg.TRIANGLE_SIZE);
+  engine.writeTriangles(quadFaces, QUAD_FACES);
+
+  // Le sol d'abord : une surface modulée multiplie ce qui est déjà écrit, et
+  // n'aurait rien à assombrir sans lui.
+  engine.writeVerticesUv(quadVertices, COMPOSITE_FLOOR);
+  check(
+    e.scg_submit_textured(ctx, identity, quadVertices, 4, quadFaces, 2, sides) === scg.SCG_OK,
+    "le sol de la composite est accepté",
+  );
+
+  const slots = engine.alloc(8);
+  const slotView = new DataView(engine.memory.buffer, slots, 8);
+  slotView.setUint32(0, sides, true);
+  slotView.setUint32(4, 0, true);
+  const model = engine.alloc(scg.MAT4_SIZE);
+  engine.writeMat4(model, CRATE_MODEL);
+  check(
+    e.scg_submit_mesh_frame(ctx, model, mesh, slots, 2, 0, 1, 0.35) === scg.SCG_OK,
+    "la caisse interpolée est acceptée",
+  );
+
+  // Les deux modes d'orientation, le second avec un roulis non nul : un lot ne
+  // porte qu'une orientation, donc deux soumissions.
+  const sprite = engine.alloc(scg.SPRITE_SIZE);
+  engine.writeSprites(sprite, [
+    {
+      center: [9.0, -3.5, 0.0],
+      half: [2.0, 2.4],
+      uv: [0.0, 0.0, EMBLEM_SIDE, EMBLEM_SIDE],
+      roll: 0,
+      color: [0xff, 0xff, 0xff, 0xff],
+    },
+  ]);
+  check(
+    e.scg_submit_sprites(ctx, identity, sprite, 1, emblem, scg.SCG_SPRITE_AXIAL) === scg.SCG_OK,
+    "le sprite axial est accepté",
+  );
+  check(
+    e.scg_submit_sprites(ctx, identity, sprite, 1, emblem, 0) === scg.SCG_ERR_INVALID_ARGUMENT,
+    "une orientation nulle est refusée, jamais rabattue sur un défaut",
+  );
+  engine.writeSprites(sprite, [
+    {
+      center: [9.0, 3.5, 0.0],
+      half: [2.0, 2.4],
+      uv: [0.0, 0.0, EMBLEM_SIDE, EMBLEM_SIDE],
+      // Cinq huitièmes de tour, en angle binaire. C'est le seul champ entier au
+      // milieu de flottants, donc celui qu'une liaison écrit mal sans qu'aucun
+      // contrôle ne la reprenne.
+      roll: 5 * 0x20000000,
+      color: [0xff, 0xff, 0xff, 0xff],
+    },
+  ]);
+  check(
+    e.scg_submit_sprites(ctx, identity, sprite, 1, emblem, scg.SCG_SPRITE_FACING) === scg.SCG_OK,
+    "le sprite plein face et son roulis sont acceptés",
+  );
+
+  // La tache modulée en dernier : elle multiplie ce que les lots précédents ont
+  // écrit, donc l'ordre de soumission décide.
+  engine.writeVerticesUv(quadVertices, COMPOSITE_SHADOW);
+  check(
+    e.scg_submit_blended(ctx, identity, quadVertices, 4, quadFaces, 2, shadow, 0) ===
+      scg.SCG_ERR_INVALID_ARGUMENT,
+    "un mode de mélange nul est refusé",
+  );
+  check(
+    e.scg_submit_blended(
+      ctx,
+      identity,
+      quadVertices,
+      4,
+      quadFaces,
+      2,
+      shadow,
+      scg.SCG_BLEND_MODULATE,
+    ) === scg.SCG_OK,
+    "la tache modulée est acceptée",
+  );
+
+  e.scg_mesh_destroy(mesh);
+  e.scg_texture_destroy(sides);
+  e.scg_texture_destroy(emblem);
+  e.scg_texture_destroy(shadow);
+
+  const pixels = engine.alloc(STRIDE * HEIGHT * scg.BYTES_PER_PIXEL);
+  const code = e.scg_frame_end(ctx, pixels, STRIDE);
+  check(code === scg.SCG_OK, "l'image composite se rend");
+  const compositeHash = code === scg.SCG_OK
+    ? engine.fingerprint(pixels, WIDTH, HEIGHT, STRIDE)
+    : null;
+
+  e.scg_destroy(ctx);
+  return compositeHash;
+}
+
 /** Toutes les vérifications, puis l'empreinte sur la sortie standard. */
 async function main() {
   const [wasmPath, headerPath, meshPath] = process.argv.slice(2);
@@ -1235,9 +1510,12 @@ async function main() {
   const overbright = renderLit(engine, 2);
   const fog = renderFog(engine);
   const lights = renderLights(engine);
-  const mesh = renderMesh(engine, new Uint8Array(await readFile(meshPath)));
+  const meshBytes = new Uint8Array(await readFile(meshPath));
+  const mesh = renderMesh(engine, meshBytes);
+  const composite = renderComposite(engine, meshBytes);
   if (
     failures > 0 ||
+    composite === null ||
     textured === null ||
     bilinear === null ||
     graded === null ||
@@ -1252,7 +1530,8 @@ async function main() {
   }
 
   process.stdout.write(
-    `${hash}\n${textured}\n${bilinear}\n${graded}\n${lit}\n${overbright}\n${fog}\n${lights}\n${mesh}\n`,
+    `${hash}\n${textured}\n${bilinear}\n${graded}\n${lit}\n${overbright}\n${fog}\n${lights}\n` +
+      `${mesh}\n${composite}\n`,
   );
   return 0;
 }
