@@ -167,6 +167,14 @@
 // of a path, this one the number of cells a single image can keep a window for.
 #define SCG_TRAVERSAL_CELLS 4096
 
+// The largest side of a cell's lightmap atlas, in luxels.
+//
+// What a cell can cost in lightmap memory, which the host sizes its cache on:
+// four bytes per luxel, mipmap chain included. A map whose surfaces would not
+// pack into an atlas this size is refused at load, not at build time — the
+// error then names the map rather than one cell of it.
+#define SCG_MAX_LIGHTMAP_SIZE 1024
+
 // The block is not a data file this library can read.
 //
 // The fault is in the content, not in the call: report it to the user as a bad
@@ -1375,6 +1383,32 @@ int32_t scg_submit_world(struct ScgContext *ctx,
                          const struct ScgTexture *const *textures,
                          uint32_t texture_count);
 
+// Submits a whole map with its lightmaps, one batch per surface.
+//
+// `textures` works exactly as in `scg_submit_world`, and `lighting` exactly as
+// in `scg_submit_world_visible` — null renders what `scg_submit_world` renders,
+// and a cell without an atlas falls back to the unlit path on its own.
+//
+// **It exists so the two paths can be compared lit.** Traversal is validated
+// against the brute path: on a level where everything is visible both must
+// render the same image, and that equality is what catches a window narrowed
+// too far. Without this call the brute path would render an unlit level and the
+// traversed one a lit level, so the two would differ for a reason that has
+// nothing to do with what is being compared.
+//
+// **The map is submitted whole or not at all**, like `scg_submit_world`.
+//
+// # Safety
+//
+// Same preconditions as `scg_submit_world`, plus `lighting` being null or a
+// live handle from `scg_lighting_create`.
+int32_t scg_submit_world_lit(struct ScgContext *ctx,
+                             const struct ScgMat4 *model,
+                             const struct ScgWorld *world,
+                             const struct ScgTexture *const *textures,
+                             uint32_t texture_count,
+                             const struct ScgLighting *lighting);
+
 // Creates the holder of a map's computed lightmaps, without computing any.
 //
 // The allocation happens here, in a named call, and never at the first
@@ -1492,6 +1526,23 @@ int32_t scg_world_cell_count(const struct ScgWorld *world, uint32_t *out);
 // `world` must be a live handle from `scg_world_load`, and `out` must point to a
 // writable `uint32_t`.
 int32_t scg_world_cell_id(const struct ScgWorld *world, uint32_t index, uint32_t *out);
+
+// Writes how many luxels baking `cell_id` computes to `out`.
+//
+// **What a bake costs, cell by cell.** `scg_lighting_build` is synchronous and
+// takes one cell, so a host that shows progress needs to weight each one: the
+// number of cells says nothing, a twenty-metre wall and a doorstep counting one
+// each. The value is derived at load, so asking for it costs nothing.
+//
+// Gutters are excluded, and so are the surfaces that refuse a lightmap — the
+// bake does not visit them. An unknown identifier is `SCG_ERR_UNKNOWN_RESOURCE`
+// and writes nothing.
+//
+// # Safety
+//
+// `world` must be a live handle from `scg_world_load`, and `out` must point to a
+// writable `uint32_t`.
+int32_t scg_world_cell_luxel_count(const struct ScgWorld *world, uint32_t cell_id, uint32_t *out);
 
 // Writes the identifier of the cell containing `position` to `out`, or `0`.
 //

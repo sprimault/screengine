@@ -66,6 +66,9 @@ export const SCG_TRAVERSAL_DEPTH = 64;
 /** Nombre de cellules qu'une image peut retenir. */
 export const SCG_TRAVERSAL_CELLS = 4096;
 
+/** Le plus grand côté de l'atlas de lightmaps d'une cellule, en luxels. */
+export const SCG_MAX_LIGHTMAP_SIZE = 1024;
+
 /** Le bloc n'est pas un fichier de données lisible : la faute est dans le contenu. */
 export const SCG_ERR_INVALID_FORMAT = -101;
 
@@ -176,9 +179,11 @@ export const EXPORTS = [
   "scg_world_entity_class",
   "scg_world_entity_data",
   "scg_submit_world",
+  "scg_submit_world_lit",
   "scg_submit_world_visible",
   "scg_world_cell_count",
   "scg_world_cell_id",
+  "scg_world_cell_luxel_count",
   "scg_world_locate",
   "scg_world_track",
   "scg_lighting_create",

@@ -11,7 +11,7 @@ use core::sync::atomic::{AtomicBool, AtomicU8, AtomicU32, Ordering};
 
 use crate::buffer::reserved;
 use crate::error::{Argument, Error, Result};
-use crate::format::{Mesh, Pose, World};
+use crate::format::{Cell, Mesh, Pose, World};
 use crate::light::MAX_OVERBRIGHT;
 use crate::light::dynamic::{self, MAX_LIGHTS};
 use crate::light::fog::Fog;
@@ -1123,35 +1123,132 @@ impl Context {
     where
         F: Fn(u32) -> Option<&'t Arc<Texture>>,
     {
+        self.submit_world_lit(model, world, texture, None)
+    }
+
+    /// Le même décor entier, éclairé par les lightmaps qu'on lui passe.
+    ///
+    /// **Elle existe pour que l'égalité avec la traversée soit vérifiable
+    /// éclairée.** Sans elle, le chemin brut rendrait un décor éteint et le
+    /// chemin traversé un décor allumé : les deux images différeraient pour une
+    /// raison étrangère à ce qu'on compare, et le seul contrôle qui attrape une
+    /// fenêtre trop étroite ne vaudrait que pour un décor sans lightmap.
+    ///
+    /// `lighting` nul rend exactement ce que [`Context::submit_world`] rend, qui
+    /// l'appelle ainsi.
+    pub fn submit_world_lit<'t, F>(
+        &mut self,
+        model: Affine3,
+        world: &World,
+        texture: F,
+        lighting: Option<&Lightmaps>,
+    ) -> Result<()>
+    where
+        F: Fn(u32) -> Option<&'t Arc<Texture>>,
+    {
         // Avant la marque, pour la raison écrite dans `submit_mesh_with`.
         self.drop_closed_frame();
         let (mark, textures) = (self.triangles.len(), self.textures.len());
         let lights = self.lighting.len();
 
-        for cell in world.cells() {
-            for surface in &cell.surfaces {
-                let first = surface.first_triangle as usize;
-                let result = self.submit_each_uv(
-                    model,
-                    surface.triangle_count as usize,
-                    texture(surface.material),
-                    |i| {
-                        let triangle = cell.triangles[first + i];
-                        let mut corners = [VertexUv::untextured(Vec3::ZERO); 3];
-                        for (corner, &index) in corners.iter_mut().zip(&triangle) {
-                            *corner = cell.vertices[index as usize];
-                        }
-                        // Le décor sort en blanc : la couleur du sommet
-                        // n'existe pas dans une carte, où c'est le matériau qui
-                        // habille, et la lightmap qui éclairera.
-                        Ok((corners, Color::new(0xFF, 0xFF, 0xFF, 0xFF)))
-                    },
-                );
-                if result.is_err() {
-                    self.triangles.truncate(mark);
-                    self.lighting.truncate(lights);
-                    self.textures.truncate(textures);
-                    return result;
+        for (index, cell) in world.cells().iter().enumerate() {
+            if let Err(error) = self.submit_cell(model, cell, index as u32, lighting, &texture) {
+                self.triangles.truncate(mark);
+                self.lighting.truncate(lights);
+                self.textures.truncate(textures);
+                return Err(error);
+            }
+        }
+        Ok(())
+    }
+
+    /// Les surfaces d'une cellule, éclairées ou non selon ce que l'atlas porte.
+    ///
+    /// **Le corps commun des trois soumissions de décor**, et non une commodité :
+    /// la projection des coordonnées de lightmap, le demi-luxel et le retrait
+    /// d'une surface qui refuse son atlas s'écrivent une fois. Recopiés, ils
+    /// divergeraient d'un chemin à l'autre, et c'est l'image du chemin le moins
+    /// emprunté qui deviendrait fausse.
+    ///
+    /// Ne rattrape rien : c'est l'appelant qui tronque, lui seul sachant où son
+    /// lot commence.
+    fn submit_cell<'t, F>(
+        &mut self,
+        model: Affine3,
+        cell: &Cell,
+        index: u32,
+        lighting: Option<&Lightmaps>,
+        texture: &F,
+    ) -> Result<()>
+    where
+        F: Fn(u32) -> Option<&'t Arc<Texture>>,
+    {
+        for (rank_in_cell, surface) in cell.surfaces.iter().enumerate() {
+            let first = surface.first_triangle as usize;
+            // La cellule a-t-elle son atlas, et cette surface accepte-t-elle une
+            // lightmap ? Sinon le lot part par le chemin non éclairé — **un
+            // niveau partiellement rallumé reste affichable**, ce qui est
+            // exactement le moment où un éditeur a besoin de le voir.
+            let lit = lighting
+                .and_then(|lighting| lighting.of(index))
+                .filter(|_| !surface.skips_lightmap())
+                .map(|(texture, atlas)| (texture, atlas.slots[rank_in_cell]));
+
+            match lit {
+                Some((lightmap, slot)) => {
+                    let extent = surface.luxels;
+                    self.submit_each_lit(
+                        model,
+                        surface.triangle_count as usize,
+                        texture(surface.material),
+                        lightmap,
+                        |i| {
+                            let triangle = cell.triangles[first + i];
+                            let mut corners =
+                                [VertexUv2::unlit(VertexUv::untextured(Vec3::ZERO)); 3];
+                            for (corner, &index) in corners.iter_mut().zip(&triangle) {
+                                let vertex = cell.vertices[index as usize];
+                                // Les coordonnées locales de la surface, plus
+                                // l'origine de son rectangle : la carte reste
+                                // indépendante d'un rangement que le premier
+                                // déplacement de sommet changerait. Le demi-luxel
+                                // n'est pas décoratif — le bilinéaire retranche
+                                // déjà un demi-texel, et le centre du luxel (0,0)
+                                // est en (0,5 ; 0,5).
+                                let (lu, lv) = surface.lightmap.project(vertex.position);
+                                *corner = VertexUv2 {
+                                    position: vertex.position,
+                                    u: vertex.u,
+                                    v: vertex.v,
+                                    u2: lu - extent.min_u as f32 + (slot.x + GUTTER) as f32 + 0.5,
+                                    v2: lv - extent.min_v as f32 + (slot.y + GUTTER) as f32 + 0.5,
+                                    // Le décor n'a pas de normale par sommet : son
+                                    // angle est déjà dans la lightmap, cuite avec
+                                    // son terme de Lambert.
+                                    normal: Vec3::ZERO,
+                                };
+                            }
+                            Ok((corners, Color::new(0xFF, 0xFF, 0xFF, 0xFF)))
+                        },
+                    )?;
+                }
+                None => {
+                    self.submit_each_uv(
+                        model,
+                        surface.triangle_count as usize,
+                        texture(surface.material),
+                        |i| {
+                            let triangle = cell.triangles[first + i];
+                            let mut corners = [VertexUv::untextured(Vec3::ZERO); 3];
+                            for (corner, &index) in corners.iter_mut().zip(&triangle) {
+                                *corner = cell.vertices[index as usize];
+                            }
+                            // Le décor sort en blanc : la couleur du sommet
+                            // n'existe pas dans une carte, où c'est le matériau
+                            // qui habille, et la lightmap qui éclairera.
+                            Ok((corners, Color::new(0xFF, 0xFF, 0xFF, 0xFF)))
+                        },
+                    )?;
                 }
             }
         }
@@ -1223,90 +1320,19 @@ impl Context {
             // triangle : c'est par elle que le remplissage retrouvera la fenêtre.
             self.visits[rank].first_triangle = self.triangles.len() as u32;
             let cell = &cells[visit.cell as usize];
-            for (rank_in_cell, surface) in cell.surfaces.iter().enumerate() {
-                let first = surface.first_triangle as usize;
-                // La cellule a-t-elle son atlas, et cette surface accepte-t-elle
-                // une lightmap ? Sinon le lot part par le chemin non éclairé —
-                // **un niveau partiellement rallumé reste affichable**, ce qui est
-                // exactement le moment où un éditeur a besoin de le voir.
-                let lit = lighting
-                    .and_then(|lighting| lighting.of(visit.cell))
-                    .filter(|_| !surface.skips_lightmap())
-                    .map(|(texture, atlas)| (texture, atlas.slots[rank_in_cell]));
-
-                let result = match lit {
-                    Some((lightmap, slot)) => {
-                        let extent = surface.luxels;
-                        let side = lightmap.width() as f32;
-                        self.submit_each_lit(
-                            model,
-                            surface.triangle_count as usize,
-                            texture(surface.material),
-                            lightmap,
-                            |i| {
-                                let triangle = cell.triangles[first + i];
-                                let mut corners =
-                                    [VertexUv2::unlit(VertexUv::untextured(Vec3::ZERO)); 3];
-                                for (corner, &index) in corners.iter_mut().zip(&triangle) {
-                                    let vertex = cell.vertices[index as usize];
-                                    // Les coordonnées locales de la surface, plus
-                                    // l'origine de son rectangle : la carte reste
-                                    // indépendante d'un rangement que le premier
-                                    // déplacement de sommet changerait. Le
-                                    // demi-luxel n'est pas décoratif — le
-                                    // bilinéaire retranche déjà un demi-texel, et
-                                    // le centre du luxel (0,0) est en (0,5 ; 0,5).
-                                    let (lu, lv) = surface.lightmap.project(vertex.position);
-                                    *corner = VertexUv2 {
-                                        position: vertex.position,
-                                        u: vertex.u,
-                                        v: vertex.v,
-                                        u2: lu - extent.min_u as f32
-                                            + (slot.x + GUTTER) as f32
-                                            + 0.5,
-                                        v2: lv - extent.min_v as f32
-                                            + (slot.y + GUTTER) as f32
-                                            + 0.5,
-                                        // Le décor n'a pas de normale par
-                                        // sommet : son angle est déjà dans la
-                                        // lightmap, cuite avec son terme de
-                                        // Lambert.
-                                        normal: Vec3::ZERO,
-                                    };
-                                }
-                                let _ = side;
-                                Ok((corners, Color::new(0xFF, 0xFF, 0xFF, 0xFF)))
-                            },
-                        )
-                    }
-                    None => self.submit_each_uv(
-                        model,
-                        surface.triangle_count as usize,
-                        texture(surface.material),
-                        |i| {
-                            let triangle = cell.triangles[first + i];
-                            let mut corners = [VertexUv::untextured(Vec3::ZERO); 3];
-                            for (corner, &index) in corners.iter_mut().zip(&triangle) {
-                                *corner = cell.vertices[index as usize];
-                            }
-                            Ok((corners, Color::new(0xFF, 0xFF, 0xFF, 0xFF)))
-                        },
-                    ),
-                };
-                if let Err(error) = result {
-                    self.triangles.truncate(mark);
-                    self.lighting.truncate(lights);
-                    self.textures.truncate(textures);
-                    // **Les trois ensemble, ou le remplissage lit une liste
-                    // vidée.** Une plage laissée derrière par une traversée
-                    // précédente de la même image désignerait encore des
-                    // triangles, et le curseur irait chercher leur fenêtre dans
-                    // la liste que cette ligne efface.
-                    self.visits.clear();
-                    self.visited_first = 0;
-                    self.visited_end = 0;
-                    return Err(error);
-                }
+            if let Err(error) = self.submit_cell(model, cell, visit.cell, lighting, &texture) {
+                self.triangles.truncate(mark);
+                self.lighting.truncate(lights);
+                self.textures.truncate(textures);
+                // **Les trois ensemble, ou le remplissage lit une liste
+                // vidée.** Une plage laissée derrière par une traversée
+                // précédente de la même image désignerait encore des triangles,
+                // et le curseur irait chercher leur fenêtre dans la liste que
+                // cette ligne efface.
+                self.visits.clear();
+                self.visited_first = 0;
+                self.visited_end = 0;
+                return Err(error);
             }
         }
 

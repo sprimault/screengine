@@ -97,6 +97,14 @@ pub const SCG_TRAVERSAL_DEPTH: u32 = 64;
 /// of a path, this one the number of cells a single image can keep a window for.
 pub const SCG_TRAVERSAL_CELLS: u32 = 4096;
 
+/// The largest side of a cell's lightmap atlas, in luxels.
+///
+/// What a cell can cost in lightmap memory, which the host sizes its cache on:
+/// four bytes per luxel, mipmap chain included. A map whose surfaces would not
+/// pack into an atlas this size is refused at load, not at build time — the
+/// error then names the map rather than one cell of it.
+pub const SCG_MAX_LIGHTMAP_SIZE: u32 = 1024;
+
 // **Les deux valeurs sont écrites en littéral, et concordent par assertion.**
 // `cbindgen` analyse la source syntaxiquement et n'interroge jamais `rustc` : une
 // constante définie depuis un chemin du noyau n'entre pas dans le header, elle y
@@ -105,6 +113,7 @@ pub const SCG_TRAVERSAL_CELLS: u32 = 4096;
 // ferait pas.
 const _: () = assert!(SCG_TRAVERSAL_DEPTH as usize == screengine::TRAVERSAL_DEPTH);
 const _: () = assert!(SCG_TRAVERSAL_CELLS as usize == screengine::TRAVERSAL_CELLS);
+const _: () = assert!(SCG_MAX_LIGHTMAP_SIZE == screengine::MAX_LIGHTMAP_SIZE);
 
 /// The block is not a data file this library can read.
 ///

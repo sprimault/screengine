@@ -1170,7 +1170,7 @@ Arrêté :
 
 ### Étape 5
 
-**Quatorze fonctions, un type opaque, sept constantes, aucun code d'erreur
+**Treize fonctions, un type opaque, huit constantes, aucun code d'erreur
 nouveau et deux statuts.** Aucune signature publiée, aucune structure, aucune
 précondition ne bouge : `SCG_ABI_VERSION` reste à **1**.
 

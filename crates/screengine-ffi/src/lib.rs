@@ -50,8 +50,8 @@ pub use status::{
     SCG_ERR_FAULTED, SCG_ERR_INVALID_ARGUMENT, SCG_ERR_INVALID_FORMAT, SCG_ERR_INVALID_STATE,
     SCG_ERR_NULL, SCG_ERR_OUT_OF_MEMORY, SCG_ERR_PANIC, SCG_ERR_POISONED, SCG_ERR_UNKNOWN_RESOURCE,
     SCG_ERR_UNSUPPORTED_FORMAT_VERSION, SCG_LIGHTMAP_ABSENT, SCG_LIGHTMAP_READY,
-    SCG_LIGHTMAP_STALE, SCG_OK, SCG_STATUS_INCOMPLETE, SCG_STATUS_NO_CELL, SCG_TRAVERSAL_CELLS,
-    SCG_TRAVERSAL_DEPTH,
+    SCG_LIGHTMAP_STALE, SCG_MAX_LIGHTMAP_SIZE, SCG_OK, SCG_STATUS_INCOMPLETE, SCG_STATUS_NO_CELL,
+    SCG_TRAVERSAL_CELLS, SCG_TRAVERSAL_DEPTH,
 };
 pub use texture::ScgTexture;
 pub use world::{ScgLighting, ScgWorld};
@@ -1749,6 +1749,74 @@ pub unsafe extern "C" fn scg_submit_world(
     unsafe { entry::with_context(ctx, submit) }
 }
 
+/// Submits a whole map with its lightmaps, one batch per surface.
+///
+/// `textures` works exactly as in `scg_submit_world`, and `lighting` exactly as
+/// in `scg_submit_world_visible` — null renders what `scg_submit_world` renders,
+/// and a cell without an atlas falls back to the unlit path on its own.
+///
+/// **It exists so the two paths can be compared lit.** Traversal is validated
+/// against the brute path: on a level where everything is visible both must
+/// render the same image, and that equality is what catches a window narrowed
+/// too far. Without this call the brute path would render an unlit level and the
+/// traversed one a lit level, so the two would differ for a reason that has
+/// nothing to do with what is being compared.
+///
+/// **The map is submitted whole or not at all**, like `scg_submit_world`.
+///
+/// # Safety
+///
+/// Same preconditions as `scg_submit_world`, plus `lighting` being null or a
+/// live handle from `scg_lighting_create`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn scg_submit_world_lit(
+    ctx: *mut ScgContext,
+    model: *const ScgMat4,
+    world: *const ScgWorld,
+    textures: *const *const ScgTexture,
+    texture_count: u32,
+    lighting: *const ScgLighting,
+) -> i32 {
+    let submit = |mut core: entry::Core<'_>| {
+        // SAFETY: précondition de la fonction — chaque pointeur est nul ou vise
+        // une valeur lisible.
+        let model = unsafe { model.as_ref() }.ok_or(AbiError::NULL)?;
+        let model = model.to_core()?;
+        // SAFETY: précondition de la fonction — `world` est un handle vivant.
+        let world = unsafe { world.as_ref() }.ok_or(AbiError::NULL)?;
+        // SAFETY: précondition de la fonction — nul, ou un handle vivant rendu
+        // par `scg_lighting_create`.
+        let lighting = unsafe { lighting.as_ref() };
+        if textures.is_null() && texture_count != 0 {
+            return Err(AbiError::NULL);
+        }
+        if texture_count != world.inner.material_count() {
+            return Err(AbiError::TEXTURE_COUNT);
+        }
+        // SAFETY: précondition de la fonction — le tableau couvre son nombre
+        // d'éléments, le cas vide étant traité par `slice_of`.
+        let slots = unsafe { slice_of(textures, texture_count) };
+
+        core.exclusive()?
+            .submit_world_lit(
+                model,
+                &world.inner,
+                |material| {
+                    // SAFETY: mêmes préconditions que `scg_submit_world`.
+                    slots
+                        .get(material as usize)
+                        .and_then(|handle| unsafe { handle.as_ref() })
+                        .map(|texture| &texture.inner)
+                },
+                lighting.map(|lighting| &lighting.inner),
+            )
+            .map_err(AbiError::from)
+    };
+
+    // SAFETY: précondition de la fonction — `ctx` est nul ou un handle vivant.
+    unsafe { entry::with_context(ctx, submit) }
+}
+
 /// Creates the holder of a map's computed lightmaps, without computing any.
 ///
 /// The allocation happens here, in a named call, and never at the first
@@ -2001,6 +2069,40 @@ pub unsafe extern "C" fn scg_world_cell_id(
 ) -> i32 {
     let read = |world: &ScgWorld| world.inner.cell_id(index).ok_or(AbiError::WORLD_INDEX);
     // SAFETY: mêmes préconditions que les autres accesseurs indexés.
+    unsafe { world_value(world, out, read) }
+}
+
+/// Writes how many luxels baking `cell_id` computes to `out`.
+///
+/// **What a bake costs, cell by cell.** `scg_lighting_build` is synchronous and
+/// takes one cell, so a host that shows progress needs to weight each one: the
+/// number of cells says nothing, a twenty-metre wall and a doorstep counting one
+/// each. The value is derived at load, so asking for it costs nothing.
+///
+/// Gutters are excluded, and so are the surfaces that refuse a lightmap — the
+/// bake does not visit them. An unknown identifier is `SCG_ERR_UNKNOWN_RESOURCE`
+/// and writes nothing.
+///
+/// # Safety
+///
+/// `world` must be a live handle from `scg_world_load`, and `out` must point to a
+/// writable `uint32_t`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn scg_world_cell_luxel_count(
+    world: *const ScgWorld,
+    cell_id: u32,
+    out: *mut u32,
+) -> i32 {
+    // L'erreur du noyau, et non un code propre à la frontière : une cellule
+    // inconnue est la même faute ici que pour `scg_lighting_build`, qui la rend
+    // par ce chemin.
+    let read = |world: &ScgWorld| {
+        world
+            .inner
+            .cell_luxel_count(cell_id)
+            .ok_or_else(|| AbiError::from(CoreError::UnknownResource))
+    };
+    // SAFETY: mêmes préconditions que les autres accesseurs de la carte.
     unsafe { world_value(world, out, read) }
 }
 

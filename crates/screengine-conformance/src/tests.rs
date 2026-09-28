@@ -619,6 +619,11 @@ fn le_decor_de_validation_porte_ses_trois_proprietes() {
 /// formée, pas une commodité. Une fenêtre trop **large**, elle, ne change pas
 /// l'image et reste invisible ici — c'est l'asymétrie à connaître avant de se fier
 /// à ce test.
+///
+/// **Les deux chemins sont comparés éclairés**, et c'est pour cela que
+/// `submit_world_lit` existe : un décor éteint cache ce qu'une fenêtre étroite
+/// retire d'une surface dont seul l'éclairage varie, et l'égalité ne vaudrait
+/// alors que pour un décor sans lightmap.
 #[test]
 fn la_traversee_ne_troue_pas_le_decor_de_validation() {
     let world = World::load(&rooms_file::bytes()).expect("décor de validation valide");
@@ -631,6 +636,12 @@ fn la_traversee_ne_troue_pas_le_decor_de_validation() {
             Some(&floor)
         }
     };
+
+    let mut lightmaps = Lightmaps::new(&world).expect("atlas alloués");
+    for index in 0..world.cell_count() {
+        let id = world.cell_id(index).expect("rang dans le compte");
+        lightmaps.build(&world, id).expect("cuisson");
+    }
 
     for (index, (position, yaw)) in ROOM_VIEWS.iter().enumerate() {
         let position = Vec3::new(position[0], position[1], position[2]);
@@ -659,11 +670,17 @@ fn la_traversee_ne_troue_pas_le_decor_de_validation() {
             context.set_camera(camera).expect("caméra valide");
             if traverse {
                 context
-                    .submit_world_visible(Affine3::IDENTITY, &world, cell, None, textures)
+                    .submit_world_visible(
+                        Affine3::IDENTITY,
+                        &world,
+                        cell,
+                        Some(&lightmaps),
+                        textures,
+                    )
                     .expect("capacité");
             } else {
                 context
-                    .submit_world(Affine3::IDENTITY, &world, textures)
+                    .submit_world_lit(Affine3::IDENTITY, &world, textures, Some(&lightmaps))
                     .expect("capacité");
             }
             let mut pixels = vec![0u8; (width * height) as usize * BYTES_PER_PIXEL];
