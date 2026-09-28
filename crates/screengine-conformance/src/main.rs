@@ -26,8 +26,8 @@ use std::sync::Arc;
 
 use screengine::{
     Affine3, Angle, BYTES_PER_PIXEL, Camera, Color, Config, Context, Filter, Frame, Light,
-    Lightmaps, MAX_OVERBRIGHT, Mesh, Quat, Rect, Rows, Texture, Triangle, Vec3, VertexUv,
-    VertexUv2, World,
+    Lightmaps, MAX_OVERBRIGHT, Mesh, Quat, Rect, Rows, Sprite, SpriteOrientation, Texture,
+    Triangle, Vec3, VertexUv, VertexUv2, World,
 };
 use screengine_conformance::{mesh_file, rooms_file, world_file};
 
@@ -430,6 +430,67 @@ enum Scene {
     /// une rotation d'un demi-tour, de déterminant positif, qui ne prouverait
     /// rien.
     MeshMirrored,
+    /// Des emblèmes masqués posés le long d'un sol texturé, **orientés autour
+    /// de l'axe vertical**.
+    ///
+    /// La première scène du dépôt qui emprunte `submit_sprites`, et la première
+    /// qui charge une **texture masquée** : jusqu'ici aucune empreinte ne
+    /// couvrait ni l'un ni l'autre, si bien que rien ne garantissait qu'ils
+    /// rendent les mêmes bits d'une cible à l'autre.
+    ///
+    /// Les sprites sont posés **à des distances et des hauteurs différentes** :
+    /// l'orientation se construit par sommet en espace de vue, et un sprite
+    /// unique au centre de l'image laisserait passer une base mal formée, qui
+    /// ne se voit que de biais.
+    SpriteAxial,
+    /// Les mêmes emblèmes, **mis plein face à la caméra**.
+    ///
+    /// Elle partage sa géométrie avec `sprite-axial`, et c'est ce qui rend les
+    /// deux empreintes comparables : seule l'orientation les sépare. Un mode
+    /// ignoré, ou les deux confondus, rendrait ici la même image que là.
+    SpriteFacing,
+    /// Les mêmes encore, plein face et **avec un roulis non nul**.
+    ///
+    /// Le roulis passe par la **table de sinus du noyau**, donc par un chemin
+    /// flottant de plus avant la projection : c'est exactement le genre d'écart
+    /// que la conformance croisée attrape et que rien d'autre ne voit. Chaque
+    /// sprite porte un angle différent, pour qu'un roulis ignoré, arrondi ou
+    /// appliqué dans le mauvais sens se voie sur au moins l'un d'eux.
+    SpriteRoll,
+    /// Une tache sombre **modulée** sur un sol texturé.
+    ///
+    /// Le cas d'usage que l'étape 6 garde en vue — l'ombre d'un objet mobile —,
+    /// et le seul chemin qui multiplie le tampon au lieu de l'écraser. La tache
+    /// est posée **au ras du sol**, ce que son test de profondeur non strict
+    /// sans écriture rend possible : elle gagne par l'ordre de soumission, sans
+    /// biais de profondeur.
+    ///
+    /// Deux taches se **recouvrent partiellement**, et c'est voulu : la seconde
+    /// module ce que la première a déjà assombri, donc le recouvrement est plus
+    /// sombre que chacune. Une modulation qui écraserait au lieu de multiplier
+    /// y rendrait deux taches de même teinte.
+    Modulated,
+    /// La caisse du fichier, sous deux lumières dynamiques, **sans miroir**.
+    ///
+    /// `maillage-miroir` éclaire déjà un maillage à normales, mais il y mêle le
+    /// déterminant négatif : celle-ci isole le terme de Lambert. Une normale
+    /// ignorée rendrait ses trois faces visibles à la même teinte, puisqu'elles
+    /// sont à peu près à la même distance des lumières — c'est précisément
+    /// l'argument qui a fait reporter la normale par sommet de l'étape 3 à
+    /// l'étape 6, et cette scène est ce qui le vérifie.
+    MeshLit,
+    /// Une caisse **à deux trames**, rendue entre les deux.
+    ///
+    /// Le seul chemin qui interpole une pose, et le seul que
+    /// `scg_submit_mesh_frame` emprunte. Le facteur est **`0.35`, ni zéro, ni un,
+    /// ni un demi** : les deux bornes sont les cas que les tests unitaires
+    /// tiennent déjà, et un demi est exact en binaire, donc il masquerait un
+    /// arrondi que toute autre valeur révèle.
+    ///
+    /// Sa seconde trame change les **trois** axes d'un facteur différent : une
+    /// trame lue à la place de l'autre, ou un facteur pris à l'envers, rend une
+    /// caisse d'une autre taille sur chacun de ses côtés.
+    MeshAnimated,
     /// Un couloir de deux cellules, **chargé depuis un fichier de carte**.
     ///
     /// Ce que l'étape 1 demandait à voir et que rien ne rendait encore : la
@@ -594,6 +655,128 @@ fn lit_quad(
     context.submit_lit(Affine3::IDENTITY, &vertices, &triangles, texture, lightmap)
 }
 
+/// Un emblème **masqué**, `side` texels de côté : un disque et son pied, sur
+/// fond transparent.
+///
+/// **Asymétrique sur les deux axes**, et c'est tout son objet. Un motif
+/// symétrique rendrait la même image retourné, tourné d'un demi-tour ou lu à
+/// l'envers : le roulis ne se verrait pas, ni un axe de texture échangé. Sa
+/// couleur varie avec la position du texel pour la même raison.
+///
+/// **Les texels transparents portent du noir**, et c'est sans conséquence : le
+/// chargement dilate le RGB des zones transparentes depuis leurs voisins
+/// opaques, précisément pour qu'un hôte n'ait pas à y penser. Les laisser noirs
+/// est donc le cas qu'il faut éprouver, pas celui qu'il faut éviter.
+fn emblem(side: u32) -> Arc<Texture> {
+    let mut bytes = Vec::with_capacity((side * side) as usize * 4);
+    let half = side as f32 / 2.0;
+    // Le disque est décalé vers le haut de la planche pour laisser la place au
+    // pied : c'est ce décalage qui rend le retournement vertical visible.
+    let (cx, cy, radius) = (half, side as f32 * 0.35, side as f32 * 0.28);
+    for v in 0..side {
+        for u in 0..side {
+            let (fu, fv) = (u as f32 + 0.5, v as f32 + 0.5);
+            let (dx, dy) = (fu - cx, fv - cy);
+            let disc = dx * dx + dy * dy <= radius * radius;
+            // Le pied, décalé à gauche : l'asymétrie horizontale.
+            let foot = fv > side as f32 * 0.6 && fu > side as f32 * 0.28 && fu < side as f32 * 0.52;
+            if disc || foot {
+                // Bornés par construction : `fu` et `fv` restent sous `side`,
+                // donc `r` va de 64 à 223 et `g` de 116 à 255.
+                let r = (0x40 + (fu * 160.0 / side as f32) as u32) as u8;
+                let g = (0xFF - (fv * 140.0 / side as f32) as u32) as u8;
+                bytes.extend_from_slice(&[r, g, 0x60, 0xFF]);
+            } else {
+                bytes.extend_from_slice(&[0x00, 0x00, 0x00, 0x00]);
+            }
+        }
+    }
+    Arc::new(Texture::load_masked(side, side, &bytes).unwrap_or_else(|_| unreachable!()))
+}
+
+/// Une tache d'ombre : sombre au centre, **blanche au bord**.
+///
+/// Blanche et non transparente, parce que 255 est le neutre de la modulation :
+/// un texel blanc laisse le tampon intact, et c'est ainsi que la tache
+/// s'éteint sur son pourtour sans que rien n'ait à la découper. Une texture
+/// masquée ferait un bord franc là où une ombre en demande un fondu, et la
+/// transparence binaire ne sait pas en rendre.
+///
+/// Le creux est **plus sombre qu'un dégradé linéaire ne le donnerait** au
+/// centre : une ombre linéaire se lit comme un halo, pas comme une ombre.
+fn shadow_blob(side: u32) -> Arc<Texture> {
+    let mut bytes = Vec::with_capacity((side * side) as usize * 4);
+    let half = side as f32 / 2.0;
+    for v in 0..side {
+        for u in 0..side {
+            let (dx, dy) = (u as f32 + 0.5 - half, v as f32 + 0.5 - half);
+            // Le **carré** du rayon normalisé, ce qui évite la racine : c'est
+            // exactement la courbe voulue, et le noyau s'interdit la libm.
+            // Linéaire, le creux se lirait comme un halo et non comme une
+            // ombre.
+            let q = (dx * dx + dy * dy) / (half * half);
+            // Comparaison écrite, jamais `min` : la doctrine du projet vaut
+            // ici comme dans le noyau.
+            let q = if q > 1.0 { 1.0 } else { q };
+            let level = (0x30 as f32 + (0xFF - 0x30) as f32 * q) as u8;
+            bytes.extend_from_slice(&[level, level, level, 0xFF]);
+        }
+    }
+    Arc::new(Texture::load(side, side, &bytes).unwrap_or_else(|_| unreachable!()))
+}
+
+/// Le sol que les quatre scènes de sprites et de modulation partagent.
+///
+/// Partagé pour la même raison que celui des scènes texturées : ce qui sépare
+/// leurs empreintes doit être le seul chemin que chacune ajoute.
+fn sprite_floor(context: &mut Context) -> screengine::Result<()> {
+    textured_quad(
+        context,
+        [
+            Vec3::new(2.0, -24.0, -1.2),
+            Vec3::new(60.0, -24.0, -1.2),
+            Vec3::new(60.0, 24.0, -1.2),
+            Vec3::new(2.0, 24.0, -1.2),
+        ],
+        8.0,
+        &checker(64, 8),
+    )
+}
+
+/// Les emblèmes que les trois scènes de sprites posent, `roll` en plus.
+///
+/// Des distances et des hauteurs différentes : l'orientation se construit en
+/// espace de vue, et un sprite unique au centre de l'image laisserait passer
+/// une base mal formée, qui ne se voit que de biais.
+fn emblems(side: f32, rolls: [u32; 4]) -> [Sprite; 4] {
+    let places = [
+        (Vec3::new(7.0, -3.0, 0.6), 2.2, 2.8),
+        (Vec3::new(11.0, 2.0, 0.2), 1.8, 2.2),
+        (Vec3::new(16.0, -1.5, 2.2), 2.6, 3.2),
+        (Vec3::new(23.0, 5.0, 1.0), 3.0, 3.8),
+    ];
+    let mut out = [Sprite {
+        center: Vec3::ZERO,
+        half_width: 0.0,
+        half_height: 0.0,
+        u0: 0.0,
+        v0: 0.0,
+        u1: side,
+        v1: side,
+        roll: Angle(0),
+        color: Color::new(0xFF, 0xFF, 0xFF, 0xFF),
+    }; 4];
+    for (slot, ((center, half_width, half_height), roll)) in
+        out.iter_mut().zip(places.into_iter().zip(rolls))
+    {
+        slot.center = center;
+        slot.half_width = half_width;
+        slot.half_height = half_height;
+        slot.roll = Angle(roll);
+    }
+    out
+}
+
 /// Une lightmap en dégradé, `side` texels de côté.
 ///
 /// **Les deux axes n'y font pas la même chose**, et c'est tout l'objet : le
@@ -747,7 +930,7 @@ impl View {
 
 impl Scene {
     /// Toutes les scènes, dans l'ordre où `--check` les rejoue.
-    const ALL: [Self; 19] = [
+    const ALL: [Self; 25] = [
         Self::Edge,
         Self::Guard,
         Self::Lateral,
@@ -765,6 +948,12 @@ impl Scene {
         Self::Lights,
         Self::MeshFile,
         Self::MeshMirrored,
+        Self::MeshLit,
+        Self::MeshAnimated,
+        Self::SpriteAxial,
+        Self::SpriteFacing,
+        Self::SpriteRoll,
+        Self::Modulated,
         Self::WorldFile,
         Self::Rooms,
     ];
@@ -809,6 +998,12 @@ impl Scene {
             Self::Lights => "lumieres",
             Self::MeshFile => "maillage",
             Self::MeshMirrored => "maillage-miroir",
+            Self::MeshLit => "maillage-lumiere",
+            Self::MeshAnimated => "maillage-anime",
+            Self::SpriteAxial => "sprite-axial",
+            Self::SpriteFacing => "sprite-face",
+            Self::SpriteRoll => "sprite-roulis",
+            Self::Modulated => "modulation",
             Self::WorldFile => "carte",
             Self::Rooms => "salles",
         }
@@ -858,6 +1053,20 @@ impl Scene {
                 Light {
                     position: Vec3::new(38.0, 12.0, 6.0),
                     radius: 60.0,
+                    color: Color::new(0x40, 0x80, 0xFF, 0xFF),
+                },
+            ],
+            // Les mêmes que la caisse miroir, pour que les deux empreintes se
+            // comparent : ce qui les sépare doit être le seul déterminant.
+            Self::MeshLit => vec![
+                Light {
+                    position: Vec3::new(3.5, -4.5, -1.5),
+                    radius: 16.0,
+                    color: Color::new(0xFF, 0xC0, 0x60, 0xFF),
+                },
+                Light {
+                    position: Vec3::new(3.5, 3.5, 4.5),
+                    radius: 16.0,
                     color: Color::new(0x40, 0x80, 0xFF, 0xFF),
                 },
             ],
@@ -1235,6 +1444,119 @@ impl Scene {
                     0 => Some(&sides),
                     _ => None,
                 })
+            }
+            // La même caisse et le même damier, sans miroir : seules les deux
+            // lumières la séparent de `maillage`, et seul le déterminant la
+            // sépare de `maillage-miroir`.
+            Self::MeshLit => {
+                let mesh = Mesh::load(&mesh_file::bytes())
+                    .unwrap_or_else(|_| unreachable!("le fichier de la caisse est bien formé"));
+                let sides = checker(64, 8);
+                context.submit_mesh(CRATE_MODEL, &mesh, |slot| match slot {
+                    0 => Some(&sides),
+                    _ => None,
+                })
+            }
+            // La caisse à deux trames, prise entre les deux.
+            Self::MeshAnimated => {
+                let mesh = Mesh::load(&mesh_file::animated_bytes())
+                    .unwrap_or_else(|_| unreachable!("le fichier animé est bien formé"));
+                let sides = checker(64, 8);
+                context.submit_mesh_frame(
+                    CRATE_MODEL,
+                    &mesh,
+                    |slot| match slot {
+                        0 => Some(&sides),
+                        _ => None,
+                    },
+                    0,
+                    1,
+                    0.35,
+                )
+            }
+            // Les trois scènes de sprites partagent leur sol et leurs emblèmes :
+            // le mode d'orientation et le roulis sont tout ce qui les sépare.
+            Self::SpriteAxial | Self::SpriteFacing | Self::SpriteRoll => {
+                // **La caméra plonge, et c'est ce qui sépare les deux modes.**
+                // À l'horizontale ils coïncident exactement — le quadrilatère
+                // debout est déjà plein face —, et les deux empreintes seraient
+                // égales sans rien prouver. Inclinée, l'axial garde le sprite
+                // debout là où le plein-face le couche : c'est la seule raison
+                // pour laquelle les deux modes existent, donc la seule
+                // configuration où une scène les départage.
+                context.set_camera(Camera {
+                    position: Vec3::new(0.0, 0.0, 9.0),
+                    // Un huitième de tour, et non un seizième : l'écart entre
+                    // les deux modes croît avec le cosinus de la plongée, et à
+                    // un seizième il se lit à peine.
+                    orientation: Quat::from_axis_angle(Vec3::new(0.0, 1.0, 0.0), Angle(1 << 29)),
+                    ..Camera::DEFAULT
+                })?;
+                sprite_floor(context)?;
+                let side = 64;
+                let texture = emblem(side);
+                // Un huitième de tour, un quart, cinq huitièmes et un demi :
+                // des fractions exactes du tour binaire, donc les mêmes bits
+                // partout, et assez écartées pour qu'un sprite au moins montre
+                // un roulis pris à l'envers.
+                let rolls = match self {
+                    Self::SpriteRoll => [1 << 29, 1 << 30, 5 << 29, 1 << 31],
+                    _ => [0; 4],
+                };
+                let orientation = match self {
+                    Self::SpriteAxial => SpriteOrientation::Axial,
+                    _ => SpriteOrientation::Facing,
+                };
+                let sprites = emblems(side as f32, rolls);
+                context.submit_sprites(Affine3::IDENTITY, &sprites, Some(&texture), orientation)
+            }
+            // Deux taches sombres au ras du sol, dont le recouvrement doit être
+            // plus sombre que chacune.
+            Self::Modulated => {
+                // La caméra plonge, sans quoi un sol vu en rasant ne montre de
+                // ses taches qu'une trace près de l'horizon.
+                context.set_camera(Camera {
+                    position: Vec3::new(0.0, 0.0, 5.0),
+                    orientation: Quat::from_axis_angle(Vec3::new(0.0, 1.0, 0.0), Angle(1 << 28)),
+                    ..Camera::DEFAULT
+                })?;
+                sprite_floor(context)?;
+                let shadow = shadow_blob(64);
+                // **Au ras du sol, sans biais de profondeur** : la tache gagne
+                // par l'ordre de soumission, que le test non strict sans
+                // écriture de profondeur rend suffisant. Un décalage en z
+                // aurait valu des millimètres de près et des mètres au loin.
+                for (x, y) in [(9.0f32, -2.0f32), (11.5, 0.5)] {
+                    let corners = [
+                        Vec3::new(x - 3.0, y - 3.0, -1.2),
+                        Vec3::new(x + 3.0, y - 3.0, -1.2),
+                        Vec3::new(x + 3.0, y + 3.0, -1.2),
+                        Vec3::new(x - 3.0, y + 3.0, -1.2),
+                    ];
+                    let uv = [(0.0, 0.0), (64.0, 0.0), (64.0, 64.0), (0.0, 64.0)];
+                    let vertices: Vec<VertexUv> = corners
+                        .iter()
+                        .zip(uv)
+                        .map(|(&position, (u, v))| VertexUv { position, u, v })
+                        .collect();
+                    let triangles = [
+                        Triangle {
+                            indices: [0, 1, 2],
+                            color: Color::new(0xFF, 0xFF, 0xFF, 0xFF),
+                        },
+                        Triangle {
+                            indices: [0, 2, 3],
+                            color: Color::new(0xFF, 0xFF, 0xFF, 0xFF),
+                        },
+                    ];
+                    context.submit_blended(
+                        Affine3::IDENTITY,
+                        &vertices,
+                        &triangles,
+                        Some(&shadow),
+                    )?;
+                }
+                Ok(())
             }
             // La même caisse et le même damier, sous le modèle nié en y.
             Self::MeshMirrored => {
