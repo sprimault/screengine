@@ -108,11 +108,21 @@ fn un_porteur_neuf_sauve_un_bloc_vide() {
     assert_eq!(other.state(&world, 7).unwrap(), Lightmap::Absent);
 }
 
-/// Un cache repris rend exactement les luxels qui ont été cuits.
+/// Un cache repris rend exactement les luxels qui ont été cuits, **à tous les
+/// niveaux de sa chaîne**.
 ///
 /// **C'est la raison d'être du lot** : reprendre doit valoir calculer, sinon une
 /// partie du niveau se rendrait autrement selon qu'elle vient du cache ou de la
 /// cuisson, et la conformance ne vaudrait plus que pour l'un des deux chemins.
+///
+/// **Les niveaux au-delà du premier ne sont pas dans le bloc** : le cache ne
+/// porte que le niveau 0, et la chaîne se reconstruit à la reprise — c'est ce
+/// que le contrat exige pour que rien ne s'alloue au premier affichage. Ils
+/// sont donc le seul endroit où les deux chemins peuvent diverger sans que le
+/// bloc y soit pour rien, et les comparer sur le seul niveau 0 laissait
+/// précisément cette divergence-là hors du contrôle. Une surface vue de loin
+/// est ce qui la montrerait, et la conformance ne regarde pas toutes les
+/// siennes de loin.
 #[test]
 fn un_cache_repris_rend_les_memes_luxels() {
     let world = one_cell();
@@ -130,7 +140,22 @@ fn un_cache_repris_rend_les_memes_luxels() {
     let (cooked, packing) = lighting.of(0).expect("cuite");
     let (taken, restored) = other.of(0).expect("reprise");
     assert_eq!(packing, restored);
-    assert_eq!(cooked.level_texels(0), taken.level_texels(0));
+    assert_eq!(
+        cooked.level_count(),
+        taken.level_count(),
+        "la chaîne reprise n'a pas le même nombre de niveaux"
+    );
+    assert!(
+        cooked.level_count() > 1,
+        "l'atlas n'a qu'un niveau : le cas de test ne mesure rien"
+    );
+    for level in 0..cooked.level_count() {
+        assert_eq!(
+            cooked.level_texels(level),
+            taken.level_texels(level),
+            "niveau {level}"
+        );
+    }
 }
 
 /// Sauver puis reprendre puis resauver rend le même bloc, octet pour octet.
