@@ -765,7 +765,25 @@ function checkLayout(header) {
     ScgTriangle: scg.TRIANGLE_SIZE,
     ScgMat4: scg.MAT4_SIZE,
     ScgGrade: scg.GRADE_SIZE,
+    ScgCamera: scg.CAMERA_SIZE,
+    ScgSprite: scg.SPRITE_SIZE,
   };
+
+  // **La table au-dessus se compare à ce que la liaison déclare**, et non
+  // l'inverse : elle était écrite à la main, et une taille ajoutée à
+  // `screengine.js` n'y entrait que si quelqu'un y pensait. `ScgSprite` et
+  // `ScgCamera` y ont manqué — les deux que la liaison écrit champ par champ
+  // dans la mémoire linéaire, donc les deux qu'un décalage atteindrait sans
+  // qu'aucune autre vérification ne bronche. `SCG_` écarte les constantes du
+  // contrat, qui finissent aussi par `_SIZE` sans nommer de structure.
+  const declarees = Object.keys(scg).filter(
+    (name) => name.endsWith("_SIZE") && !name.startsWith("SCG_"),
+  );
+  check(
+    declarees.length === Object.keys(sizes).length,
+    `les ${declarees.length} tailles de screengine.js sont toutes vérifiées ici, ${Object.keys(sizes).length} le sont`,
+  );
+
   const asserts = [
     ...header.matchAll(/LAYOUT_ASSERT\(sizeof\((\w+)\) == (\d+)/g),
   ];
@@ -1343,17 +1361,26 @@ function renderComposite(engine, meshBytes) {
   );
 
   const desc = engine.alloc(scg.TEXTURE_DESC_SIZE);
-  const loadTexture = (texels, format) => {
+  // **Le côté vient avec les texels**, il ne se suppose pas : le damier est
+  // bâti sur `FLOOR_SIDE` et les deux autres sur `EMBLEM_SIDE`. Les deux valent
+  // soixante-quatre aujourd'hui, si bien qu'une description écrite au jugé
+  // passe — jusqu'au jour où l'une des deux change, et la texture est alors lue
+  // à côté sans qu'aucune erreur soit rendue.
+  const loadTexture = (texels, side, format) => {
     const bytes = engine.alloc(texels.length);
-    engine.writeTextureDesc(desc, EMBLEM_SIDE, EMBLEM_SIDE, format);
+    engine.writeTextureDesc(desc, side, side, format);
     engine.bytes().set(texels, bytes);
     const code = e.scg_texture_load(desc, bytes, texels.length, out);
     check(code === scg.SCG_OK, "la texture de la composite se charge");
     return code === scg.SCG_OK ? engine.readU32(out) : 0;
   };
-  const sides = loadTexture(makeChecker(), scg.SCG_TEXTURE_FORMAT_RGBA8);
-  const emblem = loadTexture(makeEmblem(), scg.SCG_TEXTURE_FORMAT_RGBA8_MASKED);
-  const shadow = loadTexture(makeShadow(), scg.SCG_TEXTURE_FORMAT_RGBA8);
+  const sides = loadTexture(makeChecker(), FLOOR_SIDE, scg.SCG_TEXTURE_FORMAT_RGBA8);
+  const emblem = loadTexture(
+    makeEmblem(),
+    EMBLEM_SIDE,
+    scg.SCG_TEXTURE_FORMAT_RGBA8_MASKED,
+  );
+  const shadow = loadTexture(makeShadow(), EMBLEM_SIDE, scg.SCG_TEXTURE_FORMAT_RGBA8);
 
   const config = engine.alloc(scg.CONFIG_SIZE);
   engine.writeConfig(config, sceneConfig());
