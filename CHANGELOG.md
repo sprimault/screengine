@@ -46,6 +46,20 @@ publié, et explique les conventions du dépôt à qui y contribue.
 
 ## [Non publié]
 
+### Interne
+- **PHP n'est plus cité comme cible de liaison**, faute de destinataire. Ce que
+  le document en disait valait pour toute liaison qui lit le header au lieu de
+  le compiler, et c'est ainsi qu'il est écrit désormais. Un hôte Go est noté à
+  l'étape 7 de la feuille de route, où « utilisable sans rendu » prend son sens.
+
+***
+
+### Internal
+- **PHP is no longer named as a binding target**, for want of an audience. What
+  the document said of it held for any binding that reads the header instead of
+  compiling it, and that is how it now reads. A Go host is noted at step 7 of
+  the roadmap, where "usable without rendering" takes on its meaning.
+
 ## [0.6.1] — 2026-09-28
 
 **Ce qu'un hôte de la 0.6.0 doit reprendre pour compiler : rien.**

@@ -264,9 +264,10 @@ catégorie d'un code est `(-code) / 100`. Une liaison qui rencontre un code
 qu'elle ne connaît pas le ramène à sa catégorie — un `-203` inconnu reste une
 erreur du monde, et se traite comme telle.
 
-C'est une liaison PHP que cette règle sert le plus : `FFI::cdef` n'exécute aucun
-préprocesseur, les `#define SCG_ERR_*` du header lui sont invisibles, et elle
-recopie les constantes à la main. Elle en aura donc toujours en retard.
+C'est une liaison sans préprocesseur que cette règle sert le plus — `ctypes` en
+Python, `FFI` dans d'autres langages : les `#define SCG_ERR_*` du header lui
+sont invisibles, elle recopie les constantes à la main, et elle en aura donc
+toujours en retard.
 
 ## Erreurs
 
@@ -654,7 +655,7 @@ int32_t scg_frame_end(ScgContext *ctx, uint8_t *pixels, uint32_t stride);
 - Conséquence à connaître : l'égalité ne détecte pas une fonction ajoutée
   depuis. Une liaison écrite contre un header plus récent qui appelle une telle
   fonction échoue à la résolution du symbole — à l'édition de liens pour le C, au
-  premier appel pour PHP FFI.
+  premier appel pour une liaison qui résout à la demande.
 - **`scg_abi_version` rend un `uint32_t`, qu'une liaison peut recevoir signé.**
   En JNI il arrive en `jint`, sur wasm il revient en `i32` côté JavaScript : la
   comparaison se fait sur la valeur non signée, et la version reste loin de 2³¹.

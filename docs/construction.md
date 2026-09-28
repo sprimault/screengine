@@ -439,11 +439,12 @@ publiées. Ce qui suit est ce que chaque langage impose au chargement.
 - **C** : inclut le header, se lie à la bibliothèque statique ou dynamique.
 - **C++** : inclut le même header, que `cpp_compat` entoure de gardes
   `extern "C"`, et se lie de préférence à la bibliothèque dynamique.
-- **PHP** : l'extension FFI. `FFI::cdef` ignore les lignes de préprocesseur sans
-  les évaluer, mais ne connaît pas les assertions statiques du `trailer` : une
-  liaison coupe le header à `#endif  /* SCREENGINE_H */`, et lit les constantes
-  `SCG_*` dans les `#define` du même fichier. Constaté sous PHP 8.4 ; aucun hôte
-  PHP ne le vérifie en continu.
+- **Les liaisons à FFI déclaratif** — celles qui lisent le header au lieu de le
+  compiler — n'évaluent pas ses lignes de préprocesseur et ne connaissent pas
+  les assertions statiques du `trailer` : elles coupent le header à
+  `#endif  /* SCREENGINE_H */` et recopient les constantes `SCG_*` à la main.
+  C'est pour elles que `abi.md` exige qu'un code inconnu se ramène à sa
+  catégorie : elles auront toujours des constantes en retard.
 - **JavaScript** : instancie le `.wasm`, alloue par `scg_buffer_alloc`, écrit les
   structures octet par octet selon les décalages du header — d'où l'absence de
   remplissage implicite exigée par `abi.md`.
