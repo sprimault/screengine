@@ -188,13 +188,13 @@ all: native dex apk
 # empreinte par palier et par ABI, qui doivent toutes être identiques.
 run: all
 	@set -e; rm -f $(OUT)/paliers.txt; \
-	$(foreach abi,$(ABIS),h=$$($(qemu_$(abi)) $(OUT)/$(abi)/screengine-abi-static $(MESH) | tr -d '\r'); \
+	$(foreach abi,$(ABIS),h=$$($(qemu_$(abi)) $(OUT)/$(abi)/screengine-abi-static $(MESH) $(WORLD) | tr -d '\r'); \
 	  echo "$(abi) statique : $$(echo $$h)" >&2; echo "$$h" >> $(OUT)/paliers.txt; ) \
 	adb shell rm -rf $(DEVICE_DIR) >/dev/null; \
 	adb shell mkdir -p $(DEVICE_DIR) >/dev/null; \
 	adb push $(OUT)/x86_64/libscreengine.so $(OUT)/x86_64/libscreengine_jni.so \
-	  $(OUT)/x86_64/screengine-abi $(OUT)/dex/classes.dex $(MESH) $(DEVICE_DIR)/ >/dev/null; \
-	h=$$(adb shell "LD_LIBRARY_PATH=$(DEVICE_DIR) $(DEVICE_DIR)/screengine-abi $(DEVICE_DIR)/caisse.mesh" | tr -d '\r'); \
+	  $(OUT)/x86_64/screengine-abi $(OUT)/dex/classes.dex $(MESH) $(WORLD) $(DEVICE_DIR)/ >/dev/null; \
+	h=$$(adb shell "LD_LIBRARY_PATH=$(DEVICE_DIR) $(DEVICE_DIR)/screengine-abi $(DEVICE_DIR)/caisse.mesh $(DEVICE_DIR)/salles.world" | tr -d '\r'); \
 	echo "x86_64 appareil, C : $$(echo $$h)" >&2; echo "$$h" >> $(OUT)/paliers.txt; \
 	h=$$(adb shell "LD_LIBRARY_PATH=$(DEVICE_DIR) CLASSPATH=$(DEVICE_DIR)/classes.dex app_process $(DEVICE_DIR) screengine.host.Test $(DEVICE_DIR)" | tr -d '\r'); \
 	echo "x86_64 appareil, JNI : $$(echo $$h)" >&2; echo "$$h" >> $(OUT)/paliers.txt; \

@@ -437,6 +437,19 @@ public final class Screengine {
     static native int worldCellId(long world, int index);
 
     /**
+     * {@code scg_world_cell_luxel_count}.
+     *
+     * <p>Ce que la cuisson d'une cellule coûte, lu avant de l'appeler : le
+     * nombre de cellules ne dit rien du coût de chacune, un mur de vingt mètres
+     * et une marche en comptant une chacun.
+     *
+     * @param world handle rendu par {@link #worldLoad}
+     * @param cell l'identifiant de la cellule, jamais son rang
+     * @return son compte de luxels, ou 0 si elle n'existe pas
+     */
+    static native int worldCellLuxelCount(long world, int cell);
+
+    /**
      * {@code scg_lighting_create}.
      *
      * @param world handle rendu par {@link #worldLoad}

@@ -598,6 +598,21 @@ static jint world_cell_id(JNIEnv *env, jclass cls, jlong world, jint index)
     return (jint)out;
 }
 
+/* scg_world_cell_luxel_count : ce que la cuisson d'une cellule coûte, ou zéro.
+ *
+ * Zéro dit l'erreur comme l'absence, et c'est sans ambiguïté ici : une cellule
+ * qui existe porte au moins une surface, donc au moins un luxel. */
+static jint world_cell_luxel_count(JNIEnv *env, jclass cls, jlong world, jint cell)
+{
+    (void)env;
+    (void)cls;
+    uint32_t out = 0;
+    if (scg_world_cell_luxel_count((const ScgWorld *)(intptr_t)world, (uint32_t)cell, &out) < 0) {
+        return 0;
+    }
+    return (jint)out;
+}
+
 /* scg_lighting_create : le porteur des lightmaps d'une carte, ou zéro. */
 static jlong lighting_create(JNIEnv *env, jclass cls, jlong world)
 {
@@ -1120,6 +1135,7 @@ static const JNINativeMethod METHODS[] = {
     {"worldTrack", "(JI[F[F)I", (void *)world_track},
     {"worldCellCount", "(J)I", (void *)world_cell_count},
     {"worldCellId", "(JI)I", (void *)world_cell_id},
+    {"worldCellLuxelCount", "(JI)I", (void *)world_cell_luxel_count},
     {"lightingCreate", "(J)J", (void *)lighting_create},
     {"lightingBuild", "(JI)I", (void *)lighting_build},
     {"lightingDestroy", "(J)V", (void *)lighting_destroy},

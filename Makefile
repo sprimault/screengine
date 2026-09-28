@@ -165,10 +165,15 @@ HOST_OUT = $(abspath $(SORTIE))/host-$(host_dir_$*)
 #                         modulée. Une seule, parce qu'une scène coûte quatre
 #                         descriptions ; les scènes séparées de la conformance
 #                         disent lequel des chemins a bougé
+#   salles                le décor chargé depuis hosts/salles.world, cuit cellule
+#                         par cellule et parcouru par sa traversée : treize
+#                         points d'entrée que les dix précédentes n'atteignent
+#                         pas, et dont deux ont manqué au code pendant une
+#                         version entière sans que rien ne le dise
 #
 # Une scène ajoutée ici est une scène à écrire dans les quatre hôtes, et c'est
 # voulu : c'est ce qui rend leur comparaison possible.
-HOST_SCENES := arete texture texture-bilineaire gamma lumiere lumiere-surbrillance brouillard lumieres maillage composite
+HOST_SCENES := arete texture texture-bilineaire gamma lumiere lumiere-surbrillance brouillard lumieres maillage composite salles
 
 # Sans l'outillage de l'hôte, la cible saute et dit pourquoi. En intégration
 # continue (CI défini), le même saut est une erreur : un contrôle qui ne tourne
@@ -197,7 +202,9 @@ $(addsuffix -run,$(addprefix test-,$(TEST_HOSTS))): test-%-run:
 	done
 	$(MAKE) -s --no-print-directory -C hosts/$(host_dir_$*) PROFILE=$(host_profile_$*) OUT=$(HOST_OUT) all
 	$(MAKE) -s --no-print-directory -C hosts/$(host_dir_$*) PROFILE=$(host_profile_$*) OUT=$(HOST_OUT) \
-	  SCENE_COUNT=$(words $(HOST_SCENES)) run > $(HOST_OUT)/host.txt
+	  SCENE_COUNT=$(words $(HOST_SCENES)) \
+	  WORLD=$(abspath hosts/salles.world) MESH=$(abspath hosts/caisse.mesh) \
+	  run > $(HOST_OUT)/host.txt
 	@rust=$$(tr -d '\r' < $(HOST_OUT)/rust.txt); host=$$(tr -d '\r' < $(HOST_OUT)/host.txt); \
 	if [ -z "$$host" ]; then \
 	  echo "test-$* : l'hote $(host_name_$*) n'a rien ecrit"; exit 1; \

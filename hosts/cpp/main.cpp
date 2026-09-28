@@ -171,14 +171,14 @@ constexpr ScgTriangle FLOOR_TRIANGLES[2] = {
 /// Le damier procédural, teinte pour teinte comme la suite de conformance
 /// l'écrit : c'est lui qui décide de l'empreinte, et un liseré décalé d'un
 /// texel la ferait diverger.
-std::vector<uint8_t> make_checker()
+std::vector<uint8_t> make_checker(uint32_t side = FLOOR_SIDE, uint32_t cell = FLOOR_CELL)
 {
-    std::vector<uint8_t> texels(static_cast<size_t>(FLOOR_SIDE) * FLOOR_SIDE * 4);
-    for (uint32_t v = 0; v < FLOOR_SIDE; v++) {
-        for (uint32_t u = 0; u < FLOOR_SIDE; u++) {
-            uint8_t *texel = texels.data() + (static_cast<size_t>(v) * FLOOR_SIDE + u) * 4;
-            const bool edge = (u % FLOOR_CELL) == 0 || (v % FLOOR_CELL) == 0;
-            const bool dark = ((u / FLOOR_CELL) + (v / FLOOR_CELL)) % 2 == 0;
+    std::vector<uint8_t> texels(static_cast<size_t>(side) * side * 4);
+    for (uint32_t v = 0; v < side; v++) {
+        for (uint32_t u = 0; u < side; u++) {
+            uint8_t *texel = texels.data() + (static_cast<size_t>(v) * side + u) * 4;
+            const bool edge = (u % cell) == 0 || (v % cell) == 0;
+            const bool dark = ((u / cell) + (v / cell)) % 2 == 0;
             if (edge) {
                 texel[0] = 0xF0; texel[1] = 0xE0; texel[2] = 0xA0;
             } else if (dark) {
@@ -1164,6 +1164,129 @@ uint64_t render_composite(bool &ok, const char *path)
     return hash;
 }
 
+/// La scène `salles` : un décor chargé d'un fichier, cuit cellule par cellule,
+/// parcouru par sa traversée.
+///
+/// **Treize points d'entrée que les dix scènes précédentes n'atteignent pas**,
+/// et dont deux ont manqué au code pendant une version entière sans que rien ne
+/// le dise : un symbole que personne n'appelle s'exporte aussi bien qu'il
+/// manque.
+///
+/// La vue est la première de la scène de conformance : dans la salle en L, face
+/// à l'ouverture du couloir.
+uint64_t render_rooms(bool &ok, const char *path)
+{
+    // Les deux damiers de la scène de référence : le mur est plus fin que le
+    // sol, et c'est le nom du matériau qui décide lequel va où.
+    constexpr uint32_t WALL_SIDE = 512, WALL_CELL = 128;
+    constexpr uint32_t ROOM_FLOOR_SIDE = 256, ROOM_FLOOR_CELL = 32;
+
+    ok = false;
+    const std::vector<uint8_t> bytes = read_file(path);
+    if (bytes.empty()) {
+        check(false, "lecture du fichier de carte");
+        return 0;
+    }
+
+    ScgWorld *world = nullptr;
+    check(scg_world_load(bytes.data(), bytes.size(), &world) == SCG_OK,
+          "le fichier de carte se charge");
+    if (world == nullptr) {
+        return 0;
+    }
+
+    uint32_t materials = 0;
+    check(scg_world_material_count(world, &materials) == SCG_OK && materials == 2,
+          "la carte déclare deux matériaux");
+
+    std::vector<const ScgTexture *> slots(materials, nullptr);
+    for (uint32_t i = 0; i < materials; i++) {
+        char name[32] = { 0 };
+        size_t needed = 0;
+        const bool named = scg_world_material_name(world, i, nullptr, 0, &needed) == SCG_OK
+                           && needed + 1 <= sizeof name
+                           && scg_world_material_name(world, i, name, sizeof name, &needed)
+                                  == SCG_OK;
+        check(named, "le nom du matériau se lit en deux temps");
+        const bool wall = named && std::strcmp(name, "mur") == 0;
+        const uint32_t side = wall ? WALL_SIDE : ROOM_FLOOR_SIDE;
+        const std::vector<uint8_t> texels = make_checker(side, wall ? WALL_CELL : ROOM_FLOOR_CELL);
+
+        ScgTextureDesc desc {};
+        desc.width = side;
+        desc.height = side;
+        desc.format = SCG_TEXTURE_FORMAT_RGBA8;
+        ScgTexture *texture = nullptr;
+        check(scg_texture_load(&desc, texels.data(), texels.size(), &texture) == SCG_OK,
+              "le damier du matériau se charge");
+        slots[i] = texture;
+    }
+
+    ScgLighting *lighting = nullptr;
+    check(scg_lighting_create(world, &lighting) == SCG_OK, "le porteur de lightmaps se crée");
+
+    // **Toutes les cellules, pas seulement celles que la vue montre** : une
+    // lightmap est un cache de la carte et non du point de vue.
+    uint32_t cells = 0;
+    check(scg_world_cell_count(world, &cells) == SCG_OK && cells == 4,
+          "la carte porte quatre cellules");
+    for (uint32_t i = 0; i < cells && lighting != nullptr; i++) {
+        uint32_t id = 0, luxels = 0;
+        check(scg_world_cell_id(world, i, &id) == SCG_OK, "le rang rend un identifiant");
+        // Ce qu'un hôte lit avant de cuire, pour pondérer sa progression : le
+        // compte de cellules ne dit rien du coût de chacune.
+        check(scg_world_cell_luxel_count(world, id, &luxels) == SCG_OK && luxels > 0,
+              "la cellule annonce ses luxels");
+        check(scg_lighting_build(lighting, id) == SCG_OK, "la cellule se cuit");
+    }
+
+    ScgContextConfig config = scene_config();
+    ScgContext *ctx = nullptr;
+    check(scg_create(&config, &ctx) == SCG_OK, "création du contexte du décor");
+
+    uint64_t hash = 0;
+    if (ctx != nullptr) {
+        const float position[3] = { 2.0f, 2.0f, 2.0f };
+        ScgCamera camera {};
+        camera.position[0] = position[0];
+        camera.position[1] = position[1];
+        camera.position[2] = position[2];
+        // Sans rotation : la vue regarde le +X du monde, et le quaternion
+        // identité range sa partie réelle en dernier.
+        camera.orientation[3] = 1.0f;
+        camera.fov_y = 1.0471976f;
+        camera.near_plane = 0.1f;
+        check(scg_set_camera(ctx, &camera) == SCG_OK, "la caméra du décor se règle");
+
+        // La cellule se trouve, elle ne se devine pas : zéro veut dire « nulle
+        // part », ce qui est une clause et non une erreur.
+        uint32_t cell = 0;
+        check(scg_world_locate(world, position, &cell) == SCG_OK && cell != 0,
+              "la caméra est dans une cellule");
+
+        check(scg_submit_world_visible(ctx, &IDENTITY, world, slots.data(), materials, lighting,
+                                       cell)
+                  == SCG_OK,
+              "la traversée accepte le décor");
+
+        std::vector<uint8_t> pixels(static_cast<size_t>(STRIDE) * HEIGHT * 4, 0);
+        const int32_t code = scg_frame_end(ctx, pixels.data(), STRIDE);
+        check(code == SCG_OK, "l'image du décor se rend");
+        ok = code == SCG_OK;
+        hash = fingerprint(pixels.data(), WIDTH, HEIGHT, STRIDE);
+    }
+
+    for (const ScgTexture *texture : slots) {
+        scg_texture_destroy(const_cast<ScgTexture *>(texture));
+    }
+    // La carte part avant le porteur, qui en garde une référence : l'ordre est
+    // libre, et c'est ce que cette destruction éprouve.
+    scg_world_destroy(world);
+    scg_lighting_destroy(lighting);
+    scg_destroy(ctx);
+    return hash;
+}
+
 // Enchaîne les scènes et écrit leurs empreintes, une par ligne.
 //
 // Le code de retour est le verdict : `make test-cpp` compare la sortie à celle
@@ -1171,8 +1294,8 @@ uint64_t render_composite(bool &ok, const char *path)
 // empreintes plausibles passerait pour bon.
 int main(int argc, char **argv)
 {
-    if (argc != 2) {
-        std::fprintf(stderr, "usage : %s <fichier de maillage>\n", argv[0]);
+    if (argc != 3) {
+        std::fprintf(stderr, "usage : %s <fichier de maillage> <fichier de carte>\n", argv[0]);
         return 2;
     }
     check(scg_abi_version() == SCG_ABI_VERSION, "la bibliothèque chargée est celle du header");
@@ -1223,8 +1346,11 @@ int main(int argc, char **argv)
     bool composite_ok = false;
     const uint64_t composite = render_composite(composite_ok, argv[1]);
 
+    bool rooms_ok = false;
+    const uint64_t rooms = render_rooms(rooms_ok, argv[2]);
+
     if (failures > 0 || !ok || !textured_ok || !bilinear_ok || !graded_ok || !lit_ok
-        || !overbright_ok || !fog_ok || !lights_ok || !mesh_ok || !composite_ok) {
+        || !overbright_ok || !fog_ok || !lights_ok || !mesh_ok || !composite_ok || !rooms_ok) {
         std::fprintf(stderr, "%d vérification(s) en échec\n", failures);
         return 1;
     }
@@ -1238,5 +1364,6 @@ int main(int argc, char **argv)
     std::printf("%016llx\n", static_cast<unsigned long long>(lights));
     std::printf("%016llx\n", static_cast<unsigned long long>(mesh));
     std::printf("%016llx\n", static_cast<unsigned long long>(composite));
+    std::printf("%016llx\n", static_cast<unsigned long long>(rooms));
     return 0;
 }

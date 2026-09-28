@@ -334,6 +334,75 @@ fn soumet_ce_qu_une_cellule_laisse_voir() {
     }
 }
 
+/// Le chemin brut éclairé franchit la frontière, et `NULL` y vaut « sans
+/// lightmaps ».
+///
+/// **C'est la fonction qui rend l'égalité des deux chemins vérifiable
+/// éclairée** ; sans elle, la traversée ne se comparait qu'à un décor éteint.
+/// Les deux appels doivent réussir : celui qui passe un porteur et celui qui
+/// n'en passe pas, la clause du nul étant écrite dans le contrat.
+#[test]
+fn le_chemin_brut_eclaire_franchit_la_frontiere() {
+    let mut ctx = ptr::null_mut();
+    let config = config();
+    // SAFETY: les deux pointeurs visent des valeurs locales vivantes.
+    assert_eq!(unsafe { scg_create(&config, &mut ctx) }, SCG_OK);
+
+    let world = load(&one_cell_world());
+    let mut lighting = ptr::null_mut();
+    // SAFETY: carte vivante, pointeur de sortie local.
+    assert_eq!(unsafe { scg_lighting_create(world, &mut lighting) }, SCG_OK);
+    assert_eq!(
+        // SAFETY: handle vivant.
+        unsafe { scg_lighting_build(lighting, 7) },
+        SCG_OK,
+        "cuisson refusée : {}",
+        orphan_error()
+    );
+
+    let slots: [*const ScgTexture; 2] = [ptr::null(), ptr::null()];
+    let model = identity();
+    for porteur in [lighting as *const ScgLighting, ptr::null()] {
+        // SAFETY: contexte et carte vivants, matrice et tableau locaux, compte
+        // des matériaux exact, et `lighting` nul ou vivant.
+        let code = unsafe { scg_submit_world_lit(ctx, &model, world, slots.as_ptr(), 2, porteur) };
+        assert_eq!(code, SCG_OK, "soumission refusée : {}", context_error(ctx));
+    }
+
+    // SAFETY: handles vivants, détruits une seule fois.
+    unsafe {
+        scg_lighting_destroy(lighting);
+        scg_world_destroy(world);
+        scg_destroy(ctx);
+    }
+}
+
+/// Le compte de luxels d'une cellule franchit la frontière, et l'identifiant
+/// inconnu y est une erreur.
+///
+/// C'est ce qu'un hôte lit **avant** d'appeler la cuisson, pour pondérer une
+/// barre de progression : un compte nul le laisserait croire qu'une cellule ne
+/// coûte rien, et une erreur silencieuse ferait avancer sa barre de travers.
+#[test]
+fn le_compte_de_luxels_franchit_la_frontiere() {
+    let world = load(&one_cell_world());
+
+    let mut luxels = 0u32;
+    // SAFETY: carte vivante, sortie locale.
+    let code = unsafe { scg_world_cell_luxel_count(world, 7, &mut luxels) };
+    assert_eq!(code, SCG_OK, "compte refusé : {}", orphan_error());
+    assert!(luxels > 0, "une cellule cuite coûte au moins un luxel");
+
+    let mut inchange = 0xDEAD_BEEF_u32;
+    // SAFETY: mêmes préconditions ; l'identifiant est seulement inconnu.
+    let code = unsafe { scg_world_cell_luxel_count(world, 9999, &mut inchange) };
+    assert_eq!(code, SCG_ERR_UNKNOWN_RESOURCE);
+    assert_eq!(inchange, 0xDEAD_BEEF, "une erreur a écrit dans la sortie");
+
+    // SAFETY: handle vivant, détruit une seule fois.
+    unsafe { scg_world_destroy(world) };
+}
+
 /// Sans cellule de départ, la traversée rend un statut et ne soumet rien.
 ///
 /// **Un code positif est un succès**, et c'est le premier du projet à franchir la
