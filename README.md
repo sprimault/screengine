@@ -42,21 +42,14 @@ nothing about games — no player, no weapon, no score.
 
 The host provides the window, the input and the bytes. The engine transforms and
 renders. That boundary is the only reason the same code runs on Windows, in a
-browser and on a phone. `screengine-play` is one of those hosts, written in Rust
-for those making a game, and the engine does not know it exists.
+browser and on a phone.
 
 ## Status
 
-**Step 6 cleared, released as 0.6.0: animation and sprites.** A mesh interpolates
-between two frames, and the engine orients a quad towards the camera — upright
-about the vertical axis, or fully facing. That is the one thing here a host
-cannot do itself: it would have to reverse the pose it has just passed, and two
-bindings would stop rendering the same image. Two ways of writing a pixel come
-with it: the transparent texel, which is not written, and the modulated surface,
-which multiplies what is already in the buffer instead of overwriting it —
-enough to lay under a walking enemy a shadow blot that darkens the decor rather
-than covering it. The z-buffer does the ordering, with no sort. Five hosts render
-all of it in a window: C, C++, the browser, Android, and the Rust host layer.
+**Step 7 cleared, released as 0.7.0: collision.** A box sweeps against a map's
+cells and returns the time of impact, its normal and the surface hit, **with no
+rendering context**. The response belongs to the host, as does anything that is
+not cell geometry. A fifth host arrives with the step, in Go.
 
 The roadmap has ten steps, each one published.
 
@@ -107,24 +100,13 @@ fn main() -> Result<(), screengine_play::Error> {
 }
 ```
 
-`make run` launches this example. `make example EXAMPLE=couloir` launches
-another: a ruined corridor you walk through with the arrow keys and the mouse,
-lit by flickering tubes and by daylight falling through holes in the ceiling.
-Its geometry is written in Rust, panel by panel, and everything that stops you
-there is written along with it.
-
-`make example EXAMPLE=carte` shows the other half: a map **loaded from a file**,
-the very one all five hosts load. Its walls come from the engine's sweep, its
-crates from a box the example tests itself — the engine stops on cell geometry,
-and whatever is not cell geometry belongs to the host.
+`make run` launches this example. Two others run with `make example
+EXAMPLE=<name>`: `couloir`, a ruined corridor whose geometry is written in Rust,
+and `carte`, the same map all five hosts load. **They are to be watched, not
+tested** — they open a window, so no check runs them.
 
 The Rust path adds convenience, never capability: everything it allows can also
 be done through the C ABI.
-
-**These examples are to be watched, not tested.** They open a window, so no
-check runs them — they are only compiled, along with everything else. What they
-show is judged by launching them, and that is where the defects no fingerprint
-describes come to light.
 
 ### Embedding, from any language
 

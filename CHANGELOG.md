@@ -46,6 +46,17 @@ publié, et explique les conventions du dépôt à qui y contribue.
 
 ## [Non publié]
 
+## [0.7.0] — 2026-09-30 — Collision
+
+**Ce qu'un hôte de la 0.6.1 doit reprendre pour compiler : rien.**
+`SCG_ABI_VERSION` reste à **1**, aucune signature publiée ne change, et les deux
+points d'entrée de l'étape s'ajoutent sans toucher aux précédents. **Une scène
+inchangée rend exactement la même image** : aucune empreinte de conformance de
+rendu ne bouge.
+
+**Deux archives de plus**, `windows_x86` et `linux_x86` : la bibliothèque se
+publie désormais aussi pour les bureaux 32 bits.
+
 ### Ajouté
 - **Le balayage d'une boîte contre les cellules d'une carte**, sans contexte de
   rendu : `scg_world_sweep` rend un temps d'impact, une normale et la surface
@@ -72,6 +83,14 @@ publié, et explique les conventions du dépôt à qui y contribue.
   liste des scènes des hôtes n'a plus qu'une seule copie.
 
 ***
+
+**What a 0.6.1 host must revisit to compile: nothing.** `SCG_ABI_VERSION` stays
+at **1**, no published signature changes, and the step's two entry points are
+added without touching the earlier ones. **An unchanged scene renders exactly
+the same image**: no rendering conformance fingerprint moves.
+
+**Two more archives**, `windows_x86` and `linux_x86`: the library is now
+published for 32-bit desktops as well.
 
 ### Added
 - **Box sweeping against a map's cells**, with no rendering context:

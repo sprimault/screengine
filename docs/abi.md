@@ -7,15 +7,15 @@ Un auteur de liaison qui ne lit pas le français trouve l'essentiel dans
 `include/screengine.h`, dont la documentation est en anglais : ce qui ne peut pas
 être ignoré à l'appel y figure, fonction par fonction.
 
-**État : l'étape 7 est en cours ; la 0.6.0 est la dernière publiée** — les sept points d'entrée de l'étape 0,
+**État : l'étape 7 est publiée en 0.7.0** — les sept points d'entrée de l'étape 0,
 le rendu par tuiles, les textures avec leur niveau de filtrage, la lumière
 (lightmaps fournies par l'hôte, lumières dynamiques, brouillard, résolution
 interne, courbe de sortie), les deux formats de données avec leurs accesseurs, la
 traversée par portails avec le suivi de la cellule de la caméra et le calcul des
 lightmaps, cache compris, et les quadrilatères orientés, les maillages entre deux
-trames, le texel transparent et la surface modulée. **Le contrat du balayage de
-l'étape 7 est figé ci-dessous, avant son premier décodeur**, comme ceux des
-étapes 4, 5 et 6 l'ont été. Chaque décision garde ci-dessous l'option écartée et
+trames, le texel transparent et la surface modulée, et le balayage d'une boîte
+contre les cellules d'une carte. **Le contrat du balayage a été figé ci-dessous
+avant son premier décodeur**, comme ceux des étapes 4, 5 et 6 l'ont été. Chaque décision garde ci-dessous l'option écartée et
 pourquoi. Un seul point reste marqué **À trancher** : la dépréciation, qui attend
 le gel de l'ABI en 1.0.
 

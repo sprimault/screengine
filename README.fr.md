@@ -44,22 +44,15 @@ ne connaît aucune notion de jeu — ni joueur, ni arme, ni score.
 
 L'hôte fournit la fenêtre, les entrées et les octets. Le moteur transforme et
 rend. Cette frontière est la seule raison pour laquelle le même code sert sous
-Windows, dans un navigateur et sur un téléphone. `screengine-play` est l'un de
-ces hôtes, écrit en Rust pour qui fait un jeu, et le moteur ignore son existence.
+Windows, dans un navigateur et sur un téléphone.
 
 ## État
 
-**Étape 6 franchie, publiée en 0.6.0 : l'animation et les sprites.** Un maillage
-s'interpole entre deux trames, et le moteur oriente un quadrilatère sur la
-caméra — debout autour de l'axe vertical, ou plein face. C'est la seule chose ici
-qu'un hôte ne peut pas faire lui-même : il devrait réinverser la pose qu'il vient
-de passer, et deux liaisons ne rendraient plus la même image. Avec viennent deux
-façons d'écrire un pixel : le texel transparent, qu'on n'écrit pas, et la surface
-modulée, qui multiplie ce qui est déjà dans le tampon plutôt que de l'écraser —
-de quoi poser sous un ennemi qui marche une tache d'ombre qui assombrit le décor
-au lieu de le recouvrir. Le z-buffer fait l'ordre, sans tri. Les cinq hôtes
-rendent tout cela dans une fenêtre : C, C++, navigateur, Android, et l'étage
-d'accueil Rust.
+**Étape 7 franchie, publiée en 0.7.0 : la collision.** Une boîte se balaie contre
+les cellules d'une carte et rend le temps de l'impact, sa normale et la surface
+touchée, **sans contexte de rendu**. La réponse appartient à l'hôte, comme tout
+ce qui n'est pas de la géométrie de cellule. Un cinquième hôte arrive avec
+l'étape, en Go.
 
 La feuille de route compte dix étapes, publiées à chacune.
 
@@ -109,25 +102,14 @@ fn main() -> Result<(), screengine_play::Error> {
 }
 ```
 
-`make run` lance cet exemple. `make example EXAMPLE=couloir` en lance un autre :
-un couloir en ruine qu'on parcourt aux flèches et à la souris, éclairé par des
-tubes qui clignotent et par le jour qui tombe des trouées du plafond. Sa
-géométrie est écrite en Rust, panneau par panneau, et tout ce qui vous arrête y
-est écrit avec elle.
-
-`make example EXAMPLE=carte` montre l'autre moitié : un décor **chargé d'un
-fichier**, celui-là même que les cinq hôtes chargent. Ses murs viennent du
-balayage du moteur, ses caisses d'une boîte que l'exemple teste lui-même — le
-moteur arrête sur la géométrie de cellule, et ce qui n'en est pas appartient à
-l'hôte.
+`make run` lance cet exemple. Deux autres se lancent par `make example
+EXAMPLE=<nom>` : `couloir`, un couloir en ruine dont la géométrie est écrite en
+Rust, et `carte`, le même décor que chargent les cinq hôtes. **Ils se regardent,
+ils ne se testent pas** — ils ouvrent une fenêtre, donc aucun contrôle ne les
+exécute.
 
 Le chemin Rust ajoute du confort, jamais de capacité : tout ce qu'il permet se
 fait aussi par l'ABI C.
-
-**Ces exemples se regardent, ils ne se testent pas.** Ils ouvrent une fenêtre,
-donc aucun contrôle ne les exécute — ils sont seulement compilés, avec le reste.
-Ce qu'ils montrent se juge en les lançant, et c'est là que se voient les défauts
-qu'aucune empreinte ne décrit.
 
 ### Intégrer, depuis n'importe quel langage
 
