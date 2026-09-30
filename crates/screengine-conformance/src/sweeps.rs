@@ -145,6 +145,42 @@ pub fn all() -> Vec<Sweep> {
     sweeps
 }
 
+/// La magie du fichier de balayages, en tête de celui-ci.
+///
+/// **Elle ne précède aucun numéro de version**, et c'est délibéré : ce n'est pas
+/// un format du moteur, qui ne le lit jamais, mais un fichier d'épreuve versionné
+/// à côté des hôtes qui le lisent et comparé octet pour octet par un test. Une
+/// version sert à négocier une évolution entre deux artefacts livrés séparément,
+/// ce qui n'arrive pas quand le fichier et ses lecteurs sont dans le même commit.
+/// La magie, elle, reste utile : elle fait refuser franchement un mauvais chemin
+/// passé par le `Makefile`, au lieu de hacher des ordures.
+const MAGIC: &[u8; 8] = b"SCGSWEEP";
+
+/// La liste des balayages, telle que les hôtes la lisent.
+///
+/// **Ils lisent une liste, ils ne reportent pas la règle.** Quatre treillis
+/// écrits dans quatre langages prouveraient que quatre programmeurs ont su
+/// reporter la même géométrie, ce qui n'est pas ce qu'une empreinte d'hôte existe
+/// pour établir. Un cinquième hôte n'a ainsi que sa boucle d'appel à écrire.
+///
+/// Neuf flottants par balayage, octet de poids faible en tête, dans l'ordre où
+/// [`all`] les rend.
+pub fn file_bytes() -> Vec<u8> {
+    let sweeps = all();
+    let mut bytes = Vec::with_capacity(MAGIC.len() + 4 + sweeps.len() * 36);
+
+    bytes.extend_from_slice(MAGIC);
+    bytes.extend_from_slice(&(sweeps.len() as u32).to_le_bytes());
+    for sweep in &sweeps {
+        for vector in [sweep.half, sweep.from, sweep.to] {
+            for value in [vector.x, vector.y, vector.z] {
+                bytes.extend_from_slice(&value.to_bits().to_le_bytes());
+            }
+        }
+    }
+    bytes
+}
+
 /// Les positions de départ sur un axe, retirées des deux bords.
 ///
 /// **Un seul point, au centre, quand l'étendue est trop étroite pour le

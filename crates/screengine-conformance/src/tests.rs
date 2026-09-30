@@ -445,23 +445,30 @@ fn le_bilineaire_fabrique_des_couleurs_que_le_tramage_ne_peut_pas() {
 #[test]
 fn le_fichier_de_maillage_versionne_est_a_jour() {
     const VERSIONED: &[u8] = include_bytes!("../../../hosts/caisse.mesh");
-    let engendre = mesh_file::bytes();
+    compare_versionne("hosts/caisse.mesh", VERSIONED, &mesh_file::bytes());
+}
 
+/// Compare un fichier versionné à ce que la conformance engendre.
+///
+/// Extraite à la cinquième occurrence : le corps était le même partout au nom du
+/// fichier près, et le décor de collision en ajoute deux. La taille d'abord,
+/// parce qu'un fichier tronqué ou rallongé se lit mieux ainsi qu'en position du
+/// premier écart — `zip` s'arrête au plus court et ne trouverait rien.
+fn compare_versionne(nom: &str, versionne: &[u8], engendre: &[u8]) {
     assert_eq!(
-        VERSIONED.len(),
+        versionne.len(),
         engendre.len(),
-        "hosts/caisse.mesh fait {} octets, la conformance en écrit {} — \
-         relancer `make mesh`",
-        VERSIONED.len(),
+        "{nom} fait {} octets, la conformance en écrit {} — relancer `make mesh`",
+        versionne.len(),
         engendre.len()
     );
-    let ecart = VERSIONED
+    let ecart = versionne
         .iter()
-        .zip(&engendre)
+        .zip(engendre)
         .position(|(versionne, engendre)| versionne != engendre);
     assert_eq!(
         ecart, None,
-        "hosts/caisse.mesh diverge à l'octet {ecart:?} — relancer `make mesh`"
+        "{nom} diverge à l'octet {ecart:?} — relancer `make mesh`"
     );
 }
 
@@ -474,24 +481,7 @@ fn le_fichier_de_maillage_versionne_est_a_jour() {
 #[test]
 fn le_fichier_de_carte_versionne_est_a_jour() {
     const VERSIONED: &[u8] = include_bytes!("../../../hosts/couloir.world");
-    let engendre = world_file::bytes();
-
-    assert_eq!(
-        VERSIONED.len(),
-        engendre.len(),
-        "hosts/couloir.world fait {} octets, la conformance en écrit {} — \
-         relancer `make mesh`",
-        VERSIONED.len(),
-        engendre.len()
-    );
-    let ecart = VERSIONED
-        .iter()
-        .zip(&engendre)
-        .position(|(versionne, engendre)| versionne != engendre);
-    assert_eq!(
-        ecart, None,
-        "hosts/couloir.world diverge à l'octet {ecart:?} — relancer `make mesh`"
-    );
+    compare_versionne("hosts/couloir.world", VERSIONED, &world_file::bytes());
 }
 
 /// Le fichier du décor à quatre cellules est à jour.
@@ -502,24 +492,78 @@ fn le_fichier_de_carte_versionne_est_a_jour() {
 #[test]
 fn le_fichier_des_salles_est_a_jour() {
     const VERSIONED: &[u8] = include_bytes!("../../../hosts/salles.world");
-    let engendre = rooms_file::bytes();
+    compare_versionne("hosts/salles.world", VERSIONED, &rooms_file::bytes());
+}
 
-    assert_eq!(
-        VERSIONED.len(),
-        engendre.len(),
-        "hosts/salles.world fait {} octets, la conformance en écrit {} — \
-         relancer `make mesh`",
-        VERSIONED.len(),
-        engendre.len()
+/// Le décor de collision versionné est celui que la conformance engendre.
+///
+/// Même règle que les trois autres. Celui-ci a de plus une géométrie dégénérée
+/// par construction — un couloir exactement à la largeur d'une boîte, un portail
+/// qui ne mène nulle part —, et un fichier périmé y ferait diverger des
+/// empreintes de balayage sans rien dire de ce qui a bougé.
+#[test]
+fn le_decor_de_collision_versionne_est_a_jour() {
+    const VERSIONED: &[u8] = include_bytes!("../../../hosts/collision.world");
+    compare_versionne("hosts/collision.world", VERSIONED, &collision_file::bytes());
+}
+
+/// La liste de balayages versionnée est celle que la conformance engendre.
+///
+/// **C'est elle qui rend l'empreinte des hôtes comparable.** Ils ne reportent pas
+/// le treillis, ils rejouent cette liste ; si elle dérive de ce que la scène de
+/// conformance joue, les deux côtés balaient autre chose et la comparaison ne
+/// mesure plus rien.
+#[test]
+fn la_liste_de_balayages_versionnee_est_a_jour() {
+    const VERSIONED: &[u8] = include_bytes!("../../../hosts/collision.sweeps");
+    compare_versionne(
+        "hosts/collision.sweeps",
+        VERSIONED,
+        &crate::sweeps::file_bytes(),
     );
-    let ecart = VERSIONED
-        .iter()
-        .zip(&engendre)
-        .position(|(versionne, engendre)| versionne != engendre);
-    assert_eq!(
-        ecart, None,
-        "hosts/salles.world diverge à l'octet {ecart:?} — relancer `make mesh`"
-    );
+}
+
+/// La liste versionnée se relit comme un hôte la relira.
+///
+/// Un test d'écriture comparée ne dit pas que le fichier se **lit** : il dit que
+/// deux écritures s'accordent. Celui-ci parcourt les octets par le seul chemin
+/// qu'un hôte a — magie, compte, puis des flottants de taille fixe — et vérifie
+/// qu'il retombe sur les balayages que la scène joue.
+#[test]
+fn la_liste_de_balayages_se_relit_comme_un_hote_la_relit() {
+    const VERSIONED: &[u8] = include_bytes!("../../../hosts/collision.sweeps");
+    let joues = crate::sweeps::all();
+
+    assert_eq!(&VERSIONED[..8], b"SCGSWEEP");
+    let compte = u32::from_le_bytes(VERSIONED[8..12].try_into().expect("quatre octets"));
+    assert_eq!(compte as usize, joues.len());
+    assert_eq!(VERSIONED.len(), 12 + joues.len() * 36);
+
+    for (index, sweep) in joues.iter().enumerate() {
+        let base = 12 + index * 36;
+        let lu = |rang: usize| {
+            let debut = base + rang * 4;
+            f32::from_bits(u32::from_le_bytes(
+                VERSIONED[debut..debut + 4]
+                    .try_into()
+                    .expect("quatre octets"),
+            ))
+        };
+        let attendu = [
+            sweep.half.x,
+            sweep.half.y,
+            sweep.half.z,
+            sweep.from.x,
+            sweep.from.y,
+            sweep.from.z,
+            sweep.to.x,
+            sweep.to.y,
+            sweep.to.z,
+        ];
+        for (rang, valeur) in attendu.into_iter().enumerate() {
+            assert_eq!(lu(rang).to_bits(), valeur.to_bits(), "balayage {index}");
+        }
+    }
 }
 
 /// Le décor versionné porte bien ses quatre cellules, et leurs liens.

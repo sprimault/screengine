@@ -30,7 +30,7 @@ use screengine::{
     Lightmaps, MAX_OVERBRIGHT, Mesh, Quat, Rect, Rows, Sprite, SpriteOrientation, Texture,
     Triangle, Vec3, VertexUv, VertexUv2, World,
 };
-use screengine_conformance::{mesh_file, rooms_file, world_file};
+use screengine_conformance::{collision_file, mesh_file, rooms_file, world_file};
 
 /// Une façon de rendre une scène qui ne doit pas changer l'image.
 ///
@@ -230,6 +230,16 @@ enum Mode {
     /// perdre, et c'est pour cela qu'on le garde — un gain mesuré sur le seul décor
     /// qui l'avantage ne dirait rien.
     Rooms(PathBuf),
+    /// Écrit le décor de validation du balayage.
+    Collision(PathBuf),
+    /// Écrit la liste des balayages que les hôtes rejouent.
+    ///
+    /// **Le seul fichier de données qui ne décrive pas une ressource du moteur.**
+    /// Il porte la question, là où les trois autres portent la scène : sans lui,
+    /// chaque hôte réengendrerait le treillis dans son langage, et l'empreinte
+    /// prouverait qu'ils l'ont tous reporté juste au lieu de prouver ce qu'elle
+    /// existe pour prouver.
+    Sweeps(PathBuf),
 }
 
 /// Les scènes que la suite sait rendre.
@@ -2103,7 +2113,7 @@ fn dump(scene: Scene, dir: &Path) -> Result<String, String> {
 fn parse_mode(args: &[String]) -> Result<Mode, String> {
     let usage = "usage : screengine-conformance --check | --update | --print <scène> | \
                  --dump <répertoire> | --mesh <fichier> | --world <fichier> | \
-                 --rooms <fichier>";
+                 --rooms <fichier> | --collision <fichier> | --sweeps <fichier>";
     match args {
         [only] if only == "--check" => Ok(Mode::Check),
         [only] if only == "--update" => Ok(Mode::Update),
@@ -2114,6 +2124,8 @@ fn parse_mode(args: &[String]) -> Result<Mode, String> {
         [mesh, path] if mesh == "--mesh" => Ok(Mode::Mesh(PathBuf::from(path))),
         [world, path] if world == "--world" => Ok(Mode::World(PathBuf::from(path))),
         [rooms, path] if rooms == "--rooms" => Ok(Mode::Rooms(PathBuf::from(path))),
+        [collision, path] if collision == "--collision" => Ok(Mode::Collision(PathBuf::from(path))),
+        [sweeps, path] if sweeps == "--sweeps" => Ok(Mode::Sweeps(PathBuf::from(path))),
         _ => Err(usage.to_string()),
     }
 }
@@ -2155,6 +2167,8 @@ fn main() -> ExitCode {
         Mode::Mesh(path) => return write_data(&path, &mesh_file::bytes()),
         Mode::World(path) => return write_data(&path, &world_file::bytes()),
         Mode::Rooms(path) => return write_data(&path, &rooms_file::bytes()),
+        Mode::Collision(path) => return write_data(&path, &collision_file::bytes()),
+        Mode::Sweeps(path) => return write_data(&path, &sweeps::file_bytes()),
         Mode::Print(scene) => {
             // L'empreinte de la première vue, et non celle de la scène : un
             // hôte hache une image, pas une suite d'images, et c'est à cette
