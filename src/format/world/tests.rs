@@ -1365,6 +1365,73 @@ fn une_cellule_sans_surface_garde_une_boite_inversee() {
     assert!(low.x > high.x && low.y > high.y && low.z > high.z);
 }
 
+/// La normale d'une surface est dérivée au chargement, sur le polygone entier.
+///
+/// Le carré du décor de test est dans le plan `z = 0` et s'enroule dans le sens
+/// direct : sa normale de Newell vaut le double de son aire sur `+Z`. La valeur
+/// est écrite en dur plutôt que recalculée par le test, sans quoi celui-ci
+/// referait le calcul qu'il vérifie.
+#[test]
+fn une_surface_porte_sa_normale() {
+    let world = World::load(&valid()).expect("carte valide");
+    let surface = &world.cells()[0].surfaces[0];
+    assert_eq!(surface.normal(), Vec3::new(0.0, 0.0, 32.0));
+}
+
+/// Une cellule sans volume garde le sens brut de ses normales.
+///
+/// Une seule surface ne ferme rien : le volume signé est nul, et aucune
+/// orientation ne sauverait une cellule dégénérée. La clause compte parce qu'une
+/// carte en cours d'édition en produit, et que la retourner au hasard ferait
+/// basculer l'éclairage d'une face d'un chargement à l'autre.
+#[test]
+fn une_cellule_degeneree_garde_le_sens_brut() {
+    let world = World::load(&valid()).expect("carte valide");
+    let cell = &world.cells()[0];
+    let surface = &cell.surfaces[0];
+    assert_eq!(cell.inward(surface), surface.normal());
+}
+
+/// Une cellule fermée dont les normales sortent les retourne vers l'intérieur.
+///
+/// Deux carrés coplanaires d'enroulements inverses ferment un volume plat dont
+/// la somme des `point · normale` est strictement positive — c'est le cas que
+/// l'orientation existe pour attraper, et il se construit sans décrire une pièce
+/// entière.
+#[test]
+fn une_cellule_dont_les_normales_sortent_les_retourne() {
+    // Les deux carrés bornent la tranche `0 ≤ z ≤ 1`, et **leurs normales en
+    // sortent** : celle du bas vers `-Z`, celle du haut vers `+Z`. Seule la
+    // seconde contribue au volume, l'ancre de la première étant à l'origine, et
+    // la somme est positive. Le même décor avec les enroulements inverses donne
+    // des normales qui rentrent, donc un volume négatif — c'est ce que le test
+    // voisin éprouve à sa façon.
+    let points: [[f32; 3]; 8] = [
+        [0.0, 0.0, 0.0],
+        [4.0, 0.0, 0.0],
+        [4.0, 4.0, 0.0],
+        [0.0, 4.0, 0.0],
+        [0.0, 0.0, 1.0],
+        [4.0, 0.0, 1.0],
+        [4.0, 4.0, 1.0],
+        [0.0, 4.0, 1.0],
+    ];
+    let cell = cell_bytes(
+        7,
+        0,
+        &points,
+        &[
+            surface_bytes(11, 0, 1, &[0, 3, 2, 1]),
+            surface_bytes(12, 0, 1, &[4, 5, 6, 7]),
+        ],
+        &[],
+    );
+    let world = World::load(&file(&cell, &[], &[], &material(1, "mur"))).expect("carte valide");
+    let cell = &world.cells()[0];
+    let surface = &cell.surfaces[0];
+    assert_eq!(cell.inward(surface), -surface.normal());
+}
+
 /// Une section de genre inconnu refuse toujours le fichier.
 #[test]
 fn le_conteneur_garde_ses_refus() {

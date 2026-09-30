@@ -168,6 +168,17 @@ pub(crate) struct Surface {
     /// rectangle de la surface dans l'atlas de sa cellule, et le faire au calcul
     /// obligerait à reparcourir les sommets une seconde fois.
     pub(crate) luxels: Extent,
+    /// Sa normale de Newell **brute**, dans le sens de son enroulement.
+    ///
+    /// Brute, donc pas encore orientée vers l'intérieur de la cellule : le format
+    /// fixe la face visible d'une surface, ce qui n'est pas la même chose que le
+    /// côté intérieur, et seul le signe du volume de la cellule le dit. C'est
+    /// [`Cell::inward`] qui compose les deux.
+    ///
+    /// Sur le polygone entier et non sur un de ses triangles : une surface
+    /// concave a des triangles dont l'orientation ne dit rien de la sienne.
+    /// Elle n'est pas unitaire — sa longueur vaut le double de l'aire.
+    normal: Vec3,
 }
 
 impl Surface {
@@ -191,6 +202,11 @@ impl Surface {
     /// alors les entrées de lui-même, là où une lecture sélective l'oublierait.
     pub(crate) fn flags(&self) -> u32 {
         self.flags
+    }
+
+    /// Sa normale de Newell brute, dans le sens de son enroulement.
+    pub(crate) fn normal(&self) -> Vec3 {
+        self.normal
     }
 }
 
@@ -274,6 +290,21 @@ pub(crate) struct Cell {
     /// et `f32::MIN` en haut. C'est voulu : tout point est alors hors d'elle, si
     /// bien qu'une sélection par cette boîte ne retient rien plutôt que tout.
     bounds: [Vec3; 2],
+    /// Ses normales de Newell pointent-elles vers l'extérieur ?
+    ///
+    /// Six fois le volume signé, par le théorème de la divergence : la somme, sur
+    /// les faces qui ferment la cellule, du produit scalaire d'un de leurs points
+    /// par leur normale brute. **Les portails en sont**, sans quoi la cellule
+    /// n'est pas fermée et la somme ne vaut rien. Un volume nul ne peut venir que
+    /// d'une cellule dégénérée, qu'aucune orientation ne sauverait : le sens brut
+    /// est alors gardé.
+    ///
+    /// **Calculé ici, une fois, et rien ne peut l'invalider ensuite** : une carte
+    /// chargée est immuable, ni ses sommets ni ses portails ne bougent. C'est ce
+    /// qui autorise à le mémoriser plutôt qu'à reparcourir la cellule à chaque
+    /// appel — un parcours complet rend le même résultat quel que soit l'ordre
+    /// des appels, et c'est cette propriété-là qu'un champ doit conserver.
+    outward: bool,
 }
 
 impl Cell {
@@ -290,6 +321,33 @@ impl Cell {
     /// Les deux coins de sa boîte englobante, le plus bas puis le plus haut.
     pub(crate) fn bounds(&self) -> (Vec3, Vec3) {
         (self.bounds[0], self.bounds[1])
+    }
+
+    /// La normale d'une de ses surfaces, orientée vers l'intérieur de la cellule.
+    ///
+    /// **L'enroulement seul ne suffit pas à l'orienter.** La formule de Newell
+    /// rend une normale dont le sens suit l'ordre des sommets, et le format ne
+    /// dit pas lequel des deux sens est l'intérieur — il fixe la face visible, ce
+    /// qui n'est pas la même chose. Une normale prise à l'envers donne un terme
+    /// de Lambert négatif et la surface reste noire : constaté en écrivant la
+    /// cuisson, où le plafond du décor de validation restait éteint à deux unités
+    /// sous une lampe qui lui faisait face.
+    ///
+    /// Le sens vient donc du **signe du volume de la cellule**, calculé une fois
+    /// pour toutes ses faces. L'enroulement du format est cohérent d'une face à
+    /// l'autre — sans quoi le rendu montrerait déjà des trous —, donc un seul
+    /// signe les oriente toutes.
+    ///
+    /// **Le barycentre des sommets a été essayé et il est faux.** Comparer la
+    /// normale à la direction du barycentre décide juste tant que celui-ci n'est
+    /// pas dans le plan de la face ; il suffit qu'il y soit pour que le produit
+    /// scalaire s'annule, que rien ne tranche et que le signe brut passe tel quel.
+    /// Il ne faut pas une cellule tordue pour cela : le barycentre d'une salle en
+    /// L de huit unités tombe exactement sur son coin rentrant, donc sur le plan
+    /// de deux de ses murs, dont l'un ressortait noir.
+    pub(crate) fn inward(&self, surface: &Surface) -> Vec3 {
+        let raw = surface.normal();
+        if self.outward { -raw } else { raw }
     }
 }
 
@@ -811,6 +869,7 @@ fn cell(record: &[u8], materials: &[u32]) -> Result<Cell> {
     // La recalculer à chaque appel qui en a besoin ferait reparcourir les sommets
     // d'une cellule pour une valeur qui ne change jamais.
     let bounds = bounds_of(&vertices);
+    let outward = outward_of(&vertices, &surfaces, &portals);
 
     Ok(Cell {
         id,
@@ -821,7 +880,31 @@ fn cell(record: &[u8], materials: &[u32]) -> Result<Cell> {
         portals,
         luxel_count,
         bounds,
+        outward,
     })
+}
+
+/// Les normales de Newell de cette cellule pointent-elles vers l'extérieur ?
+///
+/// Six fois le volume signé : la somme, sur les faces qui ferment la cellule, du
+/// produit scalaire d'un de leurs points par leur normale brute. **Les portails
+/// en sont**, sans quoi la cellule n'est pas fermée et la somme ne vaut rien —
+/// une pièce dont on retire une porte n'a plus de volume défini.
+///
+/// L'ordre de sommation est celui du fichier, surfaces puis portails : c'est une
+/// valeur dérivée, donc son ordre d'opérations est contractuel comme les autres.
+fn outward_of(vertices: &[VertexUv], surfaces: &[Surface], portals: &[Portal]) -> bool {
+    let mut volume = 0.0;
+    for surface in surfaces {
+        let anchor = vertices[surface.first_vertex as usize].position;
+        volume += anchor.dot(surface.normal);
+    }
+    for portal in portals {
+        if let Some(&anchor) = portal.points.first() {
+            volume += anchor.dot(crate::math::polygon::newell(&portal.points));
+        }
+    }
+    volume > 0.0
 }
 
 /// Les deux coins de la boîte englobante d'un jeu de sommets dérivés.
@@ -969,6 +1052,11 @@ fn surface(
         corners: indices,
         first_vertex,
         luxels,
+        // Sur `corners`, qui porte les positions que les sommets dérivés
+        // reprennent telles quelles : c'est mot pour mot ce que la cuisson
+        // recalculait à chaque appel, dans le même ordre, donc au bit près la
+        // même normale.
+        normal: crate::math::polygon::newell(corners),
     })
 }
 
