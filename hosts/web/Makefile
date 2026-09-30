@@ -14,7 +14,7 @@ OUT     ?= ../../.tmp/host-web
 TARGET  := $(or $(CARGO_TARGET_DIR),../../target)
 WASM    := $(TARGET)/wasm32-unknown-unknown/$(PROFILE)/screengine.wasm
 HEADER  := $(abspath ../../include/screengine.h)
-# Le maillage versionné que les quatre hôtes chargent.
+# Le maillage versionné que les cinq hôtes chargent.
 MESH    := $(abspath ../../hosts/caisse.mesh)
 # Le décor que la page de démonstration parcourt.
 WORLD   := $(abspath ../../hosts/salles.world)

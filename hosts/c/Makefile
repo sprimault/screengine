@@ -15,7 +15,7 @@ OUT     ?= ../../.tmp/host-c
 TARGET  := $(or $(CARGO_TARGET_DIR),../../target)
 INCLUDE := ../../include
 
-# Le maillage que l'hôte charge, versionné et partagé par les quatre hôtes. Il
+# Le maillage que l'hôte charge, versionné et partagé par les cinq hôtes. Il
 # est passé en argument plutôt qu'écrit dans le programme : celui-ci s'exécute
 # depuis un répertoire de sortie qui n'est pas celui du dépôt.
 MESH    ?= ../../hosts/caisse.mesh

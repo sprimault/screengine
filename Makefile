@@ -200,7 +200,7 @@ HOST_OUT = $(abspath $(SORTIE))/host-$(host_dir_$*)
 #                         rendu ne touche — et un moteur sert aussi sans tampon,
 #                         ce qu'aucune des onze précédentes ne démontrait
 #
-# Une scène ajoutée ici est une scène à écrire dans les quatre hôtes, et c'est
+# Une scène ajoutée ici est une scène à écrire dans les cinq hôtes, et c'est
 # voulu : c'est ce qui rend leur comparaison possible.
 HOST_SCENES := arete texture texture-bilineaire gamma lumiere lumiere-surbrillance brouillard lumieres maillage composite salles collision
 
@@ -462,7 +462,7 @@ conform-update:
 conform-images:
 	cargo run -p screengine-conformance --release -- --dump $(SORTIE)/conformance-images
 
-# Réécrit le maillage que les quatre hôtes chargent. Le pendant de `make
+# Réécrit le maillage que les cinq hôtes chargent. Le pendant de `make
 # header` : le fichier versionné n'est jamais la source de vérité, et c'est un
 # test de la conformance — donc `make test` — qui le compare octet pour octet à
 # ce que ce mode écrit. Un fichier périmé échoue là, franchement, plutôt que de

@@ -35,7 +35,7 @@ use screengine_play::{
     Affine3, FreeCamera, KeyCode, Lightmaps, Mesh, Play, Texture, Vec3, World, load_png,
 };
 
-/// La carte du dépôt, celle que les quatre autres hôtes chargent.
+/// La carte du dépôt, celle que les cinq autres hôtes chargent.
 const SALLES: &[u8] = include_bytes!("../../../hosts/salles.world");
 
 /// Le maillage des caisses, de la même provenance.

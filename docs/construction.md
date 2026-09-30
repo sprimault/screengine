@@ -454,7 +454,7 @@ contrôle : ni `make test`, ni l'intégration continue ne le construisent.
   sur un clone Windows ferait échouer `make header-verif` sans qu'une ligne de
   code ait bougé.
 - **`hosts/caisse.mesh` suit le même modèle**, pour les données : un maillage
-  versionné que les quatre hôtes chargent, engendré par la conformance et
+  versionné que les cinq hôtes chargent, engendré par la conformance et
   réécrit par **`make mesh`**. Un test de la conformance le compare octet pour
   octet à ce que le générateur écrit, si bien qu'un fichier périmé échoue là,
   franchement, au lieu de faire diverger quatre empreintes sans dire pourquoi.

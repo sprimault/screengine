@@ -84,7 +84,7 @@ const HEIGHT: u32 = 360;
 /// Répétitions par cas, comme pour le remplissage.
 const IMAGES: u32 = 60;
 
-/// La carte du dépôt, celle que les quatre hôtes chargent.
+/// La carte du dépôt, celle que les cinq hôtes chargent.
 const COULOIR: &[u8] = include_bytes!("../hosts/couloir.world");
 
 /// Le décor à quatre cellules, où la traversée a quelque chose à éliminer.
