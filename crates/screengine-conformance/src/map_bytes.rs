@@ -74,12 +74,30 @@ pub fn surface(
     v: [f32; 3],
     out: &mut Vec<u8>,
 ) {
+    flagged(id, 0, material, indices, u, v, out);
+}
+
+/// La même, avec les drapeaux de la surface.
+///
+/// Séparée parce qu'un seul décor en pose : celui de la collision, qui a besoin
+/// d'une surface **non solide** pour donner son premier lecteur au drapeau. Les
+/// deux autres cartes n'écrivent que des zéros, et leur appel n'a pas à porter un
+/// argument qu'elles ne remplissent jamais.
+pub fn flagged(
+    id: u32,
+    flags: u32,
+    material: u32,
+    indices: &[u32],
+    u: [f32; 3],
+    v: [f32; 3],
+    out: &mut Vec<u8>,
+) {
     let density = if material == WALLS {
         WALL_DENSITY
     } else {
         FLOOR_DENSITY
     };
-    words(&[id, 0, material, indices.len() as u32], out);
+    words(&[id, flags, material, indices.len() as u32], out);
     words(indices, out);
     frame(
         [u[0] * density, u[1] * density, u[2] * density],

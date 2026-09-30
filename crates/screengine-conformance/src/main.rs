@@ -17,6 +17,7 @@
 //! le chemin Rust natif auquel les hôtes comparent la leur.
 
 mod hash;
+mod sweeps;
 
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -534,6 +535,17 @@ enum Scene {
     /// qui déplace sa caméra : c'est son objet — une fenêtre trop étroite ne se
     /// voit que depuis un endroit précis, et une seule vue en laisserait passer.
     Rooms,
+    /// Le décor de collision, balayé par une liste dérivée d'une règle.
+    ///
+    /// **La seule scène qui ne rend aucune image.** Elle n'a donc ni passe ni
+    /// résolution — le découpage en tuiles n'a rien à découper —, et son empreinte
+    /// se calcule une fois. Ce qu'elle hache est ce que le moteur écrit dans un
+    /// résultat de balayage, bit pour bit.
+    ///
+    /// Elle joue chaque balayage **deux fois**, par la traversée et par le chemin
+    /// de force brute, et exige qu'ils rendent les mêmes bits : c'est le théorème
+    /// de l'étape, et le seul contrôle qui attrape une traversée trop étroite.
+    Collision,
 }
 
 /// La matrice qui place la caisse : deux rotations composées, puis cinq unités
@@ -950,7 +962,7 @@ impl View {
 
 impl Scene {
     /// Toutes les scènes, dans l'ordre où `--check` les rejoue.
-    const ALL: [Self; 26] = [
+    const ALL: [Self; 27] = [
         Self::Edge,
         Self::Guard,
         Self::Lateral,
@@ -976,6 +988,7 @@ impl Scene {
         Self::Modulated,
         Self::WorldFile,
         Self::Rooms,
+        Self::Collision,
         Self::Composite,
     ];
 
@@ -1028,7 +1041,19 @@ impl Scene {
             Self::Modulated => "modulation",
             Self::WorldFile => "carte",
             Self::Rooms => "salles",
+            Self::Collision => "collision",
         }
+    }
+
+    /// Vrai si la scène interroge le moteur au lieu de lui faire rendre une
+    /// image.
+    ///
+    /// Les six passes de découpage n'ont alors pas d'objet : il n'y a ni tuile, ni
+    /// résolution, ni tampon. Une scène d'interrogation calcule son empreinte une
+    /// fois, et tout le reste de la mécanique — le fichier de référence, la
+    /// comparaison octet pour octet, le message d'écart — lui sert tel quel.
+    fn is_query(self) -> bool {
+        matches!(self, Self::Collision)
     }
 
     /// Les lumières dynamiques que la scène règle, ou aucune.
@@ -1246,6 +1271,11 @@ impl Scene {
     /// caméra neutre regarde le +X depuis l'origine.
     fn submit(self, context: &mut Context, view: View) -> screengine::Result<()> {
         match self {
+            // Une scène d'interrogation ne soumet rien : elle n'a pas d'image, et
+            // `render_all` l'a déjà détournée avant d'arriver ici. Le cas est
+            // écrit plutôt que laissé à un joker, pour qu'une scène d'image
+            // ajoutée plus tard ne passe pas par lui en silence.
+            Self::Collision => Ok(()),
             // Le même quadrilatère que `arete`, tourné autour de l'axe de
             // visée. L'axe passe par son centre, donc il reste dans le champ et
             // garde sa fuite en perspective ; ce qui change, c'est
@@ -1888,6 +1918,11 @@ impl Scene {
     /// divergence apparaît, là où l'empreinte de la scène ne dirait que « ça ne
     /// correspond plus ».
     fn render_all(self) -> Result<u64, String> {
+        // Une scène d'interrogation n'a pas de passes : elle rend son empreinte
+        // ici, et le reste de la mécanique la traite comme les autres.
+        if self.is_query() {
+            return sweeps::digest();
+        }
         let views = self.views();
         let mut reference: Vec<u64> = Vec::with_capacity(views.len());
 
@@ -2021,6 +2056,17 @@ fn write_bmp(path: &Path, pixels: &[u8], width: u32, height: u32) -> io::Result<
 fn dump(scene: Scene, dir: &Path) -> Result<String, String> {
     let views = scene.views();
     fs::create_dir_all(dir).map_err(|error| format!("{} : {error}", dir.display()))?;
+
+    // Une scène d'interrogation n'a pas d'image à regarder, et elle en a d'autant
+    // plus besoin d'être regardée : une empreinte dit qu'un résultat a changé,
+    // jamais qu'il est juste, et un décor où tout traverserait tout se figerait
+    // aussi bien qu'un autre. Elle écrit donc son texte, un balayage par ligne.
+    if scene.is_query() {
+        let path = dir.join(format!("{}.txt", scene.name()));
+        let text = sweeps::report()?;
+        fs::write(&path, text).map_err(|error| format!("{} : {error}", path.display()))?;
+        return Ok(format!("{} : {}", scene.name(), path.display()));
+    }
 
     for (index, view) in views.iter().enumerate() {
         let pixels = scene

@@ -605,6 +605,19 @@ impl World {
         crate::collide::sweep(self, from_cell, half.into(), from.into(), to.into())
     }
 
+    /// Le même balayage, contre **toutes** les cellules et sans traversée.
+    ///
+    /// **Ce n'est pas un outil de test, c'est la moitié d'un oracle.** Sur une
+    /// carte bien formée, les deux chemins doivent rendre exactement les mêmes
+    /// bits, et cette égalité est le seul contrôle qui attrape une traversée trop
+    /// étroite — l'analogue du chemin brut de la traversée de rendu.
+    ///
+    /// Il ne prend pas de cellule de départ : n'en connaissant aucune, il ne peut
+    /// pas se tromper de cellule, et c'est ce qui en fait une référence.
+    pub fn sweep_brute(&self, half: Vec3, from: Vec3, to: Vec3) -> Hit {
+        crate::collide::sweep_brute(self, half.into(), from.into(), to.into())
+    }
+
     /// Le matériau d'une surface, par son identifiant stable.
     ///
     /// `None` quand aucune surface ne le porte. C'est le pendant de

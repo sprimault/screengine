@@ -37,6 +37,17 @@ impl Fnv {
     }
 }
 
+/// L'empreinte d'une suite d'octets quelconque.
+///
+/// Ce qu'une scène d'**interrogation** hache : elle ne rend pas d'image, donc
+/// elle n'a ni dimensions à préfixer ni lignes à parcourir. La même fonction de
+/// hachage que les images, pour qu'un hôte n'en réimplémente pas deux.
+pub(crate) fn of(bytes: &[u8]) -> u64 {
+    let mut fnv = Fnv(OFFSET);
+    fnv.write(bytes);
+    fnv.0
+}
+
 /// L'empreinte de l'image `width × height` écrite dans `pixels` avec `stride`
 /// pixels par ligne.
 pub(crate) fn image(pixels: &[u8], width: u32, height: u32, stride: u32) -> u64 {

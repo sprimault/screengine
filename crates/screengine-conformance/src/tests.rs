@@ -84,6 +84,13 @@ fn la_scene_des_hotes_rend_une_empreinte_stable() {
 #[test]
 fn toutes_les_passes_rendent_l_empreinte_des_hotes() {
     for scene in Scene::ALL {
+        // Une scène d'interrogation n'a pas de passes : il n'y a ni tuile, ni
+        // résolution, ni tampon à découper. Ce que ce test garantit pour les
+        // autres — une empreinte qui ne dépend pas du découpage — lui est vrai
+        // par construction, son empreinte ne se calculant qu'une fois.
+        if scene.is_query() {
+            continue;
+        }
         assert_eq!(scene.render_all(), Ok(host_hash(scene)), "{}", scene.name());
     }
 }
@@ -125,6 +132,14 @@ fn une_scene_a_vue_unique_garde_l_empreinte_de_son_image() {
 #[test]
 fn chaque_scene_couvre_une_part_de_l_image() {
     for scene in Scene::ALL {
+        // Une scène d'interrogation ne peint rien, et ce contrôle n'a pas d'objet
+        // pour elle. Ce qu'il protège — une scène qui se chronomètre très bien en
+        // ne montrant rien — a son équivalent dans `sweeps::tests` : la plupart
+        // de ses départs doivent tomber dans une cellule, faute de quoi elle
+        // figerait une empreinte sans avoir rien balayé.
+        if scene.is_query() {
+            continue;
+        }
         for view in scene.views() {
             let pixels = scene
                 .render_pixels(Scene::HOST_PASS, view)

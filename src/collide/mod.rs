@@ -36,9 +36,6 @@ use crate::math::{Vec3, Vec3d};
 
 use shape::Touch;
 
-// Seuls les tests l'appellent aujourd'hui ; la conformance en fera son oracle au
-// lot qui écrit la scène, et retirera cette autorisation.
-#[cfg_attr(not(test), allow(unused_imports))]
 pub(crate) use brute::sweep_brute;
 
 /// Le plus grand nombre de cellules qu'un balayage visite.
