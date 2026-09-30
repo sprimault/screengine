@@ -2130,6 +2130,24 @@ fn parse_mode(args: &[String]) -> Result<Mode, String> {
     }
 }
 
+/// L'empreinte que `--print` écrit, celle à laquelle un hôte compare la sienne.
+///
+/// **Une fonction plutôt que le corps du mode**, pour qu'un test l'atteigne :
+/// écrite en ligne dans `main`, elle a rendu pendant un temps l'empreinte d'une
+/// image vide pour la scène d'interrogation — une valeur, pas une erreur, que
+/// rien ne pouvait prendre en défaut avant qu'un hôte la cherche.
+fn printed(scene: Scene) -> Result<u64, String> {
+    if scene.is_query() {
+        return sweeps::digest();
+    }
+    // L'empreinte de la première vue, et non celle de la scène : un hôte hache
+    // une image, pas une suite d'images.
+    let view = scene.views()[0];
+    scene
+        .render_view(Scene::HOST_PASS, view)
+        .map_err(|error| format!("le moteur a refusé la scène : {error:?}"))
+}
+
 /// Écrit un fichier de données, ou dit pourquoi il n'a pas pu l'être.
 fn write_data(path: &Path, bytes: &[u8]) -> ExitCode {
     match fs::write(path, bytes) {
@@ -2170,17 +2188,13 @@ fn main() -> ExitCode {
         Mode::Collision(path) => return write_data(&path, &collision_file::bytes()),
         Mode::Sweeps(path) => return write_data(&path, &sweeps::file_bytes()),
         Mode::Print(scene) => {
-            // L'empreinte de la première vue, et non celle de la scène : un
-            // hôte hache une image, pas une suite d'images, et c'est à cette
-            // valeur-là qu'il compare la sienne.
-            let view = scene.views()[0];
-            return match scene.render_view(Scene::HOST_PASS, view) {
+            return match printed(scene) {
                 Ok(hash) => {
                     println!("{}", hash::format(hash));
                     ExitCode::SUCCESS
                 }
-                Err(error) => {
-                    eprintln!("le moteur a refusé la scène : {error:?}");
+                Err(message) => {
+                    eprintln!("{message}");
                     ExitCode::FAILURE
                 }
             };

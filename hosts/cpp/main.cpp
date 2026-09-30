@@ -864,6 +864,128 @@ std::vector<uint8_t> read_file(const char *path)
                                 std::istreambuf_iterator<char>());
 }
 
+/// Lit un flottant écrit octet de poids faible en tête.
+///
+/// Par `memcpy` et non par un transtypage de pointeur : la liste n'est alignée
+/// sur rien, et déréférencer un `float *` sur une adresse quelconque est un
+/// comportement indéfini que les compilateurs exploitent.
+float sweep_float(const uint8_t *bytes)
+{
+    const uint32_t bits = static_cast<uint32_t>(bytes[0])
+                          | (static_cast<uint32_t>(bytes[1]) << 8)
+                          | (static_cast<uint32_t>(bytes[2]) << 16)
+                          | (static_cast<uint32_t>(bytes[3]) << 24);
+    float value = 0.0f;
+    std::memcpy(&value, &bits, sizeof value);
+    return value;
+}
+
+/// Absorbe un entier dans l'empreinte, octet de poids faible en tête.
+uint64_t absorb(uint64_t hash, uint32_t value, int octets)
+{
+    for (int i = 0; i < octets; i++) {
+        hash = (hash ^ ((value >> (i * 8)) & 0xff)) * 0x100000001b3u;
+    }
+    return hash;
+}
+
+/// Absorbe un flottant par ses bits, jamais par sa valeur.
+uint64_t absorb_float(uint64_t hash, float value)
+{
+    uint32_t bits = 0;
+    std::memcpy(&bits, &value, sizeof bits);
+    return absorb(hash, bits, 4);
+}
+
+/// Rejoue les balayages du fichier versionné et hache leurs résultats.
+///
+/// **La seule scène qui ne rende aucune image**, et la seule qui n'ouvre aucun
+/// contexte : le module de collision n'en demande pas, ce qui est exactement ce
+/// qu'un serveur de jeu en attend. L'hôte lit la liste, il ne l'engendre pas.
+uint64_t render_sweeps(bool &ok, const char *world_path, const char *sweeps_path)
+{
+    ok = false;
+    const std::vector<uint8_t> world_bytes = read_file(world_path);
+    const std::vector<uint8_t> list = read_file(sweeps_path);
+    check(!world_bytes.empty() && !list.empty(),
+          "le decor de collision et la liste de balayages se lisent");
+    if (world_bytes.empty() || list.empty()) {
+        return 0;
+    }
+
+    ScgWorld *world = nullptr;
+    if (scg_world_load(world_bytes.data(), world_bytes.size(), &world) != SCG_OK) {
+        check(false, "le decor de collision se charge");
+        return 0;
+    }
+    const std::unique_ptr<ScgWorld, decltype(&scg_world_destroy)> guard(world, &scg_world_destroy);
+
+    // La magie avant toute lecture : un mauvais chemin doit échouer ici plutôt
+    // que produire une empreinte de bruit.
+    if (list.size() < 12 || std::memcmp(list.data(), "SCGSWEEP", 8) != 0) {
+        check(false, "la liste de balayages porte sa magie");
+        return 0;
+    }
+    const uint32_t count = static_cast<uint32_t>(list[8])
+                           | (static_cast<uint32_t>(list[9]) << 8)
+                           | (static_cast<uint32_t>(list[10]) << 16)
+                           | (static_cast<uint32_t>(list[11]) << 24);
+    if (list.size() != 12 + static_cast<size_t>(count) * 36) {
+        check(false, "la liste annonce le nombre de balayages qu'elle porte");
+        return 0;
+    }
+
+    uint64_t hash = 0xcbf29ce484222325u;
+    for (uint32_t i = 0; i < count; i++) {
+        const uint8_t *record = list.data() + 12 + static_cast<size_t>(i) * 36;
+        float half[3];
+        float from[3];
+        float to[3];
+        for (int axis = 0; axis < 3; axis++) {
+            half[axis] = sweep_float(record + axis * 4);
+            from[axis] = sweep_float(record + 12 + axis * 4);
+            to[axis] = sweep_float(record + 24 + axis * 4);
+        }
+
+        // Zéro veut dire « nulle part », et se passe tel quel : c'est le
+        // balayage qui rend le déplacement libre, pas l'hôte qui le fabrique.
+        uint32_t cell = 0;
+        if (scg_world_locate(world, from, &cell) != SCG_OK) {
+            check(false, "la cellule de depart se cherche");
+            return 0;
+        }
+
+        ScgSweepHit hit{};
+        const int32_t status = scg_world_sweep(world, cell, half, from, to, &hit);
+        if (status < 0) {
+            check(false, "le balayage est accepte");
+            return 0;
+        }
+
+        hash = absorb_float(hash, hit.fraction);
+        for (const float value : hit.normal) {
+            hash = absorb_float(hash, value);
+        }
+        for (const float value : hit.point) {
+            hash = absorb_float(hash, value);
+        }
+        hash = absorb(hash, hit.surface_id, 4);
+        hash = absorb(hash, hit.cell_id, 4);
+        hash = absorb(hash, static_cast<uint32_t>(status), 1);
+
+        // Le contrepoids de `surface_id` : sans cet appel, le champ serait un
+        // identifiant qu'aucune fonction ne traduit.
+        if (hit.surface_id != 0) {
+            uint32_t material = 0;
+            check(scg_world_surface_material(world, hit.surface_id, &material) == SCG_OK,
+                  "la surface touchee nomme son materiau");
+        }
+    }
+
+    ok = true;
+    return hash;
+}
+
 /// Rend la caisse du fichier de maillage et hache son image.
 ///
 /// Le seul chemin de cet hôte qui lise un fichier : ce qu'il éprouve est que le
@@ -1294,8 +1416,11 @@ uint64_t render_rooms(bool &ok, const char *path)
 // empreintes plausibles passerait pour bon.
 int main(int argc, char **argv)
 {
-    if (argc != 3) {
-        std::fprintf(stderr, "usage : %s <fichier de maillage> <fichier de carte>\n", argv[0]);
+    if (argc != 5) {
+        std::fprintf(stderr,
+                     "usage : %s <fichier de maillage> <fichier de carte> "
+                     "<decor de collision> <liste de balayages>\n",
+                     argv[0]);
         return 2;
     }
     check(scg_abi_version() == SCG_ABI_VERSION, "la bibliothèque chargée est celle du header");
@@ -1349,8 +1474,12 @@ int main(int argc, char **argv)
     bool rooms_ok = false;
     const uint64_t rooms = render_rooms(rooms_ok, argv[2]);
 
+    bool sweeps_ok = false;
+    const uint64_t sweeps = render_sweeps(sweeps_ok, argv[3], argv[4]);
+
     if (failures > 0 || !ok || !textured_ok || !bilinear_ok || !graded_ok || !lit_ok
-        || !overbright_ok || !fog_ok || !lights_ok || !mesh_ok || !composite_ok || !rooms_ok) {
+        || !overbright_ok || !fog_ok || !lights_ok || !mesh_ok || !composite_ok || !rooms_ok
+        || !sweeps_ok) {
         std::fprintf(stderr, "%d vérification(s) en échec\n", failures);
         return 1;
     }
@@ -1365,5 +1494,6 @@ int main(int argc, char **argv)
     std::printf("%016llx\n", static_cast<unsigned long long>(mesh));
     std::printf("%016llx\n", static_cast<unsigned long long>(composite));
     std::printf("%016llx\n", static_cast<unsigned long long>(rooms));
+    std::printf("%016llx\n", static_cast<unsigned long long>(sweeps));
     return 0;
 }

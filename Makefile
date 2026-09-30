@@ -185,10 +185,22 @@ HOST_OUT = $(abspath $(SORTIE))/host-$(host_dir_$*)
 #                         points d'entrée que les dix précédentes n'atteignent
 #                         pas, et dont deux ont manqué au code pendant une
 #                         version entière sans que rien ne le dise
+#   collision             la seule qui ne rende aucune image : elle rejoue les
+#                         balayages de hosts/collision.sweeps contre
+#                         hosts/collision.world et hache leurs résultats. Elle
+#                         atteint les deux points d'entrée du balayage, qu'aucun
+#                         rendu ne touche — et un moteur sert aussi sans tampon,
+#                         ce qu'aucune des onze précédentes ne démontrait
 #
 # Une scène ajoutée ici est une scène à écrire dans les quatre hôtes, et c'est
 # voulu : c'est ce qui rend leur comparaison possible.
-HOST_SCENES := arete texture texture-bilineaire gamma lumiere lumiere-surbrillance brouillard lumieres maillage composite salles
+HOST_SCENES := arete texture texture-bilineaire gamma lumiere lumiere-surbrillance brouillard lumieres maillage composite salles collision
+
+# Les fichiers que les scènes chargent, passés à chaque hôte. Un seul endroit :
+# la liste était recopiée sur quatre recettes, et une scène ajoutée y manquait
+# à l'une d'elles sans que rien ne le dise avant l'empreinte.
+HOST_DATA = WORLD=$(abspath hosts/salles.world) MESH=$(abspath hosts/caisse.mesh) \
+            COLLISION=$(abspath hosts/collision.world) SWEEPS=$(abspath hosts/collision.sweeps)
 
 # Sans l'outillage de l'hôte, la cible saute et dit pourquoi. En intégration
 # continue (CI défini), le même saut est une erreur : un contrôle qui ne tourne
@@ -217,8 +229,7 @@ $(addsuffix -run,$(addprefix test-,$(TEST_HOSTS))): test-%-run:
 	done
 	$(MAKE) -s --no-print-directory -C hosts/$(host_dir_$*) PROFILE=$(host_profile_$*) OUT=$(HOST_OUT) all
 	$(MAKE) -s --no-print-directory -C hosts/$(host_dir_$*) PROFILE=$(host_profile_$*) OUT=$(HOST_OUT) \
-	  SCENE_COUNT=$(words $(HOST_SCENES)) \
-	  WORLD=$(abspath hosts/salles.world) MESH=$(abspath hosts/caisse.mesh) \
+	  SCENE_COUNT=$(words $(HOST_SCENES)) $(HOST_DATA) \
 	  run > $(HOST_OUT)/host.txt
 	@rust=$$(tr -d '\r' < $(HOST_OUT)/rust.txt); host=$$(tr -d '\r' < $(HOST_OUT)/host.txt); \
 	if [ -z "$$host" ]; then \
@@ -301,8 +312,7 @@ $(addprefix test-archive-,$(ARCHIVE_HOSTS_ALL)): test-archive-%: archive-emprein
 	  OUT=$(ARCHIVE_OUT)/$* all
 	@attendu=$$(tr -d '\r' < $(ARCHIVE_OUT)/rust.txt); \
 	obtenu=$$($(MAKE) -s --no-print-directory -C hosts/$(host_dir_$*) $(archive_vars_$*) \
-	  OUT=$(ARCHIVE_OUT)/$* SCENE_COUNT=$(words $(HOST_SCENES)) \
-	  WORLD=$(abspath hosts/salles.world) MESH=$(abspath hosts/caisse.mesh) run | tr -d '\r'); \
+	  OUT=$(ARCHIVE_OUT)/$* SCENE_COUNT=$(words $(HOST_SCENES)) $(HOST_DATA) run | tr -d '\r'); \
 	if [ -z "$$obtenu" ]; then \
 	  echo "test-archive : l'hote $(host_name_$*) n'a rien ecrit"; exit 1; \
 	fi; \
@@ -504,14 +514,12 @@ host-web: lib-wasm
 demo-c: lib
 	@reason=$$($(MAKE) -s --no-print-directory -C hosts/c why-not-demo); \
 	if [ -n "$$reason" ]; then echo "demo-c impossible : $$reason"; exit 1; fi
-	$(MAKE) -C hosts/c demo-run PROFILE=release-ffi OUT=$(abspath $(SORTIE))/host-c \
-	  WORLD=$(abspath hosts/salles.world) MESH=$(abspath hosts/caisse.mesh)
+	$(MAKE) -C hosts/c demo-run PROFILE=release-ffi OUT=$(abspath $(SORTIE))/host-c $(HOST_DATA)
 
 demo-cpp: lib
 	@reason=$$($(MAKE) -s --no-print-directory -C hosts/cpp why-not-demo); \
 	if [ -n "$$reason" ]; then echo "demo-cpp impossible : $$reason"; exit 1; fi
-	$(MAKE) -C hosts/cpp demo-run PROFILE=release-ffi OUT=$(abspath $(SORTIE))/host-cpp \
-	  WORLD=$(abspath hosts/salles.world) MESH=$(abspath hosts/caisse.mesh)
+	$(MAKE) -C hosts/cpp demo-run PROFILE=release-ffi OUT=$(abspath $(SORTIE))/host-cpp $(HOST_DATA)
 
 # La page du navigateur, servie en local : `fetch` ne lit pas un .wasm en
 # file://. PORT se choisit sur la ligne de commande.

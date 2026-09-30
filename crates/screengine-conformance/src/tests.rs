@@ -95,6 +95,42 @@ fn toutes_les_passes_rendent_l_empreinte_des_hotes() {
     }
 }
 
+/// Ce qu'un hôte compare pour une scène d'interrogation est l'empreinte de ses
+/// balayages, et non celle d'une image.
+///
+/// **Le défaut que ce test ferme rendait une valeur, pas une erreur** : la scène
+/// de collision n'ouvrant aucun contexte, `--print` y hachait un tampon vide et
+/// en sortait avec succès. Un hôte l'aurait cherchée sans jamais la retrouver, et
+/// la divergence aurait désigné le code du balayage plutôt que le mode qui
+/// l'imprime.
+#[test]
+fn une_scene_d_interrogation_imprime_l_empreinte_de_ses_balayages() {
+    for scene in Scene::ALL.into_iter().filter(|scene| scene.is_query()) {
+        assert_eq!(printed(scene), crate::sweeps::digest(), "{}", scene.name());
+        assert_ne!(
+            printed(scene),
+            Ok(host_hash(scene)),
+            "{} : l'empreinte imprimée vaut celle d'une image",
+            scene.name()
+        );
+    }
+}
+
+/// Ce qu'une scène d'image imprime est l'empreinte de sa première vue.
+///
+/// L'autre moitié de la clause ci-dessus : le cas d'interrogation ne doit pas
+/// avoir déplacé ce que les onze autres scènes rendent aux hôtes.
+#[test]
+fn une_scene_d_image_imprime_l_empreinte_de_sa_premiere_vue() {
+    for scene in Scene::ALL.into_iter().filter(|scene| !scene.is_query()) {
+        let view = scene.views()[0];
+        let image = scene
+            .render_view(Scene::HOST_PASS, view)
+            .expect("scène valide");
+        assert_eq!(printed(scene), Ok(image), "{}", scene.name());
+    }
+}
+
 /// Une scène à vue unique a pour empreinte celle de son image, sans enveloppe.
 ///
 /// C'est ce qui permet à un hôte de comparer l'empreinte qu'il calcule sur ses

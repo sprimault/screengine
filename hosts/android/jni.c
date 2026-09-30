@@ -574,6 +574,58 @@ static jint world_track(JNIEnv *env, jclass cls, jlong world, jint from_cell,
     return (jint)out;
 }
 
+/* scg_world_sweep : le statut, et les trente-six premiers octets du résultat.
+ *
+ * Le résultat passe en `byte[]` brut plutôt qu'en champs : c'est dans cet ordre
+ * que l'empreinte le hache, et le recomposer en Java demanderait de réécrire la
+ * disposition d'une structure que le header fige déjà. Toutes les ABI Android
+ * sont à octet de poids faible en tête, comme la liste qu'on rejoue.
+ *
+ * Les deux champs réservés restent dehors : ils n'entrent pas dans l'empreinte. */
+static jint world_sweep(JNIEnv *env, jclass cls, jlong world, jint from_cell, jfloatArray half,
+                        jfloatArray from, jfloatArray to, jbyteArray out)
+{
+    (void)cls;
+    if (half == NULL || from == NULL || to == NULL || out == NULL
+        || (*env)->GetArrayLength(env, half) != 3 || (*env)->GetArrayLength(env, from) != 3
+        || (*env)->GetArrayLength(env, to) != 3 || (*env)->GetArrayLength(env, out) != 36) {
+        return SCG_ERR_INVALID_ARGUMENT;
+    }
+    float extents[3];
+    float start[3];
+    float end[3];
+    (*env)->GetFloatArrayRegion(env, half, 0, 3, extents);
+    (*env)->GetFloatArrayRegion(env, from, 0, 3, start);
+    (*env)->GetFloatArrayRegion(env, to, 0, 3, end);
+
+    ScgSweepHit hit;
+    memset(&hit, 0, sizeof hit);
+    int32_t code = scg_world_sweep((const ScgWorld *)(intptr_t)world, (uint32_t)from_cell,
+                                   extents, start, end, &hit);
+    if (code < 0) {
+        return code;
+    }
+    (*env)->SetByteArrayRegion(env, out, 0, 36, (const jbyte *)&hit);
+    return (jint)code;
+}
+
+/* scg_world_surface_material : le matériau d'une surface, ou -1.
+ *
+ * Pas zéro pour l'erreur, contrairement aux autres accesseurs de cette
+ * frontière : zéro est un rang de matériau valide, et le confondre avec un échec
+ * ferait passer une surface inconnue pour la première du tableau. */
+static jint world_surface_material(JNIEnv *env, jclass cls, jlong world, jint surface)
+{
+    (void)env;
+    (void)cls;
+    uint32_t out = 0;
+    if (scg_world_surface_material((const ScgWorld *)(intptr_t)world, (uint32_t)surface, &out)
+        < 0) {
+        return -1;
+    }
+    return (jint)out;
+}
+
 /* scg_world_cell_count. */
 static jint world_cell_count(JNIEnv *env, jclass cls, jlong world)
 {
@@ -1133,6 +1185,8 @@ static const JNINativeMethod METHODS[] = {
     {"submitWorldVisible", "(J[FJ[JJI)I", (void *)submit_world_visible},
     {"worldLocate", "(J[F)I", (void *)world_locate},
     {"worldTrack", "(JI[F[F)I", (void *)world_track},
+    {"worldSweep", "(JI[F[F[F[B)I", (void *)world_sweep},
+    {"worldSurfaceMaterial", "(JI)I", (void *)world_surface_material},
     {"worldCellCount", "(J)I", (void *)world_cell_count},
     {"worldCellId", "(JI)I", (void *)world_cell_id},
     {"worldCellLuxelCount", "(JI)I", (void *)world_cell_luxel_count},

@@ -420,6 +420,40 @@ public final class Screengine {
     static native int worldTrack(long world, int fromCell, float[] from, float[] to);
 
     /**
+     * {@code scg_world_sweep}.
+     *
+     * <p>Le résultat revient en octets bruts plutôt qu'en champs : c'est dans cet
+     * ordre que l'empreinte de conformance le hache, et le recomposer ici
+     * demanderait de réécrire côté Java une disposition que le header fige déjà.
+     *
+     * <p><b>Le statut se lit au signe.</b> Négatif est une erreur ; positif est
+     * un état du balayage — {@code 1} région tronquée, {@code 2} départ hors de
+     * toute cellule, {@code 3} départ dans le solide —, et {@code out} est
+     * rempli dans les quatre cas.
+     *
+     * @param world handle rendu par {@link #worldLoad}
+     * @param fromCell la cellule de départ, ou 0 pour « nulle part »
+     * @param half les trois demi-étendues de la boîte
+     * @param from les trois coordonnées du départ
+     * @param to celles de l'arrivée
+     * @param out trente-six octets, les champs de {@code ScgSweepHit} hors
+     *     réservés
+     * @return le statut du balayage
+     */
+    static native int worldSweep(
+            long world, int fromCell, float[] half, float[] from, float[] to, byte[] out);
+
+    /**
+     * {@code scg_world_surface_material}.
+     *
+     * @param world handle rendu par {@link #worldLoad}
+     * @param surface l'identifiant rendu par un balayage
+     * @return le rang du matériau, ou -1 si la surface est inconnue — zéro étant
+     *     un rang valide, il ne peut pas servir de marque d'échec ici
+     */
+    static native int worldSurfaceMaterial(long world, int surface);
+
+    /**
      * {@code scg_world_cell_count}.
      *
      * @param world handle rendu par {@link #worldLoad}

@@ -22,6 +22,11 @@ MESH    ?= ../../hosts/caisse.mesh
 WORLD   ?= ../../hosts/couloir.world
 SDL3    ?=
 
+# Le décor de collision et la liste de balayages que la scène `collision`
+# rejoue. Versionnés eux aussi : l'hôte ne les engendre pas, il les lit.
+COLLISION ?= ../../hosts/collision.world
+SWEEPS    ?= ../../hosts/collision.sweeps
+
 ifeq ($(OS),Windows_NT)
 
 IMPLIB  := $(TARGET)/$(PROFILE)/screengine.dll.lib
@@ -105,4 +110,4 @@ demo-run: $(DEMO)
 
 # Écrit l'empreinte sur la sortie standard, les échecs sur la sortie d'erreur.
 run: $(EXE)
-	@$(EXE) "$(MESH)" "$(WORLD)"
+	@$(EXE) "$(MESH)" "$(WORLD)" "$(COLLISION)" "$(SWEEPS)"
