@@ -51,7 +51,7 @@ pub(crate) use brute::sweep_brute;
 /// **Sa valeur se mesure avant d'être publiée**, sur le décor de validation : une
 /// constante d'ABI ne change jamais de sens une fois publiée, et celle-ci attend
 /// donc le lot qui écrit la scène de conformance.
-pub(crate) const SWEEP_CELLS: usize = 64;
+pub const SWEEP_CELLS: usize = 64;
 
 /// De combien la boîte est dilatée, en fraction de sa plus grande demi-étendue.
 ///
@@ -73,25 +73,25 @@ const SKIN: f64 = 1.0 / 1024.0;
 
 /// Ce qu'un balayage rend.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub(crate) struct Hit {
+pub struct Hit {
     /// La fraction du déplacement parcourue avant le contact, dans `[0, 1]`.
-    pub(crate) fraction: f32,
+    pub fraction: f32,
     /// La normale du contact, unitaire, opposée au mouvement.
     ///
     /// Nulle quand rien n'est touché : le vecteur nul est ce que la table de
     /// racine inverse rend d'une longueur négligeable, et l'hôte n'a de toute
     /// façon rien à en faire quand `surface` vaut zéro.
-    pub(crate) normal: Vec3,
+    pub normal: Vec3,
     /// Le point de contact, sur le plan de la surface touchée.
-    pub(crate) point: Vec3,
+    pub point: Vec3,
     /// L'identifiant de la surface touchée, ou zéro.
-    pub(crate) surface: u32,
+    pub surface: u32,
     /// L'identifiant de la cellule où le contact a lieu, ou zéro.
-    pub(crate) cell: u32,
+    pub cell: u32,
     /// La boîte était-elle déjà en intersection au départ ?
-    pub(crate) start_solid: bool,
+    pub start_solid: bool,
     /// La région examinée a-t-elle été tronquée par [`SWEEP_CELLS`] ?
-    pub(crate) incomplete: bool,
+    pub incomplete: bool,
 }
 
 /// Le meilleur contact connu, et ce qu'il faut pour le départager du suivant.

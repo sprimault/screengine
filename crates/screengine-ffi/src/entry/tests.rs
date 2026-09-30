@@ -118,7 +118,12 @@ fn un_appel_qui_aboutit_rend_le_succes() {
 /// La traduction du noyau vers l'ABI, dans le sens où l'hôte la voit.
 #[test]
 fn une_erreur_du_noyau_devient_son_code() {
-    let code = without_context(|| Err(Error::InvalidArgument(Argument::TileSize).into()));
+    // Le succès est annoté parce que l'enveloppe porte désormais un statut aussi
+    // bien que rien : sur un chemin qui ne rend que l'erreur, le type du succès
+    // ne se déduit de nulle part.
+    let code = without_context(|| -> Result<(), AbiError> {
+        Err(Error::InvalidArgument(Argument::TileSize).into())
+    });
     assert_eq!(code, SCG_ERR_INVALID_ARGUMENT);
 }
 
@@ -127,7 +132,7 @@ fn une_erreur_du_noyau_devient_son_code() {
 /// échoue, il fait tomber le processus de test avec lui.
 #[test]
 fn une_panique_devient_un_code_et_ne_s_echappe_pas() {
-    let code = without_context(|| panic!("défaut simulé du moteur"));
+    let code = without_context(|| -> Result<(), AbiError> { panic!("défaut simulé du moteur") });
     assert_eq!(code, SCG_ERR_PANIC);
 }
 
@@ -136,7 +141,7 @@ fn une_panique_devient_un_code_et_ne_s_echappe_pas() {
 /// pile Rust à afficher.
 #[test]
 fn le_message_d_une_panique_est_retenu() {
-    without_context(|| panic!("défaut simulé du moteur"));
+    without_context(|| -> Result<(), AbiError> { panic!("défaut simulé du moteur") });
     // SAFETY: le pointeur vise le stockage local du thread courant, et rien
     // n'écrit entre-temps.
     let text = unsafe { std::ffi::CStr::from_ptr(message::orphan_ptr()) };
@@ -151,7 +156,7 @@ fn le_message_d_une_panique_est_retenu() {
 /// une erreur qui n'a pas eu lieu.
 #[test]
 fn un_appel_qui_aboutit_efface_le_message_precedent() {
-    without_context(|| Err(Error::OutOfMemory.into()));
+    without_context(|| -> Result<(), AbiError> { Err(Error::OutOfMemory.into()) });
     without_context(|| Ok(()));
     // SAFETY: même raisonnement.
     let text = unsafe { std::ffi::CStr::from_ptr(message::orphan_ptr()) };

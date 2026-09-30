@@ -703,6 +703,84 @@ impl ScgGrade {
     }
 }
 
+/// What a sweep found, written by the engine into a struct the host owns.
+///
+/// **No "hit" field.** `surface_id` is `0` when nothing was touched, and
+/// `fraction` is then `1`. That is not a sentinel invented here: the map format
+/// already reserves `0` for "none", and `cell_id` already means "no cell" at `0`.
+/// A boolean would say what a null identifier says, and this ABI has no `bool`.
+///
+/// **Forty-four bytes, offsets 0 to 40 on every target**, with no padding: every
+/// field is four bytes wide. A binding that writes the struct byte by byte —
+/// JavaScript on wasm — reproduces them as they read here.
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct ScgSweepHit {
+    /// How much of the move was travelled before contact, in `[0, 1]`.
+    ///
+    /// `1` when nothing was touched. `0` together with a return code of
+    /// `SCG_STATUS_START_SOLID` means the box began inside solid geometry.
+    pub fraction: f32,
+    /// The contact normal, unit length, opposing the move.
+    ///
+    /// Zero when nothing was touched. **The response is yours**: sliding,
+    /// stepping and gravity are game policies, and the engine knows none of
+    /// them. A character stopping dead against an angled wall is three lines of
+    /// projection away on your side, not a defect on ours.
+    pub normal: [f32; 3],
+    /// The contact point, on the plane of the surface that was touched.
+    ///
+    /// A face-to-face contact is a rectangle and not a point; the engine picks
+    /// the projection of the box centre onto that plane and freezes it, so that
+    /// two targets agree on it.
+    pub point: [f32; 3],
+    /// The stable identifier of the surface touched, or `0`.
+    ///
+    /// Pass it to `scg_world_surface_material` to learn what it is made of.
+    pub surface_id: u32,
+    /// The stable identifier of the cell the contact happened in, or `0`.
+    pub cell_id: u32,
+    /// Reserved, must be zero.
+    pub reserved0: u32,
+    /// Reserved, must be zero.
+    pub reserved1: u32,
+}
+
+impl ScgSweepHit {
+    /// Ce que rend un balayage qui n'a rien examiné.
+    ///
+    /// `from_cell` à zéro veut dire « nulle part », et le moteur n'a alors
+    /// regardé aucune géométrie : le déplacement est rendu libre, et le point
+    /// d'arrivée est celui que l'hôte a demandé.
+    pub(crate) fn free(to: screengine::Vec3) -> Self {
+        Self {
+            fraction: 1.0,
+            normal: [0.0; 3],
+            point: [to.x, to.y, to.z],
+            surface_id: 0,
+            cell_id: 0,
+            reserved0: 0,
+            reserved1: 0,
+        }
+    }
+
+    /// La conversion depuis ce que le noyau rend.
+    ///
+    /// Les deux drapeaux du noyau ne traversent pas : ils deviennent le **code de
+    /// retour**, l'ABI n'ayant pas de `bool` et un statut se lisant au signe.
+    pub(crate) fn from_core(hit: &screengine::Hit) -> Self {
+        Self {
+            fraction: hit.fraction,
+            normal: [hit.normal.x, hit.normal.y, hit.normal.z],
+            point: [hit.point.x, hit.point.y, hit.point.z],
+            surface_id: hit.surface,
+            cell_id: hit.cell,
+            reserved0: 0,
+            reserved1: 0,
+        }
+    }
+}
+
 /// Les tailles et décalages que le header publie, vérifiés **à la compilation**.
 ///
 /// En assertions de constante et non en test : un test ne s'exécute que sur la
@@ -788,4 +866,12 @@ const _: () = {
     assert!(offset_of!(ScgLight, radius) == 12);
     assert!(offset_of!(ScgLight, r) == 16);
     assert!(offset_of!(ScgLight, _reserved) == 19);
+
+    assert!(size_of::<ScgSweepHit>() == 44 && align_of::<ScgSweepHit>() == 4);
+    assert!(offset_of!(ScgSweepHit, normal) == 4);
+    assert!(offset_of!(ScgSweepHit, point) == 16);
+    assert!(offset_of!(ScgSweepHit, surface_id) == 28);
+    assert!(offset_of!(ScgSweepHit, cell_id) == 32);
+    assert!(offset_of!(ScgSweepHit, reserved0) == 36);
+    assert!(offset_of!(ScgSweepHit, reserved1) == 40);
 };

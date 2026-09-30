@@ -43,15 +43,15 @@ pub use mesh::ScgMesh;
 pub use scene::{
     SCG_BLEND_MODULATE, SCG_FILTER_BILINEAR, SCG_FILTER_DITHER, SCG_SPRITE_AXIAL,
     SCG_SPRITE_FACING, SCG_TEXTURE_FORMAT_RGBA8, SCG_TEXTURE_FORMAT_RGBA8_MASKED, ScgCamera,
-    ScgGrade, ScgLight, ScgMat4, ScgSprite, ScgTextureDesc, ScgTriangle, ScgVertex, ScgVertexUv,
-    ScgVertexUv2, ScgVertexUvN,
+    ScgGrade, ScgLight, ScgMat4, ScgSprite, ScgSweepHit, ScgTextureDesc, ScgTriangle, ScgVertex,
+    ScgVertexUv, ScgVertexUv2, ScgVertexUvN,
 };
 pub use status::{
     SCG_ERR_FAULTED, SCG_ERR_INVALID_ARGUMENT, SCG_ERR_INVALID_FORMAT, SCG_ERR_INVALID_STATE,
     SCG_ERR_NULL, SCG_ERR_OUT_OF_MEMORY, SCG_ERR_PANIC, SCG_ERR_POISONED, SCG_ERR_UNKNOWN_RESOURCE,
     SCG_ERR_UNSUPPORTED_FORMAT_VERSION, SCG_LIGHTMAP_ABSENT, SCG_LIGHTMAP_READY,
     SCG_LIGHTMAP_STALE, SCG_MAX_LIGHTMAP_SIZE, SCG_OK, SCG_STATUS_INCOMPLETE, SCG_STATUS_NO_CELL,
-    SCG_TRAVERSAL_CELLS, SCG_TRAVERSAL_DEPTH,
+    SCG_STATUS_START_SOLID, SCG_SWEEP_CELLS, SCG_TRAVERSAL_CELLS, SCG_TRAVERSAL_DEPTH,
 };
 pub use texture::ScgTexture;
 pub use world::{ScgLighting, ScgWorld};
@@ -1565,6 +1565,27 @@ unsafe fn read_point(ptr: *const f32) -> Result<Vec3, AbiError> {
     Ok(Vec3::new(values[0], values[1], values[2]))
 }
 
+/// Les trois demi-étendues d'une boîte, refusées si elles sont négatives.
+///
+/// Séparée de [`read_point`] parce que le domaine n'est pas le même : une
+/// coordonnée peut être négative, une demi-étendue non. Nulle est admise — c'est
+/// ce qui fait du balayage d'une boîte plate, ou d'un rayon, le même appel.
+///
+/// **`NaN` se teste par la finitude, avant les comparaisons de bornes**, qui sont
+/// fausses dans les deux sens et le laisseraient passer.
+///
+/// # Safety
+///
+/// `ptr` doit être nul ou viser trois `float` lisibles.
+unsafe fn read_extents(ptr: *const f32) -> Result<Vec3, AbiError> {
+    // SAFETY: même précondition, et la finitude y est déjà vérifiée.
+    let values = unsafe { read_point(ptr) }?;
+    if values.x < 0.0 || values.y < 0.0 || values.z < 0.0 {
+        return Err(CoreError::InvalidArgument(Argument::VertexCoordinate).into());
+    }
+    Ok(values)
+}
+
 /// La lecture en deux temps d'un nom, partagée par les deux ressources.
 ///
 /// Extraite dès sa seconde occurrence, contrairement à la règle habituelle : ce
@@ -2317,6 +2338,121 @@ pub unsafe extern "C" fn scg_world_light(
         unsafe { out.write(ScgLight::from_core(light)) };
         Ok(())
     })
+}
+
+/// Sweeps an axis-aligned box from `from` to `to`, starting in `from_cell`.
+///
+/// **The collision module needs no rendering context**, which is the whole point:
+/// a game server loads a map, sweeps, and never allocates a frame buffer. It
+/// takes no context and writes its error to the thread-local slot, read with
+/// `scg_last_error(NULL)`.
+///
+/// **It is callable from any thread, on the same handle, at the same time.** A
+/// loaded map is immutable and this only reads it; nothing is retained between
+/// calls, and the result depends on the arguments alone. This is the first entry
+/// point in the ABI to allow that on a shared object.
+///
+/// **Returns a positive status, not only `SCG_OK`.** Judge the result by the sign
+/// of the code: `SCG_STATUS_NO_CELL` when `from_cell` is `0`, which means
+/// "nowhere" and reports a free move; `SCG_STATUS_INCOMPLETE` when the sweep hit
+/// `SCG_SWEEP_CELLS`, which **truncates** the move rather than reporting it free;
+/// and `SCG_STATUS_START_SOLID` when the box was already inside solid geometry.
+///
+/// `half_extents` of zero sweeps a ray. The box never rotates: give one that
+/// encloses every orientation your character takes.
+///
+/// **What stops the box is the map, not a filter you pass.** Surfaces flagged
+/// non-solid are ignored, and a collision layer mask is a game notion that
+/// belongs on your side.
+///
+/// # Safety
+///
+/// `world` must be a live handle from `scg_world_load`, `half_extents`, `from`
+/// and `to` must each point to three readable `float`s, and `out` must point to a
+/// writable `ScgSweepHit`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn scg_world_sweep(
+    world: *const ScgWorld,
+    from_cell: u32,
+    half_extents: *const f32,
+    from: *const f32,
+    to: *const f32,
+    out: *mut ScgSweepHit,
+) -> i32 {
+    // Le type de retour est annoté : cette enveloppe accepte aussi bien `()` que
+    // le code d'un statut, et sans annotation l'inférence choisit le premier.
+    entry::without_context(|| -> Result<i32, AbiError> {
+        if out.is_null() {
+            return Err(AbiError::NULL);
+        }
+        // SAFETY: précondition de la fonction — le pointeur est nul ou vise un
+        // handle vivant.
+        let world = unsafe { world.as_ref() }.ok_or(AbiError::NULL)?;
+        // SAFETY: précondition de la fonction — trois flottants lisibles, et
+        // chacun doit être fini et positif ou nul.
+        let half = unsafe { read_extents(half_extents) }?;
+        // SAFETY: précondition de la fonction — trois flottants lisibles.
+        let start = unsafe { read_point(from) }?;
+        // SAFETY: idem.
+        let end = unsafe { read_point(to) }?;
+
+        // « Nulle part » se traite avant le noyau : ce n'est pas une cellule
+        // inconnue, c'est l'absence de cellule, et le moteur n'a rien examiné.
+        // Inventer un mur serait inventer de la géométrie.
+        if from_cell == 0 {
+            // SAFETY: précondition — `out` vise une `ScgSweepHit` inscriptible.
+            unsafe { out.write(ScgSweepHit::free(end)) };
+            return Ok(status::SCG_STATUS_NO_CELL);
+        }
+
+        let hit = world
+            .inner
+            .sweep(from_cell, half, start, end)
+            .ok_or_else(|| AbiError::from(CoreError::UnknownResource))?;
+
+        // SAFETY: précondition — `out` vise une `ScgSweepHit` inscriptible, et
+        // rien n'y a été écrit avant ce point.
+        unsafe { out.write(ScgSweepHit::from_core(&hit)) };
+
+        // **Le plus actionnable des deux quand les deux s'appliquent** : un
+        // départ dans le solide demande à l'hôte de se dégager, là où une région
+        // tronquée ne lui laisse aucun levier — la borne n'étant pas réglable.
+        Ok(if hit.start_solid {
+            status::SCG_STATUS_START_SOLID
+        } else if hit.incomplete {
+            status::SCG_STATUS_INCOMPLETE
+        } else {
+            status::SCG_OK
+        })
+    })
+}
+
+/// Writes the material of a surface to `out`, by its stable identifier.
+///
+/// The counterpart of `ScgSweepHit::surface_id`: without it that field would be
+/// an identifier no function translates. What it writes indexes the map's
+/// material table, which `scg_world_material_name` names.
+///
+/// An identifier no surface carries is `SCG_ERR_UNKNOWN_RESOURCE`.
+///
+/// # Safety
+///
+/// `world` must be a live handle from `scg_world_load`, and `out` must point to a
+/// writable `uint32_t`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn scg_world_surface_material(
+    world: *const ScgWorld,
+    surface_id: u32,
+    out: *mut u32,
+) -> i32 {
+    let read = |world: &ScgWorld| {
+        world
+            .inner
+            .surface_material(surface_id)
+            .ok_or_else(|| AbiError::from(CoreError::UnknownResource))
+    };
+    // SAFETY: mêmes préconditions que les autres accesseurs de la carte.
+    unsafe { world_value(world, out, read) }
 }
 
 /// Writes the number of entities the map carries to `out`.

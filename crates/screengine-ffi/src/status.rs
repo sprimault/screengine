@@ -71,6 +71,31 @@ pub const SCG_STATUS_INCOMPLETE: i32 = 1;
 /// place the camera in a cell again. The engine never relocates it on its own.
 pub const SCG_STATUS_NO_CELL: i32 = 2;
 
+/// Success, and the box was already inside solid geometry when the sweep began.
+///
+/// `fraction` is `0` and the normal is that of the least deeply penetrated
+/// surface. **The engine does not push out**: there is no push-out vector defined
+/// against a set of non-convex surfaces, so it reports and leaves the response to
+/// the host.
+///
+/// **This is a status and not just `fraction == 0`**, which is ambiguous: an
+/// immediate legitimate contact returns the same fraction — box exactly against a
+/// wall, moving into it. The two call for opposite responses, sliding or getting
+/// out, and this is the one thing the host cannot reconstruct.
+///
+/// A sweep that stays inside solid geometry the whole way returns this same
+/// status, and `fraction` says the rest.
+pub const SCG_STATUS_START_SOLID: i32 = 3;
+
+/// The greatest number of cells one sweep visits.
+///
+/// Reaching it returns [`SCG_STATUS_INCOMPLETE`] and **truncates** the move to
+/// where the examined region stops — the only conservative answer, since
+/// reporting a free move would send an entity through a wall the engine never
+/// looked at. It is not configurable: a result that depended on a configuration
+/// field would escape the conformance suite.
+pub const SCG_SWEEP_CELLS: u32 = 64;
+
 /// A cell has no lightmap yet.
 pub const SCG_LIGHTMAP_ABSENT: u32 = 0;
 
