@@ -67,12 +67,12 @@ impl<'a> Cursor<'a> {
         Ok(self.take(1)?[0])
     }
 
-    /// Deux octets, petit-boutiste.
+    /// Deux octets, poids faible en tête.
     pub(crate) fn u16(&mut self) -> Result<u16> {
         Ok(u16::from_le_bytes(self.array()?))
     }
 
-    /// Quatre octets, petit-boutiste.
+    /// Quatre octets, poids faible en tête.
     pub(crate) fn u32(&mut self) -> Result<u32> {
         Ok(u32::from_le_bytes(self.array()?))
     }

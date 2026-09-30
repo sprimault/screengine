@@ -1432,7 +1432,7 @@ deux autres formats : une somme ne protège de rien face à un bloc hostile, et
 l'intégrité de transport appartient à l'archive de l'hôte.
 
 **L'empreinte est un FNV-1a 64 bits par cellule**, calculée sur des octets écrits
-en petit-boutiste, tout par `to_bits` et sans une seule opération flottante, dans
+poids faible en tête, tout par `to_bits` et sans une seule opération flottante, dans
 cet ordre :
 
 1. **la révision du calcul**, une constante du noyau incrémentée à *tout*
@@ -1875,7 +1875,7 @@ mesure : un compteur, une empreinte, une durée.
   autant d'occasions de le porter de travers, pour une distinction dont
   l'empreinte n'a que faire.
 - **L'empreinte est FNV-1a 64 bits**, écrite en seize chiffres hexadécimaux
-  minuscules. Elle hache la largeur puis la hauteur en `u32` petit-boutiste, puis
+  minuscules. Elle hache la largeur puis la hauteur en `u32`, poids faible en tête, puis
   la zone utile ligne par ligne, `largeur × 4` octets alpha compris ; le `stride`
   n'y entre pas. Chaque hôte la recalcule dans son langage : elle tient en dix
   lignes partout, sans dépendance ni table. Écartés : xxHash, à réimplémenter en

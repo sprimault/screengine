@@ -259,7 +259,7 @@ impl<'a> Writer<'a> {
         self.offset += 4;
     }
 
-    /// Écrit un entier de trente-deux bits, petit-boutiste.
+    /// Écrit un entier de trente-deux bits, octet de poids faible en tête.
     fn u32(&mut self, value: u32) {
         self.tag(value.to_le_bytes());
     }

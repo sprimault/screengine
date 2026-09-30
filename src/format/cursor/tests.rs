@@ -8,13 +8,13 @@ use super::*;
 /// L'erreur qu'une lecture hors borne doit rendre, écrite une fois.
 const TRUNCATED: Error = Error::InvalidFormat(Malformation::Truncated);
 
-/// Les entiers se lisent en petit-boutiste, quelle que soit la cible.
+/// Les entiers se lisent octet de poids faible en tête, quelle que soit la
+/// cible.
 ///
-/// Le test porte des octets distincts par position : une lecture en
-/// gros-boutiste rendrait les mêmes valeurs sur une suite palindrome, et
-/// passerait.
+/// Le test porte des octets distincts par position : une lecture dans l'ordre
+/// inverse rendrait les mêmes valeurs sur une suite palindrome, et passerait.
 #[test]
-fn les_entiers_se_lisent_en_petit_boutiste() {
+fn les_entiers_se_lisent_poids_faible_en_tete() {
     let bytes = [0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07];
     let mut cursor = Cursor::new(&bytes);
     assert_eq!(cursor.u8().unwrap(), 0x01);

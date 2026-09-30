@@ -96,7 +96,7 @@ const CAPS: [Face; 2] = [
     },
 ];
 
-/// Les octets d'un `f32`, petit-boutistes comme le format l'impose.
+/// Les octets d'un `f32`, poids faible en tête comme le format l'impose.
 fn f32_bytes(value: f32, out: &mut Vec<u8>) {
     out.extend_from_slice(&value.to_le_bytes());
 }

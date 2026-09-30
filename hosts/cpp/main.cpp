@@ -84,7 +84,7 @@ struct ContextDeleter {
 using Context = std::unique_ptr<ScgContext, ContextDeleter>;
 
 /// FNV-1a 64 bits, dans la forme de screengine-conformance : largeur et hauteur
-/// en u32 petit-boutiste, puis la zone utile ligne par ligne.
+/// en u32 poids faible en tete, puis la zone utile ligne par ligne.
 uint64_t fingerprint(const uint8_t *pixels, uint32_t width, uint32_t height, uint32_t stride)
 {
     uint64_t hash = 0xcbf29ce484222325u;
