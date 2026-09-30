@@ -56,6 +56,14 @@ const VERTEX_LEN: usize = 12;
 /// déjà écrites.
 const SURFACE_FLAGS: u32 = 0b111;
 
+/// Le bit qui dit qu'une surface n'arrête aucun volume qui la balaie.
+///
+/// Défini par le format depuis l'étape des données, sans lecteur jusqu'ici :
+/// c'est le balayage qui lui en donne un. Il décrit la géométrie et non
+/// l'appelant — la surface compte toujours dans la parité qui localise un point,
+/// et occulte toujours la cuisson.
+const SURFACE_NON_SOLID: u32 = 0b100;
+
 /// Le bit qui dit qu'une surface ne reçoit pas de lightmap.
 ///
 /// Défini par le format depuis l'étape des données, sans lecteur jusqu'ici : c'est
@@ -179,6 +187,20 @@ pub(crate) struct Surface {
     /// concave a des triangles dont l'orientation ne dit rien de la sienne.
     /// Elle n'est pas unitaire — sa longueur vaut le double de l'aire.
     normal: Vec3,
+    /// Lesquelles de ses arêtes portent un volume propre pour le balayage.
+    ///
+    /// Le bit `i` désigne l'arête qui va du coin `i` au suivant, et vaut 1 quand
+    /// cette arête est **exposée** : soit elle n'est partagée avec aucune autre
+    /// surface solide, soit le dièdre qu'elles forment est saillant. Un `u64`
+    /// suffit, une surface étant plafonnée à [`MAX_POLYGON`] coins.
+    ///
+    /// Une arête **rentrante ou coplanaire** vaut 0, et c'est ce qui tue la
+    /// collision fantôme : la face de l'une ou l'autre surface couvre déjà
+    /// l'instant du contact, et lui laisser en plus un volume d'arête ferait
+    /// accrocher une boîte qui glisse sur un sol plan, à la couture de la
+    /// triangulation comme à la jointure de deux dalles. Voir `docs/rust.md`,
+    /// « La règle de l'arête partagée ».
+    edges: u64,
 }
 
 impl Surface {
@@ -207,6 +229,21 @@ impl Surface {
     /// Sa normale de Newell brute, dans le sens de son enroulement.
     pub(crate) fn normal(&self) -> Vec3 {
         self.normal
+    }
+
+    /// Vrai si cette surface arrête un volume qui la balaie.
+    ///
+    /// L'inverse du bit « non solide » du format, qui décrit la géométrie et non
+    /// l'appelant : une surface non solide **compte toujours** dans la parité qui
+    /// dit si un point est dans la cellule, et **occulte toujours** la cuisson.
+    /// Seul le balayage l'ignore.
+    pub(crate) fn is_solid(&self) -> bool {
+        self.flags & SURFACE_NON_SOLID == 0
+    }
+
+    /// Vrai si l'arête partant du coin `index` porte un volume propre.
+    pub(crate) fn edge_is_exposed(&self, index: usize) -> bool {
+        self.edges & (1 << index) != 0
     }
 }
 
@@ -870,6 +907,7 @@ fn cell(record: &[u8], materials: &[u32]) -> Result<Cell> {
     // d'une cellule pour une valeur qui ne change jamais.
     let bounds = bounds_of(&vertices);
     let outward = outward_of(&vertices, &surfaces, &portals);
+    classify_edges(&vertices, &mut surfaces, outward);
 
     Ok(Cell {
         id,
@@ -882,6 +920,119 @@ fn cell(record: &[u8], materials: &[u32]) -> Result<Cell> {
         bounds,
         outward,
     })
+}
+
+/// Marque, sur chaque surface solide, les arêtes qui portent un volume propre.
+///
+/// **La règle de l'arête partagée, dont `docs/rust.md` porte les trois clauses et
+/// leur raison.** Une arête est partagée quand une autre surface solide de la
+/// même cellule porte les deux mêmes positions, comparées **au bit près** ; le
+/// dièdre est alors rentrant, coplanaire ou saillant, et seul le saillant garde
+/// son volume.
+///
+/// **Exacte et dérivée ici, jamais stockée ni approchée.** L'usage est de marquer
+/// les arêtes internes dans les données, ou de poser un seuil de recalage de la
+/// normale au contact. Le premier est un lien stocké, donc une occasion
+/// d'incohérence que l'éditeur devrait maintenir à chaque opération — l'argument
+/// même qui interdit de stocker les liens de portails. Le second n'est juste que
+/// sur les décors où on l'a réglé. Ici le verdict est un **signe**, et un epsilon
+/// rendrait la relation non transitive, donc dépendante de l'ordre de parcours.
+///
+/// Les surfaces non solides n'entrent pas dans l'appariement : elles n'arrêtent
+/// rien, donc l'arête que l'une d'elles borde reste exposée pour sa voisine.
+fn classify_edges(vertices: &[VertexUv], surfaces: &mut [Surface], outward: bool) {
+    // Toutes exposées par défaut : l'appariement ne fait qu'éteindre des bits, ce
+    // qui rend une surface isolée correcte sans cas particulier.
+    for surface in surfaces.iter_mut() {
+        surface.edges = mask_of(surface.corners.len());
+    }
+
+    for a in 0..surfaces.len() {
+        if !surfaces[a].is_solid() {
+            continue;
+        }
+        let count_a = surfaces[a].corners.len();
+        for i in 0..count_a {
+            let (p, q) = edge_of(vertices, &surfaces[a], i);
+            for b in 0..surfaces.len() {
+                if b == a || !surfaces[b].is_solid() {
+                    continue;
+                }
+                let Some(j) = shares_edge(vertices, &surfaces[b], p, q) else {
+                    continue;
+                };
+                // Le sommet voisin de l'arête dans l'autre surface, et non un
+                // sommet quelconque : c'est le dièdre **local** qui décide, et
+                // sur un polygone concave un sommet lointain donnerait un autre
+                // verdict que la géométrie du coin.
+                let count_b = surfaces[b].corners.len();
+                let neighbour = corner_of(vertices, &surfaces[b], (j + 2) % count_b);
+                let inward_a = if outward {
+                    -surfaces[a].normal
+                } else {
+                    surfaces[a].normal
+                };
+                if inward_a.dot(neighbour - p) >= 0.0 {
+                    surfaces[a].edges &= !(1 << i);
+                }
+                break;
+            }
+        }
+    }
+}
+
+/// Le masque de toutes les arêtes d'un polygone de `count` coins.
+///
+/// `count` ne dépasse jamais [`MAX_POLYGON`], que la triangulation a déjà refusé
+/// au-delà ; le décalage de 64 bits, qui serait indéfini, ne peut donc pas se
+/// produire — et il est écrit tout de même, parce qu'un plafond qui changerait
+/// ailleurs ne ferait rougir aucun test ici.
+fn mask_of(count: usize) -> u64 {
+    if count >= 64 {
+        u64::MAX
+    } else {
+        (1 << count) - 1
+    }
+}
+
+/// Les deux positions de l'arête partant du coin `index`.
+fn edge_of(vertices: &[VertexUv], surface: &Surface, index: usize) -> (Vec3, Vec3) {
+    let count = surface.corners.len();
+    (
+        corner_of(vertices, surface, index),
+        corner_of(vertices, surface, (index + 1) % count),
+    )
+}
+
+/// La position du `index`-ième coin d'une surface, parmi les sommets dérivés.
+fn corner_of(vertices: &[VertexUv], surface: &Surface, index: usize) -> Vec3 {
+    vertices[surface.first_vertex as usize + index].position
+}
+
+/// Le rang, dans `surface`, de l'arête qui porte les mêmes positions que `(p, q)`.
+///
+/// **Au bit près et dans les deux sens** : deux surfaces adjacentes bien formées
+/// parcourent leur arête commune en sens inverse, mais rien dans le format ne
+/// l'impose, et une carte en cours d'édition peut porter les deux. Comparer par
+/// `to_bits` plutôt que par `==` écarte le cas où un zéro négatif d'un côté
+/// répondrait égal à un zéro positif de l'autre : ce sont deux écritures, et la
+/// relation doit rester une égalité d'octets.
+fn shares_edge(vertices: &[VertexUv], surface: &Surface, p: Vec3, q: Vec3) -> Option<usize> {
+    let count = surface.corners.len();
+    for j in 0..count {
+        let (a, b) = edge_of(vertices, surface, j);
+        if (same(a, p) && same(b, q)) || (same(a, q) && same(b, p)) {
+            return Some(j);
+        }
+    }
+    None
+}
+
+/// Deux positions écrites avec exactement les mêmes octets.
+fn same(a: Vec3, b: Vec3) -> bool {
+    a.x.to_bits() == b.x.to_bits()
+        && a.y.to_bits() == b.y.to_bits()
+        && a.z.to_bits() == b.z.to_bits()
 }
 
 /// Les normales de Newell de cette cellule pointent-elles vers l'extérieur ?
@@ -1057,6 +1208,10 @@ fn surface(
         // recalculait à chaque appel, dans le même ordre, donc au bit près la
         // même normale.
         normal: crate::math::polygon::newell(corners),
+        // Posé par `classify_edges`, une fois la cellule complète : l'appariement
+        // a besoin de toutes ses surfaces, et une surface ne connaît pas ses
+        // voisines au moment où elle se décode.
+        edges: 0,
     })
 }
 

@@ -90,6 +90,27 @@ pub(crate) fn surface_bytes(id: u32, flags: u32, material: u32, indices: &[u32])
     bytes
 }
 
+/// Une surface d'un plan quelconque, avec le repère de lightmap qui lui va.
+///
+/// Le repère unitaire des autres constructeurs vit dans le plan `XY` : une
+/// surface verticale le ferait refuser par le contrôle qui exige les deux axes
+/// dans le plan de la surface. Les cas d'arêtes ont besoin de plusieurs plans,
+/// d'où ce constructeur-ci ; les axes se donnent unitaires, donc de carré 1, qui
+/// est une puissance de deux.
+pub(crate) fn surface_in_plane(
+    id: u32,
+    flags: u32,
+    indices: &[u32],
+    u: [f32; 3],
+    v: [f32; 3],
+) -> Vec<u8> {
+    let mut bytes = words(&[id, flags, 1, indices.len() as u32]);
+    bytes.extend_from_slice(&words(indices));
+    bytes.extend_from_slice(&unit_frame());
+    bytes.extend_from_slice(&frame([0.0, 0.0, 0.0], u, v));
+    bytes
+}
+
 /// Un portail : son identifiant et ses indices.
 pub(crate) fn portal_bytes(id: u32, indices: &[u32]) -> Vec<u8> {
     let mut bytes = words(&[id, indices.len() as u32]);
@@ -1430,6 +1451,97 @@ fn une_cellule_dont_les_normales_sortent_les_retourne() {
     let cell = &world.cells()[0];
     let surface = &cell.surfaces[0];
     assert_eq!(cell.inward(surface), -surface.normal());
+}
+
+/// Les huit points d'un dièdre : un carré vertical en `x = 0` et un autre en
+/// `y = 0`, qui partagent l'arête verticale de l'origine.
+const DIEDRE: [[f32; 3]; 6] = [
+    [0.0, 0.0, 0.0],
+    [0.0, 4.0, 0.0],
+    [0.0, 4.0, 4.0],
+    [0.0, 0.0, 4.0],
+    [4.0, 0.0, 0.0],
+    [4.0, 0.0, 4.0],
+];
+
+/// Charge une cellule à deux surfaces posées sur [`DIEDRE`] et rend ses
+/// surfaces.
+///
+/// La première est en `x = 0`, la seconde en `y = 0` ; leurs enroulements sont
+/// donnés, puisque c'est le sens intérieur qui décide du dièdre.
+fn diedre(first: &[u32], second: &[u32], second_flags: u32) -> World {
+    let cell = cell_bytes(
+        7,
+        0,
+        &DIEDRE,
+        &[
+            surface_in_plane(11, 0, first, [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]),
+            surface_in_plane(12, second_flags, second, [1.0, 0.0, 0.0], [0.0, 0.0, 1.0]),
+        ],
+        &[],
+    );
+    World::load(&file(&cell, &[], &[], &material(1, "mur"))).expect("carte valide")
+}
+
+/// Une surface dont aucune arête n'est partagée les garde toutes exposées.
+///
+/// Le défaut est l'exposition, et l'appariement ne fait qu'éteindre des bits :
+/// c'est ce qui rend une surface isolée correcte sans cas particulier.
+#[test]
+fn une_surface_isolee_garde_toutes_ses_aretes() {
+    let world = World::load(&valid()).expect("carte valide");
+    let surface = &world.cells()[0].surfaces[0];
+    for i in 0..4 {
+        assert!(surface.edge_is_exposed(i), "arête {i}");
+    }
+}
+
+/// Un dièdre rentrant éteint l'arête que ses deux surfaces partagent.
+///
+/// C'est le coin d'une pièce : la face de l'une ou de l'autre couvre déjà
+/// l'instant du contact, et lui laisser en plus un volume d'arête ferait
+/// accrocher une boîte qui glisse le long d'un mur en arrivant au coin.
+#[test]
+fn un_diedre_rentrant_eteint_l_arete_partagee() {
+    let world = diedre(&[0, 1, 2, 3], &[0, 4, 5, 3], 0);
+    let surfaces = &world.cells()[0].surfaces;
+    // L'arête partagée est la quatrième de la première surface : du coin 3,
+    // `(0, 0, 4)`, au coin 0, l'origine.
+    assert!(
+        !surfaces[0].edge_is_exposed(3),
+        "l'arête commune est rentrante"
+    );
+    assert!(
+        surfaces[0].edge_is_exposed(0),
+        "les autres restent exposées"
+    );
+}
+
+/// Un dièdre saillant garde son arête.
+///
+/// Le même décor, la première surface enroulée à l'envers : sa normale
+/// intérieure pointe désormais à l'opposé de sa voisine, et le coin devient
+/// celui d'un pilier vu du dehors. Sans ce volume d'arête, une boîte passerait
+/// au voisinage de l'angle.
+#[test]
+fn un_diedre_saillant_garde_son_arete() {
+    let world = diedre(&[3, 2, 1, 0], &[0, 4, 5, 3], 0);
+    let surfaces = &world.cells()[0].surfaces;
+    for i in 0..4 {
+        assert!(surfaces[0].edge_is_exposed(i), "arête {i}");
+    }
+}
+
+/// Une voisine non solide ne partage rien : l'arête reste exposée.
+///
+/// Le drapeau décrit la géométrie, pas l'appelant : une surface qui n'arrête
+/// aucun volume ne peut pas couvrir l'instant de contact à la place de sa
+/// voisine, et éteindre l'arête sur sa foi ouvrirait un passage.
+#[test]
+fn une_voisine_non_solide_ne_ferme_pas_l_arete() {
+    let world = diedre(&[0, 1, 2, 3], &[0, 4, 5, 3], 0b100);
+    let surfaces = &world.cells()[0].surfaces;
+    assert!(surfaces[0].edge_is_exposed(3));
 }
 
 /// Une section de genre inconnu refuse toujours le fichier.
