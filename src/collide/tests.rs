@@ -505,3 +505,42 @@ fn une_troncature_ne_recule_jamais_avant_le_depart() {
         );
     }
 }
+
+/// **Un balayage repris là où le précédent s'est arrêté ne traverse pas.**
+///
+/// La propriété que tous les autres tests manquaient, parce qu'ils jouent chaque
+/// balayage isolément : ce qu'un hôte fait, lui, c'est enchaîner, image après
+/// image, en repartant chaque fois du point d'arrêt. C'est exactement là que le
+/// moteur doit rester utilisable.
+///
+/// Ce qu'elle a attrapé : entre la vraie boîte et la boîte dilatée, une position
+/// d'arrêt tombe dans une bande où le plan de contact donne un instant d'impact
+/// **négatif**, écarté comme « pas de contact », tandis que le départ dans le
+/// solide, mesuré sur la vraie boîte, reste faux. Le balayage suivant rendait
+/// donc un déplacement libre, et la boîte entrait dans le mur — puis le
+/// traversait, un pas après l'autre.
+/// **Par l'API publique et en `f32`**, et non par la fonction interne : ce qui
+/// déclenche le défaut est l'arrondi de la fraction, que le contrat rend en
+/// simple précision et dont l'hôte tire sa position. En `f64`, le point d'arrêt
+/// reste du bon côté et le cas ne se produit jamais — un test écrit là aurait
+/// prouvé quelque chose que personne n'observe.
+#[test]
+fn un_balayage_repris_au_point_d_arret_ne_traverse_pas() {
+    let world = room(0);
+    let half = Vec3::new(0.3, 0.3, 0.9);
+    let mut at = Vec3::new(4.0, 4.0, 4.0);
+
+    // Des pas courts, comme ceux d'une image : c'est la répétition qui compte,
+    // pas la longueur.
+    for step in 0..40 {
+        let to = Vec3::new(at.x, at.y - 0.2, at.z);
+        let hit = world.sweep(7, half, at, to).expect("cellule connue");
+        at = at + (to - at) * hit.fraction;
+
+        assert!(
+            at.y - half.y >= 0.0,
+            "pas {step} : la boîte est entrée dans le mur, bord à {}",
+            at.y - half.y
+        );
+    }
+}

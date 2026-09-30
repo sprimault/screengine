@@ -177,3 +177,53 @@ fn a_instant_egal_la_face_l_emporte_sur_son_arete() {
         "la face passe avant ce que le coin dirait"
     );
 }
+
+/// **Un segment qui part dans le prisme et s'y enfonce touche tout de suite.**
+///
+/// Sans instant d'entrée, la découpe d'intervalle ne rendait rien : le prisme
+/// était franchi par tous ses plans avant le départ, donc aucun ne posait
+/// d'entrée. Une position qu'un balayage précédent a posée au contact tombe
+/// exactement là — à une dilatation près —, et le balayage suivant la laissait
+/// entrer librement.
+///
+/// La normale rendue est celle du plan dont on est le plus proche de sortir,
+/// donc celle qui demande le moins de recul : ici le côté par lequel on est
+/// entré.
+#[test]
+fn un_segment_parti_dans_le_prisme_touche_immediatement() {
+    let half = Vec3d::new(1.0, 1.0, 1.0);
+    let (a, b) = (Vec3d::new(0.0, 0.0, 0.0), Vec3d::new(0.0, 0.0, 4.0));
+
+    // Juste à l'intérieur du prisme, du côté des `x` positifs, et qui s'enfonce.
+    let from = Vec3d::new(0.99, 0.0, 2.0);
+    let to = Vec3d::new(0.5, 0.0, 2.0);
+
+    let touch = edge(a, b, half, from, to).expect("le contact est immédiat");
+    assert_eq!(touch.fraction, 0.0);
+    assert_eq!(touch.rank, RANK_EDGE);
+    assert!(
+        touch.normal.dot(to - from) < 0.0,
+        "la normale s'oppose au mouvement"
+    );
+}
+
+/// **Un segment qui part dans le prisme et en ressort n'est pas arrêté.**
+///
+/// L'autre moitié de la clause, et celle qui décide qu'un mobile ne reste pas
+/// collé : bloquer ce cas rendrait une fraction nulle à chaque image, sans rien
+/// qui permette à l'hôte d'en sortir — indiscernable d'un mur, du dehors.
+#[test]
+fn un_segment_qui_ressort_du_prisme_n_est_pas_arrete() {
+    let half = Vec3d::new(1.0, 1.0, 1.0);
+    let (a, b) = (Vec3d::new(0.0, 0.0, 0.0), Vec3d::new(0.0, 0.0, 4.0));
+
+    let from = Vec3d::new(0.99, 0.0, 2.0);
+    for to in [
+        // Il s'éloigne.
+        Vec3d::new(1.5, 0.0, 2.0),
+        // Il longe, sans entrer ni sortir : glisser ne bloque pas non plus.
+        Vec3d::new(0.99, 0.0, 2.5),
+    ] {
+        assert_eq!(edge(a, b, half, from, to), None, "vers {to:?}");
+    }
+}
