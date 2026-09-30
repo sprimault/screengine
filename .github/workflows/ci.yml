@@ -163,6 +163,17 @@ jobs:
       - name: Conformance
         run: make conform
 
+      # Les mêmes scènes, la même référence, un pointeur deux fois plus court.
+      # Sous Windows seulement : la cible s'y lie sans rien installer, là où
+      # i686 sous Linux réclamerait gcc-multilib pour vérifier une seconde fois
+      # la même propriété. Une divergence 32 bits viendrait de l'architecture,
+      # jamais du système.
+      - name: Conformance 32 bits
+        if: runner.os == 'Windows'
+        run: |
+          rustup target add "$(make -s print-CIBLE_X86)"
+          make conform-x86
+
   # Job distinct : un avis publié en amont n'a rien à voir avec la PR en cours,
   # et son échec ne doit pas se lire comme « ta contribution est cassée ».
   audit:

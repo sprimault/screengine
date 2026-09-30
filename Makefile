@@ -16,6 +16,16 @@ CIBLE_WASM ?= wasm32-unknown-unknown
 # screengine-ffi, et armv7 est celle où un `cfg` faux passait sans bruit.
 CIBLES_ANDROID ?= aarch64-linux-android armv7-linux-androideabi x86_64-linux-android
 
+# La cible bureau 32 bits sur laquelle la conformance se rejoue.
+#
+# **Windows plutôt que Linux, et un seul des deux.** Une divergence 32 bits
+# viendrait de la largeur d'un pointeur ou d'un choix de code selon
+# l'architecture, jamais du système : un couple suffit à la voir, et celui-ci se
+# lie sans rien installer là où i686 sous Linux réclame gcc-multilib. armv7
+# éprouve déjà le 32 bits sous qemu, mais pas la famille x86 — dont le risque
+# propre est la x87, que Rust évite en activant SSE2 sur ces cibles.
+CIBLE_X86 ?= i686-pc-windows-msvc
+
 # cargo install construit dans un répertoire temporaire du système et n'honore
 # pas CARGO_TARGET_DIR. Sur un poste où ce répertoire est surveillé, la variable
 # reçoit un --target-dir dans makefile.local ; ailleurs elle reste vide.
@@ -58,7 +68,7 @@ android_build = for cible in $(CIBLES_ANDROID); do \
 
 .PHONY: build lib lib-wasm lib-android run example web test native-libs fmt fmt-fix lint lint-doc-tests \
         lint-android-versions nostd msrv bench \
-        conform conform-update conform-images mesh header header-verif audit deny doc hosts host-c host-cpp host-web \
+        conform conform-x86 conform-update conform-images mesh header header-verif audit deny doc hosts host-c host-cpp host-web \
         host-android demo-c demo-cpp clean tools
 
 build:
@@ -68,8 +78,13 @@ build:
 # `screengine`. Elles passent par release-ffi et non par release : le premier
 # est en panic = "unwind", sans quoi catch_unwind ne rattraperait rien et une
 # panique traverserait la frontière C — comportement indéfini, pas plantage.
+#
+# CIBLE_LIB vide construit pour la machine ; renseignée, elle produit la même
+# bibliothèque pour une autre architecture — c'est ainsi que les archives 32
+# bits sortent du même runner que les 64.
 lib:
-	cargo build -p screengine-lib --profile release-ffi
+	cargo build -p screengine-lib --profile release-ffi \
+	  $(if $(CIBLE_LIB),--target $(CIBLE_LIB))
 
 # Le module wasm, par son propre profil : la cible n'a pas de dépliage sur une
 # chaîne stable, et le panic = "unwind" de release-ffi y serait ignoré sans
@@ -336,7 +351,7 @@ lint-android-versions:
 
 lint: lint-doc-tests lint-android-versions
 	cargo clippy --workspace --all-targets --all-features -- -D warnings
-	for cible in $(CIBLE_WASM) $(CIBLES_ANDROID); do \
+	for cible in $(CIBLE_WASM) $(CIBLES_ANDROID) $(CIBLE_X86); do \
 	  cargo clippy -p screengine -p screengine-ffi --lib --target $$cible -- -D warnings || exit 1; \
 	done
 
@@ -407,6 +422,14 @@ msrv:
 # cas, conform-update, et dans un commit séparé du lot qui l'a causée.
 conform:
 	cargo run -p screengine-conformance --release -- --check
+
+# Rejoue la conformance en 32 bits, contre les **mêmes** références.
+#
+# Des références propres au 32 bits ne diraient que « i686 est reproductible
+# avec lui-même », ce qui n'est pas la question : ce qui se vérifie ici, c'est
+# que la largeur d'un pointeur ne change pas une image.
+conform-x86:
+	cargo run -p screengine-conformance --release --target $(CIBLE_X86) -- --check
 
 conform-update:
 	cargo run -p screengine-conformance --release -- --update
@@ -528,4 +551,4 @@ tools:
 	# avis, et son intérêt est de connaître les derniers. L'épingler figerait
 	# ce qu'il sait lire des avis publiés depuis.
 	cargo install cargo-audit --locked $(CARGO_INSTALL_FLAGS)
-	rustup target add $(CIBLE_NOSTD) $(CIBLE_WASM) $(CIBLES_ANDROID)
+	rustup target add $(CIBLE_NOSTD) $(CIBLE_WASM) $(CIBLES_ANDROID) $(CIBLE_X86)

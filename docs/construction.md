@@ -109,7 +109,9 @@ l'exécution par `scg_abi_version`.
 | Cible | Triple | Artefact | Outillage | Hôtes | Contrôle |
 |---|---|---|---|---|---|
 | Windows x64 | `x86_64-pc-windows-msvc` | `.dll`, `.lib` | MSVC Build Tools | `screengine-play`, `hosts/c`, `hosts/cpp` | CI |
+| Windows x86 | `i686-pc-windows-msvc` | `.dll`, `.lib` | MSVC Build Tools | aucun | CI, `make conform-x86` |
 | Linux x64 | `x86_64-unknown-linux-gnu` | `.so`, `.a` | gcc ou clang | `hosts/c`, `hosts/cpp`, conformance | CI |
+| Linux x86 | `i686-unknown-linux-gnu` | `.so`, `.a` | gcc-multilib | aucun | CI, au tag seulement |
 | Navigateur | `wasm32-unknown-unknown` | `.wasm` | cible rustup, Node | `hosts/web` | CI, `make test-wasm` sous Linux et Windows |
 | Android arm64 | `aarch64-linux-android` | `.so`, `.a` | NDK, `qemu-user` | `hosts/android` | CI, `make test-android` sous Linux, sous `qemu-user` |
 | Android armv7 | `armv7-linux-androideabi` | `.so`, `.a` | NDK, `qemu-user` | `hosts/android` | CI, `make test-android` sous Linux, sous `qemu-user` |
@@ -124,6 +126,27 @@ plus 32 bits, et révèle au même moment une hypothèse sur la largeur de `usiz
 
 **iOS et macOS attendent que le reste soit stable.** Ils exigent un runner macOS,
 et un cycle de retour lent depuis un poste Windows.
+
+**Les deux cibles bureau 32 bits ne portent aucun hôte, et sont éprouvées par la
+conformance seule.** Lier `hosts/c` ou `hosts/cpp` contre elles demanderait une
+seconde chaîne C pour cette architecture sur chaque runner, pour vérifier une
+édition de liens que le 64 bits vérifie déjà ; ce qu'elles ont de propre, c'est
+la largeur du pointeur, et c'est une empreinte qui le dit. `make conform-x86`
+rejoue donc les scènes sur `CIBLE_X86` **contre les mêmes références** — des
+références propres au 32 bits ne diraient que « i686 est reproductible avec
+lui-même ».
+
+Une seule des deux tourne à chaque PR, celle de Windows, parce qu'elle s'y lie
+sans rien installer. Une divergence viendrait de l'architecture et non du
+système : les deux couples diraient la même chose, et le second coûterait
+`gcc-multilib` sur le runner Linux. L'archive `linux_x86` est donc construite et
+sa conformance jouée **au tag**, où le paquet l'installe de toute façon.
+
+Le risque propre à x86 32 bits est la **x87**, dont les registres à 80 bits
+arrondissent deux fois. Rust l'évite en activant SSE2 sur ces cibles —
+`rustc --print cfg --target i686-pc-windows-msvc` le liste —, et les empreintes
+le confirment : les 27 scènes rendent les mêmes que sur toutes les autres
+cibles.
 
 ## Par cible
 
@@ -519,8 +542,9 @@ leurs empreintes se comparent par leurs hôtes.
   l'entrée qui publie sa bibliothèque. Les autres entrées le retirent par
   `SANS=android` : Windows n'a pas d'émulateur, et le repasser sous Linux ne
   vérifierait rien de plus.
-- **Une archive par cible** — `windows_x64`, `linux_x64`, `wasm32`, `android`,
-  cette dernière rangée en `lib/<abi>/` comme `jniLibs/` —,
+- **Une archive par cible** — `windows_x64`, `windows_x86`, `linux_x64`,
+  `linux_x86`, `wasm32`, `android`, cette dernière rangée en `lib/<abi>/` comme
+  `jniLibs/` —,
   `screengine_<tag>_<cible>`, contenant le header, `LICENSE-MIT`,
   `LICENSE-APACHE`, `THIRD-PARTY-NOTICES`, et les bibliothèques suivantes ; un
   `SHA256SUMS` calculé sur les archives, et une attestation de provenance
@@ -528,8 +552,8 @@ leurs empreintes se comparent par leurs hôtes.
 
   | Archive | Ce qu'elle emporte |
   |---|---|
-  | `windows_x64` | `screengine.dll`, sa bibliothèque d'importation, `screengine.lib` |
-  | `linux_x64` | `libscreengine.so` et `libscreengine.a` |
+  | `windows_x64`, `windows_x86` | `screengine.dll`, sa bibliothèque d'importation, `screengine.lib` |
+  | `linux_x64`, `linux_x86` | `libscreengine.so` et `libscreengine.a` |
   | `wasm32` | `screengine.wasm` |
   | `android` | `libscreengine.so` par ABI, **et rien d'autre** |
 
