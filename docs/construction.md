@@ -544,7 +544,7 @@ leurs empreintes se comparent par leurs hôtes.
   des scènes y vit déjà** : recopiée là où elle ne tourne qu'au tag, elle a
   divergé deux fois, et les deux fois l'échec est apparu une fois la version
   posée.
-- **Un tag `vX.Y.Z-essai.N` éprouve le workflow** sans occuper le vrai tag : même
-  section du `CHANGELOG`, release en brouillon marquée préversion, à supprimer
-  avec le tag.
+- **Le tag se pose directement**, `vX.Y.Z`, sans tag d'essai préalable : le
+  brouillon est déjà le moment où l'on relit avant de rendre visible, et ce que
+  le workflow ferait de plus est ce que la liste fixe a vérifié avant le commit.
 - Les notes d'une version qui ne rend encore rien disent ce qu'elle ne fait pas.
