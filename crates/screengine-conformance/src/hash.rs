@@ -11,7 +11,7 @@
 //!
 //! Ce qui est haché, dans cet ordre :
 //!
-//! 1. la largeur puis la hauteur, en `u32` petit-boutiste — sans quoi une image
+//! 1. la largeur puis la hauteur, en `u32` poids faible en tête — sans quoi une image
 //!    de 640×360 et une de 360×640 aux mêmes octets se confondraient ;
 //! 2. les pixels de la zone utile, ligne par ligne, `largeur × 4` octets R, G,
 //!    B, A, alpha compris.
@@ -67,7 +67,7 @@ pub(crate) fn image(pixels: &[u8], width: u32, height: u32, stride: u32) -> u64 
 ///
 /// Une scène qui rend plusieurs vues — plusieurs angles, plusieurs résolutions
 /// — n'a qu'une référence : le même algorithme, appliqué aux empreintes des
-/// vues écrites en petit-boutiste. L'ordre compte, et c'est voulu : deux vues
+/// vues écrites poids faible en tête. L'ordre compte, et c'est voulu : deux vues
 /// échangées sont une régression.
 ///
 /// **Une suite d'une seule vue rend l'empreinte de cette vue**, sans

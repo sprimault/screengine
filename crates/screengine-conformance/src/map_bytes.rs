@@ -34,14 +34,14 @@ pub const FLOOR_DENSITY: f32 = 128.0;
 /// partout pour que deux surfaces coplanaires adjacentes alignent leurs grilles.
 pub const LUXEL: f32 = 1.0;
 
-/// Écrit des flottants en petit-boutiste.
+/// Écrit des flottants, octet de poids faible en tête.
 pub fn floats(values: &[f32], out: &mut Vec<u8>) {
     for value in values {
         out.extend_from_slice(&value.to_le_bytes());
     }
 }
 
-/// Écrit des entiers en petit-boutiste.
+/// Écrit des entiers, octet de poids faible en tête.
 pub fn words(values: &[u32], out: &mut Vec<u8>) {
     for value in values {
         out.extend_from_slice(&value.to_le_bytes());

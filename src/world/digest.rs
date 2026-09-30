@@ -23,7 +23,7 @@ use crate::math::Vec3;
 
 use super::bake::{REVISION, retained};
 
-/// Le hacheur : FNV-1a 64 bits, sur des octets petit-boutistes.
+/// Le hacheur : FNV-1a 64 bits, sur des octets de poids faible en tête.
 ///
 /// **Aucune opération flottante n'entre dans le calcul** — `to_bits` donne les
 /// octets, et deux cibles hachent donc la même chose. Une comparaison flottante

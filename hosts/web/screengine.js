@@ -526,7 +526,7 @@ export class Screengine {
    * La localisation et le suivi de cellule prennent des points par pointeur, et
    * c'est le seul endroit où l'hôte en passe un sans structure autour. Sans cette
    * aide, chaque appel recopierait son propre `DataView` — et c'est ainsi qu'un
-   * boutisme finit par diverger d'un appel à l'autre.
+   * ordre d'octets finit par diverger d'un appel à l'autre.
    *
    * @param {number} ptr adresse d'au moins douze octets
    * @param {number[]} point les trois coordonnées
@@ -613,7 +613,7 @@ export class Screengine {
   }
 
   /**
-   * Lit un `uint32_t` petit-boutiste.
+   * Lit un `uint32_t`, octet de poids faible en tête.
    *
    * @param {number} ptr
    * @returns {number}
@@ -623,7 +623,7 @@ export class Screengine {
   }
 
   /**
-   * Écrit un `uint32_t` petit-boutiste.
+   * Écrit un `uint32_t`, octet de poids faible en tête.
    *
    * @param {number} ptr
    * @param {number} value
@@ -671,7 +671,7 @@ export class Screengine {
 
   /**
    * FNV-1a 64 bits dans la forme de la conformance : largeur et hauteur en
-   * `u32` petit-boutiste, puis la zone utile ligne par ligne, alpha compris.
+   * `u32` poids faible en tête, puis la zone utile ligne par ligne, alpha compris.
    *
    * @param {number} ptr début du tampon de pixels
    * @param {number} width largeur en pixels

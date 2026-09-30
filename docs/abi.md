@@ -99,8 +99,9 @@ Arrêtés. Ils découlent des invariants du projet et ne se rediscutent pas ici.
   déterministe.
 - **Chaînes en UTF-8.** En entrée : pointeur et longueur, sans terminateur exigé.
   En sortie : terminées par un octet nul.
-- **Petit-boutisme.** Toutes les cibles le sont. Un format de fichier lu par le
-  moteur l'impose explicitement plutôt que de s'en remettre à la cible.
+- **Octet de poids faible en tête.** Toutes les cibles écrivent ainsi. Un format
+  de fichier lu par le moteur l'impose explicitement plutôt que de s'en remettre
+  à la cible.
 
 ### Structures
 

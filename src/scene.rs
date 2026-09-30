@@ -92,10 +92,10 @@ impl Camera {
 /// Une couleur, quatre octets dans l'ordre où l'ABI les écrit en mémoire.
 ///
 /// Quatre champs nommés et non un `u32` : l'entier que le rasteriseur manipule
-/// s'écrit `0xAABBGGRR`, parce que c'est ce que sa conversion en octets
-/// petit-boutistes impose. Un littéral pris pour du `0xAARRGGBB` échange le
-/// rouge et le bleu sans que rien ne le signale — le défaut que la disposition
-/// des pixels d'Android produit déjà chez les hôtes qui s'y trompent.
+/// s'écrit `0xAABBGGRR`, parce que c'est ce qu'impose sa conversion en octets,
+/// poids faible en tête. Un littéral pris pour du `0xAARRGGBB` échange le rouge
+/// et le bleu sans que rien ne le signale — le défaut que la disposition des
+/// pixels d'Android produit déjà chez les hôtes qui s'y trompent.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Color {
     /// Rouge.
