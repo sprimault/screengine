@@ -142,6 +142,10 @@ jobs:
       - name: Cible wasm
         run: rustup target add "$(make -s print-CIBLE_WASM)"
 
+      # `make test` lance aussi l'hôte Go, sur chaque entrée de la matrice.
+      - name: Go
+        run: go version
+
       # Les deux cibles bureau 32 bits. Sous Linux, l'édition de liens d'une
       # bibliothèque i686 réclame les bibliothèques C 32 bits, que l'image
       # n'installe pas ; sous Windows, MSVC les porte déjà.
@@ -264,8 +268,9 @@ jobs:
           done
 
       # L'archive elle-même, pas l'arbre de construction : les hôtes que son
-      # contenu permet de lier — C contre la bibliothèque statique, C++ contre
-      # la dynamique, Node contre le module wasm — doivent rendre les empreintes
+      # contenu permet de lier — C contre la bibliothèque statique, C++ et Go
+      # contre la dynamique, Node contre le module wasm — doivent rendre les
+      # empreintes
       # du chemin Rust. C'est la seule preuve qu'un intégrateur qui ouvre
       # l'archive obtient une bibliothèque qui se lie, se charge sous son nom et
       # rend la même image. Le module publié passe d'ailleurs par un profil que
