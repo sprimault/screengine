@@ -1336,6 +1336,35 @@ fn les_sections_d_entites_et_de_lumieres_sont_admises() {
     assert_eq!(world.entity_count(), 1);
 }
 
+/// La boîte englobante d'une cellule est dérivée au chargement, sur le carré
+/// que ses surfaces couvrent.
+///
+/// Dérivée et non recalculée à l'usage : c'est ce que `docs/rust.md` promet
+/// depuis l'origine, et la cuisson la reprenait pour son compte. Les coins se
+/// lisent en dur plutôt que par un calcul du test — sinon le test referait le
+/// calcul qu'il vérifie.
+#[test]
+fn une_cellule_porte_sa_boite_englobante() {
+    let world = World::load(&valid()).expect("carte valide");
+    let (low, high) = world.cells()[0].bounds();
+    assert_eq!(low, Vec3::new(0.0, 0.0, 0.0));
+    assert_eq!(high, Vec3::new(4.0, 4.0, 0.0));
+}
+
+/// Une cellule sans surface garde une boîte inversée, et c'est voulu.
+///
+/// Tout point est alors hors d'elle, si bien qu'une sélection par cette boîte ne
+/// retient **rien** plutôt que tout. Renvoyer une boîte nulle à l'origine
+/// paraîtrait plus sage et serait pire : elle attraperait les lumières posées
+/// près du zéro du monde pour une cellule qui n'a rien à éclairer.
+#[test]
+fn une_cellule_sans_surface_garde_une_boite_inversee() {
+    let cell = cell_bytes(7, 0, &SQUARE, &[], &[]);
+    let world = World::load(&file(&cell, &[], &[], &material(1, "mur"))).expect("carte valide");
+    let (low, high) = world.cells()[0].bounds();
+    assert!(low.x > high.x && low.y > high.y && low.z > high.z);
+}
+
 /// Une section de genre inconnu refuse toujours le fichier.
 #[test]
 fn le_conteneur_garde_ses_refus() {

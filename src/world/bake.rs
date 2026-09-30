@@ -34,6 +34,7 @@ use crate::error::Result;
 use crate::format::World;
 use crate::format::world::{Cell, Mapping, Surface};
 use crate::math::Vec3;
+use crate::math::polygon::{abs, axis, newell};
 use crate::scene::Light;
 
 use super::atlas::{Atlas, GUTTER, Slot};
@@ -159,11 +160,11 @@ fn outward(cell: &Cell) -> bool {
     let mut volume = 0.0;
     for surface in &cell.surfaces {
         let anchor = cell.vertices[point_of(cell, surface, 0)].position;
-        volume += dot(anchor, newell_of(cell, surface));
+        volume += anchor.dot(newell_of(cell, surface));
     }
     for portal in &cell.portals {
         if let Some(&anchor) = portal.points.first() {
-            volume += dot(anchor, newell(&portal.points));
+            volume += anchor.dot(newell(&portal.points));
         }
     }
     volume > 0.0
@@ -204,7 +205,7 @@ fn point_of(cell: &Cell, surface: &Surface, i: usize) -> usize {
 /// cellule non convexe est un comptage de traversées — un calcul de plus à rendre
 /// déterministe pour un résultat que la boîte englobante donne gratuitement.
 pub(crate) fn retained(world: &World, cell: &Cell) -> Result<Vec<Light>> {
-    let (low, high) = bounds_of(cell);
+    let (low, high) = cell.bounds();
     let mut kept = reserved(0)?;
     for index in 0..world.light_count() {
         let Some(light) = world.light(index) else {
@@ -222,7 +223,7 @@ pub(crate) fn retained(world: &World, cell: &Cell) -> Result<Vec<Light>> {
             closest.y - light.position.y,
             closest.z - light.position.z,
         );
-        if dot(offset, offset) <= light.radius * light.radius {
+        if offset.dot(offset) <= light.radius * light.radius {
             kept.try_reserve(1)
                 .map_err(|_| crate::error::Error::OutOfMemory)?;
             kept.push(light);
@@ -240,34 +241,6 @@ fn clamp(value: f32, low: f32, high: f32) -> f32 {
     } else {
         value
     }
-}
-
-/// La boîte englobante d'une cellule.
-fn bounds_of(cell: &Cell) -> (Vec3, Vec3) {
-    let mut low = Vec3::new(f32::MAX, f32::MAX, f32::MAX);
-    let mut high = Vec3::new(f32::MIN, f32::MIN, f32::MIN);
-    for vertex in &cell.vertices {
-        let p = vertex.position;
-        if p.x < low.x {
-            low.x = p.x;
-        }
-        if p.y < low.y {
-            low.y = p.y;
-        }
-        if p.z < low.z {
-            low.z = p.z;
-        }
-        if p.x > high.x {
-            high.x = p.x;
-        }
-        if p.y > high.y {
-            high.y = p.y;
-        }
-        if p.z > high.z {
-            high.z = p.z;
-        }
-    }
-    (low, high)
 }
 
 /// Un polygone qui arrête la lumière.
@@ -335,10 +308,10 @@ fn shade(
     side: u32,
     texels: &mut [u8],
 ) {
-    let unit = normalized(normal);
+    let unit = normal.normalize();
     let mapping = surface.lightmap;
-    let inverse_u = 1.0 / dot(mapping.u, mapping.u);
-    let inverse_v = 1.0 / dot(mapping.v, mapping.v);
+    let inverse_u = 1.0 / mapping.u.dot(mapping.u);
+    let inverse_v = 1.0 / mapping.v.dot(mapping.v);
     let outline: Vec<Vec3> = (0..surface.corners.len())
         .map(|i| cell.vertices[point_of(cell, surface, i)].position)
         .collect();
@@ -412,8 +385,8 @@ fn clamped(outline: &[Vec3], normal: Vec3, point: Vec3) -> Vec3 {
     let mut nearest = f32::MAX;
     for i in 0..outline.len() {
         let candidate = on_segment(outline[i], outline[(i + 1) % outline.len()], point);
-        let offset = sub(candidate, point);
-        let square = dot(offset, offset);
+        let offset = candidate - point;
+        let square = offset.dot(offset);
         if square < nearest {
             nearest = square;
             best = candidate;
@@ -424,12 +397,12 @@ fn clamped(outline: &[Vec3], normal: Vec3, point: Vec3) -> Vec3 {
 
 /// Le point d'un segment le plus proche d'un point donné.
 fn on_segment(a: Vec3, b: Vec3, point: Vec3) -> Vec3 {
-    let edge = sub(b, a);
-    let square = dot(edge, edge);
+    let edge = b - a;
+    let square = edge.dot(edge);
     if square <= 0.0 {
         return a;
     }
-    let t = clamp(dot(sub(point, a), edge) / square, 0.0, 1.0);
+    let t = clamp((point - a).dot(edge) / square, 0.0, 1.0);
     Vec3::new(a.x + edge.x * t, a.y + edge.y * t, a.z + edge.z * t)
 }
 
@@ -465,7 +438,7 @@ fn luxel_point(
         mapping.origin.y + mapping.u.y * su + mapping.v.y * sv,
         mapping.origin.z + mapping.u.z * su + mapping.v.z * sv,
     );
-    let drift = dot(unit, sub(raw, anchor));
+    let drift = unit.dot(raw - anchor);
     Vec3::new(
         raw.x - unit.x * drift,
         raw.y - unit.y * drift,
@@ -494,12 +467,12 @@ fn gather(
             light.position.y - point.y,
             light.position.z - point.z,
         );
-        let square = dot(to_light, to_light);
+        let square = to_light.dot(to_light);
         if square >= light.radius * light.radius {
             continue;
         }
-        let direction = normalized(to_light);
-        let lambert = dot(normal, direction);
+        let direction = to_light.normalize();
+        let lambert = normal.dot(direction);
         // Le rejet le plus payant du calcul : une face détournée est noire sans
         // qu'aucun rayon ne parte.
         if lambert <= 0.0 {
@@ -549,8 +522,8 @@ fn crosses(points: &[Vec3], from: Vec3, to: Vec3) -> bool {
         return false;
     }
     let normal = newell(points);
-    let side_from = dot(normal, sub(from, points[0]));
-    let side_to = dot(normal, sub(to, points[0]));
+    let side_from = normal.dot(from - points[0]);
+    let side_to = normal.dot(to - points[0]);
     if !((side_from > 0.0 && side_to < 0.0) || (side_from < 0.0 && side_to > 0.0)) {
         return false;
     }
@@ -606,12 +579,18 @@ fn contains(points: &[Vec3], normal: Vec3, hit: Vec3) -> bool {
 /// Celui dont la normale porte la plus grande composante est écarté : c'est celui
 /// le long duquel le polygone est le plus plat, et le projeter dessus pourrait
 /// l'aplatir en un segment.
+///
+/// **La paire rendue n'est pas circulaire** — `(0, 2)` au deuxième cas, là où
+/// `format::ears::dominant_axes` rend `(2, 0)` —, et les deux ne se fondent pas.
+/// L'ordre circulaire garde au double de l'aire signée le signe de la normale, ce
+/// dont le test d'oreille a besoin parce qu'il compare ce signe ; [`contains`]
+/// compte une parité de traversées, invariante par échange des deux axes, et n'en
+/// a pas besoin. Prendre l'ordre circulaire ici échangerait `hu` et `hv` dans
+/// [`contains`], donc **réécrirait ses expressions flottantes** : un luxel qui
+/// tombe exactement sur une arête peut alors basculer, et l'empreinte de lightmap
+/// avec lui. Prendre celui-ci là-bas casserait le test d'oreille.
 fn plane_axes(normal: Vec3) -> (usize, usize) {
-    let (x, y, z) = (
-        magnitude(normal.x),
-        magnitude(normal.y),
-        magnitude(normal.z),
-    );
+    let (x, y, z) = (abs(normal.x), abs(normal.y), abs(normal.z));
     if x >= y && x >= z {
         (1, 2)
     } else if y >= z {
@@ -619,33 +598,6 @@ fn plane_axes(normal: Vec3) -> (usize, usize) {
     } else {
         (0, 1)
     }
-}
-
-/// La composante d'un vecteur, par rang.
-fn axis(v: Vec3, i: usize) -> f32 {
-    match i {
-        0 => v.x,
-        1 => v.y,
-        _ => v.z,
-    }
-}
-
-/// La valeur absolue, écrite plutôt qu'empruntée à la libm.
-fn magnitude(value: f32) -> f32 {
-    if value < 0.0 { -value } else { value }
-}
-
-/// La normale de Newell d'un polygone.
-fn newell(points: &[Vec3]) -> Vec3 {
-    let mut normal = Vec3::ZERO;
-    for i in 0..points.len() {
-        let a = points[i];
-        let b = points[(i + 1) % points.len()];
-        normal.x += (a.y - b.y) * (a.z + b.z);
-        normal.y += (a.z - b.z) * (a.x + b.x);
-        normal.z += (a.x - b.x) * (a.y + b.y);
-    }
-    normal
 }
 
 /// La valeur ramenée dans un octet.
@@ -693,24 +645,6 @@ fn clamp_u32(value: u32, low: u32, high: u32) -> u32 {
     } else {
         value
     }
-}
-
-/// La différence de deux points.
-fn sub(a: Vec3, b: Vec3) -> Vec3 {
-    Vec3::new(a.x - b.x, a.y - b.y, a.z - b.z)
-}
-
-/// Le produit scalaire.
-fn dot(a: Vec3, b: Vec3) -> f32 {
-    a.x * b.x + a.y * b.y + a.z * b.z
-}
-
-/// Le vecteur unitaire, par la racine inverse du noyau.
-///
-/// Jamais `sqrt` : son résultat dépend de l'implémentation, et deux cibles
-/// donneraient deux éclairages pour la même carte.
-fn normalized(v: Vec3) -> Vec3 {
-    v.normalize()
 }
 
 #[cfg(test)]

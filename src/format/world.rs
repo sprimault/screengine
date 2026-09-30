@@ -263,6 +263,17 @@ pub(crate) struct Cell {
     /// pondérer une cuisson cellule par cellule : le nombre de surfaces ne dit
     /// rien, un mur de vingt mètres et une marche en comptant chacun une.
     luxel_count: u32,
+    /// Les deux coins de sa boîte englobante, le plus bas puis le plus haut.
+    ///
+    /// Sur les sommets **dérivés**, donc sur ce que ses surfaces couvrent : un
+    /// sommet du fichier qu'aucune surface n'emploie n'y entre pas. C'est ce qui
+    /// la rend bonne pour ce qui lit des surfaces, et ce qui interdit de la
+    /// prendre pour la boîte de la cellule au sens du fichier.
+    ///
+    /// Une cellule sans surface garde une boîte **inversée**, `f32::MAX` en bas
+    /// et `f32::MIN` en haut. C'est voulu : tout point est alors hors d'elle, si
+    /// bien qu'une sélection par cette boîte ne retient rien plutôt que tout.
+    bounds: [Vec3; 2],
 }
 
 impl Cell {
@@ -274,6 +285,11 @@ impl Cell {
     /// Ses drapeaux, tels que le fichier les porte.
     pub(crate) fn flags(&self) -> u32 {
         self.flags
+    }
+
+    /// Les deux coins de sa boîte englobante, le plus bas puis le plus haut.
+    pub(crate) fn bounds(&self) -> (Vec3, Vec3) {
+        (self.bounds[0], self.bounds[1])
     }
 }
 
@@ -790,6 +806,12 @@ fn cell(record: &[u8], materials: &[u32]) -> Result<Cell> {
         .sum::<u64>()
         .min(u64::from(u32::MAX)) as u32;
 
+    // Dérivée ici pour la même raison que le compte de luxels, et parce que
+    // `docs/rust.md` la range depuis l'origine parmi ce que le chargement dérive.
+    // La recalculer à chaque appel qui en a besoin ferait reparcourir les sommets
+    // d'une cellule pour une valeur qui ne change jamais.
+    let bounds = bounds_of(&vertices);
+
     Ok(Cell {
         id,
         flags,
@@ -798,7 +820,45 @@ fn cell(record: &[u8], materials: &[u32]) -> Result<Cell> {
         surfaces,
         portals,
         luxel_count,
+        bounds,
     })
+}
+
+/// Les deux coins de la boîte englobante d'un jeu de sommets dérivés.
+///
+/// Par comparaisons écrites, jamais par `f32::min` : celle-ci ne spécifie pas le
+/// signe qu'elle rend de `min(-0,0, 0,0)`, et deux cibles donneraient deux boîtes
+/// pour la même carte. Les coordonnées sont finies, le refus des non-finis à la
+/// lecture le garantit, donc une comparaison suffit et rend les mêmes bits
+/// partout.
+///
+/// Sans sommet, la boîte sort **inversée**, et c'est ce que [`Cell::bounds`]
+/// documente.
+fn bounds_of(vertices: &[VertexUv]) -> [Vec3; 2] {
+    let mut low = Vec3::new(f32::MAX, f32::MAX, f32::MAX);
+    let mut high = Vec3::new(f32::MIN, f32::MIN, f32::MIN);
+    for vertex in vertices {
+        let p = vertex.position;
+        if p.x < low.x {
+            low.x = p.x;
+        }
+        if p.y < low.y {
+            low.y = p.y;
+        }
+        if p.z < low.z {
+            low.z = p.z;
+        }
+        if p.x > high.x {
+            high.x = p.x;
+        }
+        if p.y > high.y {
+            high.y = p.y;
+        }
+        if p.z > high.z {
+            high.z = p.z;
+        }
+    }
+    [low, high]
 }
 
 /// Une capacité déduite d'un compte, refusée si elle dépasse ce qui reste.
@@ -1018,7 +1078,7 @@ fn aligned(mapping: Mapping, corners: &[Vec3]) -> bool {
 
     // Le plan vient de la normale de Newell, celle-là même dont la convexité se
     // sert : elle n'est pas normalisée, ce dont la forme au carré n'a pas besoin.
-    let normal = super::ears::newell(corners);
+    let normal = crate::math::polygon::newell(corners);
     let square_n = dot64(normal, normal);
     perpendicular(dot64(normal, mapping.u), square_n, f64::from(square_u))
         && perpendicular(dot64(normal, mapping.v), square_n, f64::from(square_v))
@@ -1219,7 +1279,7 @@ fn portal(cursor: &mut Cursor<'_>, points: &[Vec3]) -> Result<Portal> {
 
 /// Vrai si le polygone est plan, convexe et d'orientation constante.
 fn convex(points: &[Vec3]) -> bool {
-    let normal = super::ears::newell(points);
+    let normal = crate::math::polygon::newell(points);
     if normal.dot(normal) == 0.0 {
         return false;
     }

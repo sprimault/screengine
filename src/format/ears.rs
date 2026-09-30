@@ -14,6 +14,7 @@
 //! encore.
 
 use crate::math::Vec3;
+use crate::math::polygon::{abs, axis, newell};
 
 /// Le plus grand nombre de sommets qu'une surface peut porter.
 ///
@@ -28,6 +29,17 @@ pub(crate) const MAX_POLYGON: usize = 64;
 /// Projeter sur le plan le moins incliné est ce qui garde l'aire des triangles
 /// loin de zéro : un mur vertical projeté sur le sol s'écraserait en segment, et
 /// chaque test d'oreille deviendrait un départage d'arrondis.
+///
+/// **La paire rendue est circulaire** — `(1, 2)`, `(2, 0)`, `(0, 1)` —, et c'est
+/// ce qui distingue cette fonction de `world::bake::plane_axes`, qui lui
+/// ressemble et rend `(0, 2)` au deuxième cas. L'ordre circulaire garde au double
+/// de l'aire signée le signe de la normale, ce dont [`inside`] et le test
+/// d'oreille ont besoin : ils comparent ce signe. Celle de la cuisson compte une
+/// parité de traversées, invariante par échange des deux axes, et n'en a pas
+/// besoin. Les fondre dans un sens casse le test d'oreille ; dans l'autre, cela
+/// échange les deux coordonnées du test de la cuisson, donc réécrit ses
+/// expressions flottantes — et un luxel tombant exactement sur une arête peut
+/// alors basculer, ce qui déplace une empreinte de lightmap.
 fn dominant_axes(normal: Vec3) -> (usize, usize) {
     let (x, y, z) = (abs(normal.x), abs(normal.y), abs(normal.z));
     if x >= y && x >= z {
@@ -37,42 +49,6 @@ fn dominant_axes(normal: Vec3) -> (usize, usize) {
     } else {
         (0, 1)
     }
-}
-
-/// La valeur absolue, sans passer par la bibliothèque mathématique du système.
-///
-/// `f32::abs` vit dans `std` : le noyau ne l'a pas, et une implémentation par
-/// masque de bit serait la même partout — celle-ci l'est aussi, et se lit.
-fn abs(value: f32) -> f32 {
-    if value < 0.0 { -value } else { value }
-}
-
-/// Une composante d'un vecteur, par son rang.
-fn axis(v: Vec3, index: usize) -> f32 {
-    match index {
-        0 => v.x,
-        1 => v.y,
-        _ => v.z,
-    }
-}
-
-/// La normale d'un polygone plan, par la somme de Newell.
-///
-/// Newell plutôt qu'un produit vectoriel sur les trois premiers sommets : ces
-/// trois-là peuvent être alignés, auquel cas le produit est nul et l'orientation
-/// perdue, alors que la somme porte sur toutes les arêtes. Elle se somme dans
-/// l'ordre des sommets, qui est celui du fichier : l'ordre d'opérations d'une
-/// valeur dérivée entre dans le rendu, donc il est contractuel.
-pub(crate) fn newell(points: &[Vec3]) -> Vec3 {
-    let mut normal = Vec3::ZERO;
-    for i in 0..points.len() {
-        let a = points[i];
-        let b = points[(i + 1) % points.len()];
-        normal.x += (a.y - b.y) * (a.z + b.z);
-        normal.y += (a.z - b.z) * (a.x + b.x);
-        normal.z += (a.x - b.x) * (a.y + b.y);
-    }
-    normal
 }
 
 /// Le double de l'aire signée du triangle `a b c`, dans le plan `(i, j)`.
