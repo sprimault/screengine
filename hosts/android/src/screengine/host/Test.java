@@ -1116,6 +1116,103 @@ public final class Test {
     }
 
     /**
+     * Rejoue les balayages du fichier versionné et hache leurs résultats.
+     *
+     * <p><b>La seule scène qui ne rende aucune image</b>, et la seule qui
+     * n'ouvre aucun contexte : le module de collision n'en demande pas. Elle
+     * atteint les deux points d'entrée que le pont ne portait pas encore.
+     *
+     * <p>La liste vient du dépôt et ne se reconstruit pas ici : ce que
+     * l'empreinte doit établir est que le moteur rend la même chose à travers
+     * quatre frontières, pas que quatre hôtes ont su reporter un treillis.
+     *
+     * @param worldPath le décor de collision
+     * @param sweepsPath la liste de balayages
+     * @return l'empreinte, ou {@code null} si une vérification a échoué
+     */
+    private static String renderSweeps(String worldPath, String sweepsPath) {
+        byte[] worldBytes;
+        byte[] list;
+        try {
+            worldBytes = java.nio.file.Files.readAllBytes(java.nio.file.Paths.get(worldPath));
+            list = java.nio.file.Files.readAllBytes(java.nio.file.Paths.get(sweepsPath));
+        } catch (java.io.IOException error) {
+            check(false, "le décor de collision et la liste se lisent : " + error);
+            return null;
+        }
+
+        long world = Screengine.worldLoad(worldBytes);
+        check(world != 0, "le décor de collision se charge");
+        if (world == 0) {
+            return null;
+        }
+
+        // La magie avant toute lecture : un mauvais chemin doit échouer ici
+        // plutôt que produire une empreinte de bruit.
+        ByteBuffer source = ByteBuffer.wrap(list).order(java.nio.ByteOrder.LITTLE_ENDIAN);
+        boolean formed = list.length >= 12
+                && new String(list, 0, 8, java.nio.charset.StandardCharsets.US_ASCII)
+                        .equals("SCGSWEEP");
+        check(formed, "la liste de balayages porte sa magie");
+        if (!formed) {
+            Screengine.worldDestroy(world);
+            return null;
+        }
+        int count = source.getInt(8);
+        if (list.length != 12 + count * SWEEP_RECORD) {
+            check(false, "la liste annonce le nombre de balayages qu'elle porte");
+            Screengine.worldDestroy(world);
+            return null;
+        }
+
+        long hash = 0xcbf29ce484222325L;
+        float[] half = new float[3];
+        float[] from = new float[3];
+        float[] to = new float[3];
+        byte[] hit = new byte[36];
+
+        for (int i = 0; i < count; i++) {
+            int base = 12 + i * SWEEP_RECORD;
+            for (int axis = 0; axis < 3; axis++) {
+                half[axis] = source.getFloat(base + axis * 4);
+                from[axis] = source.getFloat(base + 12 + axis * 4);
+                to[axis] = source.getFloat(base + 24 + axis * 4);
+            }
+
+            // Zéro veut dire « nulle part », et se passe tel quel : c'est le
+            // balayage qui rend le déplacement libre, pas l'hôte.
+            int cell = Screengine.worldLocate(world, from);
+            int status = Screengine.worldSweep(world, cell, half, from, to, hit);
+            if (status < 0) {
+                check(false, "le balayage est accepté");
+                Screengine.worldDestroy(world);
+                return null;
+            }
+
+            for (byte octet : hit) {
+                hash = (hash ^ (octet & 0xFF)) * 0x100000001b3L;
+            }
+            hash = (hash ^ (status & 0xFF)) * 0x100000001b3L;
+
+            // Le contrepoids de l'identifiant de surface, qu'aucune autre
+            // fonction ne traduit. Il occupe les octets 28 à 31 du résultat.
+            int surface = ByteBuffer.wrap(hit)
+                    .order(java.nio.ByteOrder.LITTLE_ENDIAN)
+                    .getInt(28);
+            if (surface != 0) {
+                check(Screengine.worldSurfaceMaterial(world, surface) >= 0,
+                        "la surface touchée nomme son matériau");
+            }
+        }
+
+        Screengine.worldDestroy(world);
+        return String.format("%016x", hash);
+    }
+
+    /** La taille d'un enregistrement de la liste de balayages : neuf flottants. */
+    private static final int SWEEP_RECORD = 36;
+
+    /**
      * Toutes les vérifications, puis l'empreinte sur la sortie standard.
      *
      * @param args le répertoire des bibliothèques, qui porte aussi le maillage
@@ -1147,10 +1244,12 @@ public final class Test {
         String mesh = renderMesh(args[0] + "/caisse.mesh");
         String composite = renderComposite(args[0] + "/caisse.mesh");
         String rooms = renderRooms(args[0] + "/salles.world");
+        String sweeps = renderSweeps(args[0] + "/collision.world", args[0] + "/collision.sweeps");
 
         if (failures > 0 || hash == null || textured == null || bilinear == null
                 || graded == null || lit == null || overbright == null || fog == null
-                || lights == null || mesh == null || composite == null || rooms == null) {
+                || lights == null || mesh == null || composite == null || rooms == null
+                || sweeps == null) {
             System.err.println(failures + " vérification(s) en échec");
             System.exit(1);
         }
@@ -1165,6 +1264,7 @@ public final class Test {
         System.out.println(mesh);
         System.out.println(composite);
         System.out.println(rooms);
+        System.out.println(sweeps);
         System.exit(0);
     }
 }

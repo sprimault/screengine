@@ -258,6 +258,16 @@ export const TRIANGLE_SIZE = 16;
  */
 export const SPRITE_SIZE = 44;
 
+/**
+ * Taille de `ScgSweepHit` : ce que le moteur écrit d'un balayage.
+ *
+ * Quarante-quatre octets sans bourrage, tous les champs larges de quatre : la
+ * liaison lit les trente-six premiers tels quels pour les hacher, ce qui n'est
+ * juste que tant que les décalages tiennent. `checkLayout` les compare au
+ * header.
+ */
+export const SWEEP_HIT_SIZE = 44;
+
 /** Taille de `ScgMat4` : seize `float`, par colonnes. */
 export const MAT4_SIZE = 64;
 
@@ -669,6 +679,26 @@ export class Screengine {
    * @param {number} stride pas de ligne en pixels
    * @returns {string} seize chiffres hexadécimaux minuscules
    */
+  /**
+   * FNV-1a 64 bits sur une suite d'octets quelconque.
+   *
+   * Le pendant de {@link fingerprint} pour ce qui n'est pas une image : la
+   * scène de collision hache des résultats de balayage, pas des pixels. Les
+   * deux ne se fondent pas en une seule méthode — celle-ci reçoit des octets
+   * déjà rassemblés, l'autre parcourt la mémoire ligne par ligne sans rien
+   * allouer par image.
+   *
+   * @param {Uint8Array} bytes les octets à hacher, dans l'ordre
+   * @returns {string} seize chiffres hexadécimaux minuscules
+   */
+  hashBytes(bytes) {
+    let hash = FNV_OFFSET;
+    for (const byte of bytes) {
+      hash = BigInt.asUintN(64, (hash ^ BYTE[byte]) * FNV_PRIME);
+    }
+    return hash.toString(16).padStart(16, "0");
+  }
+
   fingerprint(ptr, width, height, stride) {
     const bytes = this.bytes();
     let hash = FNV_OFFSET;

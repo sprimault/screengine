@@ -1489,6 +1489,137 @@ static uint64_t render_rooms(int *ok, const char *path)
     return hash;
 }
 
+/* Lit un flottant écrit octet de poids faible en tête.
+ *
+ * Par memcpy et non par un transtypage de pointeur : la liste n'est alignée sur
+ * rien, et déréférencer un `float *` sur une adresse quelconque est un
+ * comportement indéfini que les compilateurs exploitent. */
+static float sweep_float(const uint8_t *bytes)
+{
+    uint32_t bits = (uint32_t)bytes[0] | ((uint32_t)bytes[1] << 8) | ((uint32_t)bytes[2] << 16)
+                    | ((uint32_t)bytes[3] << 24);
+    float value;
+    memcpy(&value, &bits, sizeof value);
+    return value;
+}
+
+/* Absorbe un entier dans l'empreinte, octet de poids faible en tête. */
+static uint64_t absorb(uint64_t hash, uint32_t value, int octets)
+{
+    for (int i = 0; i < octets; i++) {
+        hash = (hash ^ ((value >> (i * 8)) & 0xff)) * 0x100000001b3u;
+    }
+    return hash;
+}
+
+/* Absorbe un flottant par ses bits, jamais par sa valeur. */
+static uint64_t absorb_float(uint64_t hash, float value)
+{
+    uint32_t bits;
+    memcpy(&bits, &value, sizeof bits);
+    return absorb(hash, bits, 4);
+}
+
+/* La scène `collision` : la seule qui ne rende aucune image.
+ *
+ * **Elle rejoue une liste versionnée, elle ne l'engendre pas.** Le treillis de
+ * départs et les directions vivent dans la conformance ; les reporter ici
+ * ferait prouver à l'empreinte que quatre hôtes ont su recopier la même
+ * géométrie, ce qui n'est pas ce qu'elle mesure.
+ *
+ * Trente-sept octets par balayage, statut compris et sans cas particulier : un
+ * départ hors cellule rend un déplacement libre comme les autres. */
+static uint64_t render_sweeps(int *ok, const char *world_path, const char *sweeps_path)
+{
+    ScgWorld *world = NULL;
+    size_t world_len = 0;
+    size_t list_len = 0;
+    uint8_t *world_bytes = read_file(world_path, &world_len);
+    uint8_t *list = read_file(sweeps_path, &list_len);
+    uint64_t hash = 0xcbf29ce484222325u;
+
+    *ok = 0;
+    if (world_bytes == NULL || list == NULL) {
+        check(0, "lecture du decor de collision et de la liste de balayages");
+        free(world_bytes);
+        free(list);
+        return 0;
+    }
+
+    int loaded = scg_world_load(world_bytes, world_len, &world) == SCG_OK;
+    check(loaded, "le decor de collision se charge");
+    free(world_bytes);
+
+    /* La magie avant toute lecture : un mauvais chemin passé par le Makefile
+     * doit échouer ici plutôt que produire une empreinte de bruit. */
+    int formed = list_len >= 12 && memcmp(list, "SCGSWEEP", 8) == 0;
+    check(formed, "la liste de balayages porte sa magie");
+
+    uint32_t count = 0;
+    if (formed) {
+        count = (uint32_t)list[8] | ((uint32_t)list[9] << 8) | ((uint32_t)list[10] << 16)
+                | ((uint32_t)list[11] << 24);
+        formed = list_len == (size_t)12 + (size_t)count * 36;
+        check(formed, "la liste annonce le nombre de balayages qu'elle porte");
+    }
+
+    if (loaded && formed) {
+        for (uint32_t i = 0; i < count; i++) {
+            const uint8_t *record = list + 12 + (size_t)i * 36;
+            float half[3];
+            float from[3];
+            float to[3];
+            for (int axis = 0; axis < 3; axis++) {
+                half[axis] = sweep_float(record + axis * 4);
+                from[axis] = sweep_float(record + 12 + axis * 4);
+                to[axis] = sweep_float(record + 24 + axis * 4);
+            }
+
+            /* Zéro veut dire « nulle part », et se passe tel quel au balayage :
+             * c'est lui qui rend le déplacement libre, l'hôte n'a pas à le
+             * fabriquer. */
+            uint32_t cell = 0;
+            if (scg_world_locate(world, from, &cell) != SCG_OK) {
+                check(0, "la cellule de depart se cherche");
+                break;
+            }
+
+            ScgSweepHit hit;
+            memset(&hit, 0, sizeof hit);
+            int32_t status = scg_world_sweep(world, cell, half, from, to, &hit);
+            if (status < 0) {
+                check(0, "le balayage est accepte");
+                break;
+            }
+
+            hash = absorb_float(hash, hit.fraction);
+            for (int axis = 0; axis < 3; axis++) {
+                hash = absorb_float(hash, hit.normal[axis]);
+            }
+            for (int axis = 0; axis < 3; axis++) {
+                hash = absorb_float(hash, hit.point[axis]);
+            }
+            hash = absorb(hash, hit.surface_id, 4);
+            hash = absorb(hash, hit.cell_id, 4);
+            hash = absorb(hash, (uint32_t)status, 1);
+
+            /* Le contrepoids de `surface_id` : sans cet appel, le champ serait
+             * un identifiant qu'aucune fonction ne traduit, et rien dans les
+             * quatre hôtes ne l'emprunterait. */
+            if (hit.surface_id != 0) {
+                uint32_t material = 0;
+                check(scg_world_surface_material(world, hit.surface_id, &material) == SCG_OK,
+                      "la surface touchee nomme son materiau");
+            }
+        }
+        *ok = 1;
+    }
+
+    free(list);
+    scg_world_destroy(world);
+    return *ok ? hash : 0;
+}
+
 /* Toutes les vérifications, puis les empreintes sur la sortie standard, une
  * par ligne et dans l'ordre que le Makefile attend.
  *
@@ -1497,8 +1628,11 @@ static uint64_t render_rooms(int *ok, const char *path)
  * un hôte lancé depuis un autre répertoire ne le trouverait pas. */
 int main(int argc, char **argv)
 {
-    if (argc != 3) {
-        fprintf(stderr, "usage : %s <fichier de maillage> <fichier de carte>\n", argv[0]);
+    if (argc != 5) {
+        fprintf(stderr,
+                "usage : %s <fichier de maillage> <fichier de carte> "
+                "<decor de collision> <liste de balayages>\n",
+                argv[0]);
         return 2;
     }
 
@@ -1552,8 +1686,12 @@ int main(int argc, char **argv)
     int rooms_ok = 0;
     uint64_t rooms = render_rooms(&rooms_ok, argv[2]);
 
+    int sweeps_ok = 0;
+    uint64_t sweeps = render_sweeps(&sweeps_ok, argv[3], argv[4]);
+
     if (failures > 0 || !ok || !textured_ok || !bilinear_ok || !graded_ok || !lit_ok
-        || !overbright_ok || !fog_ok || !lights_ok || !mesh_ok || !composite_ok || !rooms_ok) {
+        || !overbright_ok || !fog_ok || !lights_ok || !mesh_ok || !composite_ok || !rooms_ok
+        || !sweeps_ok) {
         fprintf(stderr, "%d vérification(s) en échec\n", failures);
         return 1;
     }
@@ -1568,5 +1706,6 @@ int main(int argc, char **argv)
     printf("%016llx\n", (unsigned long long)mesh);
     printf("%016llx\n", (unsigned long long)composite);
     printf("%016llx\n", (unsigned long long)rooms);
+    printf("%016llx\n", (unsigned long long)sweeps);
     return 0;
 }

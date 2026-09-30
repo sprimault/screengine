@@ -769,6 +769,7 @@ function checkLayout(header) {
     ScgGrade: scg.GRADE_SIZE,
     ScgCamera: scg.CAMERA_SIZE,
     ScgSprite: scg.SPRITE_SIZE,
+    ScgSweepHit: scg.SWEEP_HIT_SIZE,
   };
 
   // **La table au-dessus se compare à ce que la liaison déclare**, et non
@@ -1651,12 +1652,115 @@ function renderRooms(engine, worldBytes) {
   return hash;
 }
 
+/**
+ * Rejoue les balayages du fichier versionné et hache leurs résultats.
+ *
+ * **La seule scène sans image, et la seule sans contexte.** Elle éprouve les
+ * deux points d'entrée du balayage, qu'aucun rendu n'emprunte, et la liste vient
+ * du dépôt : la reconstruire ici ferait mesurer à l'empreinte un report de règle
+ * plutôt que le moteur.
+ *
+ * Sur wasm, l'hôte ne peut pas donner un pointeur arbitraire : les trois
+ * vecteurs et la structure de sortie passent par `scg_buffer_alloc`, ce que les
+ * autres scènes font déjà pour leurs sommets.
+ *
+ * @param {scg.Screengine} engine
+ * @param {Uint8Array} worldBytes le décor de collision
+ * @param {Uint8Array} list la liste de balayages, magie comprise
+ * @returns {string | null} l'empreinte, ou null si une vérification a échoué
+ */
+function renderSweeps(engine, worldBytes, list) {
+  const e = engine.exports;
+  const out = engine.alloc(4);
+
+  const block = engine.alloc(worldBytes.length);
+  engine.bytes().set(worldBytes, block);
+  if (e.scg_world_load(block, worldBytes.length, out) < 0) {
+    check(false, "le décor de collision se charge");
+    return null;
+  }
+  const world = engine.readU32(out);
+  engine.free(block, worldBytes.length);
+
+  // La magie avant toute lecture : un mauvais chemin doit échouer ici plutôt
+  // que produire une empreinte de bruit.
+  const magic = new TextDecoder().decode(list.subarray(0, 8));
+  if (list.length < 12 || magic !== "SCGSWEEP") {
+    check(false, "la liste de balayages porte sa magie");
+    return null;
+  }
+  const source = new DataView(list.buffer, list.byteOffset, list.byteLength);
+  const count = source.getUint32(8, true);
+  if (list.length !== 12 + count * SWEEP_RECORD) {
+    check(false, "la liste annonce le nombre de balayages qu'elle porte");
+    return null;
+  }
+
+  // Trois vecteurs contigus, écrits une fois par balayage : un allocateur
+  // sollicité huit cents fois dirait surtout le coût de l'allocateur.
+  const vectors = engine.alloc(9 * 4);
+  const hit = engine.alloc(scg.SWEEP_HIT_SIZE);
+  const digest = new Uint8Array(count * 37);
+  let written = 0;
+
+  for (let i = 0; i < count; i++) {
+    const base = 12 + i * SWEEP_RECORD;
+    const view = new DataView(engine.memory.buffer);
+    for (let rank = 0; rank < 9; rank++) {
+      view.setFloat32(vectors + rank * 4, source.getFloat32(base + rank * 4, true), true);
+    }
+    const half = vectors;
+    const from = vectors + 12;
+    const to = vectors + 24;
+
+    // Zéro veut dire « nulle part », et se passe tel quel : c'est le balayage
+    // qui rend le déplacement libre, pas l'hôte qui le fabrique.
+    if (e.scg_world_locate(world, from, out) < 0) {
+      check(false, "la cellule de départ se cherche");
+      return null;
+    }
+    const status = e.scg_world_sweep(world, engine.readU32(out), half, from, to, hit);
+    if (status < 0) {
+      check(false, "le balayage est accepté");
+      return null;
+    }
+
+    // Les trente-six premiers octets de `ScgSweepHit` sont exactement ceux que
+    // l'empreinte veut, dans l'ordre : le header le garantit par ses assertions
+    // de décalage, et les deux champs réservés viennent après.
+    digest.set(engine.bytes().subarray(hit, hit + 36), written);
+    digest[written + 36] = status;
+    written += 37;
+
+    // Le contrepoids de `surface_id` : sans cet appel, le champ serait un
+    // identifiant qu'aucune fonction ne traduit.
+    const surface = engine.readU32(hit + 28);
+    if (surface !== 0) {
+      check(
+        e.scg_world_surface_material(world, surface, out) === scg.SCG_OK,
+        "la surface touchée nomme son matériau",
+      );
+    }
+  }
+
+  engine.free(vectors, 9 * 4);
+  engine.free(hit, scg.SWEEP_HIT_SIZE);
+  engine.free(out, 4);
+  e.scg_world_destroy(world);
+  return engine.hashBytes(digest);
+}
+
+/** La taille d'un enregistrement de la liste : neuf flottants. */
+const SWEEP_RECORD = 36;
+
 /** Toutes les vérifications, puis l'empreinte sur la sortie standard. */
 async function main() {
-  const [wasmPath, headerPath, meshPath, worldPath] = process.argv.slice(2);
-  if (!wasmPath || !headerPath || !meshPath || !worldPath) {
+  const [wasmPath, headerPath, meshPath, worldPath, collisionPath, sweepsPath] =
+    process.argv.slice(2);
+  if (!wasmPath || !headerPath || !meshPath || !worldPath || !collisionPath || !sweepsPath) {
     process.stderr.write(
-      "usage : node test.js <module.wasm> <screengine.h> <caisse.mesh> <salles.world>\n",
+      "usage : node test.js <module.wasm> <screengine.h> <caisse.mesh> <salles.world> " +
+        "<collision.world> <collision.sweeps>\n",
     );
     return 2;
   }
@@ -1693,8 +1797,14 @@ async function main() {
   const mesh = renderMesh(engine, meshBytes);
   const composite = renderComposite(engine, meshBytes);
   const rooms = renderRooms(engine, new Uint8Array(await readFile(worldPath)));
+  const sweeps = renderSweeps(
+    engine,
+    new Uint8Array(await readFile(collisionPath)),
+    new Uint8Array(await readFile(sweepsPath)),
+  );
   if (
     failures > 0 ||
+    sweeps === null ||
     rooms === null ||
     composite === null ||
     textured === null ||
@@ -1712,7 +1822,7 @@ async function main() {
 
   process.stdout.write(
     `${hash}\n${textured}\n${bilinear}\n${graded}\n${lit}\n${overbright}\n${fog}\n${lights}\n` +
-      `${mesh}\n${composite}\n${rooms}\n`,
+      `${mesh}\n${composite}\n${rooms}\n${sweeps}\n`,
   );
   return 0;
 }
