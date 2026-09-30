@@ -405,14 +405,20 @@ where
 ///
 /// Son message va dans l'emplacement par thread, que `scg_last_error(NULL)`
 /// lit.
-pub(crate) fn without_context<F>(f: F) -> i32
+/// **Elle porte un statut comme celle du contexte**, depuis que le balayage en
+/// rend un. Elle ne le faisait pas jusqu'ici, aucune fonction sans contexte
+/// n'ayant de succès à nuancer ; la contraindre à `()` aurait obligé le balayage
+/// à passer par une enveloppe à lui, c'est-à-dire à recopier le `catch_unwind` et
+/// la fixation de l'environnement flottant — le défaut le plus discret du projet.
+pub(crate) fn without_context<T, F>(f: F) -> i32
 where
-    F: FnOnce() -> Result<(), AbiError>,
+    T: Outcome,
+    F: FnOnce() -> Result<T, AbiError>,
 {
     message::clear_orphan();
 
     match guarded(f) {
-        Ok(()) => SCG_OK,
+        Ok(value) => value.code(),
         Err(Failure::Abi(error)) => {
             message::set_orphan(error.message);
             error.code

@@ -60,6 +60,17 @@ export const SCG_STATUS_INCOMPLETE = 1;
 /** Succès, et aucune cellule n'a été donnée : rien n'a été soumis. */
 export const SCG_STATUS_NO_CELL = 2;
 
+/**
+ * Succès, et la boîte balayée partait déjà dans le solide.
+ *
+ * Un statut plutôt qu'une fraction nulle, qu'un contact immédiat légitime rend
+ * aussi : les deux appellent des réponses opposées, glisser ou se dégager.
+ */
+export const SCG_STATUS_START_SOLID = 3;
+
+/** Nombre de cellules qu'un balayage visite au plus. */
+export const SCG_SWEEP_CELLS = 64;
+
 /** Profondeur à laquelle la traversée suit une ligne de vue. */
 export const SCG_TRAVERSAL_DEPTH = 64;
 
@@ -186,6 +197,8 @@ export const EXPORTS = [
   "scg_world_cell_luxel_count",
   "scg_world_locate",
   "scg_world_track",
+  "scg_world_sweep",
+  "scg_world_surface_material",
   "scg_lighting_create",
   "scg_lighting_destroy",
   "scg_lighting_build",

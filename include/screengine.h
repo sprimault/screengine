@@ -141,6 +141,31 @@
 // place the camera in a cell again. The engine never relocates it on its own.
 #define SCG_STATUS_NO_CELL 2
 
+// Success, and the box was already inside solid geometry when the sweep began.
+//
+// `fraction` is `0` and the normal is that of the least deeply penetrated
+// surface. **The engine does not push out**: there is no push-out vector defined
+// against a set of non-convex surfaces, so it reports and leaves the response to
+// the host.
+//
+// **This is a status and not just `fraction == 0`**, which is ambiguous: an
+// immediate legitimate contact returns the same fraction — box exactly against a
+// wall, moving into it. The two call for opposite responses, sliding or getting
+// out, and this is the one thing the host cannot reconstruct.
+//
+// A sweep that stays inside solid geometry the whole way returns this same
+// status, and `fraction` says the rest.
+#define SCG_STATUS_START_SOLID 3
+
+// The greatest number of cells one sweep visits.
+//
+// Reaching it returns [`SCG_STATUS_INCOMPLETE`] and **truncates** the move to
+// where the examined region stops — the only conservative answer, since
+// reporting a free move would send an entity through a wall the engine never
+// looked at. It is not configurable: a result that depended on a configuration
+// field would escape the conformance suite.
+#define SCG_SWEEP_CELLS 64
+
 // A cell has no lightmap yet.
 #define SCG_LIGHTMAP_ABSENT 0
 
@@ -601,6 +626,47 @@ typedef struct ScgVertexUv2 {
   // Lightmap ordinate, in texels of the lightmap.
   float v2;
 } ScgVertexUv2;
+
+// What a sweep found, written by the engine into a struct the host owns.
+//
+// **No "hit" field.** `surface_id` is `0` when nothing was touched, and
+// `fraction` is then `1`. That is not a sentinel invented here: the map format
+// already reserves `0` for "none", and `cell_id` already means "no cell" at `0`.
+// A boolean would say what a null identifier says, and this ABI has no `bool`.
+//
+// **Forty-four bytes, offsets 0 to 40 on every target**, with no padding: every
+// field is four bytes wide. A binding that writes the struct byte by byte —
+// JavaScript on wasm — reproduces them as they read here.
+typedef struct ScgSweepHit {
+  // How much of the move was travelled before contact, in `[0, 1]`.
+  //
+  // `1` when nothing was touched. `0` together with a return code of
+  // `SCG_STATUS_START_SOLID` means the box began inside solid geometry.
+  float fraction;
+  // The contact normal, unit length, opposing the move.
+  //
+  // Zero when nothing was touched. **The response is yours**: sliding,
+  // stepping and gravity are game policies, and the engine knows none of
+  // them. A character stopping dead against an angled wall is three lines of
+  // projection away on your side, not a defect on ours.
+  float normal[3];
+  // The contact point, on the plane of the surface that was touched.
+  //
+  // A face-to-face contact is a rectangle and not a point; the engine picks
+  // the projection of the box centre onto that plane and freezes it, so that
+  // two targets agree on it.
+  float point[3];
+  // The stable identifier of the surface touched, or `0`.
+  //
+  // Pass it to `scg_world_surface_material` to learn what it is made of.
+  uint32_t surface_id;
+  // The stable identifier of the cell the contact happened in, or `0`.
+  uint32_t cell_id;
+  // Reserved, must be zero.
+  uint32_t reserved0;
+  // Reserved, must be zero.
+  uint32_t reserved1;
+} ScgSweepHit;
 
 #ifdef __cplusplus
 extern "C" {
@@ -1647,6 +1713,59 @@ int32_t scg_world_light_count(const struct ScgWorld *world, uint32_t *out);
 // a writable `ScgLight`.
 int32_t scg_world_light(const struct ScgWorld *world, uint32_t index, struct ScgLight *out);
 
+// Sweeps an axis-aligned box from `from` to `to`, starting in `from_cell`.
+//
+// **The collision module needs no rendering context**, which is the whole point:
+// a game server loads a map, sweeps, and never allocates a frame buffer. It
+// takes no context and writes its error to the thread-local slot, read with
+// `scg_last_error(NULL)`.
+//
+// **It is callable from any thread, on the same handle, at the same time.** A
+// loaded map is immutable and this only reads it; nothing is retained between
+// calls, and the result depends on the arguments alone. This is the first entry
+// point in the ABI to allow that on a shared object.
+//
+// **Returns a positive status, not only `SCG_OK`.** Judge the result by the sign
+// of the code: `SCG_STATUS_NO_CELL` when `from_cell` is `0`, which means
+// "nowhere" and reports a free move; `SCG_STATUS_INCOMPLETE` when the sweep hit
+// `SCG_SWEEP_CELLS`, which **truncates** the move rather than reporting it free;
+// and `SCG_STATUS_START_SOLID` when the box was already inside solid geometry.
+//
+// `half_extents` of zero sweeps a ray. The box never rotates: give one that
+// encloses every orientation your character takes.
+//
+// **What stops the box is the map, not a filter you pass.** Surfaces flagged
+// non-solid are ignored, and a collision layer mask is a game notion that
+// belongs on your side.
+//
+// # Safety
+//
+// `world` must be a live handle from `scg_world_load`, `half_extents`, `from`
+// and `to` must each point to three readable `float`s, and `out` must point to a
+// writable `ScgSweepHit`.
+int32_t scg_world_sweep(const struct ScgWorld *world,
+                        uint32_t from_cell,
+                        const float *half_extents,
+                        const float *from,
+                        const float *to,
+                        struct ScgSweepHit *out);
+
+// Writes the material of a surface to `out`, by its stable identifier.
+//
+// The counterpart of `ScgSweepHit::surface_id`: without it that field would be
+// an identifier no function translates. What it writes indexes the map's
+// material table, which `scg_world_material_name` names.
+//
+// An identifier no surface carries is `SCG_ERR_UNKNOWN_RESOURCE`.
+//
+// # Safety
+//
+// `world` must be a live handle from `scg_world_load`, and `out` must point to a
+// writable `uint32_t`.
+int32_t scg_world_surface_material(const struct ScgWorld *world,
+                                   uint32_t surface_id,
+                                   uint32_t *out);
+
 // Writes the number of entities the map carries to `out`.
 //
 // # Safety
@@ -1797,6 +1916,14 @@ SCREENGINE_LAYOUT_ASSERT(offsetof(ScgLight, z) == 8, "ScgLight.z moved");
 SCREENGINE_LAYOUT_ASSERT(offsetof(ScgLight, radius) == 12, "ScgLight.radius moved");
 SCREENGINE_LAYOUT_ASSERT(offsetof(ScgLight, r) == 16, "ScgLight.r moved");
 SCREENGINE_LAYOUT_ASSERT(offsetof(ScgLight, _reserved) == 19, "ScgLight._reserved moved");
+
+SCREENGINE_LAYOUT_ASSERT(sizeof(ScgSweepHit) == 44, "ScgSweepHit changed size");
+SCREENGINE_LAYOUT_ASSERT(offsetof(ScgSweepHit, normal) == 4, "ScgSweepHit.normal moved");
+SCREENGINE_LAYOUT_ASSERT(offsetof(ScgSweepHit, point) == 16, "ScgSweepHit.point moved");
+SCREENGINE_LAYOUT_ASSERT(offsetof(ScgSweepHit, surface_id) == 28, "ScgSweepHit.surface_id moved");
+SCREENGINE_LAYOUT_ASSERT(offsetof(ScgSweepHit, cell_id) == 32, "ScgSweepHit.cell_id moved");
+SCREENGINE_LAYOUT_ASSERT(offsetof(ScgSweepHit, reserved0) == 36, "ScgSweepHit.reserved0 moved");
+SCREENGINE_LAYOUT_ASSERT(offsetof(ScgSweepHit, reserved1) == 40, "ScgSweepHit.reserved1 moved");
 SCREENGINE_LAYOUT_ASSERT(sizeof(ScgTextureDesc) == 24, "ScgTextureDesc changed size");
 SCREENGINE_LAYOUT_ASSERT(offsetof(ScgTextureDesc, height) == 4, "ScgTextureDesc.height moved");
 SCREENGINE_LAYOUT_ASSERT(offsetof(ScgTextureDesc, format) == 8, "ScgTextureDesc.format moved");

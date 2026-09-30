@@ -1627,6 +1627,17 @@ reculé.** Reculer `t` laisse la boîte pénétrante sur les axes perpendiculair
 mouvement, si bien que le problème revient au balayage suivant, ailleurs : le
 recul est proportionnel à la vitesse, la dilatation ne l'est pas.
 
+**Le dégagement appartient au balayage, jamais à la question « suis-je déjà
+dedans ».** La clause est générale et vaut pour tout module de collision à venir —
+un maillage, une capsule —, pas seulement pour celui-ci : le balayage prend la
+boîte **dilatée**, la détection de départ dans le solide prend la **vraie**.
+
+Les tester contre la même boîte défait exactement ce que la dilatation produit.
+Un test de recouvrement est non strict, si bien qu'une boîte venant de s'arrêter
+au contact d'un mur repart en départ solide à l'appel suivant. Chez un
+intégrateur, cela se voit comme un personnage collé aux murs, et la cause ne
+désigne aucun des deux calculs, tous deux justes séparément.
+
 La constante est une puissance de deux relative à la plus grande demi-extension,
 donc exacte, sans échelle de monde à inventer et sans sous-normal — même clause
 que le décalage d'échantillonnage de la cuisson. **Sa valeur se juge sur un décor

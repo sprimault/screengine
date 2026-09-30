@@ -15,9 +15,6 @@
 extern crate alloc;
 
 mod buffer;
-// Rien ne l'appelle encore : la frontière C est son premier consommateur, et le
-// lot qui l'expose retire cette autorisation.
-#[cfg_attr(not(test), allow(dead_code))]
 mod collide;
 mod context;
 mod error;
@@ -31,6 +28,7 @@ mod testing;
 mod texture;
 mod world;
 
+pub use collide::{Hit, SWEEP_CELLS};
 pub use context::{
     BYTES_PER_PIXEL, Config, Context, Frame, MAX_RESOLUTION, Output, Rows, TILE_SIZES,
     TRIANGLE_CAPACITY, Visibility,

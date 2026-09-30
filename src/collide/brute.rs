@@ -30,6 +30,9 @@ use super::{Best, Hit, grown, start_solid, sweep_cell};
 /// La cellule de départ n'entre pas : il n'y a pas de traversée à amorcer. C'est
 /// aussi ce qui fait de ce chemin une référence indépendante — il ne peut pas se
 /// tromper de cellule, n'en connaissant aucune.
+/// Seuls les tests l'appellent aujourd'hui ; la conformance en fera son oracle au
+/// lot qui écrit la scène, et retirera cette autorisation.
+#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) fn sweep_brute(world: &World, half: Vec3d, from: Vec3d, to: Vec3d) -> Hit {
     // **La dilatation s'applique ici aussi**, et l'oublier a été le premier
     // défaut que l'égalité des deux chemins ait attrapé : sans elle, l'oracle

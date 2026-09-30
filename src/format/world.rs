@@ -19,6 +19,7 @@ use alloc::vec::Vec;
 use super::ears::{MAX_POLYGON, triangulate};
 use super::{Cursor, decode};
 use crate::buffer::{owned, reserved};
+use crate::collide::Hit;
 use crate::error::{Error, Malformation, Result};
 use crate::math::{MAX_TEXEL_COORD, Quat, Vec3};
 use crate::scene::{Color, Light, VertexUv};
@@ -573,6 +574,10 @@ impl World {
     /// `from_cell` est celui d'où le déplacement part. Un identifiant qui ne
     /// désigne aucune cellule rend `0`, comme une sortie : il n'y a pas de fil à
     /// reprendre depuis une cellule qui n'existe pas.
+    ///
+    /// **Plusieurs cellules peuvent être traversées en un seul déplacement**, et
+    /// le suivi les enchaîne. Le moteur ne se relocalise jamais de lui-même :
+    /// quand ceci rend `0`, c'est à l'hôte de rappeler [`World::locate`].
     pub fn track(&self, from_cell: u32, from: Vec3, to: Vec3) -> u32 {
         let Some(index) = self.cell_of(from_cell) else {
             return 0;
@@ -580,6 +585,40 @@ impl World {
         crate::world::locate::track(self, index, from, to)
             .and_then(|found| self.cell_id(found))
             .unwrap_or(0)
+    }
+
+    /// Balaie une boîte axiale de `from` à `to`, depuis la cellule `from_cell`.
+    ///
+    /// Rend `None` quand `from_cell` ne désigne aucune cellule : c'est à
+    /// l'appelant d'en faire une erreur de ressource inconnue, le noyau ne
+    /// connaissant pas les codes de l'ABI. `0` n'arrive pas ici — l'absence de
+    /// cellule se traite avant, et elle n'est pas une erreur.
+    ///
+    /// **Appelable depuis plusieurs threads sur la même carte.** Rien n'y est
+    /// muté, rien n'y est retenu, et le résultat ne dépend que des arguments :
+    /// c'est ce qui rend un serveur possible sans contexte de rendu.
+    /// **Les arguments et le résultat sont en `f32`** ; le balayage travaille en
+    /// `f64` derrière cette frontière, qui est son unique point de passage. La
+    /// règle d'usage est dans `docs/rust.md`, au même endroit que la clause du
+    /// `f64`.
+    pub fn sweep(&self, from_cell: u32, half: Vec3, from: Vec3, to: Vec3) -> Option<Hit> {
+        crate::collide::sweep(self, from_cell, half.into(), from.into(), to.into())
+    }
+
+    /// Le matériau d'une surface, par son identifiant stable.
+    ///
+    /// `None` quand aucune surface ne le porte. C'est le pendant de
+    /// l'identifiant que le balayage rend : sans lui, l'hôte recevrait un
+    /// identifiant qu'aucune fonction ne traduit.
+    pub fn surface_material(&self, surface_id: u32) -> Option<u32> {
+        for cell in &self.cells {
+            for surface in &cell.surfaces {
+                if surface.id() == surface_id {
+                    return Some(surface.material);
+                }
+            }
+        }
+        None
     }
 
     /// Combien de matériaux elle réclame.
