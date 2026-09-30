@@ -11,6 +11,13 @@
 
 use super::*;
 
+/// La taille d'un enregistrement haché, en octets.
+///
+/// Ici plutôt qu'à côté de l'écriture, qui va champ par champ et n'a pas à la
+/// connaître : c'est l'uniformité qui a de la valeur, pas le nombre, et elle se
+/// perdrait au premier cas particulier réintroduit.
+const RECORD: usize = 37;
+
 /// Joue les balayages et range leurs résultats à côté de leur description.
 fn played() -> Vec<(Sweep, Option<Hit>)> {
     let world = World::load(&collision_file::bytes()).expect("décor valide");
@@ -143,4 +150,67 @@ fn le_trajet_qui_franchit_le_portail_suit_la_force_brute() {
     let fast = world.sweep(cell, half, from, to).expect("cellule connue");
     let slow = world.sweep_brute(half, from, to);
     assert!(same(&fast, &slow), "traversée {fast:?}, brute {slow:?}");
+}
+
+/// Tous les enregistrements hachés font la même taille.
+///
+/// **C'est l'uniformité qui a de la valeur ici**, pas la valeur du nombre : un
+/// hôte qui lit une liste de balayages et hache le résultat de chacun n'a alors
+/// aucun cas particulier à porter, et le départ hors cellule ne se distingue plus
+/// des autres que par son statut. Le test rougit au premier cas particulier
+/// réintroduit, qui serait sinon invisible jusqu'à ce qu'un hôte diverge.
+#[test]
+fn chaque_enregistrement_fait_la_meme_taille() {
+    let world = World::load(&collision_file::bytes()).expect("décor valide");
+    let sweeps = all();
+
+    let mut bytes = Vec::new();
+    for sweep in &sweeps {
+        let cell = world.locate(sweep.from);
+        let found = if cell == 0 {
+            None
+        } else {
+            world.sweep(cell, sweep.half, sweep.from, sweep.to)
+        };
+        let (hit, status) = publish(found, sweep.to);
+        absorb(&hit, status, &mut bytes);
+    }
+
+    assert_eq!(bytes.len(), sweeps.len() * RECORD);
+}
+
+/// Un départ hors de toute cellule rend le déplacement libre que la frontière
+/// rend.
+///
+/// La conformance ne fabrique pas ici une marque à elle : elle reproduit ce que
+/// `scg_world_sweep` écrit quand `from_cell` vaut zéro — une fraction de 1 et le
+/// point demandé. Un hôte hache donc la même chose sans rien savoir du cas.
+#[test]
+fn un_depart_hors_cellule_rend_un_deplacement_libre() {
+    let to = Vec3::new(3.0, 4.0, 5.0);
+    let (hit, status) = publish(None, to);
+
+    assert_eq!(status, STATUS_NO_CELL);
+    assert_eq!(hit.fraction, 1.0);
+    assert_eq!(hit.point, to);
+    assert_eq!(hit.surface, 0);
+    assert_eq!(hit.cell, 0);
+}
+
+/// Un départ dans le solide masque une région tronquée.
+///
+/// La règle de priorité de l'ABI, celle que l'empreinte fige : des deux drapeaux
+/// du noyau, la frontière garde le plus actionnable. Écrit ici parce que le décor
+/// ne produit pas le cas — il a deux cellules, rien n'y approche la borne —, et
+/// qu'une règle qu'aucune donnée n'éprouve se perd au premier remaniement.
+#[test]
+fn le_depart_solide_masque_la_troncature() {
+    let mut hit = free(Vec3::ZERO);
+    hit.start_solid = true;
+    hit.incomplete = true;
+
+    assert_eq!(publish(Some(hit), Vec3::ZERO).1, STATUS_START_SOLID);
+
+    hit.start_solid = false;
+    assert_eq!(publish(Some(hit), Vec3::ZERO).1, STATUS_INCOMPLETE);
 }

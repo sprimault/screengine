@@ -54,10 +54,11 @@ publié, et explique les conventions du dépôt à qui y contribue.
   glissade, marche, gravité — appartient à l'hôte.
 
 ### Interne
-- **PHP n'est plus cité comme cible de liaison**, faute de destinataire. Ce que
-  le document en disait valait pour toute liaison qui lit le header au lieu de
-  le compiler, et c'est ainsi qu'il est écrit désormais. Un hôte Go est noté à
-  l'étape 7 de la feuille de route, où « utilisable sans rendu » prend son sens.
+- **La scène de collision hachait un état que la frontière ne publie pas** :
+  deux drapeaux du noyau, là où l'ABI ne rend qu'un statut. Elle validait le
+  moteur contre lui-même, et aucun hôte n'aurait pu la reproduire. Elle hache
+  désormais le statut, dans des enregistrements de taille unique. **Une empreinte
+  de conformance bouge.**
 - **L'épreuve de l'archive de publication passe par `make test-archive`**, qui
   déduit du paquet les hôtes à lier au lieu de les nommer dans le workflow. La
   liste des scènes des hôtes n'a plus qu'une seule copie.
@@ -72,10 +73,10 @@ publié, et explique les conventions du dépôt à qui y contribue.
   — sliding, stepping, gravity — belongs to the host.
 
 ### Internal
-- **PHP is no longer named as a binding target**, for want of an audience. What
-  the document said of it held for any binding that reads the header instead of
-  compiling it, and that is how it now reads. A Go host is noted at step 7 of
-  the roadmap, where "usable without rendering" takes on its meaning.
+- **The collision scene hashed state the boundary does not publish**: two core
+  flags, where the ABI returns a single status. It validated the engine against
+  itself, and no host could have reproduced it. It now hashes the status, in
+  records of a single size. **One conformance fingerprint moves.**
 - **The release archive check now goes through `make test-archive`**, which
   derives the hosts to link from the package instead of naming them in the
   workflow. The host scene list has only one copy left.

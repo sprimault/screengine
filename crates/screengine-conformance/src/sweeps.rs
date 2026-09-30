@@ -19,11 +19,30 @@
 //! attraper. Deux clauses en découlent, que le noyau tient : **jamais de `NaN`,
 //! jamais de `-0,0`** dans un résultat, sans quoi deux résultats égaux
 //! donneraient deux empreintes.
+//!
+//! **On ne hache que ce que la frontière publie**, et c'est la clause qui
+//! commande toutes les autres : voir [`publish`].
 
 use screengine::{Hit, Vec3, World};
 use screengine_conformance::collision_file;
 
 use crate::hash;
+
+/// Les quatre codes que `scg_world_sweep` rend, tels que `docs/abi.md` les
+/// publie.
+///
+/// **Recopiés plutôt que partagés**, et c'est la mesure elle-même qui les garde :
+/// un écart entre ces valeurs et celles du header ferait diverger cette empreinte
+/// de celles des quatre hôtes, qui hachent l'entier que la frontière leur rend
+/// sans le traduire. C'est ce qui leur épargne un branchement, et ce qui rend la
+/// recopie détectable au lieu d'être silencieuse.
+const STATUS_OK: u8 = 0;
+/// La région examinée a été tronquée par la borne de cellules.
+const STATUS_INCOMPLETE: u8 = 1;
+/// Le départ n'était dans aucune cellule.
+const STATUS_NO_CELL: u8 = 2;
+/// La boîte partait dans le solide.
+const STATUS_START_SOLID: u8 = 3;
 
 /// Le pas du treillis de départs, en unités de monde.
 const STEP: f32 = 2.0;
@@ -194,19 +213,59 @@ pub fn digest() -> Result<u64, String> {
 
         // Le départ sans cellule entre dans l'empreinte comme les autres : c'est
         // un cas que la carte produit, pas un trou dans la liste.
-        match &fast {
-            Some(hit) => absorb(hit, &mut bytes),
-            None => bytes.push(0xFF),
-        }
+        let (published, status) = publish(fast, sweep.to);
+        absorb(&published, status, &mut bytes);
     }
     Ok(hash::of(&bytes))
 }
 
-/// Écrit un résultat dans le tampon à hacher, octet de poids faible en tête.
+/// Ce que la frontière publie d'un balayage : un résultat, et un statut.
+///
+/// **Une empreinte ne peut hacher que cela**, et c'est ce que l'écriture du
+/// premier hôte a montré. Le noyau porte deux drapeaux indépendants,
+/// `start_solid` et `incomplete` ; l'ABI n'en publie qu'un code de retour, et
+/// garde le plus actionnable quand les deux s'appliquent — un départ dans le
+/// solide demande à l'hôte de se dégager, une région tronquée ne lui laisse aucun
+/// levier, la borne n'étant pas réglable. Hacher les deux drapeaux revenait à
+/// valider le noyau contre lui-même, sur un état qu'aucun hôte ne peut observer.
+///
+/// **La règle de priorité entre donc dans la référence.** Le jour où elle serait
+/// remise en cause, l'empreinte bougerait sans que la géométrie ni le rendu aient
+/// changé, et c'est ici qu'il faudra le lire.
+///
+/// `None` est le départ hors de toute cellule, que la frontière traite avant le
+/// noyau : elle rend un déplacement libre au point demandé, et la conformance
+/// rend le même plutôt qu'une marque à elle. **Un enregistrement de taille unique
+/// épargne un cas particulier à chacun des quatre hôtes** — quatre occasions de
+/// le porter de travers, pour une distinction dont l'empreinte n'a que faire.
+fn publish(hit: Option<Hit>, to: Vec3) -> (Hit, u8) {
+    match hit {
+        None => (free(to), STATUS_NO_CELL),
+        Some(hit) if hit.start_solid => (hit, STATUS_START_SOLID),
+        Some(hit) if hit.incomplete => (hit, STATUS_INCOMPLETE),
+        Some(hit) => (hit, STATUS_OK),
+    }
+}
+
+/// Le déplacement libre que rend un départ hors de toute cellule.
+fn free(to: Vec3) -> Hit {
+    Hit {
+        fraction: 1.0,
+        normal: Vec3::ZERO,
+        point: to,
+        surface: 0,
+        cell: 0,
+        start_solid: false,
+        incomplete: false,
+    }
+}
+
+/// Écrit un résultat publié dans le tampon à hacher, octet de poids faible en
+/// tête. Trente-sept octets, quel que soit le cas.
 ///
 /// Tout par `to_bits`, sans une seule opération flottante : ce qui est haché est
 /// ce que le moteur a écrit, et non ce qu'un formatage en aurait fait.
-fn absorb(hit: &Hit, bytes: &mut Vec<u8>) {
+fn absorb(hit: &Hit, status: u8, bytes: &mut Vec<u8>) {
     bytes.extend_from_slice(&hit.fraction.to_bits().to_le_bytes());
     for value in [hit.normal.x, hit.normal.y, hit.normal.z] {
         bytes.extend_from_slice(&value.to_bits().to_le_bytes());
@@ -216,8 +275,7 @@ fn absorb(hit: &Hit, bytes: &mut Vec<u8>) {
     }
     bytes.extend_from_slice(&hit.surface.to_le_bytes());
     bytes.extend_from_slice(&hit.cell.to_le_bytes());
-    bytes.push(u8::from(hit.start_solid));
-    bytes.push(u8::from(hit.incomplete));
+    bytes.push(status);
 }
 
 /// Deux résultats portent-ils exactement les mêmes bits ?
@@ -256,14 +314,19 @@ pub fn report() -> Result<String, String> {
     );
     for (index, sweep) in all().into_iter().enumerate() {
         let cell = world.locate(sweep.from);
-        let Some(hit) = world.sweep(cell, sweep.half, sweep.from, sweep.to) else {
-            text.push_str(&format!("{index:4} : hors de toute cellule\n"));
-            continue;
+        let found = if cell == 0 {
+            None
+        } else {
+            world.sweep(cell, sweep.half, sweep.from, sweep.to)
         };
-        let state = match (hit.start_solid, hit.incomplete) {
-            (true, _) => "depart-solide",
-            (false, true) => "tronque",
-            (false, false) => "-",
+        // Le rapport montre ce que l'empreinte hache, statut compris : un texte
+        // qui dirait autre chose ne servirait plus à instruire un écart.
+        let (hit, status) = publish(found, sweep.to);
+        let state = match status {
+            STATUS_START_SOLID => "depart-solide",
+            STATUS_INCOMPLETE => "tronque",
+            STATUS_NO_CELL => "hors-cellule",
+            _ => "-",
         };
         text.push_str(&format!(
             "{index:4} : ({:.2}, {:.2}, {:.2}) -> ({:.2}, {:.2}, {:.2}) | {:.2} | {:.4} | \
