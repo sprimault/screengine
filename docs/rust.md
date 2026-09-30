@@ -110,7 +110,8 @@ elle ne crée aucun répertoire d'avance.
 ```
 src/
   lib.rs  error.rs  buffer.rs  context.rs  scene.rs   avant tout domaine
-  math/       étape 1   vecteurs, matrices, quaternions, tables, virgule fixe
+  math/       étape 1   vecteurs, matrices, quaternions, tables, virgule fixe,
+                        et ce qu'un polygone plan demande de plus
   raster/     étape 1   clipping, fonctions de bord, profondeur, tuiles ; simd/ à l'étape 9
   texture/    étape 2   mipmaps, filtrage
   light/      étape 3   lightmaps, brouillard, post-traitement de tuile

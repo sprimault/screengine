@@ -12,6 +12,13 @@
 //! cellules et toutes leurs faces : c'est un appel nommé, que l'hôte fait au
 //! chargement ou quand il a perdu le fil. [`track`] ne regarde que la cellule
 //! courante et ses portails.
+//!
+//! **Ce que rendent les produits scalaires et vectoriels d'ici décide de la
+//! cellule où l'hôte croit être, donc de l'image** : leur ordre d'opérations est
+//! contractuel comme celui de toute valeur dérivée. Il est celui de [`Vec3`],
+//! dont les sommes s'écrivent de gauche à droite — ce module en avait sa propre
+//! copie, à l'expression près la même, et deux écritures d'un ordre contractuel
+//! sont une occasion de plus qu'elles divergent.
 
 use crate::format::World;
 use crate::math::Vec3;
@@ -196,12 +203,12 @@ fn crosses(points: &[Vec3], from: Vec3, to: Vec3) -> bool {
     if points.len() < 3 {
         return false;
     }
-    let edge1 = sub(points[1], points[0]);
-    let edge2 = sub(points[2], points[0]);
-    let normal = cross(edge1, edge2);
+    let edge1 = points[1] - points[0];
+    let edge2 = points[2] - points[0];
+    let normal = edge1.cross(edge2);
 
-    let side_from = dot(normal, sub(from, points[0]));
-    let side_to = dot(normal, sub(to, points[0]));
+    let side_from = normal.dot(from - points[0]);
+    let side_to = normal.dot(to - points[0]);
     // Les deux extrémités doivent être strictement de part et d'autre.
     if !((side_from > 0.0 && side_to < 0.0) || (side_from < 0.0 && side_to > 0.0)) {
         return false;
@@ -225,7 +232,7 @@ fn crosses(points: &[Vec3], from: Vec3, to: Vec3) -> bool {
     for i in 0..points.len() {
         let a = points[i];
         let b = points[(i + 1) % points.len()];
-        let side = dot(normal, cross(sub(b, a), sub(hit, a)));
+        let side = normal.dot((b - a).cross(hit - a));
         if side > 0.0 {
             positive += 1;
         } else if side < 0.0 {
@@ -233,29 +240,6 @@ fn crosses(points: &[Vec3], from: Vec3, to: Vec3) -> bool {
         }
     }
     positive == 0 || negative == 0
-}
-
-/// La différence de deux points.
-fn sub(a: Vec3, b: Vec3) -> Vec3 {
-    Vec3::new(a.x - b.x, a.y - b.y, a.z - b.z)
-}
-
-/// Le produit vectoriel de deux vecteurs.
-fn cross(a: Vec3, b: Vec3) -> Vec3 {
-    Vec3::new(
-        a.y * b.z - a.z * b.y,
-        a.z * b.x - a.x * b.z,
-        a.x * b.y - a.y * b.x,
-    )
-}
-
-/// Le produit scalaire de deux vecteurs.
-///
-/// Écrit ici plutôt que pris sur [`Vec3`] pour que l'ordre des opérations de ce
-/// module soit lisible d'un seul endroit : ce qu'il rend décide de la cellule où
-/// l'hôte croit être, donc de l'image.
-fn dot(a: Vec3, b: Vec3) -> f32 {
-    a.x * b.x + a.y * b.y + a.z * b.z
 }
 
 /// Vrai si l'arête appartient au triangle qui la porte dans ce sens.

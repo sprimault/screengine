@@ -16,6 +16,7 @@ mod angle;
 #[cfg_attr(not(test), allow(dead_code))]
 pub mod exp2;
 pub mod fixed;
+pub(crate) mod polygon;
 pub mod projection;
 mod quat;
 mod rsqrt;
