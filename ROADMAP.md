@@ -306,6 +306,8 @@ cinq descriptions et non quatre, et c'est ce qui les rend comparables. Ce qu'il
 pointeurs, qu'aucun autre hôte ne touche — C et C++ ne déplacent aucun objet,
 JavaScript et Java ne passent jamais d'adresse.
 
+**Franchie, publiée en 0.7.0.**
+
 ## 8 — Ce qu'il faut pour éditer
 
 Le moteur n'a pas d'éditeur : il expose ce qu'un éditeur réclame — tracé de
