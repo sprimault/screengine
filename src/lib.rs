@@ -15,6 +15,10 @@
 extern crate alloc;
 
 mod buffer;
+// Rien ne l'appelle encore : la frontière C est son premier consommateur, et le
+// lot qui l'expose retire cette autorisation.
+#[cfg_attr(not(test), allow(dead_code))]
+mod collide;
 mod context;
 mod error;
 mod format;

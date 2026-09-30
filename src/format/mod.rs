@@ -17,7 +17,7 @@
 
 pub(crate) mod cache;
 mod cursor;
-mod ears;
+pub(crate) mod ears;
 mod mesh;
 // Visible dans le crate pour ses constructeurs de fichiers de test, que la
 // traversée réemploie : une carte d'épreuve s'écrit en octets, et la recopier

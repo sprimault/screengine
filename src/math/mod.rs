@@ -21,6 +21,7 @@ pub mod projection;
 mod quat;
 mod rsqrt;
 mod vector;
+mod vector64;
 
 pub use affine::Affine3;
 pub use angle::Angle;
@@ -28,6 +29,7 @@ pub use fixed::MAX_TEXEL_COORD;
 pub use projection::Projection;
 pub use quat::Quat;
 pub use vector::Vec3;
+pub(crate) use vector64::Vec3d;
 
 #[cfg(test)]
 mod tests;
