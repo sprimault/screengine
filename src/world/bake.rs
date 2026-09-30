@@ -96,7 +96,7 @@ pub(crate) fn bake(world: &World, index: u32, atlas: Atlas) -> Result<Baked> {
     let occluders = region(world, index)?;
 
     for (surface, slot) in cell.surfaces.iter().zip(&atlas.slots) {
-        let plane = normal_of(cell, surface);
+        let plane = cell.inward(surface);
         shade(
             cell,
             surface,
@@ -114,77 +114,6 @@ pub(crate) fn bake(world: &World, index: u32, atlas: Atlas) -> Result<Baked> {
         texels,
         atlas,
     })
-}
-
-/// La normale du plan d'une surface, **tournée vers l'intérieur de la cellule**.
-///
-/// **L'enroulement seul ne suffit pas à l'orienter.** La formule de Newell rend
-/// une normale dont le sens suit l'ordre des sommets, et le format ne dit pas
-/// lequel des deux sens est l'intérieur — il fixe la face visible, ce qui n'est
-/// pas la même chose. Une normale prise à l'envers donne un terme de Lambert
-/// négatif et la surface reste noire : vu en écrivant ce module, où le plafond du
-/// décor de validation restait éteint à deux unités sous une lampe qui lui faisait
-/// face.
-///
-/// Le sens se décide donc sur le **signe du volume de la cellule**, calculé une
-/// fois pour toutes ses faces. L'enroulement du format est cohérent d'une face à
-/// l'autre — sans quoi le rendu montrerait déjà des trous —, donc un seul signe
-/// les oriente toutes.
-///
-/// **Le barycentre des sommets a été essayé et il est faux.** Comparer la normale
-/// à la direction du barycentre décide juste tant que celui-ci n'est pas dans le
-/// plan de la face ; il suffit qu'il y soit pour que le produit scalaire s'annule,
-/// que rien ne tranche et que le signe brut de Newell passe tel quel. Ce n'est pas
-/// une cellule tordue qu'il faut pour cela : le barycentre d'une salle en L de huit
-/// unités tombe exactement sur son coin rentrant, donc sur le plan de deux de ses
-/// murs, dont l'un ressortait noir.
-fn normal_of(cell: &Cell, surface: &Surface) -> Vec3 {
-    let raw = newell_of(cell, surface);
-    if outward(cell) {
-        Vec3::new(-raw.x, -raw.y, -raw.z)
-    } else {
-        raw
-    }
-}
-
-/// Les normales de Newell de cette cellule pointent-elles vers l'extérieur ?
-///
-/// Six fois le volume signé, par le théorème de la divergence : la somme, sur les
-/// faces fermant la cellule, du produit scalaire d'un de leurs points par leur
-/// normale de Newell. Les portails en sont, sans quoi la cellule n'est pas fermée
-/// et la somme ne vaut rien.
-///
-/// Un volume nul ne peut venir que d'une cellule dégénérée, qu'aucune orientation
-/// ne sauverait ; le sens brut est alors gardé.
-fn outward(cell: &Cell) -> bool {
-    let mut volume = 0.0;
-    for surface in &cell.surfaces {
-        let anchor = cell.vertices[point_of(cell, surface, 0)].position;
-        volume += anchor.dot(newell_of(cell, surface));
-    }
-    for portal in &cell.portals {
-        if let Some(&anchor) = portal.points.first() {
-            volume += anchor.dot(newell(&portal.points));
-        }
-    }
-    volume > 0.0
-}
-
-/// La normale de Newell d'une surface, dans le sens de son enroulement.
-///
-/// Sur le polygone entier, et non sur un de ses triangles : une surface concave a
-/// des triangles dont l'orientation ne dit rien de la sienne.
-fn newell_of(cell: &Cell, surface: &Surface) -> Vec3 {
-    let mut normal = Vec3::ZERO;
-    let n = surface.corners.len();
-    for i in 0..n {
-        let a = cell.vertices[point_of(cell, surface, i)].position;
-        let b = cell.vertices[point_of(cell, surface, (i + 1) % n)].position;
-        normal.x += (a.y - b.y) * (a.z + b.z);
-        normal.y += (a.z - b.z) * (a.x + b.x);
-        normal.z += (a.x - b.x) * (a.y + b.y);
-    }
-    normal
 }
 
 /// Le rang, dans les sommets dérivés de la cellule, du `i`-ième coin d'une
