@@ -39,69 +39,10 @@ const START: f32 = -2.0;
 /// de l'exemple qui décrit son couloir en Rust, 256 aux murs et 128 au sol, ce
 /// qui situe la scène dans la famille qu'elle imite : ses moteurs tenaient
 /// entre 16 et 64 texels par unité sur des textures de 64 ou 128.
-const WALL_DENSITY: f32 = 256.0;
-
-/// Ceux du sol et du plafond, moitié moins serrés : un pavage se lit de plus
-/// loin qu'un mur, et ce sont les deux plus grandes surfaces de la cellule.
-const FLOOR_DENSITY: f32 = 128.0;
-
-/// Le côté du repère de lightmap, puissance de deux comme le chargement
-/// l'exige.
-const LUXEL: f32 = 1.0;
-
-/// Les identifiants des deux matériaux.
-const WALLS: u32 = 1;
-/// Celui du sol et du plafond.
-const FLOOR: u32 = 2;
-
-/// Les octets d'une suite de flottants.
-fn floats(values: &[f32], out: &mut Vec<u8>) {
-    for value in values {
-        out.extend_from_slice(&value.to_le_bytes());
-    }
-}
-
-/// Les octets d'une suite d'entiers.
-fn words(values: &[u32], out: &mut Vec<u8>) {
-    for value in values {
-        out.extend_from_slice(&value.to_le_bytes());
-    }
-}
-
-/// Un repère de plaquage aligné sur deux axes du monde.
-///
-/// L'origine est nulle et les axes portent l'échelle : c'est le repère qui est
-/// la source, et les coordonnées la dérivée.
-fn frame(u: [f32; 3], v: [f32; 3], out: &mut Vec<u8>) {
-    floats(&[0.0, 0.0, 0.0], out);
-    floats(&u, out);
-    floats(&v, out);
-}
-
-/// Une surface : son en-tête, ses indices, son repère de texture, celui de sa
-/// lightmap.
-/// La densité vient du matériau et non d'un paramètre : c'est la texture qu'on
-/// mettra derrière qui décide du serrage, et le rang du matériau est ce qui la
-/// désigne.
-fn surface(id: u32, material: u32, indices: &[u32], u: [f32; 3], v: [f32; 3], out: &mut Vec<u8>) {
-    let density = if material == WALLS {
-        WALL_DENSITY
-    } else {
-        FLOOR_DENSITY
-    };
-    words(&[id, 0, material, indices.len() as u32], out);
-    words(indices, out);
-    frame(
-        [u[0] * density, u[1] * density, u[2] * density],
-        [v[0] * density, v[1] * density, v[2] * density],
-        out,
-    );
-    frame(
-        [u[0] * LUXEL, u[1] * LUXEL, u[2] * LUXEL],
-        [v[0] * LUXEL, v[1] * LUXEL, v[2] * LUXEL],
-        out,
-    );
-}
+/// Les densités, les rangs de matériaux et l'écriture des surfaces sont communs
+/// aux trois cartes : voir [`crate::map_bytes`], qui porte aussi la raison des
+/// deux densités.
+use crate::map_bytes::{FLOOR, WALLS, floats, surface, words};
 
 /// Une cellule du couloir : un tronçon fermé, ouvert à ses deux bouts par un
 /// portail.

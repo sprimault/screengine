@@ -10,6 +10,7 @@
 //! octet, et `make mesh` le réécrit. Même règle que le header — un fichier
 //! périmé échoue franchement au lieu de dériver.
 
+pub mod map_bytes;
 pub mod mesh_file;
 pub mod rooms_file;
 pub mod world_file;

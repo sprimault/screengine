@@ -38,15 +38,9 @@ const UPPER_FLOOR_Z: f32 = 8.0;
 /// Son plafond.
 const UPPER_CEILING_Z: f32 = 12.0;
 
-/// L'identifiant du matériau des murs.
-const WALLS: u32 = 1;
-/// Celui du sol et du plafond.
-const FLOOR: u32 = 2;
-
-/// La densité de plaquage des murs, celle de `couloir.world`.
-const WALL_DENSITY: f32 = 256.0;
-/// Celle du sol et du plafond.
-const FLOOR_DENSITY: f32 = 128.0;
+/// Les rangs de matériaux, les densités de plaquage et l'écriture des surfaces
+/// sont communs aux trois cartes : voir [`crate::map_bytes`].
+use crate::map_bytes::{FLOOR, WALLS, floats, surface, words};
 
 // **Un troisième matériau pour les murs obliques a été essayé, puis retiré.** À la
 // densité des autres murs, une surface lointaine voit les cases de son damier
@@ -55,56 +49,6 @@ const FLOOR_DENSITY: f32 = 128.0;
 // la **distance** et non de l'obliquité — il persistait au fond des mêmes vues —,
 // et que les murs obliques proches devenaient de larges bandes qui ne
 // ressemblaient plus au reste du décor. Un matériau de plus pour rien.
-
-/// Le côté d'un luxel, en unités de monde.
-const LUXEL: f32 = 1.0;
-
-/// Les octets d'une suite de flottants.
-fn floats(values: &[f32], out: &mut Vec<u8>) {
-    for value in values {
-        out.extend_from_slice(&value.to_le_bytes());
-    }
-}
-
-/// Les octets d'une suite d'entiers.
-fn words(values: &[u32], out: &mut Vec<u8>) {
-    for value in values {
-        out.extend_from_slice(&value.to_le_bytes());
-    }
-}
-
-/// Un repère, dont l'origine est nulle et dont les axes portent l'échelle.
-fn frame(u: [f32; 3], v: [f32; 3], out: &mut Vec<u8>) {
-    floats(&[0.0, 0.0, 0.0], out);
-    floats(&u, out);
-    floats(&v, out);
-}
-
-/// Une surface : son en-tête, ses indices, son repère de texture, celui de sa
-/// lightmap.
-///
-/// Les deux repères partagent leurs axes et ne diffèrent que par l'échelle : la
-/// texture se serre à la densité de son matériau, la lightmap tient un luxel par
-/// unité de monde.
-fn surface(id: u32, material: u32, indices: &[u32], u: [f32; 3], v: [f32; 3], out: &mut Vec<u8>) {
-    let density = if material == WALLS {
-        WALL_DENSITY
-    } else {
-        FLOOR_DENSITY
-    };
-    words(&[id, 0, material, indices.len() as u32], out);
-    words(indices, out);
-    frame(
-        [u[0] * density, u[1] * density, u[2] * density],
-        [v[0] * density, v[1] * density, v[2] * density],
-        out,
-    );
-    frame(
-        [u[0] * LUXEL, u[1] * LUXEL, u[2] * LUXEL],
-        [v[0] * LUXEL, v[1] * LUXEL, v[2] * LUXEL],
-        out,
-    );
-}
 
 /// Une cellule prismatique : une empreinte au sol, deux hauteurs.
 ///
