@@ -111,9 +111,23 @@ fn main() -> Result<(), screengine_play::Error> {
 
 `make run` lance cet exemple. `make example EXAMPLE=couloir` en lance un autre :
 un couloir en ruine qu'on parcourt aux flèches et à la souris, éclairé par des
-tubes qui clignotent et par le jour qui tombe des trouées du plafond. Le chemin
-Rust ajoute du confort, jamais de capacité : tout ce qu'il permet se fait aussi
-par l'ABI C.
+tubes qui clignotent et par le jour qui tombe des trouées du plafond. Sa
+géométrie est écrite en Rust, panneau par panneau, et tout ce qui vous arrête y
+est écrit avec elle.
+
+`make example EXAMPLE=carte` montre l'autre moitié : un décor **chargé d'un
+fichier**, celui-là même que les cinq hôtes chargent. Ses murs viennent du
+balayage du moteur, ses caisses d'une boîte que l'exemple teste lui-même — le
+moteur arrête sur la géométrie de cellule, et ce qui n'en est pas appartient à
+l'hôte.
+
+Le chemin Rust ajoute du confort, jamais de capacité : tout ce qu'il permet se
+fait aussi par l'ABI C.
+
+**Ces exemples se regardent, ils ne se testent pas.** Ils ouvrent une fenêtre,
+donc aucun contrôle ne les exécute — ils sont seulement compilés, avec le reste.
+Ce qu'ils montrent se juge en les lançant, et c'est là que se voient les défauts
+qu'aucune empreinte ne décrit.
 
 ### Intégrer, depuis n'importe quel langage
 

@@ -75,6 +75,40 @@ const CRATE_Z: f32 = 0.5;
 /// la traversée ne rendrait rien du tout.
 const START: Vec3 = Vec3::new(2.0, 2.0, 2.0);
 
+/// Les demi-étendues du volume que le joueur occupe.
+///
+/// Une boîte et non un point : un point traverserait un angle rentrant sans
+/// jamais toucher un mur, et c'est justement ce qu'un joueur fait quand il longe
+/// une cloison.
+///
+/// **La verticale décrit un corps, pas une tête.** Centrée sur l'œil, une boîte
+/// de cette largeur flotterait au-dessus de caisses hautes d'une unité et les
+/// traverserait sans les toucher — géométriquement juste, et parfaitement faux.
+/// Le volume descend donc jusqu'au sol, dont il garde un jeu : posé dessus, il
+/// partirait en contact et le balayage le dirait solide.
+const BODY_HALF: Vec3 = Vec3::new(0.3, 0.3, 0.9);
+
+/// De combien l'œil est au-dessus du centre de ce volume.
+///
+/// La caméra porte l'œil, la collision porte le corps : l'un se déduit de
+/// l'autre par cette constante, et rien d'autre ne les relie. Le départ est à
+/// `2,0` et le sol à zéro, ce qui laisse le corps entre `0,1` et `1,9`.
+const EYE_ABOVE: f32 = 1.0;
+
+/// La demi-étendue de la boîte qui entoure une caisse.
+///
+/// **Le maillage n'est pas dans le décor, donc le balayage ne le voit pas** : une
+/// caisse est un obstacle que l'exemple porte lui-même, et c'est la répartition
+/// que l'étape veut montrer. Le moteur arrête sur la géométrie de cellule ;
+/// l'hôte décide de ce qui n'en est pas.
+///
+/// Le maillage fait deux unités de côté et [`CRATE_SCALE`] le réduit de moitié,
+/// d'où une demi-étendue d'une demi-unité. La rotation n'entre pas dans le
+/// calcul : une boîte alignée qui enveloppe toutes les orientations est la
+/// réponse la plus simple, et elle déborde d'un cinquième d'unité dans les
+/// diagonales — ce qu'on ne sent pas en jouant.
+const CRATE_HALF: f32 = 0.5 * core::f32::consts::SQRT_2;
+
 /// La matrice d'une caisse : une rotation autour du zénith mise à l'échelle,
 /// puis une translation.
 ///
@@ -88,6 +122,85 @@ fn crate_model(x: f32, y: f32, angle: f32) -> Affine3 {
     Affine3 {
         m: [c, s, 0.0, -s, c, 0.0, 0.0, 0.0, CRATE_SCALE, x, y, CRATE_Z],
     }
+}
+
+/// Où le déplacement s'arrête : le décor d'abord, les caisses ensuite.
+///
+/// **Deux chemins, et c'est le sujet.** Les murs, le sol et le plafond viennent
+/// du fichier : ils sont de la géométrie de cellule, et le moteur les balaie. Les
+/// caisses sont des maillages posés par l'hôte, que le décor ne connaît pas :
+/// c'est à l'exemple de les tester, en trois lignes, et le moteur n'a pas de
+/// primitive pour cela — il n'en a pas besoin.
+///
+/// Rien ne glisse le long de ce qui arrête : le mouvement s'arrête net. La
+/// glissade est une règle de jeu, trois lignes de projection sur la normale du
+/// contact, et l'ajouter ici ferait passer pour un service du moteur ce qui
+/// appartient à l'hôte.
+fn stopped(scene: &Scene, from: Vec3, to: Vec3) -> Vec3 {
+    // Hors de toute cellule, rien à balayer : la caméra est déjà sortie du
+    // décor, et l'arrêter là l'y enfermerait.
+    if scene.cell == 0 {
+        return to;
+    }
+    let mut end = match scene.world.sweep(scene.cell, BODY_HALF, from, to) {
+        // Un départ dans le solide ne bloque pas : il rendrait une fraction
+        // nulle, et la caméra resterait collée sans moyen d'en sortir.
+        Some(hit) if !hit.start_solid => from + (to - from) * hit.fraction,
+        _ => to,
+    };
+
+    for &(x, y, _) in &CRATES {
+        end = around_crate(Vec3::new(x, y, CRATE_Z), from, end);
+    }
+    end
+}
+
+/// Arrête le déplacement devant une caisse, sur l'axe où il y entre le plus tard.
+///
+/// Le recouvrement de deux boîtes alignées, écrit à la main : c'est la forme la
+/// plus courte de ce qu'un hôte fait pour un obstacle qui n'est pas du décor, et
+/// elle tient en vingt lignes parce qu'on ne demande ni le point de contact ni la
+/// normale — seulement de ne pas entrer.
+fn around_crate(centre: Vec3, from: Vec3, to: Vec3) -> Vec3 {
+    let half = Vec3::new(
+        CRATE_HALF + BODY_HALF.x,
+        CRATE_HALF + BODY_HALF.y,
+        CRATE_SCALE + BODY_HALF.z,
+    );
+    let inside = |p: Vec3| {
+        (p.x - centre.x).abs() < half.x
+            && (p.y - centre.y).abs() < half.y
+            && (p.z - centre.z).abs() < half.z
+    };
+    if !inside(to) || inside(from) {
+        return to;
+    }
+
+    // L'axe par lequel on est entré est celui dont on est le plus proche du
+    // bord : y revenir sort de la boîte sans toucher aux deux autres, ce qui
+    // laisse glisser le long d'une caisse alors que les murs, eux, arrêtent net.
+    // La différence est visible en jouant, et elle est voulue : deux chemins,
+    // deux réponses, décidées par l'hôte dans les deux cas.
+    let mut best = to;
+    let mut shortest = f32::MAX;
+    for axis in 0..3 {
+        let (p, c, h) = match axis {
+            0 => (to.x, centre.x, half.x),
+            1 => (to.y, centre.y, half.y),
+            _ => (to.z, centre.z, half.z),
+        };
+        let edge = if p < c { c - h } else { c + h };
+        let push = (edge - p).abs();
+        if push < shortest {
+            shortest = push;
+            best = match axis {
+                0 => Vec3::new(edge, to.y, to.z),
+                1 => Vec3::new(to.x, edge, to.z),
+                _ => Vec3::new(to.x, to.y, edge),
+            };
+        }
+    }
+    best
 }
 
 /// Ce que la boucle garde entre deux images.
@@ -159,7 +272,17 @@ fn main() -> Result<(), screengine_play::Error> {
             if tick.input().pressed(KeyCode::Escape) {
                 tick.exit();
             }
+            let before = scene.camera.position;
             scene.camera.update(tick);
+
+            // **Le déplacement se filtre avant tout le reste.** La caméra libre
+            // a déjà posé sa position ; ce qui suit la ramène à ce que le décor
+            // autorise, et le suivi de cellule part alors d'un point qui est
+            // réellement dedans. Ce qui se balaie est le centre du corps, l'œil
+            // s'en déduisant.
+            let body = Vec3::new(0.0, 0.0, EYE_ABOVE);
+            scene.camera.position =
+                stopped(scene, before - body, scene.camera.position - body) + body;
 
             // **Le suivi se fait ici, pas au rendu** : il dépend du déplacement,
             // donc de deux positions successives, et le rendu n'en connaît qu'une.
