@@ -39,14 +39,9 @@ jobs:
       # Le tag et la version du Cargo.toml disent la même chose, ou rien ne part :
       # une bibliothèque publiée sous v0.1.0 qui se déclare 0.0.0 ment à chaque
       # outil qui lit ses métadonnées.
-      #
-      # Un tag `vX.Y.Z-essai.N` éprouve le workflow entier sur la section de
-      # X.Y.Z sans occuper le vrai tag : sa release est un brouillon marqué
-      # préversion, qu'on supprime avec le tag.
       - name: Vérifier la version du Cargo.toml
         run: |
           version="${GITHUB_REF_NAME#v}"
-          version="${version%%-essai*}"
           declaree=$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -n 1)
           if [ "$declaree" != "$version" ]; then
             echo "Cargo.toml déclare $declaree, le tag est $GITHUB_REF_NAME" >&2
@@ -57,7 +52,6 @@ jobs:
         id: notes
         run: |
           version="${GITHUB_REF_NAME#v}"
-          version="${version%%-essai*}"
 
           # index et non une expression régulière : les crochets du titre de
           # section formeraient une classe de caractères, et « [0.4.0] » ne
@@ -307,13 +301,9 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          case "$GITHUB_REF_NAME" in
-            *-essai*) preversion=--prerelease ;;
-            *) preversion= ;;
-          esac
           gh release create "$GITHUB_REF_NAME" \
             --repo "$GITHUB_REPOSITORY" \
-            --draft $preversion \
+            --draft \
             --title "${{ needs.notes.outputs.titre }}" \
             --notes-file notes.md \
             publication/*
