@@ -118,6 +118,38 @@ impl Best {
             deepest: f64::MAX,
         }
     }
+
+    /// Ramène le résultat à `reached`, reculé de la marge, s'il allait plus loin.
+    ///
+    /// **Le recul est celui du dégagement de sécurité, et c'est la même
+    /// constante** : s'arrêter pile sur la frontière poserait le mobile **sur un
+    /// portail**, au seuil d'une cellule que le moteur n'a pas regardée, et un
+    /// balayage repris de là repartirait sans plus de garantie. Le dégagement
+    /// évite le contact exact avec ce qui arrête, celui-ci le contact exact avec
+    /// ce qui n'a pas été examiné : c'est le même invariant, **le moteur ne rend
+    /// jamais une position pile sur une limite**.
+    ///
+    /// Aucune surface n'est nommée : le moteur n'en a touché aucune, et prétendre
+    /// le contraire serait inventer de la géométrie. C'est le statut qui dit à
+    /// l'hôte pourquoi il s'arrête là.
+    fn truncate(&mut self, reached: f64) {
+        // Jamais en deçà du départ : sur un balayage assez court pour que sa
+        // première cellule soit déjà la dernière examinable, le recul mordrait
+        // sur l'origine. Zéro est alors la réponse honnête — l'hôte apprend
+        // qu'il n'avance pas, ce qui est vrai — là où une valeur négative serait
+        // un déplacement à rebours qu'il n'a pas demandé.
+        let stopped = if reached - SKIN < 0.0 {
+            0.0
+        } else {
+            reached - SKIN
+        };
+        if stopped < self.fraction {
+            self.fraction = stopped;
+            self.hit.fraction = stopped as f32;
+            self.hit.surface = 0;
+            self.hit.normal = Vec3::ZERO;
+        }
+    }
 }
 
 impl Hit {
@@ -191,6 +223,14 @@ pub(crate) fn sweep(
                 continue;
             }
             if count == SWEEP_CELLS {
+                // **La région examinée s'arrête à ce portail**, et le mouvement
+                // avec elle : au-delà, le moteur n'a rien regardé. Rendre le
+                // déplacement entier ferait passer une entité à travers un mur
+                // qu'il n'a pas eu le temps de voir, et le statut ne servirait
+                // qu'à s'en excuser.
+                if let Some(reached) = portal_fraction(&portal.points, grown_half, from, to) {
+                    best.truncate(reached);
+                }
                 best.hit.incomplete = true;
                 break;
             }
@@ -201,7 +241,88 @@ pub(crate) fn sweep(
         }
     }
 
+    // **La fraction est bornée à la sortie, et non au seul endroit du calcul où
+    // on la croirait nécessaire.** Le contrat annonce `[0, 1]` : un hôte n'a
+    // donc aucune raison de tester une valeur négative, elle traverserait tous
+    // ses garde-fous, et un déplacement à rebours se manifesterait comme un
+    // défaut de son code de glissade — très loin de sa cause.
+    //
+    // Par comparaisons écrites et non par `clamp`, que `clippy.toml` refuse :
+    // son traitement de `NaN` n'est pas celui des chemins vectoriels. L'ordre
+    // des deux tests le borne aussi — un `NaN` ne satisfait ni l'un ni l'autre
+    // et ressortirait tel quel, d'où le cas nommé qui le ramène à zéro.
+    best.hit.fraction = in_unit(best.hit.fraction);
     Some(best.hit)
+}
+
+/// La fraction ramenée dans `[0, 1]`, `NaN` compris.
+///
+/// **Par comparaisons écrites et non par `clamp`**, que `clippy.toml` refuse :
+/// son traitement de `NaN` n'est pas celui des chemins vectoriels. L'ordre des
+/// cas fait le reste — ce qui n'est ni au-dessus de un ni strictement au-dessus
+/// de zéro tombe dans le dernier, et c'est là que `NaN` atterrit sans avoir à
+/// être nommé, toute comparaison avec lui étant fausse.
+pub(super) fn in_unit(value: f32) -> f32 {
+    if value > 1.0 {
+        1.0
+    } else if value > 0.0 {
+        value
+    } else {
+        0.0
+    }
+}
+
+/// La fraction à laquelle la boîte atteint le plan d'un portail.
+///
+/// Sans test d'appartenance au polygone : ce qui est cherché est le moment où le
+/// mouvement quitte la région examinée, et **tronquer trop tôt est sûr quand
+/// tronquer trop tard ne l'est pas**. Un portail atteint par le plan mais manqué
+/// par le polygone ne fait donc qu'arrêter le mobile un peu avant.
+fn portal_fraction(points: &[Vec3], half: Vec3d, from: Vec3d, to: Vec3d) -> Option<f64> {
+    let corners: heapless::Points = {
+        let mut list = heapless::Points::new();
+        for point in points {
+            list.push(Vec3d::from(*point));
+        }
+        list
+    };
+    let normal = newell(&corners);
+    let anchor = *corners.first()?;
+    if normal == Vec3d::ZERO {
+        return None;
+    }
+
+    let reach = shape::support(normal, half);
+    let d0 = normal.dot(from - anchor);
+    let d1 = normal.dot(to - anchor);
+    if d0 == d1 {
+        return None;
+    }
+    // Des deux côtés : un portail se franchit dans le sens que le mouvement lui
+    // donne, et le sien n'est pas orienté.
+    let t = if d0 > d1 {
+        (d0 - reach) / (d0 - d1)
+    } else {
+        (d0 + reach) / (d0 - d1)
+    };
+    if (0.0..=1.0).contains(&t) {
+        Some(t)
+    } else {
+        None
+    }
+}
+
+/// La normale de Newell d'un polygone en double précision.
+fn newell(points: &[Vec3d]) -> Vec3d {
+    let mut normal = Vec3d::ZERO;
+    for i in 0..points.len() {
+        let a = points[i];
+        let b = points[(i + 1) % points.len()];
+        normal.x += (a.y - b.y) * (a.z + b.z);
+        normal.y += (a.z - b.z) * (a.x + b.x);
+        normal.z += (a.x - b.x) * (a.y + b.y);
+    }
+    normal
 }
 
 /// La boîte dilatée de [`SKIN`].

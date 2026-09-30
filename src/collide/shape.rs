@@ -200,8 +200,14 @@ impl Interval {
         }
         let t = d0 / (d0 - d1);
         if d1 < d0 {
-            // Le segment entre par ce plan.
-            if self.enter.is_none_or(|entered| t > entered) {
+            // Le segment entre par ce plan — **pendant le mouvement, et pas
+            // avant**. Un instant négatif dit que le segment était déjà du bon
+            // côté au départ : ce n'est pas une entrée, et le retenir ferait
+            // remonter un contact à une fraction antérieure à l'origine, que
+            // l'hôte n'a aucune raison de tester puisque le contrat annonce
+            // `[0, 1]`. Le cas se produit dès qu'une boîte part entre deux plans
+            // d'un prisme d'arête, ce qui n'a rien d'exceptionnel.
+            if t >= 0.0 && self.enter.is_none_or(|entered| t > entered) {
                 self.enter = Some(t);
                 self.normal = normal;
             }
