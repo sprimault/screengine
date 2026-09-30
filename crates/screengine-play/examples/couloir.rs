@@ -131,6 +131,108 @@ const LIGHTMAP_DENSITY: f32 = 2.0;
 /// Côté d'une caisse.
 const CRATE: f32 = 0.7;
 
+/// Les demi-étendues du volume qu'un marcheur occupe.
+///
+/// **Le joueur et le démon prennent les mêmes**, et c'est le sujet : le décor ne
+/// connaît ni l'un ni l'autre, seulement un volume qui se déplace. L'horizontale
+/// dépasse [`WEAPON_DISTANCE`], ce qui garantit qu'un mur ne vient jamais couper
+/// l'arme.
+///
+/// **La verticale décrit un corps, pas une tête.** Centrée sur l'œil, une boîte
+/// de cette largeur flotterait au-dessus de caisses hautes de `0,7` et les
+/// traverserait sans les toucher — ce qui est géométriquement juste et
+/// parfaitement faux. Le volume descend donc jusqu'au sol, dont il garde un
+/// cinquième d'unité de jeu : posé dessus, il partirait en contact et le
+/// balayage le dirait solide.
+const WALK_HALF: Vec3 = Vec3::new(0.4, 0.4, 0.65);
+
+/// De combien l'œil est au-dessus du centre de ce volume.
+///
+/// La caméra porte l'œil, la collision porte le corps : l'un se déduit de
+/// l'autre par cette constante, et rien d'autre ne les relie.
+const EYE_ABOVE: f32 = 0.75;
+
+/// Ce qui arrête un marcheur, ici : le couloir et les caisses, sans le moteur.
+///
+/// **Aucun décor chargé, donc aucun balayage.** La géométrie d'ici est écrite en
+/// Rust, panneau par panneau, et le moteur n'en sait rien : il a reçu des
+/// triangles, jamais des cellules. `World::sweep` n'aurait rien à balayer, et
+/// tout ce qui arrête est donc écrit ici — le couloir comme une boîte creuse, les
+/// caisses comme des boîtes pleines.
+///
+/// C'est la moitié utile de la démonstration, l'autre étant dans `carte.rs` : la
+/// même chose des deux côtés de la frontière. Là-bas un monde est chargé et le
+/// balayage fait les murs ; ici l'hôte fait tout, et cela lui coûte cette
+/// fonction — ce qui dit aussi pourquoi un décor de jeu se charge plutôt qu'il ne
+/// s'écrit.
+///
+/// **Le démon n'y figure pas**, et ce n'est pas un oubli : comme obstacle il est
+/// traversable. Un volume mobile solide est une règle de jeu, qui se coderait ici
+/// en un recouvrement de boîtes sans rien demander au moteur ; dans un couloir
+/// d'une largeur pareille, trois créatures qui se suivent en feraient un bouchon.
+/// Comme sujet, en revanche, il passe par cette même fonction.
+fn stopped(from: Vec3, to: Vec3) -> Vec3 {
+    let mut end = to;
+
+    // Le couloir, vu de l'intérieur : quatre murs, un sol, un plafond. Chaque
+    // borne se rabat séparément, donc on glisse le long d'une paroi au lieu de
+    // s'y coller — ce qui est le comportement qu'on attend en longeant un mur.
+    end.x = end.x.clamp(START + WALK_HALF.x, LENGTH - WALK_HALF.x);
+    end.y = end
+        .y
+        .clamp(-HALF_WIDTH + WALK_HALF.y, HALF_WIDTH - WALK_HALF.y);
+    end.z = end.z.clamp(WALK_HALF.z, HEIGHT - WALK_HALF.z);
+
+    for &(x, y, z) in &CRATES {
+        let centre = Vec3::new(x, y, z + CRATE * 0.5);
+        let half = Vec3::new(
+            CRATE * 0.5 + WALK_HALF.x,
+            CRATE * 0.5 + WALK_HALF.y,
+            CRATE * 0.5 + WALK_HALF.z,
+        );
+        end = around_box(centre, half, from, end);
+    }
+    end
+}
+
+/// Repousse hors d'une boîte alignée, par l'axe dont on est le plus près du bord.
+///
+/// Vingt lignes, et c'est tout ce qu'un hôte écrit pour un obstacle qui n'est pas
+/// du décor. Ni point de contact ni normale : on ne demande que de ne pas entrer.
+fn around_box(centre: Vec3, half: Vec3, from: Vec3, to: Vec3) -> Vec3 {
+    let inside = |p: Vec3| {
+        (p.x - centre.x).abs() < half.x
+            && (p.y - centre.y).abs() < half.y
+            && (p.z - centre.z).abs() < half.z
+    };
+    // Déjà dedans au départ : le repousser l'expulserait d'un coup, ce qui est
+    // pire que de le laisser sortir de lui-même.
+    if !inside(to) || inside(from) {
+        return to;
+    }
+
+    let mut best = to;
+    let mut shortest = f32::MAX;
+    for axis in 0..3 {
+        let (p, c, h) = match axis {
+            0 => (to.x, centre.x, half.x),
+            1 => (to.y, centre.y, half.y),
+            _ => (to.z, centre.z, half.z),
+        };
+        let edge = if p < c { c - h } else { c + h };
+        let push = (edge - p).abs();
+        if push < shortest {
+            shortest = push;
+            best = match axis {
+                0 => Vec3::new(edge, to.y, to.z),
+                1 => Vec3::new(to.x, edge, to.z),
+                _ => Vec3::new(to.x, to.y, edge),
+            };
+        }
+    }
+    best
+}
+
 /// Texels de pierre par unité de monde : la texture couvre deux mètres, ce qui
 /// donne des blocs d'une trentaine de centimètres.
 ///
@@ -885,8 +987,8 @@ const STRIDE_LENGTH: f32 = 1.7;
 ///
 /// **Au-delà du plan proche et en deçà de ce que le décor peut approcher.**
 /// Un mur ne masque l'arme que si la caméra s'en approche à moins de cette
-/// distance, ce que la collision interdira ; en attendant, le couloir est
-/// assez large pour que le cas ne se présente pas.
+/// distance, ce que [`WALK_HALF`] interdit : la boîte du joueur est plus large
+/// que cette distance, donc un mur est toujours au moins à ce point-là.
 const WEAPON_DISTANCE: f32 = 0.35;
 
 /// La demi-largeur et la demi-hauteur de l'arme, en unités de monde.
@@ -928,7 +1030,24 @@ const WALK_FRAMES: u32 = 8;
 const DEMON_HALF: f32 = 0.95;
 
 /// Le va-et-vient du démon le long du couloir, en abscisses de monde.
-const DEMON_RANGE: (f32, f32) = (6.0, 26.0);
+///
+/// **Ce ne sont plus elles qui le font se retourner, ce sont les caisses.** Il
+/// marche sur l'axe du couloir, et trois des cinq caisses sont à moins de sa
+/// demi-largeur de cet axe : celles de `18` et de `31` l'arrêtent, un peu avant
+/// ces abscisses puisqu'une caisse a une épaisseur. Posées ici, les bornes ne
+/// sont donc jamais atteintes et ne servent plus qu'à le garder en vue si on
+/// retirait les caisses.
+///
+/// Parti de `6`, il naissait dans la première caisse du couloir et n'en sortait
+/// plus — c'est ce qui l'a déplacé vers le fond.
+const DEMON_RANGE: (f32, f32) = (18.0, 31.0);
+
+/// Où il naît : au milieu du segment que les deux caisses lui laissent.
+///
+/// Une borne pour point de départ le ferait naître dans une caisse, où le
+/// repoussoir ne fait rien — il refuse d'expulser ce qui est déjà dedans, par
+/// principe.
+const DEMON_START: f32 = 24.0;
 
 /// Sa vitesse, en unités de monde par seconde.
 ///
@@ -949,6 +1068,15 @@ const DEMON_SPEED: f32 = 1.1;
 /// Posé à `2,2` au jugé, il faisait patiner les pieds sur plus du double de
 /// leur course.
 const DEMON_STRIDE: f32 = 0.9;
+
+/// De combien le bas de sa case est sous ses pieds, en unités de monde.
+///
+/// **Mesuré sur la planche, pas réglé à l'œil** : les pieds s'y arrêtent trois à
+/// quatre texels avant le bas de leur case de soixante-quatre, selon la pose. La
+/// case valant `2 × DEMON_HALF` de haut, ces trois texels et demi font un dixième
+/// d'unité — et un démon posé sans les retrancher flotte de cette hauteur-là,
+/// assez peu pour qu'on hésite à le nommer et assez pour qu'on le voie.
+const DEMON_FEET: f32 = 3.5 / 64.0 * 2.0 * DEMON_HALF;
 
 /// Le rayon de la tache d'ombre du démon, en unités de monde.
 const SHADOW_RADIUS: f32 = 0.55;
@@ -990,12 +1118,34 @@ struct Demon {
 
 impl Demon {
     /// Avance d'un pas de la boucle, et se retourne au bout du couloir.
+    ///
+    /// **Il passe par la même fonction que le joueur**, avec sa propre boîte : ni
+    /// mur ni caisse ne se traversent, et il se retourne devant ce qui l'arrête
+    /// comme devant le bout de sa course. C'est ce qui fait de lui une meilleure
+    /// démonstration que le joueur seul — deux volumes, un seul chemin, et rien
+    /// dans le décor qui sache lequel est lequel.
     fn update(&mut self, dt: f32) {
-        self.x += self.heading * DEMON_SPEED * dt;
-        if self.x > DEMON_RANGE.1 {
+        // Sa boîte est celle du joueur, pas celle de sa planche : `DEMON_HALF`
+        // décrit une image de deux unités de haut, pas le volume d'un corps, et
+        // un marcheur aussi large que son dessin ne passerait nulle part.
+        let from = Vec3::new(self.x, 0.0, WALK_HALF.z);
+        let wanted = Vec3::new(self.x + self.heading * DEMON_SPEED * dt, 0.0, WALK_HALF.z);
+        let reached = stopped(from, wanted);
+
+        // **Arrêté veut dire demi-tour, quel que soit l'axe qui l'a arrêté.**
+        // Une caisse décalée sur le côté le repousse latéralement et non de
+        // face — c'est l'axe de moindre pénétration qui gagne —, si bien qu'un
+        // demi-tour conditionné à la seule abscisse ne se déclencherait jamais :
+        // il dériverait hors de son axe en continuant d'avancer.
+        if reached != wanted {
+            self.heading = -self.heading;
+            return;
+        }
+        self.x = reached.x;
+        if self.x >= DEMON_RANGE.1 {
             self.x = DEMON_RANGE.1;
             self.heading = -1.0;
-        } else if self.x < DEMON_RANGE.0 {
+        } else if self.x <= DEMON_RANGE.0 {
             self.x = DEMON_RANGE.0;
             self.heading = 1.0;
         }
@@ -1075,7 +1225,7 @@ fn main() -> Result<(), screengine_play::Error> {
         last_yaw: 0.0,
         flash: 0.0,
         demon: Demon {
-            x: DEMON_RANGE.0,
+            x: DEMON_START,
             heading: 1.0,
         },
     };
@@ -1112,6 +1262,11 @@ fn main() -> Result<(), screengine_play::Error> {
             world.time = tick.index() as f32 * tick.dt();
             let before = world.camera.position;
             world.camera.update(tick);
+            // **Le joueur se cogne**, et par le même chemin que le démon plus
+            // bas : rien ici ne sait lequel des deux volumes se déplace. Ce qui
+            // se balaie est le centre de son corps, l'œil s'en déduisant.
+            let body = Vec3::new(0.0, 0.0, EYE_ABOVE);
+            world.camera.position = stopped(before - body, world.camera.position - body) + body;
 
             // **La phase du pas avance avec la distance, pas avec le temps.**
             // Le déplacement se mesure après coup plutôt que se déduire des
@@ -1303,7 +1458,7 @@ fn main() -> Result<(), screengine_play::Error> {
             let _ = context.submit_sprites(
                 Affine3::IDENTITY,
                 &[Sprite {
-                    center: Vec3::new(world.demon.x, 0.0, DEMON_HALF - 0.05),
+                    center: Vec3::new(world.demon.x, 0.0, DEMON_HALF - DEMON_FEET),
                     half_width: DEMON_HALF,
                     half_height: DEMON_HALF,
                     u0,

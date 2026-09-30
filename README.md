@@ -110,8 +110,21 @@ fn main() -> Result<(), screengine_play::Error> {
 `make run` launches this example. `make example EXAMPLE=couloir` launches
 another: a ruined corridor you walk through with the arrow keys and the mouse,
 lit by flickering tubes and by daylight falling through holes in the ceiling.
+Its geometry is written in Rust, panel by panel, and everything that stops you
+there is written along with it.
+
+`make example EXAMPLE=carte` shows the other half: a map **loaded from a file**,
+the very one all five hosts load. Its walls come from the engine's sweep, its
+crates from a box the example tests itself — the engine stops on cell geometry,
+and whatever is not cell geometry belongs to the host.
+
 The Rust path adds convenience, never capability: everything it allows can also
 be done through the C ABI.
+
+**These examples are to be watched, not tested.** They open a window, so no
+check runs them — they are only compiled, along with everything else. What they
+show is judged by launching them, and that is where the defects no fingerprint
+describes come to light.
 
 ### Embedding, from any language
 
