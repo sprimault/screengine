@@ -681,3 +681,71 @@ fn aucune_image_de_traversee_n_alloue() {
         assert_eq!(seen, 0, "{seen} allocation(s), éclairé : {lit}");
     }
 }
+
+/// **Aucun balayage n'alloue, le premier compris.**
+///
+/// L'invariant est vrai aujourd'hui parce que rien du balayage ne retient quoi
+/// que ce soit : la pile de cellules et l'ensemble des visitées sont des tableaux
+/// de taille fixe sur la pile de l'appel, et l'intersection se calcule surface
+/// par surface sans garder de liste de candidates. **C'est précisément le genre
+/// d'invariant qui se perd au premier ajout** — un tampon de travail qu'on
+/// croirait anodin —, et rien d'autre que ce test ne le verrait : un balayage qui
+/// allouerait ne changerait aucune empreinte et ne ferait rougir aucun contrôle.
+///
+/// **Le premier balayage compte autant que les suivants**, comme la première
+/// image : c'est là qu'une table dimensionnée à la demande se cacherait.
+#[test]
+fn aucun_balayage_n_alloue() {
+    let world = World::load(SALLES).expect("décor du dépôt valide");
+
+    // Le chargement alloue, et il en a le droit : c'est un appel nommé. La mesure
+    // s'arme après lui.
+    let half = Vec3::new(0.4, 0.4, 0.9);
+    let from = Vec3::new(0.0, 0.0, 1.0);
+    let cell = world.locate(from);
+    assert_ne!(cell, 0, "le départ est dans une cellule");
+
+    let seen = allocations(|| {
+        for step in 0..8 {
+            let reach = 1.0 + step as f32;
+            for direction in [
+                Vec3::new(reach, 0.0, 0.0),
+                Vec3::new(-reach, 0.0, 0.0),
+                Vec3::new(0.0, reach, 0.0),
+                Vec3::new(0.0, 0.0, -reach),
+            ] {
+                let to = Vec3::new(
+                    from.x + direction.x,
+                    from.y + direction.y,
+                    from.z + direction.z,
+                );
+                std::hint::black_box(world.sweep(cell, half, from, to));
+            }
+        }
+    });
+    assert_eq!(seen, 0, "{seen} allocation(s) pendant les balayages");
+}
+
+/// Le chemin de force brute n'alloue pas davantage.
+///
+/// Il visite toutes les cellules au lieu de suivre les portails, donc c'est lui
+/// qui rencontrerait le plus de géométrie — et une liste qui grandirait avec le
+/// nombre de surfaces s'y verrait en premier.
+#[test]
+fn aucun_balayage_de_force_brute_n_alloue() {
+    let world = World::load(SALLES).expect("décor du dépôt valide");
+    let half = Vec3::new(0.4, 0.4, 0.9);
+    let from = Vec3::new(0.0, 0.0, 1.0);
+
+    let seen = allocations(|| {
+        for step in 0..8 {
+            let reach = 1.0 + step as f32;
+            std::hint::black_box(world.sweep_brute(
+                half,
+                from,
+                Vec3::new(from.x + reach, from.y, from.z),
+            ));
+        }
+    });
+    assert_eq!(seen, 0, "{seen} allocation(s) pendant la force brute");
+}

@@ -1714,6 +1714,18 @@ n'est pas un lot plus petit, c'est un lot inachevé.
 le test rougir, on répare. Un test qui n'a jamais échoué ne prouve pas qu'il
 teste quelque chose.
 
+**Et quand le test passe par un instrument, l'instrument se vérifie d'abord.**
+Tant qu'il n'a pas vu une fois ce qu'il doit voir, ce qu'il rend n'a aucune
+valeur — ni vert, ni rouge. Un compteur d'allocations qui rendrait zéro par
+construction ferait passer toutes les mesures qui l'emploient, et rien dans leur
+sortie ne l'en distinguerait : c'est le mode de panne le plus discret qui soit,
+puisqu'il se présente comme un succès complet.
+
+D'où le **témoin** — une mesure qui alloue exprès et exige un compte non nul, à
+côté de celles qui exigent zéro. La règle est la même que ci-dessus, appliquée à
+l'appareil plutôt qu'au sujet, et elle vaut partout où un test conclut par une
+mesure : un compteur, une empreinte, une durée.
+
 ### Où vivent les tests
 
 - **Tests unitaires dans leur propre fichier** : `#[cfg(test)] mod tests;` dans le

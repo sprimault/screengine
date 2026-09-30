@@ -185,6 +185,21 @@ Les plages sont réservées par étape dès maintenant. Écarté : numéroter à
 suite au fil de l'eau, qui rend illisible la catégorie d'un code — précisément
 ce dont une liaison a besoin pour traiter celui qu'elle ne connaît pas.
 
+**La valeur d'une borne est un réglage ; ce qu'elle rend quand on l'atteint est
+un contrat.** Clause générale, qui vaut pour les cinq bornes publiées —
+`SCG_TRAVERSAL_DEPTH`, `SCG_TRAVERSAL_CELLS`, `SCG_SWEEP_CELLS`,
+`SCG_MAX_LIGHTMAP_SIZE`, le plafond de lumières. Un intégrateur qui en lit une
+veut d'abord savoir ce qu'il reçoit à la limite, et cela seul décide de ce qu'il
+écrit : un statut qu'il ignore, une erreur qu'il rapporte, un résultat tronqué
+qu'il retente autrement.
+
+La distinction porte aussi sur ce qui se vérifie. **Le comportement à la limite
+se teste avant que la valeur soit mesurée**, avec une géométrie faite pour
+l'atteindre ; la valeur, elle, se juge sur un décor réel et peut donc attendre.
+Les confondre laisse croire qu'une borne non éprouvée est une borne sûre, « non
+vérifié » et « vérifié et bon » se lisant de la même façon tant que rien ne
+l'approche.
+
 | Plage | Domaine | Codes proposés |
 |---|---|---|
 | `1` et au-delà | statuts (étapes 5 et 7) | `1` `SCG_STATUS_INCOMPLETE`, `2` `SCG_STATUS_NO_CELL`, `3` `SCG_STATUS_START_SOLID` |
