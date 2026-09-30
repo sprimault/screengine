@@ -381,6 +381,26 @@ aux fonctions de bord.
   `compiler-builtins`, correctement arrondi lui aussi. Ce qui l'exclut d'une
   image n'est pas sa justesse mais son coût, et la virgule fixe après
   projection, qui ne laisse de toute façon aucun flottant arriver au pixel.
+- **La règle d'usage : `f32` dans le pipeline d'image, `f64` dans ce qui se
+  calcule hors image — cuisson et collision comprises.** La frontière est le
+  coût par pixel, pas un module : un calcul qui s'exécute une fois par luxel,
+  par requête ou par chargement n'a aucune raison de se priver de la précision
+  que le déterminisme lui accorde déjà, et un calcul qui s'exécute deux cent
+  mille fois par image en a toutes.
+
+  **Énoncée par la frontière et non par une liste de modules**, parce qu'une
+  liste serait périmée au module suivant, alors que la question « ce calcul
+  a-t-il lieu par pixel ? » se pose telle quelle dans un module qui n'existe pas
+  encore.
+
+  Conséquence de vocabulaire, à connaître avant d'écrire : `Vec3` est en `f32` et
+  sert le pipeline ; un calcul hors image qui enchaîne plus qu'une expression
+  courte prend le type `f64`. Promouvoir champ par champ à chaque entrée de
+  calcul — ce que fait le contrôle de repère de lightmap, sur une seule
+  expression — ne passe pas à l'échelle : chaque promotion écrite à la main est
+  un endroit où elle peut être oubliée, et un oubli ne donne pas une erreur de
+  compilation mais un résultat en `f32` qui passe les tests et diverge sur un cas
+  limite. Le type le tient à la place de la relecture.
 - **Pas de `mul_add`.** Sur une cible sans instruction FMA, il retombe sur la
   libm ; sur une autre, il ne rend pas les mêmes bits qu'une multiplication
   suivie d'une addition.
@@ -1439,6 +1459,202 @@ ferait périmer le niveau entier au premier réglage d'une torche à l'autre bou
 **Une entrée dont l'empreinte ne concorde pas est écartée sans erreur**, et la
 cellule reste sans lightmap ; le compte des entrées reprises le dit à l'hôte. Le
 reste du contrat de reprise est dans [`abi.md`](abi.md).
+
+## Collision
+
+Le balayage d'une boîte axiale contre les cellules d'une carte, dans
+`src/collide/`. Le contrat vu de l'hôte est dans [`abi.md`](abi.md) ; ce qui suit
+est ce que deux cibles doivent produire au bit près, et l'endroit où se joue la
+justesse de l'étape.
+
+### La méthode
+
+**Balayage continu, jamais des pas discrets avec dégagement.** Le dégagement
+exige une profondeur de pénétration, qui n'est définie que contre un convexe ;
+nos surfaces sont des polygones plans **non convexes**, et une cellule l'est
+encore moins. S'y ajoute qu'un pas discret laisse passer au travers d'un mur
+mince à grande vitesse, ce qui est un défaut de la classe « résultat faux, aucune
+erreur ».
+
+**La boîte se réduit à un point contre la géométrie dilatée** — la somme de
+Minkowski de la surface et de la boîte réfléchie —, et le balayage devient un
+segment contre un convexe, donc une découpe d'intervalle, purement linéaire. Le
+volume dilaté se décompose en trois familles :
+
+- la **face**, plan de la surface décalé du support
+  `|N.x|·hx + |N.y|·hy + |N.z|·hz`, puis appartenance en deux dimensions au
+  polygone **non dilaté** ;
+- un **prisme convexe par arête**, enveloppe des deux boîtes posées à ses
+  extrémités : six plans axiaux et les biseaux `arête × axe` ;
+- une **boîte par sommet**.
+
+Écartée : la SAT balayée avec vitesse relative. Elle n'est définie que sur un
+convexe, ce qui ramènerait à tester la triangulation — voir juste en dessous.
+
+**Le balayage teste le polygone de la surface, jamais sa triangulation**, et
+c'est la même conclusion que le rayon de la cuisson par un chemin inverse. La
+somme de Minkowski distribue sur l'union, donc boîte ⊕ triangulation et
+boîte ⊕ polygone ont le même **volume** : il n'y a pas ici de trou d'épingle. Ce
+qui diffère est l'**ensemble des faces** de ce volume, où chaque arête interne de
+la découpe d'oreilles devient un prisme — donc une normale de contact qui
+n'existe pas sur la surface. Une boîte qui glisse sur un sol plan y accrocherait
+sur la couture de la triangulation. Le rayon sous-couvrait et trouait ; la boîte
+sur-couvre et accroche : même famille, symptôme inverse, et celui-ci se voit à
+l'arrêt.
+
+### La règle de l'arête partagée
+
+**C'est la règle top-left de cette étape.** Deux surfaces qui partagent une arête
+revendiquent toutes deux le volume dilaté le long de cette arête, et leurs temps
+d'impact diffèrent de quelques ulp : sans règle écrite, le minimum bascule de
+l'une à l'autre selon l'arrondi, donc la normale bascule, donc la glissade. Trois
+clauses, et chacune a sa raison.
+
+**(a) Les arêtes se classent au chargement, par comparaison exacte des
+positions.** Une arête d'une surface est **partagée** quand une autre surface de
+la même cellule porte les deux mêmes positions, comparées **au bit près** ; elle
+est ensuite **rentrante ou coplanaire**, ou **saillante**, par le signe du
+produit scalaire de la normale intérieure de la surface avec un sommet hors arête
+de sa voisine. Une arête rentrante ou coplanaire **ne porte aucun prisme** : elle
+est intérieure au bord solide tel que la boîte le voit, et la face de l'une ou de
+l'autre couvre déjà l'instant.
+
+**Pourquoi exacte, et pourquoi au chargement**, et c'est ce qu'il faut retenir
+avant de vouloir simplifier. L'usage, dans cette famille de moteurs, est de
+**stocker un marquage d'arêtes internes** dans les données, ou de poser un
+**seuil de recalage de la normale** au moment du contact. Le premier est un lien
+stocké, donc une occasion d'incohérence que l'éditeur devrait maintenir à chaque
+opération — c'est mot pour mot l'argument qui interdit de stocker les liens de
+portails. Le second est un réglage sans garantie : il est juste sur les décors où
+on l'a réglé.
+
+Ici la même information se **dérive** d'une comparaison exacte, comme
+l'appariement des portails, et le verdict est un **signe**, jamais une tolérance.
+Une tolérance rendrait d'ailleurs la relation non transitive — `a≈b`, `b≈c`,
+`a≉c` —, donc dépendante de l'ordre de parcours, ce que le déterminisme interdit.
+**Ne pas y poser d'epsilon** : ce qui paraîtrait de la robustesse serait la perte
+de la propriété qui fait tenir la règle.
+
+**(b) Un élément n'est retenu que s'il est franchi en entrant**, `N·d < 0`
+strictement. Deux murs dos à dos, de part et d'autre d'une frontière entre deux
+cellules, se départagent ainsi sans rien de plus.
+
+**(c) À temps d'impact rigoureusement égal**, trois critères dans l'ordre :
+**face, puis arête, puis sommet** ; à égalité, l'ordre du fichier — la cellule,
+puis la surface dans la cellule ; à égalité encore, le rang de l'arête ou du
+sommet dans le polygone.
+
+**Ce que la règle ne peut pas rater, et qu'il faut dire** : la boîte ne **passe**
+jamais par une arête partagée. Contrairement au rayon, les deux volumes dilatés
+se **recouvrent** le long de l'arête — la sur-couverture est structurelle. La
+règle ne tranche donc qu'une **double revendication**, jamais un trou, ce qui est
+le cas facile des deux. Un lecteur qui craint une fuite là où le rayon en avait
+une cherche un défaut qui ne peut pas exister ici.
+
+### La traversée
+
+**Par les portails, la boîte englobante en pré-rejet seulement.** Il n'existe
+aucun index spatial dans ce moteur, par construction : les portails sont la seule
+adjacence. Une sélection par boîtes de cellules n'aurait aucune borne, celles de
+cellules non convexes se recouvrant librement, et dégénérerait en balayage de la
+carte entière — ce que « utilisable par un serveur » interdit. La boîte
+englobante, dérivée au chargement, reste en pré-rejet d'une cellule déjà
+atteinte : conservatrice, gratuite, sans effet sur le résultat.
+
+La pile de travail part de la cellule que l'hôte passe ; **toutes** les surfaces
+de chaque cellule visitée sont testées ; la cellule liée d'un portail apparié est
+empilée quand le polygone dilaté du portail coupe la boîte du mouvement entier.
+Pile et ensemble des visitées en tableaux de taille fixe sur la pile de l'appel,
+jamais un `Vec`, jamais une table de hachage.
+
+**La non-convexité ne gêne pas**, et c'est l'argument de fermeture déjà écrit
+pour les occulteurs : une cellule est fermée, donc tout ce qui en sort traverse
+une surface ou un portail. La requête étant un **volume** et non un point, une
+boîte plus grande qu'un portail, ou à cheval sur deux, est couverte.
+
+**Un portail non apparié est solide.** C'est le mot du format — « un portail non
+apparié est un mur » —, et c'est ce qui garde la cellule fermée : passable, il
+ferait tomber l'hôte hors du monde sur une carte en cours d'édition. Conséquence
+assumée : un mur invisible là où l'éditeur n'a pas fini.
+
+**Le drapeau « non solide » exclut du balayage, et de rien d'autre.** Deux
+clauses qui se rateront sans être écrites : la surface **compte toujours** dans
+la parité de `locate`, qui mesure la fermeture du volume et non la solidité — l'en
+retirer mettrait tout point hors de toute cellule ; et elle **occulte toujours**
+la cuisson, ce que la section des lightmaps dit déjà. Le drapeau « deux faces »
+n'a aucun lecteur ici, le format ne disant pas quel côté d'une surface est
+l'avant : la normale rendue est celle qui s'oppose au mouvement.
+
+### Arithmétique
+
+**Tout le balayage est en `f64` ; l'entrée et la sortie sont en `f32`.** La
+virgule fixe commence à la projection parce que le coût y est par pixel ; une
+requête coûte quelques dizaines de surfaces, et la règle d'usage ci-dessus le
+range du côté hors image. Une virgule fixe demanderait en outre de figer une
+unité de monde que le format ne fixe pas.
+
+**Le calcul reste scalaire et sort du périmètre de l'étape 9**, pour la raison de
+la cuisson : sur armv7, le SIMD avancé n'a que la sémantique du zéro forcé là où
+le VFP scalaire traite les sous-normaux, et le `f64` n'y a de toute façon aucun
+chemin vectoriel.
+
+Opérations admises : les quatre, les comparaisons, les conversions, la valeur
+absolue écrite en comparaison. Aucune libm, aucun `mul_add`, aucun `min`/`max`
+de bibliothèque, `is_nan` nommément sur ce que l'hôte passe, avant toute
+comparaison de bornes.
+
+**Les ordres figés**, qui sont contractuels au même titre que ceux des
+transformations :
+
+1. le support, `|N.x|·hx + |N.y|·hy + |N.z|·hz`, dans l'ordre x, y, z ;
+2. les distances signées `d0 = N·(C0 − P0)` puis `d1 = N·(C1 − P0)`, dans l'ordre
+   du produit scalaire du noyau ;
+3. l'unique division `t = (d0 − support) / (d0 − d1)`, `d0 == d1` — mouvement
+   parallèle au plan — traité **avant** elle, en cas écrit ;
+4. les bornes d'intervalle du découpage par demi-espaces, axe par axe, par
+   comparaisons écrites.
+
+**Le résultat ne porte ni `NaN` ni `-0,0`.** Une empreinte hache des motifs de
+bits : deux résultats mathématiquement égaux dont l'un porte un zéro négatif
+donneraient deux empreintes. La clause se tient par un test qui inspecte les bits
+sur des balayages tirés au hasard — et le test d'`abs` de `math/polygon.rs` dit
+d'où un `-0,0` peut venir, la valeur absolue laissant passer le sien.
+
+### La boîte de sécurité
+
+**La boîte est dilatée d'une constante du noyau ; le temps d'impact n'est jamais
+reculé.** Reculer `t` laisse la boîte pénétrante sur les axes perpendiculaires au
+mouvement, si bien que le problème revient au balayage suivant, ailleurs : le
+recul est proportionnel à la vitesse, la dilatation ne l'est pas.
+
+La constante est une puissance de deux relative à la plus grande demi-extension,
+donc exacte, sans échelle de monde à inventer et sans sous-normal — même clause
+que le décalage d'échantillonnage de la cuisson. **Sa valeur se juge sur un décor
+réel**, à la marche d'escalier et au chambranle de porte, et non sur le papier :
+elle se fige avec la scène de conformance, dans le même lot, avant que sa
+référence soit écrite. Les tests écrits avant elle portent donc sur des
+**propriétés vraies pour tout un intervalle** — pas de pénétration, glissement
+stable sur un sol plan, pas d'accrochage sur une arête interne —, jamais sur des
+valeurs qu'elle déplacerait.
+
+### Les cas dégénérés
+
+Nommés d'avance, parce que chacun a une réponse et qu'aucune ne se devine :
+
+- **boîte déjà en intersection au départ** : temps nul et statut propre, normale
+  de la surface de moindre pénétration le long de sa propre normale intérieure, à
+  égalité l'ordre du fichier. Le moteur ne dégage pas ;
+- **déplacement nul**, `from == to` au bit près : cas écrit avant toute division,
+  rend le recouvrement de départ et rien d'autre. **Aucun epsilon sur la longueur
+  du déplacement** ; le seul test est `d0 == d1` ;
+- **surface dégénérée** — moins de trois coins, coins colinéaires, normale de
+  Newell nulle : aucun élément, comme le test d'appartenance de `locate` le fait
+  déjà sur une aire nulle. Le chargement ne vérifie pas la cohérence géométrique,
+  par clause, donc c'est ici que cela se traite ;
+- **boîte plus grande qu'une cellule** : légale, et c'est l'argument de la requête
+  par volume ;
+- **sortie par une surface non solide** : la boîte finit hors de toute cellule, et
+  l'hôte rappelle `scg_world_locate` — clause déjà celle de `track`.
 
 ## Documentation et commentaires
 

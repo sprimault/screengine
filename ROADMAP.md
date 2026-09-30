@@ -386,6 +386,17 @@ liste que rien n'éprouve aujourd'hui.
   lightmaps, meilleures et déjà payées. À trancher quand il y aura un objet
   mobile à ombrer, pas avant : dimensionner pour des objets qui n'existent pas
   revient à choisir une résolution au hasard.
+- **La collision contre autre chose que la géométrie d'une carte.** Un maillage
+  posé — une caisse, un poteau, une étagère — n'a pas de portail, donc pas
+  d'adjacence : rien de ce que l'étape 7 apprend à traverser ne s'applique à lui,
+  et ce n'est pas un arbitrage de périmètre mais ce qui lui manque. Il se teste
+  chez l'hôte, qui l'a placé et connaît sa pose ; un volume mobile — un ennemi —
+  encore davantage, le décider solide étant une règle de jeu.
+
+  Le jour où cela s'ajouterait, ce serait une fonction de plus prenant un
+  maillage et sa matrice, et elle aurait trois questions à trancher que l'étape 7
+  n'éclaire pas : la transformation de la géométrie vers le monde, le test contre
+  son enveloppe, et ce qu'un maillage **animé entre deux trames** doit arrêter.
 - Post-traitement plein écran : FXAA, bloom, tout ce qui lit les pixels voisins.
 - Modèles animés par squelette : les trames interpolées suffisent à la classe
   visée.

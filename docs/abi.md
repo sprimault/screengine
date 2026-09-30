@@ -7,24 +7,26 @@ Un auteur de liaison qui ne lit pas le français trouve l'essentiel dans
 `include/screengine.h`, dont la documentation est en anglais : ce qui ne peut pas
 être ignoré à l'appel y figure, fonction par fonction.
 
-**État : l'étape 6 est publiée en 0.6.0** — les sept points d'entrée de l'étape 0,
+**État : l'étape 7 est en cours ; la 0.6.0 est la dernière publiée** — les sept points d'entrée de l'étape 0,
 le rendu par tuiles, les textures avec leur niveau de filtrage, la lumière
 (lightmaps fournies par l'hôte, lumières dynamiques, brouillard, résolution
 interne, courbe de sortie), les deux formats de données avec leurs accesseurs, la
 traversée par portails avec le suivi de la cellule de la caméra et le calcul des
 lightmaps, cache compris, et les quadrilatères orientés, les maillages entre deux
-trames, le texel transparent et la surface modulée. Chaque décision garde ci-dessous
-l'option écartée et pourquoi. Un seul point reste marqué **À trancher** : la
-dépréciation, qui attend le gel de l'ABI en 1.0.
+trames, le texel transparent et la surface modulée. **Le contrat du balayage de
+l'étape 7 est figé ci-dessous, avant son premier décodeur**, comme ceux des
+étapes 4, 5 et 6 l'ont été. Chaque décision garde ci-dessous l'option écartée et
+pourquoi. Un seul point reste marqué **À trancher** : la dépréciation, qui attend
+le gel de l'ABI en 1.0.
 
-`SCG_ABI_VERSION` reste à **1** : aucune signature publiée n'a changé, l'étape 6
-n'ayant fait qu'ajouter des fonctions. Ce qui change pour une liaison est ailleurs :
-les deux premiers **codes de retour positifs** du projet, apparus en 0.5.0, qui
-font d'un test « différent de zéro » un refus de succès.
+`SCG_ABI_VERSION` reste à **1** : aucune signature publiée n'a changé, les étapes
+6 et 7 n'ayant fait qu'ajouter des fonctions. Ce qui change pour une liaison est
+ailleurs : les **codes de retour positifs**, dont les deux premiers sont apparus
+en 0.5.0 et qui font d'un test « différent de zéro » un refus de succès.
 
-**Elle rend les deux premiers codes positifs du projet**, ce que la section
-« Codes de retour » avait réservé sans l'employer. Une liaison qui juge un appel
-par « différent de `0` » se trompe désormais : le critère est « négatif ».
+Une liaison qui juge un appel par « différent de `0` » se trompe donc : le
+critère est « négatif ». Un troisième statut arrive avec le balayage, et un
+statut inconnu se traite toujours comme `SCG_OK`.
 
 ## Principes
 
@@ -185,7 +187,7 @@ ce dont une liaison a besoin pour traiter celui qu'elle ne connaît pas.
 
 | Plage | Domaine | Codes proposés |
 |---|---|---|
-| `1` et au-delà | statuts (étape 5) | `1` `SCG_STATUS_INCOMPLETE`, `2` `SCG_STATUS_NO_CELL` |
+| `1` et au-delà | statuts (étapes 5 et 7) | `1` `SCG_STATUS_INCOMPLETE`, `2` `SCG_STATUS_NO_CELL`, `3` `SCG_STATUS_START_SOLID` |
 | `0` | succès | `SCG_OK` |
 | `-1` à `-99` | généraux | `-1` `SCG_ERR_NULL`, `-2` `SCG_ERR_INVALID_ARGUMENT`, `-3` `SCG_ERR_OUT_OF_MEMORY`, `-4` `SCG_ERR_INVALID_STATE`, `-5` `SCG_ERR_PANIC`, `-6` `SCG_ERR_FAULTED` |
 | `-100` à `-199` | données (étape 4) | `-100` `SCG_ERR_UNKNOWN_RESOURCE`, `-101` `SCG_ERR_INVALID_FORMAT`, `-102` `SCG_ERR_UNSUPPORTED_FORMAT_VERSION` |
@@ -464,6 +466,11 @@ Arrêté :
   sont indépendants et peuvent servir chacun sur son thread.
 - Les fonctions sans objet — `scg_abi_version`, `scg_buffer_alloc`,
   `scg_buffer_free` — sont appelables depuis n'importe quel thread.
+- **Une seconde exception, sur un objet et non sur un contexte :
+  `scg_world_sweep`.** `ScgWorld` est immuable après chargement, le balayage ne
+  la lit qu'en partage, et il ne prend aucune ressource : il s'appelle depuis
+  n'importe quel thread, sur le même handle, simultanément et sans limite. Voir
+  « Étape 7 ».
 - **Une exception, et une seule : le rendu des tuiles.** Entre le début et la fin
   d'une image, l'hôte peut rendre des tuiles d'index distincts depuis des threads
   distincts. Aucun autre appel sur le contexte n'est permis pendant ce temps.
@@ -1664,6 +1671,211 @@ règle se devinait jusqu'à présent sans être énoncée.
   changerait quand le joueur en fait le tour. Il garde l'atténuation par la
   distance seule.
 
+### Étape 7
+
+**Deux fonctions, une structure, une constante et un statut.** Aucune signature
+publiée, aucune structure, aucune précondition ne bouge : `SCG_ABI_VERSION` reste
+à **1**, et `version_format` non plus — le bit « non solide » d'une surface est
+défini et accepté par le chargeur depuis l'étape 4, il reçoit ici son premier
+lecteur.
+
+```c
+int32_t scg_world_sweep(const ScgWorld *world, uint32_t from_cell,
+                        const float half_extents[3],
+                        const float from[3], const float to[3],
+                        ScgSweepHit *out);
+int32_t scg_world_surface_material(const ScgWorld *world, uint32_t surface_id,
+                                   uint32_t *out);
+```
+
+```c
+typedef struct ScgSweepHit {
+    float    fraction;
+    float    normal[3];
+    float    point[3];
+    uint32_t surface_id;
+    uint32_t cell_id;
+    uint32_t reserved0;
+    uint32_t reserved1;
+} ScgSweepHit;
+```
+
+Constantes : `SCG_STATUS_START_SOLID` (3) et `SCG_SWEEP_CELLS`.
+
+**Le module s'utilise sans contexte de rendu**, et c'est la raison d'être de
+l'étape : un serveur de jeu charge une carte, balaie, et n'alloue jamais un
+tampon d'image. Aucune de ces deux fonctions ne prend de `ScgContext`, et leur
+erreur se lit par `scg_last_error(NULL)`, comme celle de `scg_world_locate`.
+
+#### Ce que le moteur rend, et ce qu'il ne rend pas
+
+- **Un temps d'impact et une normale ; la réponse appartient à l'hôte.**
+  Glissade, marche d'escalier, gravité, rebond sont des politiques de jeu, et le
+  moteur n'en connaît aucune. C'est écrit ici parce que l'absence de réponse se
+  lit autrement comme un manque : un intégrateur qui trouve son personnage
+  arrêté net contre un mur en biais cherchera un défaut du moteur là où il lui
+  manque trois lignes de projection de son déplacement sur le plan rendu.
+- **Le balayage ne dégage pas.** Il n'existe aucun vecteur de dégagement défini
+  contre un jeu de surfaces non convexes : la profondeur de pénétration n'est
+  définie que contre un convexe, et une cellule ne l'est pas. Un départ dans le
+  solide se signale, il ne se corrige pas.
+- **`half_extents` nuls valent un lancer de rayon.** Une seule fonction pour les
+  deux : le rayon est le balayage d'une boîte d'étendue nulle, et deux fonctions
+  auraient été le même parcours à valider l'un contre l'autre.
+- **La boîte est axiale dans le monde et ne tourne pas.** Une boîte tournée
+  cesserait d'être axiale, donc son balayage cesserait d'être une découpe
+  d'intervalle par axe ; ce que l'hôte veut vraiment d'un personnage qui pivote,
+  c'est une boîte qui englobe toutes ses orientations, et c'est lui qui la donne.
+- **Aucun filtre de l'hôte.** Ce qui arrête est décidé par le **drapeau « non
+  solide »** que porte chaque surface de la carte. Un masque de collision — les
+  couches que l'hôte croiserait — est une notion de jeu, et il se fait chez lui
+  en balayant deux fois ou en ignorant un résultat.
+
+#### `ScgSweepHit`
+
+Quarante-quatre octets, décalages 0 à 40 identiques sur x86_64, aarch64, wasm32
+et armv7, sans un octet de bourrage : que des champs de quatre octets. C'est la
+disposition de `ScgSprite`, et pour la même raison.
+
+- **Le moteur remplit une structure que l'hôte possède**, ce que le principe
+  autorise explicitement depuis `scg_world_light` : ce qu'il interdit est une
+  structure *rendue* par valeur ou par pointeur vers sa propre mémoire.
+- **Pas de champ « touché ».** `surface_id` vaut `0` quand rien n'est touché, et
+  `fraction` vaut alors `1`. Ce n'est pas une sentinelle inventée ici : le format
+  réserve déjà `0` à « aucun », et `cell_id` à `0` vaut déjà « aucune cellule »
+  dans l'ABI publiée. Un booléen aurait dit ce qu'un identifiant nul dit déjà, et
+  l'ABI n'a pas de `bool`.
+- **`point` figure dès la publication**, et c'est la clause des trois décalages
+  de `ScgGrade` : trois flottants ne tiendraient jamais dans deux champs
+  réservés, et un point de contact n'a pas zéro pour neutre — il aurait donc
+  fallu une seconde structure et une seconde fonction, pour toujours. C'est aussi
+  la seule valeur que l'hôte ne peut pas recalculer par une interpolation, un
+  contact face contre face étant un rectangle et non un point.
+- **Le point rendu est la projection, sur le plan de la surface touchée, du
+  centre de la boîte à la fraction d'impact.** Un produit scalaire, sans racine,
+  et le même sur toutes les cibles — c'est ce qui le rend opposable à la
+  conformance.
+- **Les deux champs réservés sont nuls obligatoires**, et leur usage prévu est
+  connu : une profondeur de pénétration, dont le neutre *est* zéro, ce que la
+  clause d'extensibilité exige.
+- **La structure est rendue par pointeur, jamais par valeur.** L'ABI
+  `extern "C"` de `wasm32-unknown-unknown` a divergé de celle de clang pendant
+  des années sur le passage d'agrégats par valeur.
+
+#### Ce que le balayage attend, et ce qu'il refuse
+
+- `world` ou `out` nul : **`SCG_ERR_NULL`**.
+- Une demi-extension négative ou non finie, une position non finie :
+  **`SCG_ERR_INVALID_ARGUMENT`**, `NaN` testé nommément avant les comparaisons de
+  bornes, qui sont fausses dans les deux sens et le laisseraient passer.
+- Un `from_cell` ou un `surface_id` qu'aucune cellule ni surface ne porte :
+  **`SCG_ERR_UNKNOWN_RESOURCE`**, dont c'est la définition littérale et que
+  l'étape 5 emploie déjà pour la cellule de départ d'une traversée. `0` n'est pas
+  un identifiant inconnu, c'est l'absence.
+- **Que la cellule de départ contienne la boîte n'est pas vérifié** : ce serait un
+  test d'appartenance par requête pour un appelant qui le sait déjà, l'ayant
+  obtenu de `scg_world_locate` ou de `scg_world_track`.
+- **Aucune allocation**, donc pas même `SCG_ERR_OUT_OF_MEMORY`. Ce qui doit être
+  borné vit sur la pile de l'appel.
+
+**La plage `-300` à `-399` reste vide**, comme celle du monde est restée vide à
+l'étape 5 : chaque cas d'échec tombe dans un code déjà défini, et c'est le signe
+que les plages sont bien tracées. Une plage vide ne coûte rien, et un code
+s'ajoute plus tard sans incrémenter `SCG_ABI_VERSION`.
+
+#### Les trois statuts
+
+- **`SCG_STATUS_NO_CELL`** quand `from_cell` vaut `0` : le balayage rend un
+  déplacement libre, `fraction` à 1 et `surface_id` à 0. Le moteur n'a rien
+  examiné, et inventer un mur serait inventer de la géométrie ; c'est le statut
+  qui dit à l'hôte de rappeler `scg_world_locate`.
+- **`SCG_STATUS_INCOMPLETE`** quand le budget `SCG_SWEEP_CELLS` est épuisé. Le
+  déplacement est alors **tronqué** à la fraction où s'arrête la région examinée,
+  et c'est la seule réponse conservatrice : rendre le déplacement libre ferait
+  passer une entité à travers un mur que le moteur n'a pas eu le temps de
+  regarder.
+- **`SCG_STATUS_START_SOLID`** quand la boîte est déjà en intersection au départ.
+  `fraction` vaut alors 0, et la normale est celle de la surface de moindre
+  pénétration le long de sa propre normale intérieure, à égalité l'ordre du
+  fichier.
+
+  **Un statut et non `fraction == 0`**, qui est ambigu : c'est aussi ce que rend
+  un contact légitime immédiat, boîte au contact exact d'un mur et mouvement qui
+  entre dedans. Les deux cas appellent des réponses opposées — glisser, ou se
+  dégager —, et c'est la seule information que l'hôte ne peut pas reconstruire.
+  Le lui faire deviner d'un nombre, c'est lui garantir de se tromper le jour où
+  il restera coincé dans un chambranle.
+
+  **Un balayage entièrement dans le solide, sans sortie, rend le même statut**, et
+  `fraction` dit le reste. Écrit ici pour qu'aucun quatrième statut ne s'ajoute
+  plus tard sur un cas que celui-ci couvre.
+
+Quand deux statuts s'appliquent, l'appel rend **le plus actionnable** et le
+message nomme les deux : la convention est celle des codes de retour, et cet
+ordre fait partie de la sortie d'une scène de conformance.
+
+#### La boîte de sécurité
+
+**Le moteur dilate la boîte d'une constante du noyau ; il ne recule pas le temps
+d'impact.** Reculer `t` laisserait la boîte pénétrante sur les axes
+perpendiculaires au mouvement, et le problème reviendrait au balayage suivant,
+ailleurs. La dilatation, elle, ne dépend pas de la vitesse.
+
+Ce que l'hôte doit en savoir tient en une phrase : **le temps rendu place la
+boîte juste avant le contact, jamais dessus**, si bien qu'un déplacement appliqué
+à cette fraction ne remet pas l'appel suivant en départ solide. La constante ne
+se configure pas, pour la raison de `SCG_TRAVERSAL_DEPTH` : un résultat qui
+dépendrait d'un champ de configuration échapperait à la conformance.
+
+#### `SCG_SWEEP_CELLS` et la concurrence
+
+**Une borne et non deux**, à la différence de l'étape 5 : l'étendue balayée borne
+déjà la région, et le nombre de cellules visitées est la seule chose qui puisse
+enfler. Elle ne se configure pas, et l'atteindre rend `SCG_STATUS_INCOMPLETE`.
+
+**Sa valeur se mesure avant d'être publiée**, sur le décor de validation, et elle
+est le seul élément de cette section à ne pas être arrêté ici. Un ordre de
+grandeur n'est pas une mesure, et une constante d'ABI ne change jamais de sens
+une fois publiée : la fixer au jugé reviendrait à graver un nombre qu'on ne
+pourrait plus corriger. Elle est donc figée avec la scène de conformance, dans le
+même lot et avant que sa référence soit écrite — comme la constante de dilatation
+de la boîte de sécurité, et pour la même raison.
+
+**`scg_world_sweep` est le premier appel du projet à être concurrent sur un même
+objet.** `ScgWorld` est immuable après chargement et le balayage ne la lit qu'en
+partage : il s'appelle depuis n'importe quel thread, sur le même handle,
+simultanément et sans limite. C'est nouveau, et c'est dit parce que la seule
+concurrence permise jusqu'ici était celle des tuiles, sur un contexte, à index
+disjoints. Aucun état n'est partagé en écriture, aucune ressource n'est prise, et
+il n'existe pas de handle de requête à tenir par thread — c'est ce que l'absence
+d'état achète. `ScgLighting` reste non partageable, `scg_lighting_build` la
+mutant, mais le balayage n'y touche pas.
+
+Détruire la carte pendant un balayage reste une précondition, jamais un cas
+d'erreur.
+
+#### `scg_world_surface_material`
+
+Elle existe parce que `surface_id` la réclame. Sans elle, l'hôte reçoit un
+identifiant qu'aucune fonction ne traduit avant l'étape 8 — donc un champ mort
+dans une structure qui ne se modifie plus, ce qui est pire que d'anticiper un
+accesseur. Elle rend l'identifiant de matériau de la surface, que
+`scg_world_material_name` nomme.
+
+C'est la seule fonction de l'étape qui entame l'interrogation de scène de
+l'étape 8, et le risque est assumé : elle pourra s'y retrouver seule d'une
+famille qui aura une autre forme. La règle le couvre — on ajoute des fonctions,
+on n'en change pas.
+
+#### Ce que l'étape ne fait pas
+
+**Elle ne balaie que contre les cellules d'une carte.** Un obstacle qui n'est pas
+de la géométrie de cellule — un maillage posé, une caisse, un poteau — n'a pas de
+portail, donc pas d'adjacence, et rien de ce que cette étape apprend à traverser
+ne s'applique à lui. Il se teste chez l'hôte, qui l'a placé et connaît sa pose.
+
+Voir `ROADMAP.md`, « Hors périmètre v1 ».
+
 ### Étapes suivantes
 
 Prévisionnel. Ce qui doit être exposé est arrêté par la feuille de route ; les
@@ -1677,7 +1889,7 @@ noms ne le sont pas.
 | 4 | ✓ chargement d'un maillage et d'une carte depuis un bloc d'octets, libération, leurs comptes, leurs noms, leurs soumissions, et les lumières et entités d'une carte |
 | 5 | ✓ rendu du monde depuis la caméra, suivi de sa cellule, calcul des lightmaps d'une cellule et reprise d'un cache |
 | 6 | ✓ modes d'écriture de pixel, quadrilatères orientés, trames, normale par sommet — voir « Étape 6 » |
-| 7 | module de collision, utilisable sans contexte de rendu |
+| 7 | ✓ balayage d'une boîte contre les cellules, utilisable sans contexte de rendu — voir « Étape 7 » |
 | 8 | tracé de lignes et de points, interrogation de la scène, modification d'une cellule par identifiant |
 
 ## Ce qu'un auteur de liaison doit savoir

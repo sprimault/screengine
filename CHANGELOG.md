@@ -46,6 +46,13 @@ publié, et explique les conventions du dépôt à qui y contribue.
 
 ## [Non publié]
 
+### Ajouté
+- **Le balayage d'une boîte contre les cellules d'une carte**, sans contexte de
+  rendu : `scg_world_sweep` rend un temps d'impact, une normale et la surface
+  touchée, `scg_world_surface_material` la nomme. Un troisième statut,
+  `SCG_STATUS_START_SOLID`, signale un départ dans le solide. La réponse —
+  glissade, marche, gravité — appartient à l'hôte.
+
 ### Interne
 - **PHP n'est plus cité comme cible de liaison**, faute de destinataire. Ce que
   le document en disait valait pour toute liaison qui lit le header au lieu de
@@ -56,6 +63,13 @@ publié, et explique les conventions du dépôt à qui y contribue.
   liste des scènes des hôtes n'a plus qu'une seule copie.
 
 ***
+
+### Added
+- **Box sweeping against a map's cells**, with no rendering context:
+  `scg_world_sweep` returns a time of impact, a normal and the surface hit,
+  `scg_world_surface_material` names it. A third status,
+  `SCG_STATUS_START_SOLID`, reports a start inside solid geometry. The response
+  — sliding, stepping, gravity — belongs to the host.
 
 ### Internal
 - **PHP is no longer named as a binding target**, for want of an audience. What
