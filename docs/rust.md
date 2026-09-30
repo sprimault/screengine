@@ -1791,10 +1791,23 @@ mesure : un compteur, une empreinte, une durée.
   son empreinte, jamais contre une capture prise avec elle-même. Une divergence
   est une variante fausse, pas une différence acceptable.
 - **Une empreinte qui change est soit une régression, soit une évolution
-  voulue.** Dans le second cas, `make conform-update`, et la mise à jour des
-  références est un commit distinct, dont le message dit ce que le rendu fait
-  désormais autrement. Jamais mêlée au lot qui l'a causée : le diff d'un fichier
-  d'empreintes ne se relit pas.
+  voulue.** Dans le second cas, `make conform-update`, et le message dit ce que
+  le rendu fait désormais autrement.
+
+  **Où elle se livre dépend de ce qui la fait bouger.** Une référence qui change
+  **pour une raison qu'il faut instruire** va dans un commit distinct, jamais
+  mêlée au lot qui l'a causée : dans un gros lot personne ne relit les deux, on
+  regarde le code et l'empreinte passe, et la séparer force à instruire la
+  cause. Une référence que **le lot existe pour changer** va dans le lot : elle
+  n'accompagne pas le changement, elle en est la preuve, et l'en retirer
+  retirerait au lot ce qui le valide.
+
+  Le message porte alors **l'ancienne et la nouvelle empreinte**, et une phrase
+  sur ce qui distingue les deux rendus. C'est ce que la séparation en deux
+  commits cherchait à obtenir, et cela l'obtient sans le prix : les deux autres
+  ordres possibles — la référence avant le correctif, ou après — laissent
+  `master` rouge entre les deux, et une branche protégée dont la conformance est
+  rouge est une fenêtre où tout autre contrôle qui tombe ne se distingue plus.
 - **Une option de rendu qui change l'image prend une scène, jamais une passe.**
   Les passes d'une scène ne diffèrent que par le découpage et doivent rendre la
   même empreinte : c'est tout leur objet. Un filtrage qui rend délibérément une

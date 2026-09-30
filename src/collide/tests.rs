@@ -12,7 +12,7 @@
 use alloc::vec::Vec;
 
 use super::*;
-use crate::format::world::tests::{cell_bytes, file, material, surface_in_plane};
+use crate::format::world::tests::{cell_bytes, file, material, portal_bytes, surface_in_plane};
 use crate::testing::Rng;
 
 /// Les huit coins d'un cube de huit unités, à l'origine.
@@ -319,5 +319,189 @@ fn les_sommets_d_une_surface_tiennent_sur_la_pile() {
     for surface in &cell.surfaces {
         let points: Vec<Vec3d> = corners(cell, surface).iter().copied().collect();
         assert_eq!(points.len(), surface.corners.len());
+    }
+}
+
+/// **La fraction rendue est toujours dans `[0, 1]`, quelle que soit l'entrée.**
+///
+/// Une propriété de la **sortie** du balayage, et non d'un chemin de calcul :
+/// elle vaut pour tous ceux qui existent et pour ceux qu'on n'a pas écrits. Elle
+/// se teste sans construire de scène particulière, et c'est ce qui la distingue
+/// d'un correctif local.
+///
+/// Ce qu'elle protège est le défaut le plus discret de sa famille : le contrat
+/// annonce `[0, 1]`, donc aucun hôte n'a de raison de tester une valeur hors
+/// bornes. Elle traverserait tous ses garde-fous, et un déplacement à rebours se
+/// manifesterait comme un défaut de son code de glissade, très loin de sa cause.
+#[test]
+fn la_fraction_reste_dans_ses_bornes() {
+    let world = room(0);
+    let mut rng = Rng::new(0x000B_07E5_0000_0011);
+
+    for round in 0..512 {
+        // Des entrées volontairement extrêmes : très loin, très près, nulles,
+        // et des boîtes de toutes tailles jusqu'à plus grandes que la salle.
+        let scale = f64::from(rng.coord(0, 40));
+        let from = random_point(&mut rng);
+        let to = Vec3d::new(
+            from.x + f64::from(rng.coord(-20, 20)) * scale,
+            from.y + f64::from(rng.coord(-20, 20)) * scale,
+            from.z + f64::from(rng.coord(-20, 20)) * scale,
+        );
+        let side = f64::from(rng.coord(0, 12)) * 0.5;
+        let half = Vec3d::new(side, side, side);
+
+        for cell in [7, 0] {
+            let Some(hit) = sweep(&world, cell.max(7), half, from, to) else {
+                continue;
+            };
+            assert!(
+                (0.0..=1.0).contains(&hit.fraction),
+                "tour {round} : fraction {} hors bornes, graine 0xB07E500000000011",
+                hit.fraction
+            );
+        }
+    }
+}
+
+/// Une enfilade de `count` cubes de quatre unités, alignés sur `X`.
+///
+/// **Toutes les coordonnées sont des multiples de quatre**, et c'est ce qui fait
+/// que le test mesure ce qu'il prétend : deux cellules voisines écrivent alors
+/// leur portail commun avec **les mêmes bits**, donc il s'apparie. Sans cela il
+/// deviendrait un mur, le balayage s'arrêterait bien avant la borne, et le test
+/// passerait au vert pour la mauvaise raison.
+fn chain(count: u32) -> World {
+    let mut cells = Vec::new();
+    for index in 0..count {
+        let x0 = (index * 4) as f32;
+        let x1 = x0 + 4.0;
+        let points: [[f32; 3]; 8] = [
+            [x0, 0.0, 0.0],
+            [x1, 0.0, 0.0],
+            [x1, 4.0, 0.0],
+            [x0, 4.0, 0.0],
+            [x0, 0.0, 4.0],
+            [x1, 0.0, 4.0],
+            [x1, 4.0, 4.0],
+            [x0, 4.0, 4.0],
+        ];
+        // Sol, plafond, et les deux murs perpendiculaires à Y ; les deux faces
+        // perpendiculaires à X sont des portails, sauf aux deux bouts de la
+        // chaîne, où ils restent non appariés — donc solides.
+        let first = 100 + index * 10;
+        let surfaces = [
+            surface_in_plane(
+                first + 1,
+                0,
+                &[0, 3, 2, 1],
+                [1.0, 0.0, 0.0],
+                [0.0, 1.0, 0.0],
+            ),
+            surface_in_plane(
+                first + 2,
+                0,
+                &[4, 5, 6, 7],
+                [1.0, 0.0, 0.0],
+                [0.0, 1.0, 0.0],
+            ),
+            surface_in_plane(
+                first + 3,
+                0,
+                &[0, 1, 5, 4],
+                [1.0, 0.0, 0.0],
+                [0.0, 0.0, 1.0],
+            ),
+            surface_in_plane(
+                first + 4,
+                0,
+                &[3, 7, 6, 2],
+                [1.0, 0.0, 0.0],
+                [0.0, 0.0, 1.0],
+            ),
+        ];
+        let portals = [
+            portal_bytes(first + 5, &[0, 4, 7, 3]),
+            portal_bytes(first + 6, &[1, 2, 6, 5]),
+        ];
+        cells.extend_from_slice(&cell_bytes(index + 1, 0, &points, &surfaces, &portals));
+    }
+    World::load(&file(&cells, &[], &[], &material(1, "mur"))).expect("chaîne valide")
+}
+
+/// Une chaîne juste sous la borne se parcourt entière, sans statut.
+///
+/// **Le contrôle négatif, et il est indispensable** : sans lui, un statut rendu
+/// toujours — ou rendu trop tôt — passerait inaperçu, et le test voisin serait
+/// vert pour rien. C'est le témoin du compteur d'allocations, appliqué à un
+/// statut.
+#[test]
+fn une_chaine_sous_la_borne_se_parcourt_entiere() {
+    let count = SWEEP_CELLS as u32 - 1;
+    let world = chain(count);
+    let half = Vec3d::new(0.5, 0.5, 0.5);
+    let from = Vec3d::new(2.0, 2.0, 2.0);
+    let to = Vec3d::new(f64::from(count * 4) - 2.0, 2.0, 2.0);
+
+    let hit = sweep(&world, 1, half, from, to).expect("cellule connue");
+    assert!(!hit.incomplete, "la région entière a été examinée");
+    assert_eq!(hit.fraction, 1.0, "et le déplacement est libre");
+}
+
+/// Une chaîne au-delà de la borne tronque le déplacement, et le dit.
+///
+/// **Le drapeau ne suffit pas.** Posé sur une fraction de 1, il signalerait une
+/// limite tout en rendant un résultat qui dit le contraire : un hôte qui lit le
+/// statut comme un avertissement plutôt que comme un refus ferait traverser le
+/// mur. La fraction doit donc être **strictement inférieure**, et le point
+/// d'arrêt **atteignable** — sans quoi la troncature serait pire qu'un refus
+/// net.
+#[test]
+fn une_chaine_au_dela_de_la_borne_tronque_le_deplacement() {
+    let count = SWEEP_CELLS as u32 + 8;
+    let world = chain(count);
+    let half = Vec3d::new(0.5, 0.5, 0.5);
+    let from = Vec3d::new(2.0, 2.0, 2.0);
+    let to = Vec3d::new(f64::from(count * 4) - 2.0, 2.0, 2.0);
+
+    let hit = sweep(&world, 1, half, from, to).expect("cellule connue");
+    assert!(hit.incomplete, "la région examinée s'arrête avant la fin");
+    assert!(
+        hit.fraction < 1.0,
+        "le déplacement est tronqué, fraction {}",
+        hit.fraction
+    );
+    assert_eq!(hit.surface, 0, "aucune surface n'a été touchée");
+
+    // **Le point d'arrêt est atteignable** : un balayage repris de là ne part pas
+    // du solide, ce qui est tout ce que l'hôte demande pour y poser son mobile.
+    let landed = from + (to - from) * f64::from(hit.fraction);
+    let cell = world.locate(to_f32(landed));
+    assert_ne!(cell, 0, "le point d'arrêt est dans une cellule");
+    let again = sweep(&world, cell, half, landed, landed).expect("cellule connue");
+    assert!(!again.start_solid, "et il n'est pas dans un mur");
+}
+
+/// Une chaîne d'une seule cellule ne rend jamais une fraction négative.
+///
+/// Le cas dégénéré : la première cellule est déjà la dernière examinable, et le
+/// recul mordrait sur l'origine. **Zéro est alors la réponse honnête** — l'hôte
+/// apprend qu'il n'avance pas, ce qui est vrai — là où une valeur négative serait
+/// un déplacement à rebours qu'il n'a pas demandé, et que le contrat lui donne
+/// toutes les raisons de ne pas tester.
+#[test]
+fn une_troncature_ne_recule_jamais_avant_le_depart() {
+    let world = chain(1);
+    let half = Vec3d::new(0.5, 0.5, 0.5);
+    let from = Vec3d::new(2.0, 2.0, 2.0);
+
+    for reach in [0.1, 1.0, 10.0] {
+        let to = Vec3d::new(from.x + reach, 2.0, 2.0);
+        let hit = sweep(&world, 1, half, from, to).expect("cellule connue");
+        assert!(
+            hit.fraction >= 0.0,
+            "portée {reach} : fraction {}",
+            hit.fraction
+        );
     }
 }

@@ -23,7 +23,7 @@
 use crate::format::World;
 use crate::math::Vec3d;
 
-use super::{Best, Hit, grown, start_solid, sweep_cell};
+use super::{Best, Hit, grown, in_unit, start_solid, sweep_cell};
 
 /// Balaie une boîte contre **toutes** les surfaces solides de la carte.
 ///
@@ -44,5 +44,10 @@ pub(crate) fn sweep_brute(world: &World, half: Vec3d, from: Vec3d, to: Vec3d) ->
         sweep_cell(cell, grown_half, from, to, &mut best);
         start_solid(cell, half, from, &mut best);
     }
+    // **Le même bornage de sortie que la traversée**, et l'oublier a été le
+    // second défaut que l'égalité des deux chemins ait attrapé : une garantie de
+    // sortie posée sur un seul d'entre eux les fait diverger là où elle
+    // s'applique, ce qui la transforme en source d'écart au lieu d'une garantie.
+    best.hit.fraction = in_unit(best.hit.fraction);
     best.hit
 }
