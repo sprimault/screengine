@@ -33,7 +33,7 @@ use crate::hash;
 ///
 /// **Recopiés plutôt que partagés**, et c'est la mesure elle-même qui les garde :
 /// un écart entre ces valeurs et celles du header ferait diverger cette empreinte
-/// de celles des quatre hôtes, qui hachent l'entier que la frontière leur rend
+/// de celles des cinq hôtes, qui hachent l'entier que la frontière leur rend
 /// sans le traduire. C'est ce qui leur épargne un branchement, et ce qui rend la
 /// recopie détectable au lieu d'être silencieuse.
 const STATUS_OK: u8 = 0;
@@ -272,7 +272,7 @@ pub fn digest() -> Result<u64, String> {
 /// `None` est le départ hors de toute cellule, que la frontière traite avant le
 /// noyau : elle rend un déplacement libre au point demandé, et la conformance
 /// rend le même plutôt qu'une marque à elle. **Un enregistrement de taille unique
-/// épargne un cas particulier à chacun des quatre hôtes** — quatre occasions de
+/// épargne un cas particulier à chacun des cinq hôtes** — autant d'occasions de
 /// le porter de travers, pour une distinction dont l'empreinte n'a que faire.
 fn publish(hit: Option<Hit>, to: Vec3) -> (Hit, u8) {
     match hit {

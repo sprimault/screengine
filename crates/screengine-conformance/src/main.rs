@@ -247,7 +247,7 @@ enum Mode {
 enum Scene {
     /// Deux triangles qui partagent une arête, vus de biais.
     ///
-    /// La scène que les quatre hôtes décrivent aussi, chacun dans son langage,
+    /// La scène que les cinq hôtes décrivent aussi, chacun dans son langage,
     /// en tuiles de 64 : c'est elle qui relie leurs empreintes à celle du
     /// chemin Rust, donc la changer ici sans eux les ferait toutes diverger à
     /// la fois.
@@ -502,7 +502,7 @@ enum Scene {
     /// trame lue à la place de l'autre, ou un facteur pris à l'envers, rend une
     /// caisse d'une autre taille sur chacun de ses côtés.
     MeshAnimated,
-    /// **La scène que les quatre hôtes rendent pour l'étape 6**, et la seule
+    /// **La scène que les cinq hôtes rendent pour l'étape 6**, et la seule
     /// qui emprunte ses cinq chemins dans la même image.
     ///
     /// Une par chemin aurait été plus lisible en cas de divergence ; c'est une
@@ -841,7 +841,7 @@ fn gradient(side: u32) -> Arc<Texture> {
 
 /// Le quadrilatère à arêtes partagées, en coordonnées de monde.
 ///
-/// Les quatre hôtes le décrivent aussi, chacun dans son langage : c'est lui qui
+/// Les cinq hôtes le décrivent aussi, chacun dans son langage : c'est lui qui
 /// relie leurs empreintes à celle du chemin Rust. Son centre est sur l'axe de
 /// visée, ce dont la scène en rotation se sert pour le faire tourner sans le
 /// sortir du champ.
@@ -1540,7 +1540,7 @@ impl Scene {
                 })
             }
             // Les cinq chemins de l'étape dans une seule image, dans l'ordre
-            // que les quatre hôtes devront reproduire : la caisse animée et
+            // que les cinq hôtes devront reproduire : la caisse animée et
             // éclairée, les deux emblèmes masqués, puis la tache modulée.
             Self::Composite => {
                 // **La caméra plonge, et c'est la tache qui l'exige.** Un sol

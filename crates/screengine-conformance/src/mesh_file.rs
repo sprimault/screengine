@@ -1,7 +1,7 @@
 // Copyright 2026 Stéphane Primault <sprimault@users.noreply.github.com>
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
-//! Le fichier de maillage que la scène chargée rend, et que les quatre hôtes
+//! Le fichier de maillage que la scène chargée rend, et que les cinq hôtes
 //! chargent.
 //!
 //! **La disposition est écrite ici à la main**, octet par octet, comme elle

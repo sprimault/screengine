@@ -872,7 +872,7 @@ public final class Test {
      * maillage entre deux trames, texture masquée, les deux modes
      * d'orientation de sprite, le roulis, et la surface modulée. Une par
      * chemin aurait été plus lisible en cas de divergence ; c'est une seule,
-     * parce que chacune se paie en quatre descriptions — une par langage — et
+     * parce que chacune se paie en cinq descriptions — une par langage — et
      * que les scènes séparées de la conformance disent déjà lequel a bougé.
      *
      * @param path le fichier de maillage, à deux trames
@@ -1124,7 +1124,7 @@ public final class Test {
      *
      * <p>La liste vient du dépôt et ne se reconstruit pas ici : ce que
      * l'empreinte doit établir est que le moteur rend la même chose à travers
-     * quatre frontières, pas que quatre hôtes ont su reporter un treillis.
+     * cinq frontières, pas que cinq hôtes ont su reporter un treillis.
      *
      * @param worldPath le décor de collision
      * @param sweepsPath la liste de balayages

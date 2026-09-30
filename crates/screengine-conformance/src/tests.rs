@@ -470,7 +470,7 @@ fn le_bilineaire_fabrique_des_couleurs_que_le_tramage_ne_peut_pas() {
 /// Le fichier de maillage versionné est exactement celui que la conformance
 /// engendre.
 ///
-/// Sur le modèle de `make header-verif` : le binaire que les quatre hôtes
+/// Sur le modèle de `make header-verif` : le binaire que les cinq hôtes
 /// chargent n'est jamais la source de vérité. Sans ce contrôle, un changement de
 /// format laisserait les hôtes charger un fichier périmé — et leurs empreintes
 /// diverger sans qu'on sache si la faute est au décodeur, au rendu ou au

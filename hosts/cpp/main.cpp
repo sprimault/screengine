@@ -1157,7 +1157,7 @@ constexpr ScgVertexUv COMPOSITE_SHADOW[4] = {
 /// maillage entre deux trames, texture masquée, les deux modes d'orientation de
 /// sprite, le roulis, et la surface modulée. Une par chemin aurait été plus
 /// lisible en cas de divergence ; c'est une seule, parce que chacune se paie en
-/// quatre descriptions — une par langage — et que les scènes séparées de la
+/// cinq descriptions — une par langage — et que les scènes séparées de la
 /// conformance disent déjà lequel a bougé.
 uint64_t render_composite(bool &ok, const char *path)
 {

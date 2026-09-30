@@ -11,7 +11,7 @@ OUT     ?= ../../.tmp/host-cpp
 TARGET  := $(or $(CARGO_TARGET_DIR),../../target)
 INCLUDE := ../../include
 
-# Le maillage versionné que les quatre hôtes chargent, passé en argument :
+# Le maillage versionné que les cinq hôtes chargent, passé en argument :
 # l'exécutable s'exécute depuis un répertoire de sortie qui n'est pas celui du
 # dépôt.
 MESH    ?= ../../hosts/caisse.mesh

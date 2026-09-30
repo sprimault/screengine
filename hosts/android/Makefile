@@ -59,7 +59,7 @@ ABIS := arm64-v8a armeabi-v7a x86_64
 # passerait pour une égalité.
 SCENE_COUNT ?= 12
 
-# Le maillage versionné que les quatre hôtes chargent. Les deux premiers paliers
+# Le maillage versionné que les cinq hôtes chargent. Les deux premiers paliers
 # le lisent depuis le dépôt ; le troisième et le quatrième depuis l'appareil, où
 # il est poussé à côté des bibliothèques.
 MESH := $(abspath ../../hosts/caisse.mesh)
@@ -68,7 +68,7 @@ MESH := $(abspath ../../hosts/caisse.mesh)
 # avec le maillage dans les ressources : une application ne lit pas le dépôt.
 WORLD := $(abspath ../../hosts/salles.world)
 
-# Le décor de collision et la liste de balayages, pour les quatre paliers de
+# Le décor de collision et la liste de balayages, pour les cinq paliers de
 # `run`. Pas dans les ressources de l'APK : la démonstration rend une image et
 # ne balaie rien, et deux fichiers qu'elle n'ouvre pas n'ont rien à y faire.
 COLLISION := $(abspath ../../hosts/collision.world)

@@ -1204,7 +1204,7 @@ static const ScgVertexUv COMPOSITE_SHADOW[4] = {
  * maillage entre deux trames, texture masquée, les deux modes d'orientation de
  * sprite, le roulis, et la surface modulée. Une par chemin aurait été plus
  * lisible en cas de divergence ; c'est une seule, parce que chacune se paie en
- * quatre descriptions — une par langage — et que les scènes séparées de la
+ * cinq descriptions — une par langage — et que les scènes séparées de la
  * conformance disent déjà lequel a bougé. */
 static uint64_t render_composite(int *ok, const char *path)
 {
@@ -1524,7 +1524,7 @@ static uint64_t absorb_float(uint64_t hash, float value)
  *
  * **Elle rejoue une liste versionnée, elle ne l'engendre pas.** Le treillis de
  * départs et les directions vivent dans la conformance ; les reporter ici
- * ferait prouver à l'empreinte que quatre hôtes ont su recopier la même
+ * ferait prouver à l'empreinte que cinq hôtes ont su recopier la même
  * géométrie, ce qui n'est pas ce qu'elle mesure.
  *
  * Trente-sept octets par balayage, statut compris et sans cas particulier : un
@@ -1605,7 +1605,7 @@ static uint64_t render_sweeps(int *ok, const char *world_path, const char *sweep
 
             /* Le contrepoids de `surface_id` : sans cet appel, le champ serait
              * un identifiant qu'aucune fonction ne traduit, et rien dans les
-             * quatre hôtes ne l'emprunterait. */
+             * cinq hôtes ne l'emprunterait. */
             if (hit.surface_id != 0) {
                 uint32_t material = 0;
                 check(scg_world_surface_material(world, hit.surface_id, &material) == SCG_OK,

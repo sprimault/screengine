@@ -1332,7 +1332,7 @@ const QUAD_FACES = [
  * maillage entre deux trames, texture masquée, les deux modes d'orientation de
  * sprite, le roulis, et la surface modulée. Une scène par chemin aurait été
  * plus lisible en cas de divergence ; c'est une seule, parce que chacune se
- * paie en quatre descriptions — une par langage — et que les scènes séparées
+ * paie en cinq descriptions — une par langage — et que les scènes séparées
  * existent déjà côté Rust pour dire lequel a bougé.
  *
  * **Ce qu'elle ferme ici et nulle part ailleurs** : les quarante-quatre octets
