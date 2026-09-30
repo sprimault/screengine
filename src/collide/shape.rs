@@ -85,9 +85,18 @@ pub(crate) fn face(
         return None;
     }
     let t = (d0 - s) / (d0 - d1);
-    if !(0.0..=1.0).contains(&t) {
+    if t > 1.0 {
         return None;
     }
+    // **Un instant négatif est un contact immédiat, pas une absence de
+    // contact.** Il dit que la boîte dilatée franchit déjà ce plan au départ, et
+    // `d1 < d0` dit qu'elle continue de s'y enfoncer : l'écarter laissait une
+    // bande d'une épaisseur de dilatation où le balayage ne voyait rien, tandis
+    // que le départ dans le solide, mesuré sur la **vraie** boîte, restait faux.
+    // Une boîte arrêtée au contact par un balayage y retombait au suivant, et
+    // traversait le mur un pas après l'autre — ce que seul un enchaînement de
+    // deux balayages révèle.
+    let t = if t < 0.0 { 0.0 } else { t };
     let centre = from + (to - from) * t;
     if !inside(points, normal, centre) {
         return None;
@@ -137,10 +146,10 @@ pub(crate) fn edge(a: Vec3d, b: Vec3d, half: Vec3d, from: Vec3d, to: Vec3d) -> O
         slab.cut(-normal, -normal.dot(a) + s, from, to)?;
     }
 
-    let t = slab.enter?;
+    let (t, normal) = slab.immediate(from, to)?;
     Some(Touch {
         fraction: t,
-        normal: slab.normal,
+        normal,
         rank: RANK_EDGE,
     })
 }
@@ -156,10 +165,10 @@ pub(crate) fn vertex(point: Vec3d, half: Vec3d, from: Vec3d, to: Vec3d) -> Optio
         set_axis(&mut normal, i, -1.0);
         slab.cut(normal, -point.axis(i) + half.axis(i), from, to)?;
     }
-    let t = slab.enter?;
+    let (t, normal) = slab.immediate(from, to)?;
     Some(Touch {
         fraction: t,
-        normal: slab.normal,
+        normal,
         rank: RANK_VERTEX,
     })
 }
@@ -176,14 +185,37 @@ struct Interval {
     leave: f64,
     /// La normale du plan qui a posé `enter`.
     normal: Vec3d,
+    /// La normale du plan dont la sortie est la plus proche au départ.
+    ///
+    /// Elle ne sert qu'au cas où le segment part **dans** le convexe : c'est
+    /// alors la direction qui demande le moins de recul, le même choix que la
+    /// détection de départ dans le solide fait sur un jeu de surfaces.
+    shallow: Vec3d,
+    /// Le carré de la profondeur sous ce plan, et le carré de la norme de sa
+    /// normale.
+    ///
+    /// Deux nombres plutôt qu'un quotient : la distance vaut `profondeur / |n|`,
+    /// et les comparer par produit croisé évite une racine. Les biseaux d'un
+    /// prisme n'ont pas de normale unitaire, si bien que les profondeurs brutes
+    /// ne sont pas comparables entre elles.
+    shallow_depth: f64,
+    /// Voir [`Interval::shallow_depth`].
+    shallow_norm: f64,
 }
 
 impl Interval {
     /// L'intervalle entier, avant toute découpe.
+    ///
+    /// `shallow_norm` nul fait gagner le premier plan rencontré, quelle que soit
+    /// sa profondeur : c'est la forme d'un « plus rien de comparable » qui ne
+    /// demande pas d'infini.
     const FULL: Self = Self {
         enter: None,
         leave: 1.0,
         normal: Vec3d::ZERO,
+        shallow: Vec3d::ZERO,
+        shallow_depth: 1.0,
+        shallow_norm: 0.0,
     };
 
     /// Découpe par le demi-espace `normal · p ≤ offset`.
@@ -193,6 +225,19 @@ impl Interval {
     fn cut(&mut self, normal: Vec3d, offset: f64, from: Vec3d, to: Vec3d) -> Option<()> {
         let d0 = normal.dot(from) - offset;
         let d1 = normal.dot(to) - offset;
+
+        // Le départ est-il déjà du bon côté de ce plan, et de combien ? C'est ce
+        // qui répondra si aucun plan n'est franchi en entrant — le segment part
+        // alors dans le convexe, et le contact est immédiat plutôt qu'absent.
+        if d0 <= 0.0 {
+            let depth = d0 * d0;
+            let norm = normal.dot(normal);
+            if depth * self.shallow_norm < self.shallow_depth * norm {
+                self.shallow_depth = depth;
+                self.shallow_norm = norm;
+                self.shallow = normal;
+            }
+        }
 
         if d0 == d1 {
             // Parallèle au plan : dedans pour toujours, ou dehors pour toujours.
@@ -219,6 +264,28 @@ impl Interval {
             return None;
         }
         Some(())
+    }
+
+    /// L'instant du contact et sa normale, une fois toutes les découpes faites.
+    ///
+    /// **Sans instant d'entrée, le segment part dans le convexe**, et le contact
+    /// est alors immédiat : c'est ce que la boîte dilatée décrit d'une position
+    /// qu'un balayage précédent a posée au contact, et l'écarter laissait une
+    /// bande où le mobile entrait librement dans le décor.
+    ///
+    /// **Mais seulement s'il s'y enfonce**, au sens strict. Un mobile qui
+    /// ressort n'est pas arrêté : le bloquer là le collerait au décor sans rien
+    /// pour l'en tirer, ce que la dilatation existe précisément pour éviter — et
+    /// un hôte n'a aucun moyen de distinguer ce blocage-là d'un mur. La
+    /// comparaison stricte écarte du même geste les deux cas où il n'y a rien à
+    /// signaler : un déplacement nul, et un déplacement tangent, qui glisse le
+    /// long sans entrer.
+    fn immediate(&self, from: Vec3d, to: Vec3d) -> Option<(f64, Vec3d)> {
+        match self.enter {
+            Some(t) => Some((t, self.normal)),
+            None if (to - from).dot(self.shallow) < 0.0 => Some((0.0, self.shallow)),
+            None => None,
+        }
     }
 }
 

@@ -1638,6 +1638,32 @@ au contact d'un mur repart en départ solide à l'appel suivant. Chez un
 intégrateur, cela se voit comme un personnage collé aux murs, et la cause ne
 désigne aucun des deux calculs, tous deux justes séparément.
 
+**Corollaire, et il n'a rien d'évident : entre les deux boîtes il y a une bande,
+et le balayage doit y voir un contact immédiat.** Une position que le balayage
+vient de rendre y tombe par construction — elle est au contact de la boîte
+dilatée, et la vraie boîte n'y touche rien. Si le balayage suivant n'y voit rien,
+le mobile entre librement dans le décor, puis le traverse ; et si l'élément
+touché est un prisme d'arête, il s'y arrête définitivement, cette fois **dans** le
+mur. Les deux se voient chez l'intégrateur, jamais dans un test qui joue un
+balayage à la fois.
+
+Un instant d'impact **négatif** est donc un contact à l'instant zéro, et non une
+absence de contact. Pour une face, il suffit de le ramener à zéro. Pour un prisme
+ou une boîte de sommet, il n'y a pas d'instant d'entrée du tout — tous les plans
+sont franchis avant le départ —, et le contact se rend alors avec la normale du
+plan dont on est le plus proche de sortir, celle qui demande le moins de recul.
+
+**Dans les deux cas, seulement si le mouvement s'enfonce**, au sens strict. Un
+mobile qui ressort n'est pas arrêté, sans quoi rien ne l'en tirerait ; un
+mouvement tangent glisse et ne bloque pas davantage ; et un déplacement nul ne
+rend rien, la question « suis-je déjà dedans » appartenant au départ dans le
+solide.
+
+**La scène de conformance ne couvre pas cette bande** : ses départs viennent d'un
+treillis, et aucun ne tombe à une dilatation d'un mur. Ce qui la garde, ce sont
+les tests du noyau, dont un qui enchaîne deux balayages en repartant du point
+d'arrêt — la seule forme où le défaut apparaisse.
+
 La constante est une puissance de deux relative à la plus grande demi-extension,
 donc exacte, sans échelle de monde à inventer et sans sous-normal — même clause
 que le décalage d'échantillonnage de la cuisson. **Sa valeur se juge sur un décor

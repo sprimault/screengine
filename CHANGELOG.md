@@ -55,6 +55,12 @@ publié, et explique les conventions du dépôt à qui y contribue.
 - **Deux archives bureau 32 bits**, `windows_x86` et `linux_x86`. Les empreintes
   de conformance y sont les mêmes qu'ailleurs.
 
+### Corrigé
+- **Un balayage repris là où le précédent s'était arrêté traversait le mur.**
+  Une boîte arrêtée au contact repartait d'une position que le balayage suivant
+  ne voyait plus comme touchant rien ; contre une arête, elle s'immobilisait dans
+  le mur. `scg_world_sweep` y rend désormais un contact immédiat.
+
 ### Interne
 - **La scène de collision hachait un état que la frontière ne publie pas** :
   deux drapeaux du noyau, là où l'ABI ne rend qu'un statut. Elle validait le
@@ -75,6 +81,12 @@ publié, et explique les conventions du dépôt à qui y contribue.
   — sliding, stepping, gravity — belongs to the host.
 - **Two 32-bit desktop archives**, `windows_x86` and `linux_x86`. Conformance
   fingerprints there are the same as elsewhere.
+
+### Fixed
+- **A sweep resumed where the previous one stopped went through the wall.** A box
+  halted at contact restarted from a position the next sweep no longer saw as
+  touching anything; against an edge, it came to rest inside the wall.
+  `scg_world_sweep` now reports an immediate contact there.
 
 ### Internal
 - **The collision scene hashed state the boundary does not publish**: two core
