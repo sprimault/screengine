@@ -414,6 +414,20 @@ contrôle : ni `make test`, ni l'intégration continue ne le construisent.
   Il est déclaré binaire dans `.gitattributes`. Aucun hôte ne réécrit sa
   disposition : leur faire poser ces octets dans quatre langages serait la même
   liste à quatre endroits.
+- **`hosts/collision.world` et `hosts/collision.sweeps` suivent ce modèle**, pour
+  le balayage. Le premier est un décor ; le second porte la **question** — la
+  liste des boîtes et des trajets que chaque hôte rejoue, huit octets de magie,
+  un compte, puis neuf flottants par balayage, octet de poids faible en tête.
+
+  **Il n'a pas de numéro de version**, parce que ce n'est pas un format du
+  moteur : celui-ci ne le lit jamais, et le fichier est livré dans le même commit
+  que les hôtes qui le lisent. La magie sert à refuser franchement un mauvais
+  chemin, pas à négocier une évolution.
+
+  Sans ce fichier, chaque hôte réengendrerait la liste dans son langage, et son
+  empreinte prouverait en plus que quatre programmeurs ont su reporter la même
+  règle géométrique — la moins intéressante des deux propriétés, et celle qui
+  ferait échouer le contrôle.
 - **Les images de `crates/screengine-play/assets/` sont produites pour le
   projet et publiées sous sa double licence**, MIT ou Apache 2.0, comme le
   reste du dépôt. Aucune ne provient d'une œuvre existante, et c'est une

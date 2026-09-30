@@ -35,6 +35,7 @@ crates/screengine-conformance/references/* binary
 # ligne de code ait bougé, exactement comme pour le header.
 *.mesh binary
 *.world binary
+*.sweeps binary
 *.png binary
 *.webp binary
 *.bin binary
