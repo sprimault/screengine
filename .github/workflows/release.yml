@@ -95,10 +95,20 @@ jobs:
             construire: make lib
             repertoire: target/release-ffi
             fichiers: screengine.dll screengine.dll.lib screengine.lib
+          - os: windows-latest
+            cible: windows_x86
+            construire: make lib CIBLE_LIB=i686-pc-windows-msvc
+            repertoire: target/i686-pc-windows-msvc/release-ffi
+            fichiers: screengine.dll screengine.dll.lib screengine.lib
           - os: ubuntu-latest
             cible: linux_x64
             construire: make lib
             repertoire: target/release-ffi
+            fichiers: libscreengine.so libscreengine.a
+          - os: ubuntu-latest
+            cible: linux_x86
+            construire: make lib CIBLE_LIB=i686-unknown-linux-gnu
+            repertoire: target/i686-unknown-linux-gnu/release-ffi
             fichiers: libscreengine.so libscreengine.a
           - os: ubuntu-latest
             cible: wasm32
@@ -131,6 +141,19 @@ jobs:
       # make test lance l'hôte wasm, sur chaque entrée de la matrice.
       - name: Cible wasm
         run: rustup target add "$(make -s print-CIBLE_WASM)"
+
+      # Les deux cibles bureau 32 bits. Sous Linux, l'édition de liens d'une
+      # bibliothèque i686 réclame les bibliothèques C 32 bits, que l'image
+      # n'installe pas ; sous Windows, MSVC les porte déjà.
+      - name: Cible 32 bits
+        if: endsWith(matrix.cible, '_x86')
+        run: |
+          if [ "$RUNNER_OS" = Linux ]; then
+            sudo apt-get update -q && sudo apt-get install -y -q gcc-multilib
+            rustup target add i686-unknown-linux-gnu
+          else
+            rustup target add i686-pc-windows-msvc
+          fi
 
       # L'hôte Android, comme dans ci.yml : NDK, build-tools et plateforme aux
       # versions de son Makefile, qemu-user, et KVM pour l'émulateur.
@@ -171,6 +194,16 @@ jobs:
       - name: Tests et conformance
         if: matrix.cible != 'android'
         run: make test SANS=android && make conform
+
+      # Sur l'architecture qu'on publie, et non seulement sur celle du runner.
+      # Redit ce que ci.yml vérifie déjà, et pour la même raison que le reste de
+      # ce garde-fou : ci.yml n'écoute pas les tags.
+      - name: Conformance sur la cible publiée
+        if: endsWith(matrix.cible, '_x86')
+        run: |
+          cible=$([ "$RUNNER_OS" = Linux ] && echo i686-unknown-linux-gnu \
+                                           || echo i686-pc-windows-msvc)
+          make conform-x86 CIBLE_X86="$cible"
 
       # Par le Makefile et non cargo build : c'est lui qui porte le profil —
       # release-ffi, sans lequel catch_unwind ne rattraperait rien, ou
@@ -245,8 +278,32 @@ jobs:
       # fois l'échec n'est apparu qu'au tag, cette étape ne tournant nulle part
       # ailleurs.
       - name: Éprouver l'archive
-        if: matrix.cible != 'android'
+        if: matrix.cible != 'android' && !endsWith(matrix.cible, '_x86')
         run: make test-archive PAQUET="$PAQUET"
+
+      # Les hôtes ne se lient pas contre une bibliothèque 32 bits sans une
+      # seconde chaîne C pour cette architecture, que ni l'un ni l'autre runner
+      # n'a. L'archive s'éprouve donc comme celle d'Android, par ce qui se lit
+      # sans exécuter : l'architecture annoncée dans l'en-tête du binaire. Ce
+      # qu'elle attrape est la seule erreur que la matrice puisse commettre ici
+      # — un répertoire de construction qui aurait rangé le binaire 64 bits
+      # sous le nom du paquet 32.
+      - name: Éprouver l'archive 32 bits
+        if: endsWith(matrix.cible, '_x86')
+        run: |
+          if [ "$RUNNER_OS" = Linux ]; then
+            readelf -h "$PAQUET/lib/libscreengine.so" | grep -q 'Intel 80386' \
+              || { echo "la bibliotheque n'est pas en i386" >&2; exit 1; }
+          else
+            # L'en-tête COFF d'un PE : son décalage se lit en 0x3C, et le champ
+            # Machine quatre octets plus loin. 014c est i386, 8664 x86-64.
+            dll="$PAQUET/lib/screengine.dll"
+            pe=$((0x$(od -An -t x4 -j 60 -N 4 "$dll" | tr -d ' ')))
+            machine=$(od -An -t x2 -j $((pe + 4)) -N 2 "$dll" | tr -d ' ')
+            [ "$machine" = 014c ] \
+              || { echo "machine $machine, attendu 014c (i386)" >&2; exit 1; }
+          fi
+          echo "archive 32 bits : architecture du binaire verifiee"
 
       # Ce que les empreintes ne disent pas : sous quel nom la bibliothèque se
       # charge. Un SONAME absent, et l'exécutable de l'intégrateur réclame le

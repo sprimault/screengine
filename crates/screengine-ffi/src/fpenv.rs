@@ -13,7 +13,25 @@
 //! de s'en servir pour modifier l'arrondi ou DAZ. `asm!`, stable bien avant la
 //! version minimale du projet, est le seul recours.
 
-#[cfg(target_arch = "x86_64")]
+// x86 32 bits prend le même module : MXCSR est le même registre, aux mêmes
+// bits, et `stmxcsr` s'y écrit pareil. Deux précisions qui ne vont pas de soi.
+//
+// **La x87 n'entre pas dans le lot**, alors qu'elle a son propre mot de
+// contrôle. Les cibles `i686-*` activent SSE2 par défaut — `rustc --print cfg`
+// le liste —, donc le code flottant n'y passe pas ; et l'ABI C du moteur ne rend
+// aucun flottant, seul cas où la convention 32 bits ferait transiter une valeur
+// par ST(0). Un mot de contrôle x87 changé par l'hôte reste donc sans effet sur
+// l'image.
+//
+// **Le `target_feature` est exigé** plutôt que supposé : une cible x86 sans SSE
+// n'a pas MXCSR du tout, et doit tomber dans le `compile_error!` plutôt que
+// dans un module qui écrirait un registre absent. Contrairement aux
+// fonctionnalités ARM 32 bits, celle-ci est stable et vraie sur une chaîne
+// stable.
+#[cfg(any(
+    target_arch = "x86_64",
+    all(target_arch = "x86", target_feature = "sse")
+))]
 mod arch {
     use core::arch::asm;
 
@@ -169,6 +187,7 @@ mod arch {
 // divergente.
 #[cfg(not(any(
     target_arch = "x86_64",
+    all(target_arch = "x86", target_feature = "sse"),
     target_arch = "aarch64",
     all(target_arch = "arm", any(target_os = "android", target_abi = "eabihf")),
     target_family = "wasm"

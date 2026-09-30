@@ -52,6 +52,8 @@ publié, et explique les conventions du dépôt à qui y contribue.
   touchée, `scg_world_surface_material` la nomme. Un troisième statut,
   `SCG_STATUS_START_SOLID`, signale un départ dans le solide. La réponse —
   glissade, marche, gravité — appartient à l'hôte.
+- **Deux archives bureau 32 bits**, `windows_x86` et `linux_x86`. Les empreintes
+  de conformance y sont les mêmes qu'ailleurs.
 
 ### Interne
 - **La scène de collision hachait un état que la frontière ne publie pas** :
@@ -71,6 +73,8 @@ publié, et explique les conventions du dépôt à qui y contribue.
   `scg_world_surface_material` names it. A third status,
   `SCG_STATUS_START_SOLID`, reports a start inside solid geometry. The response
   — sliding, stepping, gravity — belongs to the host.
+- **Two 32-bit desktop archives**, `windows_x86` and `linux_x86`. Conformance
+  fingerprints there are the same as elsewhere.
 
 ### Internal
 - **The collision scene hashed state the boundary does not publish**: two core

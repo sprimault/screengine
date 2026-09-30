@@ -21,6 +21,20 @@ wildcards = "deny"
 # Les crates du dépôt se référencent par chemin, sans version. Admis parce
 # qu'aucun n'est publié sur crates.io.
 allow-wildcard-paths = true
+# Les versions multiples sous l'étage d'accueil ne concernent pas la
+# bibliothèque publiée : les archives ne portent que le noyau et la couche FFI,
+# qui n'ont aucune dépendance. Une dizaine d'avertissements en venaient, et du
+# bruit permanent finit par masquer celui qui compte.
+#
+# `skip-tree` n'agit que sur cette section : `advisories` et `cargo audit`
+# continuent de parcourir l'arbre entier, vulnérabilités comprises. Écarté :
+# `multiple-versions = "deny"` avec des exceptions nommées, qui échangerait ce
+# bruit contre une liste à reprendre à chaque montée de ces deux dépendances.
+#
+# L'étage d'accueil nommé plutôt que ses dépendances : `winit`, `softbuffer` et
+# `png` en amenaient chacun, et les énumérer aurait demandé de reprendre cette
+# liste à chaque dépendance ajoutée. La racine, elle, dit la règle.
+skip-tree = [{ crate = "screengine-play" }]
 
 [sources]
 unknown-registry = "deny"
