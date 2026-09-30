@@ -29,6 +29,7 @@ Sans lui, un clone se construit dans `target/`.
 | `cargo-deny` | `0.19.4`, épinglé | ses règles changent de sens d'une version à l'autre ; en deçà de 0.19.1, il ne lit pas les scores CVSS 4.0 de la base d'avis |
 | `cargo-audit` | la dernière | il lit des avis publiés en continu ; l'épingler figerait ce qu'il sait lire |
 | Node | 22, celui des images d'intégration continue | exécute l'hôte wasm de `make test` et sert sa page ; aucun paquet npm. Ce n'est pas un plancher que le code impose — il n'emploie que des modules ES et le préfixe `node:`, tous deux bien antérieurs — mais la version sur laquelle les tests tournent réellement |
+| Go | 1.24 au minimum, celui du `go.mod` de l'hôte | l'hôte Go de `make test`, avec un compilateur C pour cgo — MinGW-w64 sous Windows, `cc` ailleurs. Aucun module tiers |
 | NDK, SDK Android | NDK r29, build-tools 36.0.0, `android-36`, épinglés dans `hosts/android/Makefile` | l'hôte Android ; r28 au minimum pour les pages de 16 Ko. Fournis par `hosts/android/Dockerfile` |
 | JDK | 17 | `javac` et les outils du SDK |
 | `qemu-user` | celui de la distribution | exécute les tests aarch64 et armv7 de l'hôte Android sans appareil |
@@ -253,6 +254,29 @@ cibles.
   navigateur ne lit pas — la page exigerait alors un compilateur, donc npm.
   La page a été vue dans un navigateur avant la 0.0.0 ; l'intégration continue
   n'en fait tourner que le test sous Node.
+
+### Go
+
+- **Lié par cgo à la bibliothèque dynamique**, et non à la statique comme l'hôte
+  C : celle-ci réclame ses bibliothèques système, que cgo passerait en drapeaux
+  d'édition de liens à tenir à jour dans le `Makefile` de l'hôte. Le chargement
+  dynamique est de plus ce qu'un intégrateur fera.
+- **Sous Windows, MinGW-w64 se lie directement à la DLL produite par MSVC** —
+  `-lscreengine.dll`, sans `gendef` ni `dlltool`. C'est ce qui ouvre Windows à cet
+  hôte là où l'hôte C y reste sur MSVC, faute de pouvoir lier une **statique**
+  MSVC depuis MinGW.
+- **Aucun pointeur vers le tas de Go ne traverse la frontière.** Tout ce que le
+  moteur lit ou écrit passe par `calloc` : le langage déplace ses objets, et une
+  adresse prise sur l'un d'eux cesse d'être valide sans prévenir. Le moteur
+  ne conserve rien au-delà d'un appel, mais s'en remettre à cette clause pour une
+  écriture de tampon serait tenir l'invariant du moteur pour une garantie du
+  langage.
+- **C'est ce que cet hôte éprouve que les quatre autres n'éprouvent pas** : que
+  l'ABI se consomme depuis un langage qui déplace ses objets. C et C++ n'en
+  déplacent aucun,
+  JavaScript et Java ne passent jamais de pointeur.
+- Aucun module tiers, et le cache de Go va sous `.tmp/` comme le reste : ailleurs
+  il tomberait dans le profil de l'utilisateur.
 
 ### Android
 

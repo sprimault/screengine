@@ -299,12 +299,12 @@ le passage de pointeurs, qu'aucun document du projet n'énonce, et un
 ordonnanceur qui réserve un thread système par appel C, ce qui décide de la
 forme qu'un rendu par tuiles y prendra.
 
-**Un hôte de démonstration, pas un hôte de garantie** : il charge la
-bibliothèque, vérifie `scg_abi_version`, rend une scène et compare son
-empreinte. Les quatre hôtes de `HOST_SCENES` décrivent chacun toutes les scènes
-— c'est ce qui les rend comparables, et ce qui fait qu'une scène ajoutée coûte
-quatre descriptions. Un cinquième à ce prix n'apporterait rien que les quatre
-ne disent déjà ; ce qu'on veut de Go, c'est que sa liaison tienne.
+**Un hôte de garantie comme les quatre autres** : il décrit toutes les scènes de
+`HOST_SCENES` et compare chacune au chemin Rust. Une scène ajoutée coûte donc
+cinq descriptions et non quatre, et c'est ce qui les rend comparables. Ce qu'il
+éprouve seul reste sa raison d'être : les règles de `cgo` sur le passage de
+pointeurs, qu'aucun autre hôte ne touche — C et C++ ne déplacent aucun objet,
+JavaScript et Java ne passent jamais d'adresse.
 
 ## 8 — Ce qu'il faut pour éditer
 

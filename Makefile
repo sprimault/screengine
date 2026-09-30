@@ -35,7 +35,7 @@ CARGO_INSTALL_FLAGS ?=
 # compilateur C, php, la cible wasm, le NDK — et aucun poste ne les a tous.
 # La liste se surcharge dans makefile.local plutôt que de faire échouer la
 # cible sur ce qui manque.
-HOSTS ?= c cpp web
+HOSTS ?= c cpp web go
 
 # Les éditeurs de liens du NDK, par variables plutôt que par cargo-ndk : trois
 # chemins ne justifient pas un outil de plus à épingler. armv7 porte un `a` que
@@ -68,7 +68,7 @@ android_build = for cible in $(CIBLES_ANDROID); do \
 
 .PHONY: build lib lib-wasm lib-android run example web test native-libs fmt fmt-fix lint lint-doc-tests \
         lint-android-versions nostd msrv bench \
-        conform conform-x86 conform-update conform-images mesh header header-verif audit deny doc hosts host-c host-cpp host-web \
+        conform conform-x86 conform-update conform-images mesh header header-verif audit deny doc hosts host-c host-cpp host-web host-go \
         host-android demo-c demo-cpp clean tools
 
 build:
@@ -133,7 +133,7 @@ test:
 # SANS retire un hôte de `make test`, et c'est la seule façon de le faire : une
 # exclusion écrite là où on l'appelle, qui se lit dans le workflow. Un outil
 # manquant, lui, reste une erreur en intégration continue.
-TEST_HOSTS   := abi cpp wasm android
+TEST_HOSTS   := abi cpp wasm android go
 SANS         ?=
 TEST_TARGETS := $(addprefix test-,$(TEST_HOSTS)) $(addsuffix -run,$(addprefix test-,$(TEST_HOSTS)))
 .PHONY: $(TEST_TARGETS)
@@ -157,6 +157,14 @@ host_dir_android     := android
 host_name_android    := Android
 host_profile_android := ffi-test
 host_build_android    = $(call android_build,ffi-test)
+
+# Le seul hôte lié par cgo, et le seul dont le langage déplace ses objets : ce
+# qu'il éprouve que les quatre autres n'éprouvent pas est qu'aucun pointeur
+# rendu au moteur n'appartient à un tas ramassé.
+host_dir_go      := go
+host_name_go     := Go
+host_profile_go  := ffi-test
+host_build_go     = cargo build -p screengine-lib --profile ffi-test
 
 HOST_OUT = $(abspath $(SORTIE))/host-$(host_dir_$*)
 
@@ -265,7 +273,7 @@ ARCHIVE_OUT = $(abspath $(SORTIE))/archive
 # qu'ils s'y lient. L'hôte Android n'en est pas : son paquet ne contient que des
 # `.so` pour une autre machine, qui se lisent dans leur en-tête ELF sans rien
 # exécuter.
-ARCHIVE_HOSTS_ALL := abi cpp wasm
+ARCHIVE_HOSTS_ALL := abi cpp wasm go
 
 # Les hôtes que *ce* paquet permet d'éprouver, déduits de ce que `lib/` porte
 # plutôt que nommés par l'appelant, qui finirait par en oublier un : le paquet
@@ -273,15 +281,19 @@ ARCHIVE_HOSTS_ALL := abi cpp wasm
 archive_lib   = $(wildcard $(PAQUET)/lib/$(1))
 ARCHIVE_HOSTS = $(strip \
   $(if $(call archive_lib,libscreengine.a)$(call archive_lib,screengine.lib),abi) \
-  $(if $(call archive_lib,libscreengine.so)$(call archive_lib,screengine.dll.lib),cpp) \
+  $(if $(call archive_lib,libscreengine.so)$(call archive_lib,screengine.dll.lib),cpp go) \
   $(if $(call archive_lib,screengine.wasm),wasm))
 
-# Chaque hôte se pointe sur le paquet à sa façon : les deux natifs par le couple
-# TARGET/PROFILE, dont `lib/` tient lieu ici, l'hôte wasm par le module et le
-# header, qu'il prend tels quels.
+# Chaque hôte se pointe sur le paquet à sa façon : les trois natifs par le
+# couple TARGET/PROFILE, dont `lib/` tient lieu ici, l'hôte wasm par le module et
+# le header, qu'il prend tels quels.
 archive_vars_abi   = TARGET=$(abspath $(PAQUET)) PROFILE=lib INCLUDE=$(abspath $(PAQUET))/include
 archive_vars_cpp   = $(archive_vars_abi)
 archive_vars_wasm  = WASM=$(abspath $(PAQUET))/lib/screengine.wasm HEADER=$(abspath $(PAQUET))/include/screengine.h
+# L'hôte Go se pointe comme les deux natifs, mais sur la dynamique seule : sa
+# recette recopie la bibliothèque à côté de l'exécutable, et c'est cette copie
+# qui se charge.
+archive_vars_go    = $(archive_vars_abi)
 
 ARCHIVE_TARGETS := test-archive archive-empreintes $(addprefix test-archive-,$(ARCHIVE_HOSTS_ALL))
 .PHONY: $(ARCHIVE_TARGETS)
@@ -503,6 +515,9 @@ host-cpp: lib
 
 host-web: lib-wasm
 	$(MAKE) -C hosts/web
+
+host-go: lib
+	$(MAKE) -C hosts/go
 
 # Les hôtes de démonstration : ils ouvrent une fenêtre, donc ils ne sont dans
 # aucun contrôle — ni `make test`, ni l'intégration continue ne les construisent.
