@@ -1861,6 +1861,19 @@ mesure : un compteur, une empreinte, une durée.
 - **Les hôtes se comparent au chemin Rust de leur plateforme**, et ce chemin à la
   référence versionnée : chaque plateforme d'intégration continue relie ainsi
   tous les hôtes qu'elle exécute au même fichier.
+- **Une empreinte ne hache que ce que la frontière publie.** Une scène
+  d'interrogation lit des valeurs plutôt qu'un tampon, et rien ne l'empêche
+  d'atteindre un état interne qu'aucun hôte ne peut observer — la scène de
+  collision hachait deux drapeaux du noyau dont l'ABI ne rend qu'un statut, et
+  validait ainsi le noyau contre lui-même. Ce qui entre dans l'empreinte est donc
+  ce qu'un appel par l'ABI rend, statut compris, **et sa règle de priorité entre
+  dans la référence avec lui**.
+
+  Corollaire sur la forme : **un enregistrement de taille unique**, les cas
+  particuliers résolus du côté de la conformance. Un enregistrement plus court
+  pour un cas de bord serait un branchement à porter dans chaque hôte, donc
+  autant d'occasions de le porter de travers, pour une distinction dont
+  l'empreinte n'a que faire.
 - **L'empreinte est FNV-1a 64 bits**, écrite en seize chiffres hexadécimaux
   minuscules. Elle hache la largeur puis la hauteur en `u32` petit-boutiste, puis
   la zone utile ligne par ligne, `largeur × 4` octets alpha compris ; le `stride`
