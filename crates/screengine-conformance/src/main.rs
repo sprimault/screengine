@@ -26,9 +26,9 @@ use std::{fs, io};
 use std::sync::Arc;
 
 use screengine::{
-    Affine3, Angle, BYTES_PER_PIXEL, Camera, Color, Config, Context, Filter, Frame, Light,
-    Lightmaps, MAX_OVERBRIGHT, Mesh, Quat, Rect, Rows, Sprite, SpriteOrientation, Texture,
-    Triangle, Vec3, VertexUv, VertexUv2, World,
+    Affine3, Angle, BYTES_PER_PIXEL, Camera, Color, Config, Context, DepthMode, Filter, Frame,
+    Light, Lightmaps, Line, MAX_OVERBRIGHT, Mesh, Point, Quat, Rect, Rows, Sprite,
+    SpriteOrientation, Texture, Triangle, Vec3, VertexUv, VertexUv2, World,
 };
 use screengine_conformance::{collision_file, mesh_file, rooms_file, world_file};
 
@@ -557,6 +557,22 @@ enum Scene {
     /// de force brute, et exige qu'ils rendent les mêmes bits : c'est le théorème
     /// de l'étape, et le seul contrôle qui attrape une traversée trop étroite.
     Collision,
+    /// **Le tracé, et la règle qui le gouverne.**
+    ///
+    /// Deux polylignes qui **partagent leurs sommets**, l'une occultée par un
+    /// mur et l'autre visible à travers. C'est la scène qui fige la règle de
+    /// sortie du losange : un pixel s'allume quand le segment quitte le losange
+    /// inscrit, si bien qu'un sommet partagé n'est peint qu'une fois.
+    ///
+    /// Elle est à la ligne ce que `arete` est au triangle, et elle existe pour
+    /// la même raison : la règle se grave avant que quoi que ce soit s'appuie
+    /// dessus. Découverte après, elle déplacerait toutes les empreintes de
+    /// tracé.
+    ///
+    /// **Un mur dans la scène, et non deux lignes seules** : sans géométrie, le
+    /// mode occulté ne se distinguerait pas du mode à travers, et la moitié de
+    /// ce que la scène fige ne serait pas figée.
+    Trace,
 }
 
 /// La matrice qui place la caisse : deux rotations composées, puis cinq unités
@@ -973,7 +989,7 @@ impl View {
 
 impl Scene {
     /// Toutes les scènes, dans l'ordre où `--check` les rejoue.
-    const ALL: [Self; 27] = [
+    const ALL: [Self; 28] = [
         Self::Edge,
         Self::Guard,
         Self::Lateral,
@@ -1000,6 +1016,7 @@ impl Scene {
         Self::WorldFile,
         Self::Rooms,
         Self::Collision,
+        Self::Trace,
         Self::Composite,
     ];
 
@@ -1053,6 +1070,7 @@ impl Scene {
             Self::WorldFile => "carte",
             Self::Rooms => "salles",
             Self::Collision => "collision",
+            Self::Trace => "trace",
         }
     }
 
@@ -1725,6 +1743,113 @@ impl Scene {
             }
             // Deux taches sombres au ras du sol, dont le recouvrement doit être
             // plus sombre que chacune.
+            // **Deux polylignes qui partagent leurs sommets, devant un mur.**
+            //
+            // La même géométrie est tracée deux fois : occultée, elle disparaît
+            // derrière le mur ; à travers, elle le recouvre. Les deux modes dans
+            // la même image, parce qu'une image d'éditeur les porte ensemble et
+            // que c'est précisément ce que le contrat promet.
+            Self::Trace => {
+                // Un mur plein cadre, à mi-distance : il coupe les polylignes
+                // en deux, si bien que la moitié de chaque trait éprouve le
+                // mode et l'autre moitié la règle de couverture.
+                // L'ordre des sommets décide de la face vue : la caméra neutre
+                // regarde le +X, son axe droit est le −Y et son haut le +Z. Pris
+                // dans l'autre sens, le mur est un dos et disparaît — sans
+                // erreur, et la scène ne figerait plus que des lignes dans le
+                // vide.
+                let wall = [
+                    Vec3::new(6.0, 4.0, -3.0),
+                    Vec3::new(6.0, -4.0, -3.0),
+                    Vec3::new(6.0, -4.0, 3.0),
+                    Vec3::new(6.0, 4.0, 3.0),
+                ];
+                let faces = [
+                    Triangle {
+                        indices: [0, 1, 2],
+                        color: Color::new(0x30, 0x38, 0x48, 0xFF),
+                    },
+                    Triangle {
+                        indices: [0, 2, 3],
+                        color: Color::new(0x30, 0x38, 0x48, 0xFF),
+                    },
+                ];
+                context.submit(Affine3::IDENTITY, &wall, &faces)?;
+
+                // **Les sommets sont partagés d'un segment au suivant**, et
+                // c'est tout l'objet : la règle du losange ne les peint qu'une
+                // fois. Une ligne brisée plutôt qu'un tracé continu, pour que
+                // chaque sommet soit un vrai raccord.
+                //
+                // Les quatre segments prennent les quatre familles de pente que
+                // la règle départage différemment : l'horizontale, la verticale
+                // et les deux diagonales.
+                let corners = [
+                    Vec3::new(8.0, -3.0, -2.0),
+                    Vec3::new(8.0, 1.0, -2.0),
+                    Vec3::new(8.0, 1.0, 2.0),
+                    Vec3::new(8.0, -3.0, 2.0),
+                    Vec3::new(8.0, -3.0, -2.0),
+                ];
+                let polyline = |shift: f32, color: Color| -> Vec<Line> {
+                    corners
+                        .windows(2)
+                        .map(|pair| Line {
+                            a: pair[0] + Vec3::new(0.0, shift, 0.0),
+                            b: pair[1] + Vec3::new(0.0, shift, 0.0),
+                            color,
+                        })
+                        .collect()
+                };
+
+                // **Les deux modes, sur la même brisure, derrière le mur.**
+                // Décalées l'une de l'autre, sans quoi la seconde écraserait la
+                // première et la moitié de ce que la scène fige serait perdue.
+                //
+                // Celle qui teste la profondeur ne doit **rien** peindre : elle
+                // est derrière le mur. C'est ce qu'une empreinte fige aussi bien
+                // qu'un trait visible, et son absence est le sujet.
+                context.submit_lines(
+                    Affine3::IDENTITY,
+                    &polyline(2.5, Color::new(0xE0, 0x40, 0x30, 0xFF)),
+                    DepthMode::Tested,
+                )?;
+                context.submit_lines(
+                    Affine3::IDENTITY,
+                    &polyline(-2.5, Color::new(0x40, 0xE0, 0x80, 0xFF)),
+                    DepthMode::Always,
+                )?;
+
+                // **Le témoin** : la même brisure, testée, mais **devant** le
+                // mur. Sans elle, un défaut qui rendrait le mode occulté
+                // toujours invisible passerait — l'absence de la rouge le
+                // confirmerait au lieu de le contredire, et la scène serait
+                // verte en ne mesurant que la moitié de ce qu'elle annonce.
+                // Juste devant le mur, et non près de la caméra : à deux unités
+                // de celle-ci, la même brisure déborde du cadre et ne montre
+                // plus ses sommets, qui sont ce que la règle gouverne.
+                let devant: Vec<Line> = polyline(2.5, Color::new(0x80, 0xC0, 0xFF, 0xFF))
+                    .into_iter()
+                    .map(|line| Line {
+                        a: line.a + Vec3::new(-2.25, 0.0, 0.0),
+                        b: line.b + Vec3::new(-2.25, 0.0, 0.0),
+                        ..line
+                    })
+                    .collect();
+                context.submit_lines(Affine3::IDENTITY, &devant, DepthMode::Tested)?;
+
+                // Et des points **devant** le mur, en mode occulté : ils se
+                // voient, ce qui distingue leur absence de celle d'une primitive
+                // qu'un défaut aurait perdue.
+                let dots: Vec<Point> = corners[..4]
+                    .iter()
+                    .map(|&at| Point {
+                        at: at + Vec3::new(-4.0, 0.0, 0.0),
+                        color: Color::new(0xFF, 0xE0, 0x40, 0xFF),
+                    })
+                    .collect();
+                context.submit_points(Affine3::IDENTITY, &dots, DepthMode::Tested)
+            }
             Self::Modulated => {
                 // La caméra plonge, sans quoi un sol vu en rasant ne montre de
                 // ses taches qu'une trace près de l'horizon.

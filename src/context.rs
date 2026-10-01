@@ -2023,15 +2023,12 @@ impl Context {
         };
 
         let (pa, pb) = (self.projection.to_vertex(ca), self.projection.to_vertex(cb));
-        // Un point se trace comme un segment d'un seizième de pixel partant de
-        // lui : la règle du losange allume alors exactement le pixel qui le
-        // contient, et un seul. Écarté : un chemin de couverture à part, qui
-        // aurait été une seconde règle à tenir d'accord avec la première.
-        let (x1, y1) = if point {
-            (pa.x + 1, pa.y)
-        } else {
-            (pb.x, pb.y)
-        };
+        // **Un point porte son drapeau, il ne se déguise pas en segment court.**
+        // La première écriture lui donnait un seizième de pixel de long, en
+        // comptant sur la règle du losange pour allumer le pixel qui le
+        // contient : un tel segment n'en sort jamais, donc il n'allumait rien.
+        // La scène de conformance du tracé l'a montré avant qu'une empreinte le
+        // fige — c'est ce pour quoi elle existe.
         if self.segments.len() >= self.config.line_capacity() {
             return Err(Error::InvalidArgument(Argument::LineCapacity));
         }
@@ -2039,11 +2036,12 @@ impl Context {
             x0: pa.x,
             y0: pa.y,
             z0: pa.z,
-            x1,
-            y1,
+            x1: pb.x,
+            y1: pb.y,
             z1: pb.z,
             color: color.packed(),
             tested: depth == DepthMode::Tested,
+            point,
         });
         Ok(())
     }

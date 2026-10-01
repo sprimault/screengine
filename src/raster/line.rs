@@ -50,6 +50,18 @@ pub struct Segment {
     /// construit depuis la constante d'ABI après l'avoir validée. L'ABI, elle,
     /// n'a pas de `bool`.
     pub tested: bool,
+    /// Vrai quand la primitive est un **point**, et non un segment.
+    ///
+    /// **Un point ne passe pas par la règle du losange**, et c'est une
+    /// distinction qu'il faut porter plutôt que simuler : un segment assez court
+    /// pour tenir dans un pixel ne sort d'aucun losange, donc n'allume rien.
+    /// Lui donner une longueur suffisante pour en sortir l'allumerait au
+    /// contraire deux fois sur certaines positions.
+    ///
+    /// Un point allume donc le pixel qui le contient, directement. C'est la
+    /// seule chose qui distingue les deux familles en aval, et ce champ est ce
+    /// qui l'évite de devenir un second chemin de couverture.
+    pub point: bool,
 }
 
 impl Segment {
@@ -250,6 +262,24 @@ pub fn exits_diamond(segment: &Segment, px: i32, py: i32) -> bool {
 /// juste : `near/w` est affine en espace écran, donc le long d'un segment de
 /// l'image.
 pub fn cover<F: FnMut(i32, i32, u32)>(segment: &Segment, window: Rect, mut pixel: F) {
+    // Un point allume le pixel qui le contient, sans règle de couverture : il
+    // n'a pas de segment dont sortir, et le faire passer par le losange ne
+    // l'allumerait jamais.
+    if segment.point {
+        let (x, y) = (
+            segment.x0.div_euclid(SUBPIXEL_SCALE),
+            segment.y0.div_euclid(SUBPIXEL_SCALE),
+        );
+        if x >= window.x as i32
+            && y >= window.y as i32
+            && x < (window.x + window.width) as i32
+            && y < (window.y + window.height) as i32
+        {
+            pixel(x, y, segment.z0);
+        }
+        return;
+    }
+
     let (dx, dy) = (
         segment.x1 as i64 - segment.x0 as i64,
         segment.y1 as i64 - segment.y0 as i64,
