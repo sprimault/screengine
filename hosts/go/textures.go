@@ -149,10 +149,11 @@ func newFrame() (unsafe.Pointer, []byte) {
 
 // Rend la scène texturée sous le filtrage demandé et hache son image.
 //
-// Plus courte que [renderEdge] : les sentinelles, l'alpha et les tuiles sont
-// déjà éprouvés par la première scène, qui passe par le même tampon et le même
-// chemin de sortie. Ce que celle-ci ajoute est le chemin que l'autre n'emprunte
-// pas — chargement d'une texture, soumission texturée, échantillonnage.
+// Plus courte que [renderEdge] : les sentinelles, les fins de ligne et l'alpha
+// sont déjà éprouvés par la première scène, qui passe par le même tampon et le
+// même chemin de sortie. Ce que celle-ci ajoute est le chemin que l'autre
+// n'emprunte pas — chargement d'une texture, soumission texturée,
+// échantillonnage.
 func renderTextured(filter uint32) (uint64, bool) {
 	config := sceneConfig()
 	frame, pixels := newFrame()
