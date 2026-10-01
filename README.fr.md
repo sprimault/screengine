@@ -62,6 +62,8 @@ La feuille de route compte dix étapes, publiées à chacune.
 - [`docs/abi.md`](docs/abi.md) — le contrat de la frontière C, qui fait foi
 - [`docs/construction.md`](docs/construction.md) — cibles, matrice de
   compilation, génération du header
+- [`docs/cartes.md`](docs/cartes.md) — comment écrire un décor : cellules,
+  portails, repères de lightmap
 
 ## Utilisation
 
