@@ -46,10 +46,12 @@ browser and on a phone.
 
 ## Status
 
-**Step 7 cleared, released as 0.7.0: collision.** A box sweeps against a map's
-cells and returns the time of impact, its normal and the surface hit, **with no
-rendering context**. The response belongs to the host, as does anything that is
-not cell geometry. A fifth host arrives with the step, in Go.
+**Step 8 cleared, released as 0.8.0: what editing needs.** The engine has no
+editor; it exposes what an editor asks for. Lines and points draw into the
+buffer, occluded by the scenery or visible through it, in world coordinates —
+for guides and a selection, never for a HUD. A ray picks the scene and returns
+the surface hit, surfaces flagged non-solid included. And modifying a map means
+replacing it whole: no function for that, and `ScgWorld` stays immutable.
 
 The roadmap has ten steps, each one published.
 

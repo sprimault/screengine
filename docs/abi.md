@@ -7,33 +7,28 @@ Un auteur de liaison qui ne lit pas le français trouve l'essentiel dans
 `include/screengine.h`, dont la documentation est en anglais : ce qui ne peut pas
 être ignoré à l'appel y figure, fonction par fonction.
 
-**État : l'étape 7 est publiée en 0.7.0** — les sept points d'entrée de l'étape 0,
+**État : l'étape 8 est publiée en 0.8.0** — les sept points d'entrée de l'étape 0,
 le rendu par tuiles, les textures avec leur niveau de filtrage, la lumière
 (lightmaps fournies par l'hôte, lumières dynamiques, brouillard, résolution
 interne, courbe de sortie), les deux formats de données avec leurs accesseurs, la
 traversée par portails avec le suivi de la cellule de la caméra et le calcul des
-lightmaps, cache compris, et les quadrilatères orientés, les maillages entre deux
-trames, le texel transparent et la surface modulée, et le balayage d'une boîte
-contre les cellules d'une carte. **Le contrat du balayage a été figé ci-dessous
-avant son premier décodeur**, comme ceux des étapes 4, 5 et 6 l'ont été. Chaque décision garde ci-dessous l'option écartée et
+lightmaps, cache compris, les quadrilatères orientés, les maillages entre deux
+trames, le texel transparent et la surface modulée, le balayage d'une boîte
+contre les cellules d'une carte, et ce qu'un éditeur réclame : le tracé de lignes
+et de points, et l'interrogation par le rayon. **Le contrat du tracé a été figé
+ci-dessous avant son premier remplissage**, comme ceux des étapes 4 à 7 l'ont
+été. Chaque décision garde ci-dessous l'option écartée et
 pourquoi. Un seul point reste marqué **À trancher** : la dépréciation, qui attend
 le gel de l'ABI en 1.0.
 
-**Le contrat de l'étape 8 est figé ci-dessous, et rien n'en est encore exposé** :
-tracé de lignes et de points, interrogation par le rayon, et la modification
-d'une carte — qui n'ajoute aucune fonction. Une bibliothèque de la série `0.7`
-n'exporte aucun de ces symboles, et une liaison écrite contre eux échoue à la
-résolution ; c'est le comportement décrit sous « Versionnement », et c'est
-attendu.
-
 `SCG_ABI_VERSION` reste à **1** : aucune signature publiée n'a changé, les étapes
-6 et 7 n'ayant fait qu'ajouter des fonctions. Ce qui change pour une liaison est
+6, 7 et 8 n'ayant fait qu'ajouter des fonctions. Ce qui change pour une liaison est
 ailleurs : les **codes de retour positifs**, dont les deux premiers sont apparus
 en 0.5.0 et qui font d'un test « différent de zéro » un refus de succès.
 
 Une liaison qui juge un appel par « différent de `0` » se trompe donc : le
-critère est « négatif ». Un troisième statut arrive avec le balayage, et un
-statut inconnu se traite toujours comme `SCG_OK`.
+critère est « négatif ». Le troisième statut est arrivé avec le balayage en
+0.7.0, et un statut inconnu se traite toujours comme `SCG_OK`.
 
 ## Principes
 
