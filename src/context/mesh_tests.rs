@@ -26,6 +26,7 @@ fn small_ctx() -> Context {
         height: 64,
         tile_size: 32,
         max_triangles: 0,
+        max_lines: 0,
     })
     .expect("configuration saine")
 }
@@ -278,6 +279,7 @@ fn un_maillage_qui_deborde_la_capacite_ne_laisse_rien() {
         tile_size: 32,
         // Un seul triangle : le premier groupe passe, le second déborde.
         max_triangles: 1,
+        max_lines: 0,
     })
     .expect("configuration saine");
 
@@ -311,6 +313,7 @@ fn un_maillage_refuse_ne_laisse_pas_sa_texture() {
         height: 64,
         tile_size: 32,
         max_triangles: 1,
+        max_lines: 0,
     })
     .expect("configuration saine");
 
@@ -447,6 +450,7 @@ fn une_carte_qui_deborde_la_capacite_ne_laisse_rien() {
         tile_size: 32,
         // Le carré donne deux triangles : un seul ne suffit pas.
         max_triangles: 1,
+        max_lines: 0,
     })
     .expect("configuration saine");
 
@@ -705,6 +709,7 @@ fn une_traversee_refusee_ne_laisse_pas_sa_plage() {
         height: 64,
         tile_size: 32,
         max_triangles: mesure.triangles.len() as u32,
+        max_lines: 0,
     })
     .expect("configuration saine");
 
@@ -740,6 +745,7 @@ fn un_maillage_refuse_apres_une_image_ne_laisse_rien() {
         // second maillage après que le premier a été rendu et jeté, et refuser
         // sur son second groupe, donc après en avoir posé un.
         max_triangles: 1,
+        max_lines: 0,
     })
     .expect("configuration saine");
 

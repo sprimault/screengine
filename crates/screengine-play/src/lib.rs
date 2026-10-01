@@ -46,8 +46,8 @@ pub use screengine;
 // données. Deux modèles de scène qui divergeraient seraient la seule façon de
 // le rater.
 pub use screengine::{
-    Affine3, Angle, Camera, Color, Filter, Light, Lightmap, Lightmaps, Mesh, Quat, Sprite,
-    SpriteOrientation, Texture, Triangle, Vec3, VertexUv, VertexUv2, World,
+    Affine3, Angle, Camera, Color, DepthMode, Filter, Light, Lightmap, Lightmaps, Line, Mesh,
+    Point, Quat, Sprite, SpriteOrientation, Texture, Triangle, Vec3, VertexUv, VertexUv2, World,
 };
 pub use texture::{load_png, load_png_masked};
 pub use winit::event::MouseButton;
@@ -181,6 +181,7 @@ impl Play {
             height,
             tile_size: self.tile_size,
             max_triangles: 0,
+            max_lines: 0,
         })?;
 
         runner::run(self, context, state, update, render)

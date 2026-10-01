@@ -15,7 +15,7 @@ use crate::context::{
 use crate::error::{Argument, Error, Result};
 use crate::light;
 use crate::light::grade::{Identity, Transfer};
-use crate::raster::{Lit, NO_LIGHTING, NO_TEXTURE, Rect, Sampling, Target, fill};
+use crate::raster::{Lit, NO_LIGHTING, NO_TEXTURE, Rect, Sampling, Segment, Target, cover, fill};
 
 /// Le plus grand côté de tuile, qui dimensionne le tampon de travail posé sur
 /// la pile.
@@ -319,7 +319,12 @@ impl Context {
             depth: &mut depth[..pixels],
             rect,
         };
-        self.draw(scratch, self.bins.tile(index), out)
+        self.draw(
+            scratch,
+            self.bins.tile(index),
+            self.segment_bins.tile(index),
+            out,
+        )
     }
 
     /// Dessine `triangles` dans `scratch`, puis recopie la région dans `out`.
@@ -331,6 +336,7 @@ impl Context {
         &self,
         mut scratch: Scratch<'_>,
         triangles: impl Iterator<Item = u32>,
+        segments: impl Iterator<Item = u32>,
         out: &mut O,
     ) -> Result<()> {
         let rect = scratch.rect;
@@ -387,6 +393,26 @@ impl Context {
             fill(&mut scratch, window, triangle, sampling, lit);
         }
 
+        // **Le tracé vient après tout le remplissage, et après le brouillard.**
+        // L'ordre est contractuel, il décide de l'image : un repère au fond d'un
+        // couloir doit rester lisible, ce que le brouillard lui retirerait.
+        //
+        // Quand une tuile ne porte aucun segment — toute scène qui n'édite rien
+        // —, le brouillard reste où il était, dans la recopie, et pas un pixel
+        // ne change. C'est ce qui garde les empreintes existantes intactes.
+        let mut segments = segments.peekable();
+        if segments.peek().is_some() {
+            self.fog_scratch(&mut scratch);
+            for index in segments {
+                self.paint_segment(&mut scratch, rect, &self.segments[index as usize]);
+            }
+            return if self.grade.is_set() {
+                self.blit_plain(&scratch, rect, out, &self.grade)
+            } else {
+                self.blit_plain(&scratch, rect, out, &Identity)
+            };
+        }
+
         // Le post-traitement se choisit **une fois par tuile**, et la recopie
         // se monomorphise sur ce choix. Le tester par pixel le ferait payer à
         // toute scène, y compris à celles qui n'en ont pas.
@@ -395,6 +421,72 @@ impl Context {
         } else {
             self.blit(&scratch, rect, out, &Identity)
         }
+    }
+
+    /// Applique le brouillard au tampon de travail, là où la recopie le ferait.
+    ///
+    /// Même calcul, même ordre, mêmes bits : c'est la recopie déplacée d'un cran
+    /// en amont pour que le tracé passe après elle. Une tuile sans segment n'y
+    /// entre jamais.
+    fn fog_scratch(&self, scratch: &mut Scratch<'_>) {
+        let Some(color) = self.fog.is_set().then(|| self.fog.color()) else {
+            return;
+        };
+        let rect = scratch.rect;
+        let width = rect.width as usize;
+        for row in 0..rect.height as usize {
+            for column in 0..width {
+                let i = row * width + column;
+                let (x, y) = (rect.x + column as u32, rect.y + row as u32);
+                let factor = self.fog.factor(scratch.depth[i]);
+                scratch.color[i] =
+                    light::fog::blend(scratch.color[i], color, factor, light::fog::dither(x, y));
+            }
+        }
+    }
+
+    /// Peint un segment dans le tampon de travail.
+    ///
+    /// **Sans jamais toucher la profondeur**, dans les deux modes : deux lignes
+    /// qui se croisent se départagent par l'ordre de soumission, qui est
+    /// contractuel et indépendant des tuiles. Si l'une écrivait sa profondeur,
+    /// leur croisement dépendrait de la répartition.
+    fn paint_segment(&self, scratch: &mut Scratch<'_>, rect: Rect, segment: &Segment) {
+        cover(segment, rect, |x, y, z| {
+            let i = scratch.index(x, y);
+            // Le test est strict, comme celui des triangles : un repère posé
+            // exactement sur la surface qu'il marque reste derrière elle, et
+            // l'hôte qui le veut devant dispose du mode qui ignore la
+            // profondeur.
+            if segment.tested && z <= scratch.depth[i] {
+                return;
+            }
+            scratch.color[i] = segment.color;
+        });
+    }
+
+    /// La recopie sans brouillard, pour une tuile qui l'a déjà reçu.
+    ///
+    /// Séparée plutôt que pilotée par un drapeau : la boucle de recopie se
+    /// monomorphise sur la courbe de sortie, et un test de plus par pixel se
+    /// paierait sur toutes les scènes.
+    fn blit_plain<O: Output, T: Transfer>(
+        &self,
+        scratch: &Scratch<'_>,
+        rect: Rect,
+        out: &mut O,
+        transfer: &T,
+    ) -> Result<()> {
+        let width = rect.width as usize;
+        for (row, source) in scratch.color.chunks_exact(width.max(1)).enumerate() {
+            let span = out
+                .span(rect.x, rect.y + row as u32, rect.width)
+                .ok_or(Error::InvalidArgument(Argument::BufferLength))?;
+            for (pixel, slot) in source.iter().zip(span.chunks_exact_mut(BYTES_PER_PIXEL)) {
+                slot.copy_from_slice(&(transfer.apply(*pixel) | OPAQUE).to_le_bytes());
+            }
+        }
+        Ok(())
     }
 
     /// Recopie la tuile rendue dans le tampon de l'hôte, en y appliquant le
@@ -555,7 +647,10 @@ impl<'a> Frame<'a> {
             rect,
         };
         let triangles = 0..self.context.triangles.len() as u32;
-        self.context.draw(scratch, triangles, out)
+        // Tous les segments, dans l'ordre de soumission, comme tous les
+        // triangles : c'est ce qui fait de cette région l'oracle des tuiles.
+        let segments = 0..self.context.segments.len() as u32;
+        self.context.draw(scratch, triangles, segments, out)
     }
 }
 

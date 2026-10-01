@@ -39,7 +39,10 @@ pub use light::MAX_OVERBRIGHT;
 pub use light::dynamic::MAX_LIGHTS;
 pub use math::{Affine3, Angle, MAX_TEXEL_COORD, Quat, Vec3};
 pub use raster::Rect;
-pub use scene::{Camera, Color, Light, Sprite, SpriteOrientation, Triangle, VertexUv, VertexUv2};
+pub use scene::{
+    Camera, Color, DepthMode, Light, Line, Point, Sprite, SpriteOrientation, Triangle, VertexUv,
+    VertexUv2,
+};
 pub use texture::{Filter, MAX_TEXTURE_SIZE, Texture};
 pub use world::atlas::MAX_ATLAS as MAX_LIGHTMAP_SIZE;
 pub use world::lighting::{Lightmap, Lightmaps};

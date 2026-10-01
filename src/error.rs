@@ -90,6 +90,12 @@ pub enum Argument {
     ScratchLength,
     /// Plus de triangles soumis que la capacité réservée à la création.
     TriangleCapacity,
+    /// Plus de primitives de tracé soumises que la capacité réservée.
+    ///
+    /// Distincte de [`Argument::TriangleCapacity`] : les deux budgets sont
+    /// séparés, et un hôte qui ne saurait pas lequel il vient d'épuiser
+    /// chercherait du mauvais côté.
+    LineCapacity,
     /// Un indice de triangle au-delà du tableau de sommets du lot.
     VertexIndex,
     /// Un indice de trame au-delà de ce que le maillage porte.

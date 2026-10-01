@@ -257,6 +257,7 @@ fn aucune_image_texturee_n_alloue() {
         height,
         tile_size: 64,
         max_triangles: 0,
+        max_lines: 0,
     })
     .expect("configuration valide");
     let mut pixels = vec![0u8; width as usize * height as usize * BYTES_PER_PIXEL];
@@ -309,6 +310,7 @@ fn aucune_image_de_maillage_n_alloue() {
         height,
         tile_size: 64,
         max_triangles: 0,
+        max_lines: 0,
     })
     .expect("configuration valide");
     let mut pixels = vec![0u8; width as usize * height as usize * BYTES_PER_PIXEL];
@@ -346,6 +348,7 @@ fn aucune_image_n_alloue() {
         height,
         tile_size: 64,
         max_triangles: 0,
+        max_lines: 0,
     })
     .expect("configuration valide");
     let mut pixels = vec![0u8; width as usize * height as usize * BYTES_PER_PIXEL];
@@ -382,6 +385,7 @@ fn aucun_changement_de_resolution_n_alloue() {
         height: 180,
         tile_size: 64,
         max_triangles: 0,
+        max_lines: 0,
     })
     .expect("configuration valide");
     let mut pixels = vec![0u8; max_width as usize * max_height as usize * BYTES_PER_PIXEL];
@@ -421,6 +425,7 @@ fn aucune_tuile_n_alloue_sur_un_autre_thread() {
         height,
         tile_size: tile,
         max_triangles: 0,
+        max_lines: 0,
     })
     .expect("configuration valide");
     let mut pixels = vec![0u8; width as usize * height as usize * BYTES_PER_PIXEL];
@@ -492,6 +497,7 @@ fn aucune_image_eclairee_n_alloue() {
         height,
         tile_size: 64,
         max_triangles: 0,
+        max_lines: 0,
     })
     .expect("configuration valide");
     let mut pixels = vec![0u8; width as usize * height as usize * BYTES_PER_PIXEL];
@@ -563,6 +569,7 @@ fn aucune_image_de_l_etape_6_n_alloue() {
         height,
         tile_size: 64,
         max_triangles: 0,
+        max_lines: 0,
     })
     .expect("configuration valide");
     let mut pixels = vec![0u8; width as usize * height as usize * BYTES_PER_PIXEL];
@@ -646,6 +653,7 @@ fn aucune_image_de_traversee_n_alloue() {
         height,
         tile_size: 64,
         max_triangles: 0,
+        max_lines: 0,
     })
     .expect("configuration valide");
     let mut pixels = vec![0u8; width as usize * height as usize * BYTES_PER_PIXEL];

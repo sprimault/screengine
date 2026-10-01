@@ -13,11 +13,11 @@ use alloc::vec::Vec;
 use core::sync::atomic::Ordering;
 
 use super::*;
-use crate::context::{Config, TRIANGLE_CAPACITY};
-use crate::math::Vec3;
+use crate::context::{Config, LINE_CAPACITY, TRIANGLE_CAPACITY};
 use crate::math::fixed::{DEPTH_MARGIN, SUBPIXEL_SCALE};
+use crate::math::{Affine3, Vec3};
 use crate::raster::{NO_TEXTURE, Vertex};
-use crate::scene::{Color, Light};
+use crate::scene::{Color, DepthMode, Light, Line};
 use crate::testing::Rng;
 use crate::texture::Texture;
 
@@ -37,6 +37,7 @@ fn context(tile_size: u32) -> Context {
         height: H,
         tile_size,
         max_triangles: 0,
+        max_lines: 0,
     })
     .expect("configuration saine")
 }
@@ -262,6 +263,7 @@ fn une_resolution_sous_le_maximum_rend_la_reference() {
             height,
             tile_size,
             max_triangles: 0,
+            max_lines: 0,
         })
         .expect("configuration saine");
         scene(&mut context, 7);
@@ -775,4 +777,102 @@ fn la_capacite_de_triangles_est_une_limite() {
         Err(Error::InvalidArgument(Argument::TriangleCapacity))
     );
     assert_eq!(context.triangles.len(), TRIANGLE_CAPACITY);
+}
+
+/// Une polyligne tracée, posée dans la scène, et ce qu'elle doit rendre.
+///
+/// Des segments longs et courts, dans les deux sens, qui se croisent et
+/// débordent de l'image : c'est là qu'une répartition par tuiles perd une
+/// référence, et là qu'un parcours rebasé sur une tuile se décale.
+fn trace(context: &mut Context, depth: DepthMode) {
+    let mut rng = Rng::new(31);
+    context.segments.clear();
+    let mut lines = Vec::new();
+    for _ in 0..40 {
+        let point = |rng: &mut Rng| {
+            Vec3::new(
+                rng.unit_f32() * 8.0 - 4.0,
+                rng.unit_f32() * 8.0 - 4.0,
+                rng.unit_f32() * 6.0 + 2.0,
+            )
+        };
+        lines.push(Line {
+            a: point(&mut rng),
+            b: point(&mut rng),
+            color: Color::new(0xE0, 0x40, 0x30, 0xFF),
+        });
+    }
+    context
+        .submit_lines(Affine3::IDENTITY, &lines, depth)
+        .expect("lot de lignes accepté");
+}
+
+/// **Le théorème du lot : une ligne rendue par tuiles est celle de la région.**
+///
+/// Le même que la traversée contre le chemin brut et le balayage contre la
+/// force brute. La région dessine tous les segments dans l'ordre de soumission,
+/// sans répartition ; les tuiles n'en voient chacune qu'une part. Un parcours
+/// qui redémarrerait son pas au bord d'une tuile décalerait la ligne d'un pixel
+/// à chaque couture, et c'est exactement ce que ce test refuse.
+///
+/// Les deux modes de profondeur, parce qu'ils ne traversent pas le même code :
+/// l'un lit le tampon de profondeur de la tuile, l'autre l'ignore.
+#[test]
+fn le_trace_par_tuiles_rend_la_region() {
+    for depth in [DepthMode::Tested, DepthMode::Always] {
+        for tile_size in [32, 64] {
+            let mut context = context(tile_size);
+            scene(&mut context, 11);
+            trace(&mut context, depth);
+
+            let attendu = reference(&mut context);
+            let mut tiled = pixels();
+            open(&mut context)
+                .end(&mut Rows::new(&mut tiled, W))
+                .expect("image");
+
+            assert!(
+                tiled == attendu,
+                "tracé en tuiles de {tile_size}, mode {depth:?}"
+            );
+        }
+    }
+}
+
+/// Le tracé écrit vraiment quelque chose, et le test précédent compare donc
+/// deux images qui portent des traits.
+///
+/// Sans ce contrôle, un tracé qui n'allumerait rien rendrait les deux chemins
+/// égaux et le théorème serait vert en ne mesurant rien — le mode de panne le
+/// plus discret qui soit, puisqu'il se présente comme un succès.
+#[test]
+fn le_trace_change_l_image() {
+    let mut context = context(64);
+    scene(&mut context, 11);
+    let sans = reference(&mut context);
+
+    scene(&mut context, 11);
+    trace(&mut context, DepthMode::Always);
+    let avec = reference(&mut context);
+
+    assert!(sans != avec, "le tracé n'a allumé aucun pixel");
+}
+
+/// La capacité de tracé est une limite rendue, et elle est **à elle** : un lot
+/// de lignes refusé ne dit rien de la capacité de triangles.
+#[test]
+fn la_capacite_de_trace_est_une_limite() {
+    let mut context = context(64);
+    let ligne = Line {
+        a: Vec3::new(-1.0, 0.0, 3.0),
+        b: Vec3::new(1.0, 0.0, 3.0),
+        color: Color::new(0xFF, 0xFF, 0xFF, 0xFF),
+    };
+    let lignes = vec![ligne; LINE_CAPACITY + 1];
+    assert_eq!(
+        context.submit_lines(Affine3::IDENTITY, &lignes, DepthMode::Always),
+        Err(Error::InvalidArgument(Argument::LineCapacity))
+    );
+    // Le lot est refusé **en entier** : rien ne reste de celui qui déborde.
+    assert!(context.segments.is_empty());
 }

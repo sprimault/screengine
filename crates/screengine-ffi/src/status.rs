@@ -203,6 +203,9 @@ pub(crate) fn message_of(error: Error) -> &'static str {
         Error::InvalidArgument(Argument::TriangleCapacity) => {
             "too many triangles submitted for the capacity reserved at creation"
         }
+        Error::InvalidArgument(Argument::LineCapacity) => {
+            "too many drawing primitives submitted for max_lines reserved at creation"
+        }
         Error::InvalidArgument(Argument::VertexIndex) => {
             "invalid triangle index: must be less than the vertex count of the batch"
         }

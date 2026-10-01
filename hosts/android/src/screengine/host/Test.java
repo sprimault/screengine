@@ -63,7 +63,14 @@ public final class Test {
     }
 
     /**
-     * Une configuration valide, champs réservés à zéro.
+     * Une configuration valide : capacités au défaut, dernier champ réservé à
+     * zéro.
+     *
+     * <p>Les deux zéros qui suivent la taille de tuile sont {@code
+     * max_triangles} et {@code max_lines} — deux champs qui étaient réservés et
+     * que les étapes 1 et 8 ont employés. Zéro y vaut le défaut, ce qui est
+     * exactement ce que la clause d'extension promettait : un hôte écrit avant
+     * n'a rien à reprendre.
      *
      * @return les huit champs de {@code ScgContextConfig}
      */
@@ -538,8 +545,11 @@ public final class Test {
         check(Screengine.create(config, out) == Screengine.ERR_INVALID_ARGUMENT, "taille de tuile 48 refusée");
         check(out[0] == 0x5A5A5A5AL, "rien n'est écrit dans le paramètre de sortie après un refus");
 
+        // Le dernier champ réservé. Les deux précédents ont servi comme la
+        // clause d'extension l'annonçait — max_triangles, puis max_lines —, et
+        // c'est ce refus-ci qui permettra d'employer le troisième à son tour.
         config = sceneConfig();
-        config[6] = 1;
+        config[7] = 1;
         check(Screengine.create(config, out) == Screengine.ERR_INVALID_ARGUMENT, "champ réservé non nul refusé");
 
         check(Screengine.create(sceneConfig(), null) == Screengine.ERR_NULL, "paramètre de sortie nul refusé");
