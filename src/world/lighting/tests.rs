@@ -236,3 +236,103 @@ fn moved_light() -> World {
 fn renumbered() -> World {
     one_cell_with(9, 2.0)
 }
+
+/// Deux cellules carrées côte à côte, sans portail entre elles.
+///
+/// `shift` déplace le sol de la **seconde** : c'est la modification d'éditeur la
+/// plus banale — un sommet qu'on tire —, et c'est elle qui doit périmer ce
+/// qu'elle touche sans toucher au reste.
+///
+/// Sans portail : deux cellules que rien ne relie n'échangent aucune lumière, et
+/// c'est le cas où la reprise partielle doit être la plus nette. Ce que les
+/// voisines ajoutent est éprouvé par la scène de conformance, sur un décor qui
+/// en a.
+fn two_cells(shift: f32) -> World {
+    let mut cells = Vec::new();
+    for (id, x0, z) in [(7u32, 0.0f32, 0.0f32), (8, 8.0, shift)] {
+        let points = [
+            [x0, 0.0, z],
+            [x0 + 4.0, 0.0, z],
+            [x0 + 4.0, 4.0, z],
+            [x0, 4.0, z],
+        ];
+        let mut surface = words(&[10 + id, 0, 1, 4]);
+        surface.extend_from_slice(&words(&[0, 1, 2, 3]));
+        surface.extend_from_slice(&frame([0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]));
+        surface.extend_from_slice(&frame([0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]));
+        cells.extend_from_slice(&cell_bytes(id, 0, &points, &[surface], &[]));
+    }
+
+    let mut lights = words(&[1]);
+    for value in [2.0f32, 2.0, 2.0, 8.0] {
+        lights.extend_from_slice(&value.to_le_bytes());
+    }
+    lights.extend_from_slice(&[0xFF, 0xFF, 0xFF, 0x00]);
+
+    World::load(&file(&cells, &[], &lights, &material(1, "mur"))).expect("carte valide")
+}
+
+/// **Modifier une carte, c'est la recharger — et seule la cellule touchée
+/// recuit.**
+///
+/// C'est la promesse que le contrat de l'étape 8 porte et que rien n'éprouvait :
+/// l'étape n'ajoute aucune fonction pour modifier une carte, donc ce qui la
+/// rend praticable est ce test et pas une signature. Un éditeur qui devrait
+/// recuire tout un niveau à chaque sommet déplacé n'aurait pas d'édition à
+/// chaud, quelle que soit la forme de l'ABI.
+#[test]
+fn une_cellule_modifiee_est_la_seule_a_recuire() {
+    let avant = two_cells(0.0);
+    let mut lighting = Lightmaps::new(&avant).expect("porteur");
+    lighting.build(&avant, 7).expect("cuisson possible");
+    lighting.build(&avant, 8).expect("cuisson possible");
+
+    let mut bytes = alloc::vec![0u8; lighting.save_len(&avant).expect("longueur")];
+    lighting.save(&avant, &mut bytes).expect("écriture");
+
+    // La carte modifiée : construite à côté, et chargée comme n'importe quelle
+    // autre. `World` n'a pas bougé d'un octet — c'est tout le propos.
+    let apres = two_cells(1.0);
+    let mut repris = Lightmaps::new(&apres).expect("porteur");
+    let acceptees = repris.restore(&apres, &bytes).expect("reprise");
+
+    assert_eq!(acceptees, 1, "une seule entrée est reprise");
+    assert_eq!(
+        repris.state(&apres, 7).unwrap(),
+        Lightmap::Ready,
+        "la cellule intacte garde sa lightmap"
+    );
+    assert_eq!(
+        repris.state(&apres, 8).unwrap(),
+        Lightmap::Absent,
+        "la cellule modifiée est à recuire"
+    );
+}
+
+/// **Les identifiants survivent au rechargement**, et c'est ce qui rend la
+/// bascule utilisable.
+///
+/// Une sélection d'éditeur désigne une cellule et une surface par identifiant ;
+/// si la carte rechargée ne les portait plus, chaque opération perdrait ce que
+/// l'utilisateur venait de désigner. Rien dans le code ne garantit cela en
+/// dehors du format — d'où ce test, qui le fixe.
+#[test]
+fn les_identifiants_survivent_au_rechargement() {
+    let avant = two_cells(0.0);
+    let apres = two_cells(1.0);
+
+    for id in [7, 8] {
+        assert_eq!(
+            avant.cell_luxel_count(id).is_some(),
+            apres.cell_luxel_count(id).is_some(),
+            "la cellule {id} existe des deux côtés"
+        );
+    }
+    for surface in [17, 18] {
+        assert_eq!(
+            avant.surface_material(surface),
+            apres.surface_material(surface),
+            "la surface {surface} désigne le même matériau"
+        );
+    }
+}
