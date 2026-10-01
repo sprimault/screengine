@@ -68,6 +68,35 @@ pub const SWEEP_CELLS: usize = 64;
 /// intervalle** de valeurs, jamais sur celle-ci.
 const SKIN: f64 = 1.0 / 1024.0;
 
+/// Quelles surfaces une interrogation voit.
+///
+/// **Le balayage et la sélection ne regardent pas le même décor**, et c'est la
+/// seule chose qui les distingue. Le premier ne voit que ce qui arrête un
+/// volume ; la seconde doit attraper une grille, une vitre, un volume de
+/// déclenchement — des surfaces que la carte marque « non solides » et que la
+/// collision ignore par construction.
+///
+/// Le drapeau décrit la géométrie, jamais l'appelant : une surface non solide
+/// compte toujours dans la parité qui localise un point, et occulte toujours la
+/// cuisson. Ce filtre ne change que ce qu'une requête retient.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Surfaces {
+    /// Les seules surfaces solides : ce que le balayage arrête.
+    Solid,
+    /// Toutes, non solides comprises : ce qu'une sélection d'éditeur attrape.
+    All,
+}
+
+impl Surfaces {
+    /// Vrai si cette surface entre dans la requête.
+    fn keeps(self, surface: &Surface) -> bool {
+        match self {
+            Self::Solid => surface.is_solid(),
+            Self::All => true,
+        }
+    }
+}
+
 /// Ce qu'un balayage rend.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Hit {
@@ -181,6 +210,7 @@ pub(crate) fn sweep(
     half: Vec3d,
     from: Vec3d,
     to: Vec3d,
+    surfaces: Surfaces,
 ) -> Option<Hit> {
     let start = world.cell_of(from_cell)?;
     // **La boîte dilatée pour le balayage, la vraie pour le départ solide.** Un
@@ -209,8 +239,8 @@ pub(crate) fn sweep(
             continue;
         };
 
-        sweep_cell(cell, grown_half, from, to, &mut best);
-        start_solid(cell, half, from, &mut best);
+        sweep_cell(cell, grown_half, from, to, surfaces, &mut best);
+        start_solid(cell, half, from, surfaces, &mut best);
 
         for portal in &cell.portals {
             let Some((linked, _)) = portal.link else {
@@ -346,9 +376,15 @@ pub(super) fn grown(half: Vec3d) -> Vec3d {
 /// Le test passe par le prédicat de recouvrement, qui ne partage aucune algèbre
 /// avec le balayage : un segment ne peut pas rendre cet instant-là, le sien
 /// commençant précisément où la boîte est déjà là.
-pub(super) fn start_solid(cell: &Cell, half: Vec3d, from: Vec3d, best: &mut Best) {
+pub(super) fn start_solid(
+    cell: &Cell,
+    half: Vec3d,
+    from: Vec3d,
+    surfaces: Surfaces,
+    best: &mut Best,
+) {
     for surface in &cell.surfaces {
-        if !surface.is_solid() {
+        if !surfaces.keeps(surface) {
             continue;
         }
         let Some(depth) = overlap::penetration(cell, surface, half, from) else {
@@ -372,9 +408,16 @@ pub(super) fn start_solid(cell: &Cell, half: Vec3d, from: Vec3d, best: &mut Best
 /// **Les trois critères de départage sont ici**, et leur ordre est contractuel :
 /// l'instant, puis la famille — face, arête, sommet —, puis l'ordre du fichier,
 /// que le parcours donne gratuitement en ne remplaçant jamais à égalité stricte.
-fn sweep_cell(cell: &Cell, half: Vec3d, from: Vec3d, to: Vec3d, best: &mut Best) {
+fn sweep_cell(
+    cell: &Cell,
+    half: Vec3d,
+    from: Vec3d,
+    to: Vec3d,
+    surfaces: Surfaces,
+    best: &mut Best,
+) {
     for surface in &cell.surfaces {
-        if !surface.is_solid() {
+        if !surfaces.keeps(surface) {
             continue;
         }
         let Some(touch) = sweep_surface(cell, surface, half, from, to) else {

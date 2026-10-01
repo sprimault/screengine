@@ -23,14 +23,20 @@
 use crate::format::World;
 use crate::math::Vec3d;
 
-use super::{Best, Hit, grown, in_unit, start_solid, sweep_cell};
+use super::{Best, Hit, Surfaces, grown, in_unit, start_solid, sweep_cell};
 
 /// Balaie une boîte contre **toutes** les surfaces solides de la carte.
 ///
 /// La cellule de départ n'entre pas : il n'y a pas de traversée à amorcer. C'est
 /// aussi ce qui fait de ce chemin une référence indépendante — il ne peut pas se
 /// tromper de cellule, n'en connaissant aucune.
-pub(crate) fn sweep_brute(world: &World, half: Vec3d, from: Vec3d, to: Vec3d) -> Hit {
+pub(crate) fn sweep_brute(
+    world: &World,
+    half: Vec3d,
+    from: Vec3d,
+    to: Vec3d,
+    surfaces: Surfaces,
+) -> Hit {
     // **La dilatation s'applique ici aussi**, et l'oublier a été le premier
     // défaut que l'égalité des deux chemins ait attrapé : sans elle, l'oracle
     // comparait deux boîtes de tailles différentes et divergeait de la marge.
@@ -41,8 +47,8 @@ pub(crate) fn sweep_brute(world: &World, half: Vec3d, from: Vec3d, to: Vec3d) ->
     // contacts au même instant et de même famille se tranchent par lui, et un
     // parcours d'un autre ordre rendrait une autre normale.
     for cell in world.cells() {
-        sweep_cell(cell, grown_half, from, to, &mut best);
-        start_solid(cell, half, from, &mut best);
+        sweep_cell(cell, grown_half, from, to, surfaces, &mut best);
+        start_solid(cell, half, from, surfaces, &mut best);
     }
     // **Le même bornage de sortie que la traversée**, et l'oublier a été le
     // second défaut que l'égalité des deux chemins ait attrapé : une garantie de
