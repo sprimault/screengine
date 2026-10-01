@@ -33,6 +33,7 @@ mod camera;
 mod clock;
 mod error;
 mod input;
+mod output;
 mod runner;
 mod scale;
 mod texture;
@@ -40,6 +41,7 @@ mod texture;
 pub use camera::FreeCamera;
 pub use error::Error;
 pub use input::Input;
+pub use output::Output;
 pub use scale::Scale;
 pub use screengine;
 // Réexportés et non redéfinis : ce crate ajoute du comportement, jamais des
@@ -166,6 +168,31 @@ impl Play {
         U: FnMut(&mut S, &mut Tick<'_>),
         R: FnMut(&mut S, &mut Context),
     {
+        self.run_with_output(state, update, render, |_, _| {})
+    }
+
+    /// La même boucle, avec un rappel de plus : l'image finie avant la fenêtre.
+    ///
+    /// **Trois rappels et non deux**, parce qu'il y a trois temps dans une image
+    /// et que le troisième n'appartient pas au moteur. `update` joue, `render`
+    /// soumet, `output` écrit par-dessus ce que le moteur a rendu — voir
+    /// [`Output`] pour ce qui va là et pourquoi.
+    ///
+    /// **Une méthode de plus plutôt qu'un paramètre de plus à [`run`](Self::run)**
+    /// : un programme qui n'écrit rien par-dessus n'a pas à porter un rappel
+    /// vide, et c'est la forme minimale qui fait la valeur de cet étage.
+    pub fn run_with_output<S, U, R, O>(
+        self,
+        state: S,
+        update: U,
+        render: R,
+        output: O,
+    ) -> Result<(), Error>
+    where
+        U: FnMut(&mut S, &mut Tick<'_>),
+        R: FnMut(&mut S, &mut Context),
+        O: FnMut(&mut S, &mut Output<'_>),
+    {
         if self.rate == 0 {
             return Err(Error::Setting("tick rate must be at least 1"));
         }
@@ -185,7 +212,7 @@ impl Play {
             max_lines: 0,
         })?;
 
-        runner::run(self, context, state, update, render)
+        runner::run(self, context, state, update, render, output)
     }
 }
 

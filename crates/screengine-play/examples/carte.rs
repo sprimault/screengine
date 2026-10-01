@@ -43,8 +43,8 @@ use std::sync::Arc;
 
 use screengine_play::screengine::Angle;
 use screengine_play::{
-    Affine3, Camera, Color, DepthMode, FreeCamera, KeyCode, Lightmaps, Line, Mesh, Play, Point,
-    Surfaces, Texture, Vec3, World, load_png,
+    Affine3, Camera, Color, DepthMode, FreeCamera, KeyCode, Lightmaps, Line, Mesh, Output, Play,
+    Point, Surfaces, Texture, Vec3, World, load_png,
 };
 
 /// La carte du dépôt, celle que les cinq autres hôtes chargent.
@@ -250,6 +250,9 @@ const ON_WALL: Color = Color::new(0x60, 0xE0, 0xFF, 0xFF);
 
 /// Celle du repère sur un sol ou un plafond.
 const ON_FLOOR: Color = Color::new(0xC0, 0xFF, 0x60, 0xFF);
+
+/// Le cadre de la pastille d'écran.
+const FRAME: Color = Color::new(0x10, 0x10, 0x14, 0xFF);
 
 /// Ce que le curseur désigne.
 ///
@@ -457,7 +460,7 @@ fn main() -> Result<(), screengine_play::Error> {
     Play::new()
         .title("Screengine — carte chargée")
         .resolution(RESOLUTION.0, RESOLUTION.1)
-        .run(
+        .run_with_output(
             scene,
             |scene, tick| {
                 if tick.input().pressed(KeyCode::Escape) {
@@ -550,7 +553,43 @@ fn main() -> Result<(), screengine_play::Error> {
                     overlay(scene, context);
                 }
             },
+            badge,
         )
+}
+
+/// Le côté de la pastille, et sa marge au bord de l'image.
+const BADGE: u32 = 16;
+const BADGE_INSET: u32 = 8;
+
+/// La teinte de ce qui est visé, posée **en coordonnées d'écran** sur l'image
+/// finie.
+///
+/// **C'est le seul dessin que ce rappel permet et que rien d'autre ne permet.**
+/// Le tracé du moteur prend des coordonnées de monde : une jauge de vie, un
+/// score, une arme vue en main n'y entrent pas, et c'est voulu — ils
+/// appartiennent à l'hôte, qui écrit dans le tampon après la fin d'image, comme
+/// un hôte C le fait après `scg_frame_end`.
+///
+/// Cet exemple n'a pas de vie à jauger : il y met donc la couleur de ce qu'il
+/// vise, qui est ce que le titre de la fenêtre dit en mots. Le cadre sombre
+/// n'est pas de la décoration — sans lui la pastille disparaît sur un mur de sa
+/// propre teinte.
+fn badge(scene: &mut Scene, output: &mut Output<'_>) {
+    let color = match scene.aim {
+        Some(Aim::Crate(_)) => PICKED,
+        Some(Aim::Surface(_, _, "mur")) => ON_WALL,
+        Some(Aim::Surface(..)) => ON_FLOOR,
+        None => GUIDE,
+    };
+    for y in 0..BADGE + 4 {
+        for x in 0..BADGE + 4 {
+            let inside = (2..BADGE + 2).contains(&x) && (2..BADGE + 2).contains(&y);
+            let teinte = if inside { color } else { FRAME };
+            if let Some(pixel) = output.pixel(BADGE_INSET + x, BADGE_INSET + y) {
+                pixel.copy_from_slice(&[teinte.r, teinte.g, teinte.b, 0xFF]);
+            }
+        }
+    }
 }
 
 /// Le calque d'éditeur, après le décor et les caisses.
