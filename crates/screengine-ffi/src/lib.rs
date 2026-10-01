@@ -31,8 +31,8 @@ use std::slice;
 use std::sync::Arc;
 
 use screengine::{
-    Argument, Context, Error as CoreError, Lightmap, Lightmaps, Mesh, SpriteOrientation, Texture,
-    Vec3, VertexUv, VertexUv2, Visibility, World,
+    Argument, Context, DepthMode, Error as CoreError, Lightmap, Lightmaps, Mesh, SpriteOrientation,
+    Texture, Vec3, VertexUv, VertexUv2, Visibility, World,
 };
 
 use entry::AbiError;
@@ -41,10 +41,10 @@ use output::HostRows;
 pub use context::{ScgContext, ScgContextConfig};
 pub use mesh::ScgMesh;
 pub use scene::{
-    SCG_BLEND_MODULATE, SCG_FILTER_BILINEAR, SCG_FILTER_DITHER, SCG_SPRITE_AXIAL,
-    SCG_SPRITE_FACING, SCG_TEXTURE_FORMAT_RGBA8, SCG_TEXTURE_FORMAT_RGBA8_MASKED, ScgCamera,
-    ScgGrade, ScgLight, ScgMat4, ScgSprite, ScgSweepHit, ScgTextureDesc, ScgTriangle, ScgVertex,
-    ScgVertexUv, ScgVertexUv2, ScgVertexUvN,
+    SCG_BLEND_MODULATE, SCG_DEPTH_ALWAYS, SCG_DEPTH_TESTED, SCG_FILTER_BILINEAR, SCG_FILTER_DITHER,
+    SCG_SPRITE_AXIAL, SCG_SPRITE_FACING, SCG_TEXTURE_FORMAT_RGBA8, SCG_TEXTURE_FORMAT_RGBA8_MASKED,
+    ScgCamera, ScgGrade, ScgLight, ScgLine, ScgMat4, ScgPoint, ScgSprite, ScgSweepHit,
+    ScgTextureDesc, ScgTriangle, ScgVertex, ScgVertexUv, ScgVertexUv2, ScgVertexUvN,
 };
 pub use status::{
     SCG_ERR_FAULTED, SCG_ERR_INVALID_ARGUMENT, SCG_ERR_INVALID_FORMAT, SCG_ERR_INVALID_STATE,
@@ -1028,6 +1028,104 @@ pub unsafe extern "C" fn scg_submit_sprites(
 
     // SAFETY: précondition de la fonction — `ctx` est nul ou un handle vivant.
     unsafe { entry::with_context(ctx, submit) }
+}
+
+/// Submits lines to draw, in the space `model` carries.
+///
+/// **A second primitive family, with a budget of its own**: lines and points
+/// share `max_lines`, never `max_triangles`. One line costs one slot, and a
+/// clipped line still costs one — unlike a triangle, whose clipping multiplies
+/// the slots it consumes.
+///
+/// `depth` must be `SCG_DEPTH_TESTED` or `SCG_DEPTH_ALWAYS`; zero and any
+/// unknown value are refused, never silently mapped onto a default.
+///
+/// Drawing happens **after all filling and after fog, before the output
+/// curve**: fog would erase a guide at the end of a corridor, which is the
+/// opposite of what a guide is for, while the curve applies because there is
+/// only one output path. It never writes depth, in either mode.
+///
+/// The batch is accepted or refused whole: a non-finite coordinate or an
+/// exceeded capacity leaves nothing in the frame. A line that does not
+/// project — behind the near plane, outside the guard band — disappears
+/// without an error, like a triangle that does not project.
+///
+/// # Safety
+///
+/// `ctx` is null or a live handle. `model` points at a readable `ScgMat4`.
+/// `lines` points at `line_count` readable `ScgLine`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn scg_submit_lines(
+    ctx: *mut ScgContext,
+    model: *const ScgMat4,
+    lines: *const ScgLine,
+    line_count: u32,
+    depth: u32,
+) -> i32 {
+    let submit = |mut core: entry::Core<'_>| {
+        let depth = depth_mode(depth)?;
+        // SAFETY: précondition de la fonction — `model` est nul ou lisible.
+        let model = unsafe { model.as_ref() }.ok_or(AbiError::NULL)?;
+        let model = model.to_core()?;
+        // SAFETY: précondition de la fonction — `lines` couvre son nombre
+        // d'éléments.
+        let lines = unsafe { slice_of(lines, line_count) };
+        // Le tableau se lit sur place par une fonction d'accès, jamais recopié
+        // ni réinterprété : une copie serait une allocation par image, et une
+        // réinterprétation imposerait au noyau la disposition de la frontière.
+        core.exclusive()?
+            .submit_each_line(model, lines.len(), depth, |i| lines[i].to_core())
+            .map_err(AbiError::from)
+    };
+
+    // SAFETY: précondition de la fonction — `ctx` est nul ou un handle vivant.
+    unsafe { entry::with_context(ctx, submit) }
+}
+
+/// Submits points to draw, in the space `model` carries.
+///
+/// Same contract as `scg_submit_lines`, same budget, same depth modes. A point
+/// lights the pixel that contains it, and only that one.
+///
+/// # Safety
+///
+/// `ctx` is null or a live handle. `model` points at a readable `ScgMat4`.
+/// `points` points at `point_count` readable `ScgPoint`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn scg_submit_points(
+    ctx: *mut ScgContext,
+    model: *const ScgMat4,
+    points: *const ScgPoint,
+    point_count: u32,
+    depth: u32,
+) -> i32 {
+    let submit = |mut core: entry::Core<'_>| {
+        let depth = depth_mode(depth)?;
+        // SAFETY: précondition de la fonction — `model` est nul ou lisible.
+        let model = unsafe { model.as_ref() }.ok_or(AbiError::NULL)?;
+        let model = model.to_core()?;
+        // SAFETY: précondition de la fonction — `points` couvre son nombre
+        // d'éléments.
+        let points = unsafe { slice_of(points, point_count) };
+        core.exclusive()?
+            .submit_each_point(model, points.len(), depth, |i| points[i].to_core())
+            .map_err(AbiError::from)
+    };
+
+    // SAFETY: précondition de la fonction — `ctx` est nul ou un handle vivant.
+    unsafe { entry::with_context(ctx, submit) }
+}
+
+/// La constante d'ABI traduite en mode du noyau, ou le refus.
+///
+/// Écrite une fois pour les deux soumissions de tracé : recopiée, elle finirait
+/// par accepter dans l'une ce que l'autre refuse.
+fn depth_mode(depth: u32) -> Result<DepthMode, AbiError> {
+    match depth {
+        SCG_DEPTH_TESTED => Ok(DepthMode::Tested),
+        SCG_DEPTH_ALWAYS => Ok(DepthMode::Always),
+        _ => Err(AbiError::DEPTH_MODE),
+    }
 }
 
 /// Submits a batch of triangles whose vertices carry a normal.

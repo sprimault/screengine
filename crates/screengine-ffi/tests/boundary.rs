@@ -1524,3 +1524,160 @@ fn soumet_un_lot_a_normales_et_la_normale_decide() {
         "la normale n'a rien changé : face {face}, dos {dos}"
     );
 }
+
+/// Un mode de profondeur inconnu est refusé, **et zéro en fait partie**.
+///
+/// La même règle que pour le mélange et l'orientation, et c'est bien une règle
+/// et non trois coïncidences : un mode passé à une soumission décrit le lot, il
+/// ne règle pas le contexte. Zéro ne vaut défaut que pour les réglages.
+#[test]
+fn refuse_un_mode_de_profondeur_inconnu() {
+    let ctx = create(&sane());
+    let model = identite();
+    let lines = [ligne()];
+    let points = [point()];
+
+    for mode in [0, SCG_DEPTH_ALWAYS + 1, u32::MAX] {
+        // SAFETY: handle vivant, pointeurs locaux, comptes exacts.
+        let code =
+            unsafe { scg_submit_lines(ctx, &model, lines.as_ptr(), lines.len() as u32, mode) };
+        assert_eq!(code, SCG_ERR_INVALID_ARGUMENT, "mode de ligne {mode}");
+        assert!(last_error(ctx).contains("depth mode"));
+
+        // SAFETY: mêmes préconditions.
+        let code =
+            unsafe { scg_submit_points(ctx, &model, points.as_ptr(), points.len() as u32, mode) };
+        assert_eq!(code, SCG_ERR_INVALID_ARGUMENT, "mode de point {mode}");
+    }
+
+    // Les deux valeurs publiées passent, pour les deux familles.
+    for mode in [SCG_DEPTH_TESTED, SCG_DEPTH_ALWAYS] {
+        // SAFETY: handle vivant, pointeurs locaux, comptes exacts.
+        let code =
+            unsafe { scg_submit_lines(ctx, &model, lines.as_ptr(), lines.len() as u32, mode) };
+        assert_eq!(code, SCG_OK, "mode de ligne {mode}");
+        // SAFETY: mêmes préconditions.
+        let code =
+            unsafe { scg_submit_points(ctx, &model, points.as_ptr(), points.len() as u32, mode) };
+        assert_eq!(code, SCG_OK, "mode de point {mode}");
+    }
+
+    // SAFETY: handle vivant, détruit une seule fois.
+    unsafe { scg_destroy(ctx) };
+}
+
+/// Les deux soumissions de tracé refusent un pointeur nul, et un handle nul.
+///
+/// Le contexte se vérifie avant tout le reste : l'enveloppe déréférencerait
+/// pour rien si elle lisait la matrice d'abord.
+#[test]
+fn le_trace_refuse_les_pointeurs_nuls() {
+    let ctx = create(&sane());
+    let model = identite();
+    let lines = [ligne()];
+
+    // SAFETY: le handle nul est le cas que la fonction doit refuser.
+    let code =
+        unsafe { scg_submit_lines(ptr::null_mut(), &model, lines.as_ptr(), 1, SCG_DEPTH_ALWAYS) };
+    assert_eq!(code, SCG_ERR_NULL);
+
+    // SAFETY: handle vivant, matrice nulle — le cas à refuser.
+    let code = unsafe { scg_submit_lines(ctx, ptr::null(), lines.as_ptr(), 1, SCG_DEPTH_ALWAYS) };
+    assert_eq!(code, SCG_ERR_NULL);
+
+    // SAFETY: handle vivant, matrice valide, tableau nul de longueur nulle —
+    // un lot vide est licite et ne lit rien.
+    let code = unsafe { scg_submit_lines(ctx, &model, ptr::null(), 0, SCG_DEPTH_ALWAYS) };
+    assert_eq!(code, SCG_OK, "un lot vide est une scène, pas une faute");
+
+    // SAFETY: handle vivant, détruit une seule fois.
+    unsafe { scg_destroy(ctx) };
+}
+
+/// La capacité de tracé est **à elle** : l'épuiser ne dit rien des triangles,
+/// et le message le nomme.
+#[test]
+fn le_trace_a_son_propre_budget() {
+    let mut config = sane();
+    config.max_lines = 2;
+    let ctx = create(&config);
+    let model = identite();
+    let lines = [ligne(), ligne(), ligne()];
+
+    // SAFETY: handle vivant, pointeurs locaux, comptes exacts.
+    let code = unsafe { scg_submit_lines(ctx, &model, lines.as_ptr(), 3, SCG_DEPTH_ALWAYS) };
+    assert_eq!(code, SCG_ERR_INVALID_ARGUMENT);
+    assert!(last_error(ctx).contains("max_lines"));
+
+    // Deux passent : le lot refusé n'a rien laissé derrière lui.
+    // SAFETY: mêmes préconditions.
+    let code = unsafe { scg_submit_lines(ctx, &model, lines.as_ptr(), 2, SCG_DEPTH_ALWAYS) };
+    assert_eq!(code, SCG_OK);
+
+    // SAFETY: handle vivant, détruit une seule fois.
+    unsafe { scg_destroy(ctx) };
+}
+
+/// Le tracé est refusé entre le début et la fin d'une image, comme toute
+/// soumission : c'est un état du contexte que les tuiles lisent.
+#[test]
+fn le_trace_est_refuse_pendant_une_image() {
+    let ctx = create(&sane());
+    let model = identite();
+    let lines = [ligne()];
+    let mut tiles = 0u32;
+
+    // SAFETY: handle vivant, paramètre de sortie local.
+    assert_eq!(unsafe { scg_frame_begin(ctx, &mut tiles) }, SCG_OK);
+    // SAFETY: handle vivant, pointeurs locaux.
+    let code = unsafe { scg_submit_lines(ctx, &model, lines.as_ptr(), 1, SCG_DEPTH_ALWAYS) };
+    assert_eq!(code, SCG_ERR_INVALID_STATE);
+
+    let mut pixels = vec![0u8; 64 * 32 * 4];
+    // SAFETY: handle vivant, tampon de la taille annoncée par le stride.
+    let fin = unsafe { scg_frame_end(ctx, pixels.as_mut_ptr(), 64) };
+    assert_eq!(fin, SCG_OK);
+    // SAFETY: handle vivant, détruit une seule fois.
+    unsafe { scg_destroy(ctx) };
+}
+
+/// La matrice identité des épreuves de tracé.
+fn identite() -> ScgMat4 {
+    ScgMat4 {
+        m: [
+            1.0, 0.0, 0.0, 0.0, //
+            0.0, 1.0, 0.0, 0.0, //
+            0.0, 0.0, 1.0, 0.0, //
+            0.0, 0.0, 0.0, 1.0,
+        ],
+    }
+}
+
+/// Une ligne devant la caméra par défaut, dans le champ.
+fn ligne() -> ScgLine {
+    ScgLine {
+        ax: 4.0,
+        ay: -1.0,
+        az: 0.0,
+        bx: 4.0,
+        by: 1.0,
+        bz: 0.0,
+        r: 0xFF,
+        g: 0xC0,
+        b: 0x40,
+        a: 0xFF,
+    }
+}
+
+/// Un point devant la caméra par défaut.
+fn point() -> ScgPoint {
+    ScgPoint {
+        x: 4.0,
+        y: 0.0,
+        z: 0.0,
+        r: 0xFF,
+        g: 0xFF,
+        b: 0xFF,
+        a: 0xFF,
+    }
+}
