@@ -1784,6 +1784,9 @@ mesure : un compteur, une empreinte, une durée.
 - **Les hôtes rendent aussi par tuiles** : une partie des tuiles, dans un ordre
   qui n'est pas celui des index, puis la fin qui complète, et l'empreinte doit
   être celle de la fin seule. L'hôte C++ les rend sur plusieurs threads.
+  **L'hôte Go ne les rend pas** et clôt par `scg_frame_end` seule, qui est le
+  chemin contractuel d'un hôte sans threads : ce qu'il éprouve en propre est
+  ailleurs, et les tuiles sont couvertes par les quatre autres.
 - **L'hôte C++, dans `make test-cpp`**, se lie à la bibliothèque dynamique et
   reprend les mêmes contrôles. Il ajoute ce que le C statique ne voit pas : le
   header compilé en C++ — gardes `extern "C"`, assertions de disposition — et la
@@ -1801,6 +1804,14 @@ mesure : un compteur, une empreinte, une durée.
   FPSCR hostiles sont éprouvés —, puis, sur un émulateur, le même programme lié
   en dynamique et `Test.java` à travers JNI, sur une base de tampon désalignée.
   Voir [`construction.md`](construction.md), « Android ».
+- **L'hôte Go, dans `make test-go`**, se lie par cgo à la bibliothèque dynamique
+  et reprend les refus, les sentinelles et les fins de ligne. Il ajoute ce
+  qu'aucun des quatre autres ne touche : l'ABI consommée depuis un langage qui
+  **déplace ses objets**. Aucun pointeur vers le tas de Go ne traverse la
+  frontière — tout ce que le moteur lit ou écrit passe par `calloc` —, une
+  adresse prise sur un objet Go cessant d'être valide sans prévenir. C et C++ ne
+  déplacent rien, JavaScript et Java ne passent jamais de pointeur. Même règle
+  de saut.
 - **Les cibles `test-*` ont une forme commune** dans le `Makefile` : chaque
   hôte fournit `why-not`, `all` et `run`, et la règle compare son empreinte à
   celle du chemin Rust. `make test SANS=android` retire un hôte, par une
@@ -1974,10 +1985,10 @@ Les bornes s'écrivent sur des valeurs choisies, jamais en comptant sur la cible
 `usize` fait 32 bits sur deux des quatre, la compilation sans `std` le vérifie
 mais n'y exécute aucun test.
 
-**Côté hôtes, un fichier binaire versionné, un seul, partagé par les quatre.**
+**Côté hôtes, des fichiers binaires versionnés, les mêmes pour les cinq.**
 Chacun doit charger une ressource pour prouver que le point d'entrée franchit
-réellement la frontière ; leur faire recopier la disposition dans quatre langages
-serait la même liste à quatre endroits, et ce qu'une liste recopiée coûte quand
-elle diverge est connu du projet. **Le test Rust régénère ce fichier et le compare
+réellement la frontière ; leur faire recopier la disposition dans cinq langages
+serait la même liste à cinq endroits, et ce qu'une liste recopiée coûte quand
+elle diverge est connu du projet. **Le test Rust les régénère et les compare
 octet pour octet**, sur le modèle du header : le binaire n'est alors jamais la
 source de vérité, et un fichier périmé échoue franchement.
