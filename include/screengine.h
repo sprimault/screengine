@@ -68,6 +68,24 @@
 // What a glow or a spark wants, having no up of its own.
 #define SCG_SPRITE_FACING 2
 
+// Draw occluded by whatever is in front: the trace tests depth.
+//
+// One, never zero, like every mode passed to a submission. A depth mode is a
+// description of the batch, not a context setting — an editor's frame carries
+// occluded edges and see-through guides in the same view, which is the
+// opposite of what a setting would allow.
+//
+// Drawing never writes depth, in either mode: two crossing lines are settled
+// by submission order, which is contractual and independent of tiling. If one
+// wrote its depth, their crossing would depend on how the image is binned.
+#define SCG_DEPTH_TESTED 1
+
+// Draw through the scene: the trace ignores depth.
+//
+// What a guide wants — an axis, a cell's edges seen from outside, a selected
+// face behind a wall.
+#define SCG_DEPTH_ALWAYS 2
+
 // Ordered dithering of texture coordinates: the default filter.
 //
 // Zero, unlike `SCG_TEXTURE_FORMAT_RGBA8`, and for the opposite reason: a
@@ -573,6 +591,69 @@ typedef struct ScgSprite {
   // Alpha, carried but never read, exactly as on `ScgTriangle`.
   uint8_t a;
 } ScgSprite;
+
+// A line to draw, in object space.
+//
+// Twenty-eight bytes, offsets 0 to 24 on every target and not one byte of
+// padding: four-byte fields throughout, then four bytes of colour. That is the
+// layout of `ScgSprite`, and for the same reason.
+//
+// **A second primitive family, not a degenerate triangle.** A line has no area
+// coverage, so nothing the edge functions decide applies to it: a pixel lights
+// up when the segment leaves the diamond inscribed in it, which is why a
+// polyline paints its shared vertices only once.
+//
+// Coordinates are in world space, never screen space. A selection rectangle or
+// a health bar is drawn by the host into its own buffer after `scg_frame_end`:
+// drawing exists here for an editor — guides, edges, a selected face — not for
+// a HUD.
+typedef struct ScgLine {
+  // First endpoint X, in object space.
+  float ax;
+  // First endpoint Y.
+  float ay;
+  // First endpoint Z.
+  float az;
+  // Second endpoint X.
+  float bx;
+  // Second endpoint Y.
+  float by;
+  // Second endpoint Z.
+  float bz;
+  // Red, in the memory order of output pixels.
+  uint8_t r;
+  // Green.
+  uint8_t g;
+  // Blue.
+  uint8_t b;
+  // Alpha, which the engine ignores: a line is written as is, without
+  // blending.
+  uint8_t a;
+} ScgLine;
+
+// A point to draw, in object space.
+//
+// Sixteen bytes, offsets 0 to 12 on every target, without padding.
+//
+// It lights the pixel that contains it, and only that one: thickness is left
+// out for lines, and it is left out here too. Both would enter the pixel loop,
+// which is the one place this step refuses to grow.
+typedef struct ScgPoint {
+  // X, in object space.
+  float x;
+  // Y.
+  float y;
+  // Z.
+  float z;
+  // Red, in the memory order of output pixels.
+  uint8_t r;
+  // Green.
+  uint8_t g;
+  // Blue.
+  uint8_t b;
+  // Alpha, which the engine ignores.
+  uint8_t a;
+} ScgPoint;
 
 // A vertex carrying its texture coordinates **and its normal**.
 //
@@ -1161,6 +1242,51 @@ int32_t scg_submit_sprites(struct ScgContext *ctx,
                            uint32_t sprite_count,
                            const struct ScgTexture *texture,
                            uint32_t orientation);
+
+// Submits lines to draw, in the space `model` carries.
+//
+// **A second primitive family, with a budget of its own**: lines and points
+// share `max_lines`, never `max_triangles`. One line costs one slot, and a
+// clipped line still costs one — unlike a triangle, whose clipping multiplies
+// the slots it consumes.
+//
+// `depth` must be `SCG_DEPTH_TESTED` or `SCG_DEPTH_ALWAYS`; zero and any
+// unknown value are refused, never silently mapped onto a default.
+//
+// Drawing happens **after all filling and after fog, before the output
+// curve**: fog would erase a guide at the end of a corridor, which is the
+// opposite of what a guide is for, while the curve applies because there is
+// only one output path. It never writes depth, in either mode.
+//
+// The batch is accepted or refused whole: a non-finite coordinate or an
+// exceeded capacity leaves nothing in the frame. A line that does not
+// project — behind the near plane, outside the guard band — disappears
+// without an error, like a triangle that does not project.
+//
+// # Safety
+//
+// `ctx` is null or a live handle. `model` points at a readable `ScgMat4`.
+// `lines` points at `line_count` readable `ScgLine`.
+int32_t scg_submit_lines(struct ScgContext *ctx,
+                         const struct ScgMat4 *model,
+                         const struct ScgLine *lines,
+                         uint32_t line_count,
+                         uint32_t depth);
+
+// Submits points to draw, in the space `model` carries.
+//
+// Same contract as `scg_submit_lines`, same budget, same depth modes. A point
+// lights the pixel that contains it, and only that one.
+//
+// # Safety
+//
+// `ctx` is null or a live handle. `model` points at a readable `ScgMat4`.
+// `points` points at `point_count` readable `ScgPoint`.
+int32_t scg_submit_points(struct ScgContext *ctx,
+                          const struct ScgMat4 *model,
+                          const struct ScgPoint *points,
+                          uint32_t point_count,
+                          uint32_t depth);
 
 // Submits a batch of triangles whose vertices carry a normal.
 //
@@ -1920,6 +2046,13 @@ SCREENGINE_LAYOUT_ASSERT(offsetof(ScgSprite, u1) == 28, "ScgSprite.u1 moved");
 SCREENGINE_LAYOUT_ASSERT(offsetof(ScgSprite, v1) == 32, "ScgSprite.v1 moved");
 SCREENGINE_LAYOUT_ASSERT(offsetof(ScgSprite, roll) == 36, "ScgSprite.roll moved");
 SCREENGINE_LAYOUT_ASSERT(offsetof(ScgSprite, r) == 40, "ScgSprite.r moved");
+SCREENGINE_LAYOUT_ASSERT(sizeof(ScgLine) == 28, "ScgLine changed size");
+SCREENGINE_LAYOUT_ASSERT(offsetof(ScgLine, bx) == 12, "ScgLine.bx moved");
+SCREENGINE_LAYOUT_ASSERT(offsetof(ScgLine, bz) == 20, "ScgLine.bz moved");
+SCREENGINE_LAYOUT_ASSERT(offsetof(ScgLine, r) == 24, "ScgLine.r moved");
+SCREENGINE_LAYOUT_ASSERT(sizeof(ScgPoint) == 16, "ScgPoint changed size");
+SCREENGINE_LAYOUT_ASSERT(offsetof(ScgPoint, z) == 8, "ScgPoint.z moved");
+SCREENGINE_LAYOUT_ASSERT(offsetof(ScgPoint, r) == 12, "ScgPoint.r moved");
 SCREENGINE_LAYOUT_ASSERT(sizeof(ScgLight) == 20, "ScgLight changed size");
 SCREENGINE_LAYOUT_ASSERT(offsetof(ScgLight, z) == 8, "ScgLight.z moved");
 SCREENGINE_LAYOUT_ASSERT(offsetof(ScgLight, radius) == 12, "ScgLight.radius moved");

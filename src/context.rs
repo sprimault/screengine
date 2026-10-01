@@ -1920,7 +1920,47 @@ impl Context {
         })
     }
 
-    /// Le corps commun des deux soumissions de tracé.
+    /// Soumet des lignes lues une par une, sans tranche à traverser.
+    ///
+    /// La forme qu'emploie la frontière C : elle lit **ses** structures sur
+    /// place, sans les recopier — ce serait une allocation par image — ni les
+    /// réinterpréter, ce qui imposerait au noyau une disposition mémoire qu'il
+    /// n'a pas choisie. La forme par tranche reste celle d'un appelant Rust.
+    pub fn submit_each_line<F>(
+        &mut self,
+        model: Affine3,
+        count: usize,
+        depth: DepthMode,
+        read: F,
+    ) -> Result<()>
+    where
+        F: Fn(usize) -> Line,
+    {
+        self.submit_segments(model, count, depth, |i| {
+            let line = read(i);
+            (line.a, line.b, line.color)
+        })
+    }
+
+    /// Soumet des points lus un par un, pour la raison de
+    /// [`Context::submit_each_line`].
+    pub fn submit_each_point<F>(
+        &mut self,
+        model: Affine3,
+        count: usize,
+        depth: DepthMode,
+        read: F,
+    ) -> Result<()>
+    where
+        F: Fn(usize) -> Point,
+    {
+        self.submit_segments(model, count, depth, |i| {
+            let point = read(i);
+            (point.at, point.at, point.color)
+        })
+    }
+
+    /// Le corps commun des quatre soumissions de tracé.
     ///
     /// Un point arrive ici avec ses deux extrémités confondues, ce que la
     /// préparation reconnaît et traite à part.

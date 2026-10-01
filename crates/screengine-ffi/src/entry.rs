@@ -159,6 +159,16 @@ impl AbiError {
         message: "sprite orientation must be SCG_SPRITE_AXIAL or SCG_SPRITE_FACING",
     };
 
+    /// Le mode de profondeur demandé n'existe pas dans cette bibliothèque.
+    ///
+    /// Zéro y tombe comme pour le mélange et l'orientation : un mode passé à
+    /// une soumission est une description, et une description laissée à zéro se
+    /// refuse plutôt que s'interprète.
+    pub(crate) const DEPTH_MODE: Self = Self {
+        code: SCG_ERR_INVALID_ARGUMENT,
+        message: "depth mode must be SCG_DEPTH_TESTED or SCG_DEPTH_ALWAYS",
+    };
+
     /// Le niveau de filtrage demandé n'existe pas dans cette bibliothèque.
     ///
     /// Refusé plutôt que rabattu sur le défaut, et c'est ce qui rend l'ajout

@@ -131,6 +131,18 @@ export const SCG_SPRITE_AXIAL = 1;
 export const SCG_SPRITE_FACING = 2;
 
 /**
+ * Tracer en testant la profondeur : le trait est occulté par ce qui est devant.
+ *
+ * Un et non zéro, comme tout mode passé à une soumission. Un mode de profondeur
+ * décrit le lot et ne règle pas le contexte — une image d'éditeur porte dans la
+ * même vue des arêtes occultées et des repères visibles à travers.
+ */
+export const SCG_DEPTH_TESTED = 1;
+
+/** Tracer à travers le décor : ce qu'un repère veut. */
+export const SCG_DEPTH_ALWAYS = 2;
+
+/**
  * Le tramage ordonné des coordonnées, filtrage par défaut.
  *
  * Zéro, à l'inverse du format de texture : un contexte qu'on ne configure pas
@@ -160,6 +172,8 @@ export const EXPORTS = [
   "scg_submit_blended",
   "scg_submit_shaded",
   "scg_submit_sprites",
+  "scg_submit_lines",
+  "scg_submit_points",
   "scg_submit_lit",
   "scg_set_resolution",
   "scg_set_grade",
