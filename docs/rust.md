@@ -1698,6 +1698,84 @@ Nommés d'avance, parce que chacun a une réponse et qu'aucune ne se devine :
 - **sortie par une surface non solide** : la boîte finit hors de toute cellule, et
   l'hôte rappelle `scg_world_locate` — clause déjà celle de `track`.
 
+## Tracé
+
+Le tracé de lignes et de points, dans `src/raster/`. Le contrat vu de l'hôte est
+dans [`abi.md`](abi.md) ; ce qui suit est ce que deux cibles doivent produire au
+bit près, et l'endroit où se joue la justesse de l'étape.
+
+**Une seconde famille de primitives, pas un triangle dégénéré.** `Prepared` fait
+exactement 128 octets, assertion à la compilation, et n'a plus un octet libre :
+le mode modulé a dû se loger dans la sentinelle de texture. Une ligne a donc sa
+propre liste, sa propre capacité et sa propre répartition par tuiles, et
+l'élargissement du triangle préparé est écarté pour la raison déjà écrite — la
+passe de répartition parcourt ce tableau deux fois par image sans lire ces
+octets, et les ferait streamer à toutes les scènes, y compris celles qui ne
+tracent rien.
+
+### La règle de sortie du losange
+
+**C'est la règle top-left de cette étape, et elle s'écrit dès le premier tracé.**
+Un pixel s'allume quand le segment **sort du losange qui lui est inscrit** — le
+carré du pixel tourné de 45°, dont les quatre sommets sont au milieu de ses
+côtés. Un segment qui traverse un coin de pixel sans entrer dans son losange ne
+l'allume pas ; un segment qui entre dans un losange sans en sortir ne l'allume
+pas non plus.
+
+**Ce qu'elle achète est la polyligne.** Une arête `A→B` suivie de `B→C` partage
+le pixel de `B` : le premier segment y entre et s'y arrête, donc ne l'allume pas,
+le second en sort, donc l'allume. Le sommet est peint **une fois**. Sans la
+règle, il est peint deux fois — invisible sur une ligne opaque, visible dès qu'un
+éditeur trace en couleur modulée ou compte ses pixels, et visible en mouvement
+sur une sélection qui clignote.
+
+Découverte après, elle se paie comme la top-left se serait payée : le tracé
+entier est construit sur sa forme, et la changer déplace toutes les empreintes.
+
+- **Le test est entier**, sur les coordonnées 28.4 : le losange d'un pixel est
+  l'ensemble des points dont la somme des distances absolues au centre, en
+  seizièmes de pixel, est strictement inférieure à huit. Aucun flottant n'entre
+  dans la boucle.
+- **Le premier pixel suit la même règle que les autres.** C'est le cas que l'on
+  traite à part sans le vouloir, et l'extrémité `A` d'un segment isolé ne
+  s'allume que si le segment sort de son losange — ce qui rend un segment plus
+  court qu'un demi-pixel entièrement invisible. C'est voulu : deux segments
+  consécutifs trop courts ne peignent alors rien plutôt que de peindre deux fois
+  le même pixel.
+- **Un point est un pixel**, celui qui contient le point projeté, et il ne passe
+  pas par cette règle : il n'a pas de segment dont sortir.
+
+### Les deux pièges du tuilage
+
+Hérités du remplissage, et la clause est la même : **l'image ne dépend ni de la
+taille des tuiles, ni du nombre de threads.**
+
+- **Le paramètre du segment se reparamètre au bord d'une tuile, il ne se
+  réinitialise jamais.** Une tuile qui redémarrerait l'erreur de Bresenham à zéro
+  sur son bord gauche décalerait la ligne d'un pixel à chaque couture, et le
+  défaut ne se verrait que dans une configuration de tuiles. Ce qui entre dans la
+  boucle d'une tuile est la valeur **évaluée en coordonnées globales** à son bord,
+  jamais une valeur remise à zéro.
+- **Rien ne s'indexe sur la tuile.** La clause est écrite alors qu'aucun motif
+  n'existe — ni pointillé, ni épaisseur —, parce que c'est le jour où l'un des
+  deux s'ajoutera qu'on l'oubliera : un motif de pointillé s'indexe sur la
+  longueur parcourue **en coordonnées image**, exactement comme le motif de
+  tramage s'indexe sur la position du pixel dans l'image.
+
+### Ce que le tracé écrit, et quand
+
+- **Il ne touche jamais la profondeur**, dans les deux modes. Deux lignes qui se
+  croisent se départagent par l'ordre de soumission, qui est contractuel et
+  indépendant des tuiles ; si l'une écrivait la profondeur, leur croisement
+  dépendrait de la répartition.
+- **Il a lieu après tout le remplissage de la tuile et après le brouillard, avant
+  la courbe de sortie.** L'ordre est contractuel : il décide de l'image. Le
+  brouillard effacerait un repère au fond d'un couloir, ce qui est l'inverse de
+  ce qu'un repère existe pour faire ; la courbe s'applique parce qu'il n'y a
+  qu'un chemin de sortie.
+- **La couleur est écrite telle quelle**, sans mélange : un trait d'éditeur n'a
+  pas d'alpha fractionnaire, et la transparence du moteur est binaire partout.
+
 ## Documentation et commentaires
 
 - **Toute déclaration a sa documentation** — fonctions, méthodes, types, champs
