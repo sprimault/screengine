@@ -32,7 +32,7 @@ use std::sync::Arc;
 
 use screengine::{
     Argument, Context, DepthMode, Error as CoreError, Lightmap, Lightmaps, Mesh, SpriteOrientation,
-    Texture, Vec3, VertexUv, VertexUv2, Visibility, World,
+    Surfaces, Texture, Vec3, VertexUv, VertexUv2, Visibility, World,
 };
 
 use entry::AbiError;
@@ -42,9 +42,10 @@ pub use context::{ScgContext, ScgContextConfig};
 pub use mesh::ScgMesh;
 pub use scene::{
     SCG_BLEND_MODULATE, SCG_DEPTH_ALWAYS, SCG_DEPTH_TESTED, SCG_FILTER_BILINEAR, SCG_FILTER_DITHER,
-    SCG_SPRITE_AXIAL, SCG_SPRITE_FACING, SCG_TEXTURE_FORMAT_RGBA8, SCG_TEXTURE_FORMAT_RGBA8_MASKED,
-    ScgCamera, ScgGrade, ScgLight, ScgLine, ScgMat4, ScgPoint, ScgSprite, ScgSweepHit,
-    ScgTextureDesc, ScgTriangle, ScgVertex, ScgVertexUv, ScgVertexUv2, ScgVertexUvN,
+    SCG_PICK_ALL, SCG_PICK_SOLID, SCG_SPRITE_AXIAL, SCG_SPRITE_FACING, SCG_TEXTURE_FORMAT_RGBA8,
+    SCG_TEXTURE_FORMAT_RGBA8_MASKED, ScgCamera, ScgGrade, ScgLight, ScgLine, ScgMat4, ScgPoint,
+    ScgSprite, ScgSweepHit, ScgTextureDesc, ScgTriangle, ScgVertex, ScgVertexUv, ScgVertexUv2,
+    ScgVertexUvN,
 };
 pub use status::{
     SCG_ERR_FAULTED, SCG_ERR_INVALID_ARGUMENT, SCG_ERR_INVALID_FORMAT, SCG_ERR_INVALID_STATE,
@@ -2515,6 +2516,89 @@ pub unsafe extern "C" fn scg_world_sweep(
         // **Le plus actionnable des deux quand les deux s'appliquent** : un
         // départ dans le solide demande à l'hôte de se dégager, là où une région
         // tronquée ne lui laisse aucun levier — la borne n'étant pas réglable.
+        Ok(if hit.start_solid {
+            status::SCG_STATUS_START_SOLID
+        } else if hit.incomplete {
+            status::SCG_STATUS_INCOMPLETE
+        } else {
+            status::SCG_OK
+        })
+    })
+}
+
+/// Picks the scene with a ray from `from` to `to`, starting in `from_cell`.
+///
+/// **This is the sweep of a zero-extent box**, and one function for both: a ray
+/// is that case, and two paths would have been the same code to validate against
+/// itself. It fills the same `ScgSweepHit`, with the same three statuses and the
+/// same rules — judge the result by the sign of the code.
+///
+/// **The safety margin is relative to the half-extent, so a ray carries none.**
+/// It hits what it crosses, never what it grazes: picking must land on the
+/// surface the user aimed at, not on its neighbour.
+///
+/// `filter` must be `SCG_PICK_SOLID` or `SCG_PICK_ALL`; zero and any unknown
+/// value are refused, never silently mapped onto a default. `SCG_PICK_ALL` also
+/// sees surfaces flagged **non-solid** — a grate, a pane, a trigger volume —
+/// which collision passes through by construction and which an editor must be
+/// able to select.
+///
+/// **It takes no context and is callable from any thread**, like
+/// `scg_world_sweep` and for the same reason: a loaded map is immutable and this
+/// only reads it. Its error is read with `scg_last_error(NULL)`.
+///
+/// # Safety
+///
+/// `world` must be a live handle from `scg_world_load`, `from` and `to` must
+/// each point to three readable `float`s, and `out` must point to a writable
+/// `ScgSweepHit`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn scg_world_pick(
+    world: *const ScgWorld,
+    from_cell: u32,
+    from: *const f32,
+    to: *const f32,
+    filter: u32,
+    out: *mut ScgSweepHit,
+) -> i32 {
+    // Annoté comme le balayage : sans cela l'inférence choisit `()` et le statut
+    // ne remonterait pas.
+    entry::without_context(|| -> Result<i32, AbiError> {
+        if out.is_null() {
+            return Err(AbiError::NULL);
+        }
+        let surfaces = match filter {
+            SCG_PICK_SOLID => Surfaces::Solid,
+            SCG_PICK_ALL => Surfaces::All,
+            _ => return Err(AbiError::PICK_FILTER),
+        };
+        // SAFETY: précondition de la fonction — le pointeur est nul ou vise un
+        // handle vivant.
+        let world = unsafe { world.as_ref() }.ok_or(AbiError::NULL)?;
+        // SAFETY: précondition de la fonction — trois flottants lisibles.
+        let start = unsafe { read_point(from) }?;
+        // SAFETY: idem.
+        let end = unsafe { read_point(to) }?;
+
+        // « Nulle part » se traite avant le noyau, exactement comme pour le
+        // balayage : ce n'est pas une cellule inconnue, c'est l'absence de
+        // cellule, et le moteur n'a rien examiné.
+        if from_cell == 0 {
+            // SAFETY: précondition — `out` vise une `ScgSweepHit` inscriptible.
+            unsafe { out.write(ScgSweepHit::free(end)) };
+            return Ok(status::SCG_STATUS_NO_CELL);
+        }
+
+        let hit = world
+            .inner
+            .pick(from_cell, start, end, surfaces)
+            .ok_or_else(|| AbiError::from(CoreError::UnknownResource))?;
+
+        // SAFETY: précondition — `out` vise une `ScgSweepHit` inscriptible, et
+        // rien n'y a été écrit avant ce point.
+        unsafe { out.write(ScgSweepHit::from_core(&hit)) };
+
+        // Le même ordre de priorité que le balayage, et il est contractuel.
         Ok(if hit.start_solid {
             status::SCG_STATUS_START_SOLID
         } else if hit.incomplete {

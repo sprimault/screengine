@@ -667,6 +667,21 @@ pub const SCG_DEPTH_TESTED: u32 = 1;
 /// face behind a wall.
 pub const SCG_DEPTH_ALWAYS: u32 = 2;
 
+/// Pick only solid surfaces: what sweeping stops against.
+///
+/// One, never zero, like every mode passed to a call that describes what it
+/// wants rather than setting the context.
+pub const SCG_PICK_SOLID: u32 = 1;
+
+/// Pick every surface, non-solid ones included.
+///
+/// What an editor needs: a grate, a pane, a trigger volume are surfaces the map
+/// flags non-solid, which collision passes through by construction and which a
+/// selection must still be able to catch. The flag describes the geometry, never
+/// the caller — a non-solid surface still counts in the parity that locates a
+/// point, and still occludes baking.
+pub const SCG_PICK_ALL: u32 = 2;
+
 /// Ordered dithering of texture coordinates: the default filter.
 ///
 /// Zero, unlike `SCG_TEXTURE_FORMAT_RGBA8`, and for the opposite reason: a
