@@ -169,6 +169,15 @@ impl AbiError {
         message: "depth mode must be SCG_DEPTH_TESTED or SCG_DEPTH_ALWAYS",
     };
 
+    /// Le filtre d'interrogation demandé n'existe pas dans cette bibliothèque.
+    ///
+    /// Zéro y tombe comme pour les autres modes : il décrit ce que la requête
+    /// retient, il ne règle pas le contexte.
+    pub(crate) const PICK_FILTER: Self = Self {
+        code: SCG_ERR_INVALID_ARGUMENT,
+        message: "pick filter must be SCG_PICK_SOLID or SCG_PICK_ALL",
+    };
+
     /// Le niveau de filtrage demandé n'existe pas dans cette bibliothèque.
     ///
     /// Refusé plutôt que rabattu sur le défaut, et c'est ce qui rend l'ajout

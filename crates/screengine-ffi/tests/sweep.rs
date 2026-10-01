@@ -412,3 +412,139 @@ fn le_balayage_est_concurrent_sur_une_meme_carte() {
     // SAFETY: handle vivant, détruit une seule fois, après la jonction.
     unsafe { scg_world_destroy(world) };
 }
+
+/// Un filtre d'interrogation inconnu est refusé, **et zéro en fait partie**.
+///
+/// La même règle que les modes de mélange, d'orientation et de profondeur :
+/// `filter` décrit ce que la requête retient, il ne règle pas le contexte.
+#[test]
+fn refuse_un_filtre_d_interrogation_inconnu() {
+    let world = load();
+    let mut hit = dirty_hit();
+    let from = [2.0f32, 2.0, 5.0];
+    let to = [2.0f32, 2.0, -5.0];
+
+    for filtre in [0, SCG_PICK_ALL + 1, u32::MAX] {
+        // SAFETY: handle vivant, deux tableaux de trois flottants, sortie
+        // inscriptible.
+        let code =
+            unsafe { scg_world_pick(world, 7, from.as_ptr(), to.as_ptr(), filtre, &mut hit) };
+        assert_eq!(code, SCG_ERR_INVALID_ARGUMENT, "filtre {filtre}");
+        assert!(last_error().contains("pick filter"));
+    }
+
+    // SAFETY: handle vivant, détruit une seule fois.
+    unsafe { scg_world_destroy(world) };
+}
+
+/// L'interrogation touche le sol et le nomme, par les deux filtres.
+///
+/// Le sol de ce décor est solide : les deux filtres doivent donc rendre la même
+/// chose. C'est ce qui montre que le filtre ne change que ce qu'il doit.
+#[test]
+fn l_interrogation_nomme_la_surface_touchee() {
+    let world = load();
+    let from = [2.0f32, 2.0, 5.0];
+    let to = [2.0f32, 2.0, -5.0];
+
+    for filtre in [SCG_PICK_SOLID, SCG_PICK_ALL] {
+        let mut hit = dirty_hit();
+        // SAFETY: handle vivant, deux tableaux de trois flottants, sortie
+        // inscriptible.
+        let code =
+            unsafe { scg_world_pick(world, 7, from.as_ptr(), to.as_ptr(), filtre, &mut hit) };
+        assert_eq!(code, SCG_OK, "filtre {filtre}");
+        assert!(hit.fraction < 1.0, "le rayon touche le sol");
+        assert_eq!(hit.surface_id, 11, "et le nomme par son identifiant stable");
+    }
+
+    // SAFETY: handle vivant, détruit une seule fois.
+    unsafe { scg_world_destroy(world) };
+}
+
+/// L'interrogation rend « aucune cellule » comme le balayage, et un rayon libre.
+#[test]
+fn l_interrogation_sans_cellule_rend_un_statut() {
+    let world = load();
+    let mut hit = dirty_hit();
+    let from = [2.0f32, 2.0, 5.0];
+    let to = [2.0f32, 2.0, -5.0];
+
+    // SAFETY: handle vivant, pointeurs locaux, sortie inscriptible.
+    let code =
+        unsafe { scg_world_pick(world, 0, from.as_ptr(), to.as_ptr(), SCG_PICK_ALL, &mut hit) };
+    assert_eq!(code, SCG_STATUS_NO_CELL);
+    assert!(code > 0, "un statut est un succès");
+    assert_eq!(hit.fraction, 1.0, "le rayon est rendu libre");
+    assert_eq!(hit.surface_id, 0);
+
+    // SAFETY: handle vivant, détruit une seule fois.
+    unsafe { scg_world_destroy(world) };
+}
+
+/// Une cellule qu'aucun identifiant ne porte est une ressource inconnue, là où
+/// zéro est une absence. La même distinction que pour le balayage.
+#[test]
+fn l_interrogation_refuse_une_cellule_inconnue() {
+    let world = load();
+    let mut hit = dirty_hit();
+    let at = [2.0f32, 2.0, 5.0];
+
+    // SAFETY: handle vivant, pointeurs locaux, sortie inscriptible.
+    let code = unsafe {
+        scg_world_pick(
+            world,
+            9999,
+            at.as_ptr(),
+            at.as_ptr(),
+            SCG_PICK_SOLID,
+            &mut hit,
+        )
+    };
+    assert_eq!(code, SCG_ERR_UNKNOWN_RESOURCE);
+
+    // SAFETY: handle vivant, détruit une seule fois.
+    unsafe { scg_world_destroy(world) };
+}
+
+/// L'interrogation refuse les pointeurs nuls, le handle comme la sortie.
+#[test]
+fn l_interrogation_refuse_les_pointeurs_nuls() {
+    let world = load();
+    let mut hit = dirty_hit();
+    let at = [2.0f32, 2.0, 5.0];
+
+    // SAFETY: le handle nul est le cas que la fonction doit refuser.
+    let code = unsafe {
+        scg_world_pick(
+            ptr::null(),
+            7,
+            at.as_ptr(),
+            at.as_ptr(),
+            SCG_PICK_ALL,
+            &mut hit,
+        )
+    };
+    assert_eq!(code, SCG_ERR_NULL);
+
+    // SAFETY: handle vivant, sortie nulle — le cas à refuser.
+    let code = unsafe {
+        scg_world_pick(
+            world,
+            7,
+            at.as_ptr(),
+            at.as_ptr(),
+            SCG_PICK_ALL,
+            ptr::null_mut(),
+        )
+    };
+    assert_eq!(code, SCG_ERR_NULL);
+
+    // SAFETY: handle vivant, point de départ nul.
+    let code =
+        unsafe { scg_world_pick(world, 7, ptr::null(), at.as_ptr(), SCG_PICK_ALL, &mut hit) };
+    assert_eq!(code, SCG_ERR_NULL);
+
+    // SAFETY: handle vivant, détruit une seule fois.
+    unsafe { scg_world_destroy(world) };
+}

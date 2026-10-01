@@ -86,6 +86,21 @@
 // face behind a wall.
 #define SCG_DEPTH_ALWAYS 2
 
+// Pick only solid surfaces: what sweeping stops against.
+//
+// One, never zero, like every mode passed to a call that describes what it
+// wants rather than setting the context.
+#define SCG_PICK_SOLID 1
+
+// Pick every surface, non-solid ones included.
+//
+// What an editor needs: a grate, a pane, a trigger volume are surfaces the map
+// flags non-solid, which collision passes through by construction and which a
+// selection must still be able to catch. The flag describes the geometry, never
+// the caller — a non-solid surface still counts in the parity that locates a
+// point, and still occludes baking.
+#define SCG_PICK_ALL 2
+
 // Ordered dithering of texture coordinates: the default filter.
 //
 // Zero, unlike `SCG_TEXTURE_FORMAT_RGBA8`, and for the opposite reason: a
@@ -1884,6 +1899,39 @@ int32_t scg_world_sweep(const struct ScgWorld *world,
                         const float *from,
                         const float *to,
                         struct ScgSweepHit *out);
+
+// Picks the scene with a ray from `from` to `to`, starting in `from_cell`.
+//
+// **This is the sweep of a zero-extent box**, and one function for both: a ray
+// is that case, and two paths would have been the same code to validate against
+// itself. It fills the same `ScgSweepHit`, with the same three statuses and the
+// same rules — judge the result by the sign of the code.
+//
+// **The safety margin is relative to the half-extent, so a ray carries none.**
+// It hits what it crosses, never what it grazes: picking must land on the
+// surface the user aimed at, not on its neighbour.
+//
+// `filter` must be `SCG_PICK_SOLID` or `SCG_PICK_ALL`; zero and any unknown
+// value are refused, never silently mapped onto a default. `SCG_PICK_ALL` also
+// sees surfaces flagged **non-solid** — a grate, a pane, a trigger volume —
+// which collision passes through by construction and which an editor must be
+// able to select.
+//
+// **It takes no context and is callable from any thread**, like
+// `scg_world_sweep` and for the same reason: a loaded map is immutable and this
+// only reads it. Its error is read with `scg_last_error(NULL)`.
+//
+// # Safety
+//
+// `world` must be a live handle from `scg_world_load`, `from` and `to` must
+// each point to three readable `float`s, and `out` must point to a writable
+// `ScgSweepHit`.
+int32_t scg_world_pick(const struct ScgWorld *world,
+                       uint32_t from_cell,
+                       const float *from,
+                       const float *to,
+                       uint32_t filter,
+                       struct ScgSweepHit *out);
 
 // Writes the material of a surface to `out`, by its stable identifier.
 //

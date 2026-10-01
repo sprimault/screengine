@@ -446,6 +446,17 @@ pub struct World {
     /// image — mais l'étape 8, qui remplacera une cellule nommée par son
     /// identifiant à chaque opération d'éditeur.
     cell_index: Vec<(u32, u32)>,
+    /// Les identifiants de surfaces avec leur place, triés par identifiant.
+    ///
+    /// `(surface, cellule, rang dans la cellule)`. Sans elle, traduire
+    /// l'identifiant qu'une interrogation rend demandait un **balayage linéaire
+    /// de toute la carte** — acceptable pour un contact de collision, que le jeu
+    /// lit une fois par déplacement, mais pas pour une sélection qui suit le
+    /// mouvement d'une souris.
+    ///
+    /// C'est la table qu'une famille d'identifiants doit avoir, comme celle des
+    /// cellules, et elle se dérive au même endroit.
+    surface_index: Vec<(u32, u32, u32)>,
     /// Les identifiants de matériaux, dans l'ordre du fichier.
     ///
     /// Le seul des six espaces d'identifiants que rien ne lit encore : les
@@ -496,9 +507,22 @@ impl World {
         }
         cell_index.sort_unstable();
 
+        // La même table pour les surfaces, et pour la même raison : une
+        // désignation par identifiant stable se résout par dichotomie, jamais
+        // par un parcours. Les identifiants sont déjà vérifiés uniques, donc le
+        // tri suffit à rendre la recherche exacte.
+        let mut surface_index = reserved(cells.iter().map(|c| c.surfaces.len()).sum())?;
+        for (index, cell) in cells.iter().enumerate() {
+            for (rank, surface) in cell.surfaces.iter().enumerate() {
+                surface_index.push((surface.id(), index as u32, rank as u32));
+            }
+        }
+        surface_index.sort_unstable();
+
         Ok(Self {
             cells,
             cell_index,
+            surface_index,
             material_ids,
             material_names,
             triangle_count,
@@ -664,14 +688,23 @@ impl World {
     /// l'identifiant que le balayage rend : sans lui, l'hôte recevrait un
     /// identifiant qu'aucune fonction ne traduit.
     pub fn surface_material(&self, surface_id: u32) -> Option<u32> {
-        for cell in &self.cells {
-            for surface in &cell.surfaces {
-                if surface.id() == surface_id {
-                    return Some(surface.material);
-                }
-            }
-        }
-        None
+        let (cell, rank) = self.surface_at(surface_id)?;
+        Some(self.cells[cell as usize].surfaces[rank as usize].material)
+    }
+
+    /// Où vit une surface, `(index de cellule, rang dans la cellule)`.
+    ///
+    /// Par dichotomie sur la table triée au chargement, comme pour une cellule.
+    /// `0` ne désigne aucune surface — l'éditeur le réserve à « aucun » —, et
+    /// c'est ici un identifiant inconnu comme un autre.
+    pub(crate) fn surface_at(&self, surface_id: u32) -> Option<(u32, u32)> {
+        self.surface_index
+            .binary_search_by_key(&surface_id, |(key, _, _)| *key)
+            .ok()
+            .map(|rank| {
+                let (_, cell, place) = self.surface_index[rank];
+                (cell, place)
+            })
     }
 
     /// Combien de matériaux elle réclame.

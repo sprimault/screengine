@@ -142,6 +142,18 @@ export const SCG_DEPTH_TESTED = 1;
 /** Tracer à travers le décor : ce qu'un repère veut. */
 export const SCG_DEPTH_ALWAYS = 2;
 
+/** Interroger les seules surfaces solides : ce que le balayage arrête. */
+export const SCG_PICK_SOLID = 1;
+
+/**
+ * Interroger toutes les surfaces, non solides comprises.
+ *
+ * Ce qu'une sélection d'éditeur veut : une grille, une vitre, un volume de
+ * déclenchement sont des surfaces que la collision traverse par construction et
+ * qu'il faut pouvoir désigner.
+ */
+export const SCG_PICK_ALL = 2;
+
 /**
  * Le tramage ordonné des coordonnées, filtrage par défaut.
  *
@@ -212,6 +224,7 @@ export const EXPORTS = [
   "scg_world_locate",
   "scg_world_track",
   "scg_world_sweep",
+  "scg_world_pick",
   "scg_world_surface_material",
   "scg_lighting_create",
   "scg_lighting_destroy",
