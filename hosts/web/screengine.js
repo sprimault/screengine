@@ -286,6 +286,18 @@ export const TRIANGLE_SIZE = 16;
 export const SPRITE_SIZE = 44;
 
 /**
+ * Taille de `ScgLine` : six `float` puis quatre canaux.
+ *
+ * Vingt-huit octets sans bourrage. Comme `ScgSprite`, elle est écrite ici champ
+ * par champ et rien ne le vérifie pour la liaison : les assertions statiques du
+ * header sont compilées par les hôtes C et C++, jamais par celui-ci.
+ */
+export const LINE_SIZE = 28;
+
+/** Taille de `ScgPoint` : trois `float` puis quatre canaux. */
+export const POINT_SIZE = 16;
+
+/**
  * Taille de `ScgSweepHit` : ce que le moteur écrit d'un balayage.
  *
  * Quarante-quatre octets sans bourrage, tous les champs larges de quatre : la
@@ -477,6 +489,39 @@ export class Screengine {
       });
       view.setUint32(base + 36, roll >>> 0, true);
       color.forEach((channel, k) => view.setUint8(base + 40 + k, channel));
+    });
+  }
+
+  /**
+   * Écrit un tableau de `ScgLine` : deux extrémités puis quatre canaux.
+   *
+   * L'alpha se range avec les trois autres et le moteur l'ignore : un trait
+   * s'écrit tel quel, sans fondu.
+   *
+   * @param {number} ptr adresse d'au moins `lines.length * LINE_SIZE` octets
+   * @param {{a: number[], b: number[], color: number[]}[]} lines
+   */
+  writeLines(ptr, lines) {
+    const view = new DataView(this.memory.buffer, ptr, lines.length * LINE_SIZE);
+    lines.forEach(({ a, b, color }, i) => {
+      const base = i * LINE_SIZE;
+      [...a, ...b].forEach((value, k) => view.setFloat32(base + k * 4, value, true));
+      color.forEach((channel, k) => view.setUint8(base + 24 + k, channel));
+    });
+  }
+
+  /**
+   * Écrit un tableau de `ScgPoint` : une position puis quatre canaux.
+   *
+   * @param {number} ptr adresse d'au moins `points.length * POINT_SIZE` octets
+   * @param {{at: number[], color: number[]}[]} points
+   */
+  writeDots(ptr, points) {
+    const view = new DataView(this.memory.buffer, ptr, points.length * POINT_SIZE);
+    points.forEach(({ at, color }, i) => {
+      const base = i * POINT_SIZE;
+      at.forEach((value, k) => view.setFloat32(base + k * 4, value, true));
+      color.forEach((channel, k) => view.setUint8(base + 12 + k, channel));
     });
   }
 

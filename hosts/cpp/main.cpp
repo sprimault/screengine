@@ -24,6 +24,7 @@
 #error "C++11 requis : sans lui, les assertions de disposition du header ne sont pas compilées"
 #endif
 
+#include <array>
 #include <atomic>
 #include <cstdint>
 #include <cstdio>
@@ -1411,6 +1412,190 @@ uint64_t render_rooms(bool &ok, const char *path)
     return hash;
 }
 
+/// Le mur de la scène `trace`, plein cadre et à mi-distance : il coupe les
+/// brisures en deux, si bien qu'une moitié de chaque trait éprouve le mode de
+/// profondeur et l'autre la règle de couverture.
+constexpr ScgVertex TRACE_WALL[4] = {
+    { 6.0f, 4.0f, -3.0f },
+    { 6.0f, -4.0f, -3.0f },
+    { 6.0f, -4.0f, 3.0f },
+    { 6.0f, 4.0f, 3.0f },
+};
+
+constexpr ScgTriangle TRACE_FACES[2] = {
+    { 0, 1, 2, 0x30, 0x38, 0x48, 0xFF },
+    { 0, 2, 3, 0x30, 0x38, 0x48, 0xFF },
+};
+
+/// Les cinq sommets de la brisure, le dernier ramené sur le premier.
+///
+/// **Ils sont partagés d'un segment au suivant**, et c'est tout l'objet : la
+/// règle de sortie du losange ne les peint qu'une fois. Les quatre segments
+/// prennent les quatre familles de pente qu'elle départage différemment.
+constexpr float TRACE_CORNERS[5][3] = {
+    { 8.0f, -3.0f, -2.0f },
+    { 8.0f, 1.0f, -2.0f },
+    { 8.0f, 1.0f, 2.0f },
+    { 8.0f, -3.0f, 2.0f },
+    { 8.0f, -3.0f, -2.0f },
+};
+
+/// Les quatre segments d'une brisure, décalée de `dx` en X et de `shift` en Y.
+std::array<ScgLine, 4> trace_polyline(float dx, float shift, uint8_t r, uint8_t g, uint8_t b)
+{
+    std::array<ScgLine, 4> lines{};
+    for (int i = 0; i < 4; i++) {
+        lines[i] = ScgLine{ TRACE_CORNERS[i][0] + dx,
+                            TRACE_CORNERS[i][1] + shift,
+                            TRACE_CORNERS[i][2],
+                            TRACE_CORNERS[i + 1][0] + dx,
+                            TRACE_CORNERS[i + 1][1] + shift,
+                            TRACE_CORNERS[i + 1][2],
+                            r, g, b, 0xFF };
+    }
+    return lines;
+}
+
+/// La scène `trace` : les deux familles de primitives que le remplissage
+/// n'emprunte pas.
+///
+/// Trois brisures sur la même géométrie, devant et derrière le mur, dans les
+/// deux modes de profondeur ; puis quatre points, qui sont le seul chemin de
+/// `scg_submit_points`. La brisure occultée derrière le mur ne doit **rien**
+/// peindre, et c'est le témoin devant le mur qui distingue cette absence d'un
+/// défaut rendant le mode occulté toujours invisible.
+///
+/// L'ordre des soumissions est celui de la scène de référence, et il compte : le
+/// tracé n'écrit jamais la profondeur, donc deux traits qui se croisent se
+/// départagent par leur rang.
+uint64_t render_trace(bool &ok)
+{
+    ok = false;
+    ScgContextConfig config = scene_config();
+    ScgContext *ctx = nullptr;
+
+    check(scg_create(&config, &ctx) == SCG_OK, "création du contexte de tracé");
+    if (ctx == nullptr) {
+        return 0;
+    }
+
+    const std::array<ScgLine, 4> occulted = trace_polyline(0.0f, 2.5f, 0xE0, 0x40, 0x30);
+    const std::array<ScgLine, 4> through = trace_polyline(0.0f, -2.5f, 0x40, 0xE0, 0x80);
+    const std::array<ScgLine, 4> witness = trace_polyline(-2.25f, 2.5f, 0x80, 0xC0, 0xFF);
+
+    std::array<ScgPoint, 4> dots{};
+    for (int i = 0; i < 4; i++) {
+        dots[i] = ScgPoint{ TRACE_CORNERS[i][0] - 4.0f,
+                            TRACE_CORNERS[i][1],
+                            TRACE_CORNERS[i][2],
+                            0xFF, 0xE0, 0x40, 0xFF };
+    }
+
+    check(scg_submit(ctx, &IDENTITY, TRACE_WALL, 4, TRACE_FACES, 2) == SCG_OK,
+          "le mur de la scène de tracé est accepté");
+    check(scg_submit_lines(ctx, &IDENTITY, occulted.data(), 4, SCG_DEPTH_TESTED) == SCG_OK,
+          "la brisure occultée est acceptée");
+    check(scg_submit_lines(ctx, &IDENTITY, through.data(), 4, SCG_DEPTH_ALWAYS) == SCG_OK,
+          "la brisure à travers est acceptée");
+    check(scg_submit_lines(ctx, &IDENTITY, witness.data(), 4, SCG_DEPTH_TESTED) == SCG_OK,
+          "le témoin devant le mur est accepté");
+    check(scg_submit_points(ctx, &IDENTITY, dots.data(), 4, SCG_DEPTH_TESTED) == SCG_OK,
+          "les points sont acceptés");
+
+    std::vector<uint8_t> pixels(static_cast<size_t>(STRIDE) * HEIGHT * 4);
+    const int32_t code = scg_frame_end(ctx, pixels.data(), STRIDE);
+    check(code == SCG_OK, "l'image de tracé se rend");
+    ok = code == SCG_OK;
+
+    const uint64_t hash = fingerprint(pixels.data(), WIDTH, HEIGHT, STRIDE);
+    scg_destroy(ctx);
+    return hash;
+}
+
+/// La scène `selection` : le même décor que la collision, interrogé au rayon.
+///
+/// Ce qu'elle ajoute à la précédente est le **filtre**, et c'est la seule chose
+/// qui sépare un rayon d'un balayage d'étendue nulle : chaque rayon est posé
+/// deux fois, contre les surfaces solides puis contre toutes. Le filtre entre
+/// dans l'empreinte avec le résultat, sans quoi les deux moitiés de la liste se
+/// hacheraient comme si elles posaient la même question.
+///
+/// Vingt-huit octets par rayon : six flottants puis le filtre.
+uint64_t render_picks(bool &ok, const char *world_path, const char *picks_path)
+{
+    ok = false;
+    const std::vector<uint8_t> world_bytes = read_file(world_path);
+    const std::vector<uint8_t> list = read_file(picks_path);
+    check(!world_bytes.empty() && !list.empty(),
+          "le decor de selection et la liste de rayons se lisent");
+    if (world_bytes.empty() || list.empty()) {
+        return 0;
+    }
+
+    ScgWorld *world = nullptr;
+    if (scg_world_load(world_bytes.data(), world_bytes.size(), &world) != SCG_OK) {
+        check(false, "le decor de selection se charge");
+        return 0;
+    }
+    const std::unique_ptr<ScgWorld, decltype(&scg_world_destroy)> guard(world, &scg_world_destroy);
+
+    if (list.size() < 12 || std::memcmp(list.data(), "SCGPICKS", 8) != 0) {
+        check(false, "la liste de rayons porte sa magie");
+        return 0;
+    }
+    const uint32_t count = static_cast<uint32_t>(list[8])
+                           | (static_cast<uint32_t>(list[9]) << 8)
+                           | (static_cast<uint32_t>(list[10]) << 16)
+                           | (static_cast<uint32_t>(list[11]) << 24);
+    if (list.size() != 12 + static_cast<size_t>(count) * 28) {
+        check(false, "la liste annonce le nombre de rayons qu'elle porte");
+        return 0;
+    }
+
+    uint64_t hash = 0xcbf29ce484222325u;
+    for (uint32_t i = 0; i < count; i++) {
+        const uint8_t *record = list.data() + 12 + static_cast<size_t>(i) * 28;
+        float from[3];
+        float to[3];
+        for (int axis = 0; axis < 3; axis++) {
+            from[axis] = sweep_float(record + axis * 4);
+            to[axis] = sweep_float(record + 12 + axis * 4);
+        }
+        const uint32_t filter = static_cast<uint32_t>(record[24])
+                                | (static_cast<uint32_t>(record[25]) << 8)
+                                | (static_cast<uint32_t>(record[26]) << 16)
+                                | (static_cast<uint32_t>(record[27]) << 24);
+
+        uint32_t cell = 0;
+        if (scg_world_locate(world, from, &cell) != SCG_OK) {
+            check(false, "la cellule de depart du rayon se cherche");
+            return 0;
+        }
+
+        ScgSweepHit hit{};
+        const int32_t status = scg_world_pick(world, cell, from, to, filter, &hit);
+        if (status < 0) {
+            check(false, "le rayon est accepte");
+            return 0;
+        }
+
+        hash = absorb_float(hash, hit.fraction);
+        for (const float value : hit.normal) {
+            hash = absorb_float(hash, value);
+        }
+        for (const float value : hit.point) {
+            hash = absorb_float(hash, value);
+        }
+        hash = absorb(hash, hit.surface_id, 4);
+        hash = absorb(hash, hit.cell_id, 4);
+        hash = absorb(hash, static_cast<uint32_t>(status), 1);
+        hash = absorb(hash, filter, 4);
+    }
+
+    ok = true;
+    return hash;
+}
+
 // Enchaîne les scènes et écrit leurs empreintes, une par ligne.
 //
 // Le code de retour est le verdict : `make test-cpp` compare la sortie à celle
@@ -1418,10 +1603,10 @@ uint64_t render_rooms(bool &ok, const char *path)
 // empreintes plausibles passerait pour bon.
 int main(int argc, char **argv)
 {
-    if (argc != 5) {
+    if (argc != 6) {
         std::fprintf(stderr,
                      "usage : %s <fichier de maillage> <fichier de carte> "
-                     "<decor de collision> <liste de balayages>\n",
+                     "<decor de collision> <liste de balayages> <liste de rayons>\n",
                      argv[0]);
         return 2;
     }
@@ -1476,12 +1661,18 @@ int main(int argc, char **argv)
     bool rooms_ok = false;
     const uint64_t rooms = render_rooms(rooms_ok, argv[2]);
 
+    bool trace_ok = false;
+    const uint64_t trace = render_trace(trace_ok);
+
     bool sweeps_ok = false;
     const uint64_t sweeps = render_sweeps(sweeps_ok, argv[3], argv[4]);
 
+    bool picks_ok = false;
+    const uint64_t picks = render_picks(picks_ok, argv[3], argv[5]);
+
     if (failures > 0 || !ok || !textured_ok || !bilinear_ok || !graded_ok || !lit_ok
         || !overbright_ok || !fog_ok || !lights_ok || !mesh_ok || !composite_ok || !rooms_ok
-        || !sweeps_ok) {
+        || !trace_ok || !sweeps_ok || !picks_ok) {
         std::fprintf(stderr, "%d vérification(s) en échec\n", failures);
         return 1;
     }
@@ -1496,6 +1687,8 @@ int main(int argc, char **argv)
     std::printf("%016llx\n", static_cast<unsigned long long>(mesh));
     std::printf("%016llx\n", static_cast<unsigned long long>(composite));
     std::printf("%016llx\n", static_cast<unsigned long long>(rooms));
+    std::printf("%016llx\n", static_cast<unsigned long long>(trace));
     std::printf("%016llx\n", static_cast<unsigned long long>(sweeps));
+    std::printf("%016llx\n", static_cast<unsigned long long>(picks));
     return 0;
 }

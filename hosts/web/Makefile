@@ -18,9 +18,11 @@ HEADER  := $(abspath ../../include/screengine.h)
 MESH    := $(abspath ../../hosts/caisse.mesh)
 # Le décor que la page de démonstration parcourt.
 WORLD   := $(abspath ../../hosts/salles.world)
-# Le décor de collision et les balayages que la scène `collision` rejoue.
+# Le décor de collision et les deux listes que les scènes `collision` et
+# `selection` rejouent, sur le même décor.
 COLLISION := $(abspath ../../hosts/collision.world)
 SWEEPS    := $(abspath ../../hosts/collision.sweeps)
+PICKS     := $(abspath ../../hosts/selection.picks)
 NODE    ?= node
 PORT    ?= 8080
 
@@ -48,7 +50,7 @@ all: $(WASM)
 # Écrit l'empreinte sur la sortie standard, les échecs sur la sortie d'erreur.
 run: all
 	@$(NODE) $(OUT)/test.js $(OUT)/screengine.wasm $(HEADER) $(MESH) $(WORLD) \
-	  $(COLLISION) $(SWEEPS)
+	  $(COLLISION) $(SWEEPS) $(PICKS)
 
 serve: all
 	$(NODE) $(OUT)/serve.js $(OUT) $(PORT)

@@ -609,6 +609,34 @@ static jint world_sweep(JNIEnv *env, jclass cls, jlong world, jint from_cell, jf
     return (jint)code;
 }
 
+/* scg_world_pick : le balayage d'une boîte d'étendue nulle, avec son filtre.
+ *
+ * Même résultat et mêmes trente-six octets que `worldSweep` : c'est la même
+ * structure, et le filtre est tout ce qui sépare les deux appels. */
+static jint world_pick(JNIEnv *env, jclass cls, jlong world, jint from_cell, jfloatArray from,
+                       jfloatArray to, jint filter, jbyteArray out)
+{
+    (void)cls;
+    if (from == NULL || to == NULL || out == NULL || (*env)->GetArrayLength(env, from) != 3
+        || (*env)->GetArrayLength(env, to) != 3 || (*env)->GetArrayLength(env, out) != 36) {
+        return SCG_ERR_INVALID_ARGUMENT;
+    }
+    float start[3];
+    float end[3];
+    (*env)->GetFloatArrayRegion(env, from, 0, 3, start);
+    (*env)->GetFloatArrayRegion(env, to, 0, 3, end);
+
+    ScgSweepHit hit;
+    memset(&hit, 0, sizeof hit);
+    int32_t code = scg_world_pick((const ScgWorld *)(intptr_t)world, (uint32_t)from_cell, start,
+                                  end, (uint32_t)filter, &hit);
+    if (code < 0) {
+        return code;
+    }
+    (*env)->SetByteArrayRegion(env, out, 0, 36, (const jbyte *)&hit);
+    return (jint)code;
+}
+
 /* scg_world_surface_material : le matériau d'une surface, ou -1.
  *
  * Pas zéro pour l'erreur, contrairement aux autres accesseurs de cette
@@ -990,6 +1018,111 @@ static jint submit_lit(JNIEnv *env, jclass cls, jlong ctx, jfloatArray model,
     return code;
 }
 
+/*
+ * scg_submit_lines : six `float` par segment, une couleur par segment, et le
+ * mode de profondeur.
+ *
+ * Deux tableaux parallèles pour la raison qui vaut partout sur cette frontière :
+ * Java n'a pas de structure à disposition mémoire garantie, et c'est ici — au
+ * seul endroit qui voit le header — que `ScgLine` se remplit.
+ */
+static jint submit_lines(JNIEnv *env, jclass cls, jlong ctx, jfloatArray model,
+                         jfloatArray segments, jbyteArray colors, jint depth)
+{
+    (void)cls;
+    if (model == NULL || segments == NULL || colors == NULL) {
+        return SCG_ERR_NULL;
+    }
+
+    jsize floats = (*env)->GetArrayLength(env, segments);
+    jsize channels = (*env)->GetArrayLength(env, colors);
+    if ((*env)->GetArrayLength(env, model) != 16 || floats % 6 != 0
+        || channels != floats / 6 * 4) {
+        return SCG_ERR_INVALID_ARGUMENT;
+    }
+
+    uint32_t count = (uint32_t)(floats / 6);
+    ScgMat4 matrix;
+    ScgLine *lines = calloc(count ? count : 1, sizeof *lines);
+    jfloat *raw = calloc(floats ? (size_t)floats : 1, sizeof *raw);
+    jbyte *raw_colors = calloc(channels ? (size_t)channels : 1, sizeof *raw_colors);
+    int32_t code = SCG_ERR_OUT_OF_MEMORY;
+
+    if (lines != NULL && raw != NULL && raw_colors != NULL) {
+        (*env)->GetFloatArrayRegion(env, model, 0, 16, matrix.m);
+        (*env)->GetFloatArrayRegion(env, segments, 0, floats, raw);
+        (*env)->GetByteArrayRegion(env, colors, 0, channels, raw_colors);
+
+        for (uint32_t i = 0; i < count; i++) {
+            const jfloat *s = raw + (size_t)i * 6;
+            lines[i].ax = s[0];
+            lines[i].ay = s[1];
+            lines[i].az = s[2];
+            lines[i].bx = s[3];
+            lines[i].by = s[4];
+            lines[i].bz = s[5];
+            lines[i].r = (uint8_t)raw_colors[i * 4];
+            lines[i].g = (uint8_t)raw_colors[i * 4 + 1];
+            lines[i].b = (uint8_t)raw_colors[i * 4 + 2];
+            lines[i].a = (uint8_t)raw_colors[i * 4 + 3];
+        }
+        code = scg_submit_lines((ScgContext *)(intptr_t)ctx, &matrix, lines, count,
+                                (uint32_t)depth);
+    }
+
+    free(lines);
+    free(raw);
+    free(raw_colors);
+    return code;
+}
+
+/* scg_submit_points : le même pont, trois `float` par point. */
+static jint submit_points(JNIEnv *env, jclass cls, jlong ctx, jfloatArray model,
+                          jfloatArray positions, jbyteArray colors, jint depth)
+{
+    (void)cls;
+    if (model == NULL || positions == NULL || colors == NULL) {
+        return SCG_ERR_NULL;
+    }
+
+    jsize floats = (*env)->GetArrayLength(env, positions);
+    jsize channels = (*env)->GetArrayLength(env, colors);
+    if ((*env)->GetArrayLength(env, model) != 16 || floats % 3 != 0
+        || channels != floats / 3 * 4) {
+        return SCG_ERR_INVALID_ARGUMENT;
+    }
+
+    uint32_t count = (uint32_t)(floats / 3);
+    ScgMat4 matrix;
+    ScgPoint *dots = calloc(count ? count : 1, sizeof *dots);
+    jfloat *raw = calloc(floats ? (size_t)floats : 1, sizeof *raw);
+    jbyte *raw_colors = calloc(channels ? (size_t)channels : 1, sizeof *raw_colors);
+    int32_t code = SCG_ERR_OUT_OF_MEMORY;
+
+    if (dots != NULL && raw != NULL && raw_colors != NULL) {
+        (*env)->GetFloatArrayRegion(env, model, 0, 16, matrix.m);
+        (*env)->GetFloatArrayRegion(env, positions, 0, floats, raw);
+        (*env)->GetByteArrayRegion(env, colors, 0, channels, raw_colors);
+
+        for (uint32_t i = 0; i < count; i++) {
+            dots[i].x = raw[(size_t)i * 3];
+            dots[i].y = raw[(size_t)i * 3 + 1];
+            dots[i].z = raw[(size_t)i * 3 + 2];
+            dots[i].r = (uint8_t)raw_colors[i * 4];
+            dots[i].g = (uint8_t)raw_colors[i * 4 + 1];
+            dots[i].b = (uint8_t)raw_colors[i * 4 + 2];
+            dots[i].a = (uint8_t)raw_colors[i * 4 + 3];
+        }
+        code = scg_submit_points((ScgContext *)(intptr_t)ctx, &matrix, dots, count,
+                                 (uint32_t)depth);
+    }
+
+    free(dots);
+    free(raw);
+    free(raw_colors);
+    return code;
+}
+
 /* scg_set_resolution. */
 static jint set_resolution(JNIEnv *env, jclass cls, jlong ctx, jint width, jint height)
 {
@@ -1178,6 +1311,8 @@ static const JNINativeMethod METHODS[] = {
     {"submitMeshFrame", "(J[FJ[JIIF)I", (void *)submit_mesh_frame},
     {"submitBlended", "(J[F[F[I[BJI)I", (void *)submit_blended},
     {"submitSprites", "(J[F[F[BJI)I", (void *)submit_sprites},
+    {"submitLines", "(J[F[F[BI)I", (void *)submit_lines},
+    {"submitPoints", "(J[F[F[BI)I", (void *)submit_points},
     {"worldLoad", "([B)J", (void *)world_load},
     {"worldDestroy", "(J)V", (void *)world_destroy},
     {"worldMaterialCount", "(J)I", (void *)world_material_count},
@@ -1186,6 +1321,7 @@ static const JNINativeMethod METHODS[] = {
     {"worldLocate", "(J[F)I", (void *)world_locate},
     {"worldTrack", "(JI[F[F)I", (void *)world_track},
     {"worldSweep", "(JI[F[F[F[B)I", (void *)world_sweep},
+    {"worldPick", "(JI[F[FI[B)I", (void *)world_pick},
     {"worldSurfaceMaterial", "(JI)I", (void *)world_surface_material},
     {"worldCellCount", "(J)I", (void *)world_cell_count},
     {"worldCellId", "(JI)I", (void *)world_cell_id},

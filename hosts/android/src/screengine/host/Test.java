@@ -1223,6 +1223,224 @@ public final class Test {
     private static final int SWEEP_RECORD = 36;
 
     /**
+     * Rejoue les rayons du fichier versionné et hache leurs résultats.
+     *
+     * <p>Ce que cette scène ajoute à la précédente est le <b>filtre</b>, et c'est
+     * la seule chose qui sépare un rayon d'un balayage d'étendue nulle : chaque
+     * rayon est posé deux fois, contre les surfaces solides puis contre toutes.
+     * Le filtre entre dans l'empreinte avec le résultat, sans quoi les deux
+     * moitiés de la liste se hacheraient comme si elles posaient la même
+     * question.
+     *
+     * @param worldPath le décor de collision
+     * @param picksPath la liste de rayons
+     * @return l'empreinte, ou {@code null} si une vérification a échoué
+     */
+    private static String renderPicks(String worldPath, String picksPath) {
+        byte[] worldBytes;
+        byte[] list;
+        try {
+            worldBytes = java.nio.file.Files.readAllBytes(java.nio.file.Paths.get(worldPath));
+            list = java.nio.file.Files.readAllBytes(java.nio.file.Paths.get(picksPath));
+        } catch (java.io.IOException error) {
+            check(false, "le décor de sélection et la liste de rayons se lisent : " + error);
+            return null;
+        }
+
+        long world = Screengine.worldLoad(worldBytes);
+        check(world != 0, "le décor de sélection se charge");
+        if (world == 0) {
+            return null;
+        }
+
+        ByteBuffer source = ByteBuffer.wrap(list).order(java.nio.ByteOrder.LITTLE_ENDIAN);
+        boolean formed = list.length >= 12
+                && new String(list, 0, 8, java.nio.charset.StandardCharsets.US_ASCII)
+                        .equals("SCGPICKS");
+        check(formed, "la liste de rayons porte sa magie");
+        if (!formed) {
+            Screengine.worldDestroy(world);
+            return null;
+        }
+        int count = source.getInt(8);
+        if (list.length != 12 + count * PICK_RECORD) {
+            check(false, "la liste annonce le nombre de rayons qu'elle porte");
+            Screengine.worldDestroy(world);
+            return null;
+        }
+
+        long hash = 0xcbf29ce484222325L;
+        float[] from = new float[3];
+        float[] to = new float[3];
+        byte[] hit = new byte[36];
+
+        for (int i = 0; i < count; i++) {
+            int base = 12 + i * PICK_RECORD;
+            for (int axis = 0; axis < 3; axis++) {
+                from[axis] = source.getFloat(base + axis * 4);
+                to[axis] = source.getFloat(base + 12 + axis * 4);
+            }
+            int filter = source.getInt(base + 24);
+
+            int cell = Screengine.worldLocate(world, from);
+            int status = Screengine.worldPick(world, cell, from, to, filter, hit);
+            if (status < 0) {
+                check(false, "le rayon est accepté");
+                Screengine.worldDestroy(world);
+                return null;
+            }
+
+            for (byte octet : hit) {
+                hash = (hash ^ (octet & 0xFF)) * 0x100000001b3L;
+            }
+            hash = (hash ^ (status & 0xFF)) * 0x100000001b3L;
+            for (int shift = 0; shift < 32; shift += 8) {
+                hash = (hash ^ ((filter >>> shift) & 0xFF)) * 0x100000001b3L;
+            }
+        }
+
+        Screengine.worldDestroy(world);
+        return String.format("%016x", hash);
+    }
+
+    /**
+     * La taille d'un enregistrement de la liste de rayons : six flottants puis le
+     * filtre.
+     */
+    private static final int PICK_RECORD = 28;
+
+    /**
+     * Le mur de la scène {@code trace}, plein cadre et à mi-distance : il coupe
+     * les brisures en deux, si bien qu'une moitié de chaque trait éprouve le mode
+     * de profondeur et l'autre la règle de couverture.
+     */
+    private static final float[] TRACE_WALL = {
+        6.0f, 4.0f, -3.0f,
+        6.0f, -4.0f, -3.0f,
+        6.0f, -4.0f, 3.0f,
+        6.0f, 4.0f, 3.0f,
+    };
+
+    /** Ses deux triangles, et les quatre canaux de chacun. */
+    private static final int[] TRACE_INDICES = {0, 1, 2, 0, 2, 3};
+
+    private static final byte[] TRACE_COLORS = {
+        (byte) 0x30, (byte) 0x38, (byte) 0x48, (byte) 0xFF,
+        (byte) 0x30, (byte) 0x38, (byte) 0x48, (byte) 0xFF,
+    };
+
+    /**
+     * Les cinq sommets de la brisure, le dernier ramené sur le premier.
+     *
+     * <p><b>Ils sont partagés d'un segment au suivant</b>, et c'est tout l'objet :
+     * la règle de sortie du losange ne les peint qu'une fois. Les quatre segments
+     * prennent les quatre familles de pente qu'elle départage différemment.
+     */
+    private static final float[][] TRACE_CORNERS = {
+        {8.0f, -3.0f, -2.0f},
+        {8.0f, 1.0f, -2.0f},
+        {8.0f, 1.0f, 2.0f},
+        {8.0f, -3.0f, 2.0f},
+        {8.0f, -3.0f, -2.0f},
+    };
+
+    /**
+     * Les quatre segments d'une brisure, décalée de {@code dx} en X et de
+     * {@code shift} en Y : six flottants par segment, comme le pont les attend.
+     *
+     * @param dx décalage en X
+     * @param shift décalage en Y
+     * @return vingt-quatre flottants
+     */
+    private static float[] tracePolyline(float dx, float shift) {
+        float[] segments = new float[24];
+        for (int i = 0; i < 4; i++) {
+            segments[i * 6] = TRACE_CORNERS[i][0] + dx;
+            segments[i * 6 + 1] = TRACE_CORNERS[i][1] + shift;
+            segments[i * 6 + 2] = TRACE_CORNERS[i][2];
+            segments[i * 6 + 3] = TRACE_CORNERS[i + 1][0] + dx;
+            segments[i * 6 + 4] = TRACE_CORNERS[i + 1][1] + shift;
+            segments[i * 6 + 5] = TRACE_CORNERS[i + 1][2];
+        }
+        return segments;
+    }
+
+    /**
+     * La couleur d'une brisure, répétée sur ses quatre segments.
+     *
+     * @param r rouge
+     * @param g vert
+     * @param b bleu
+     * @return seize octets
+     */
+    private static byte[] traceColor(int r, int g, int b) {
+        byte[] colors = new byte[16];
+        for (int i = 0; i < 4; i++) {
+            colors[i * 4] = (byte) r;
+            colors[i * 4 + 1] = (byte) g;
+            colors[i * 4 + 2] = (byte) b;
+            colors[i * 4 + 3] = (byte) 0xFF;
+        }
+        return colors;
+    }
+
+    /**
+     * Rend la scène {@code trace} : les deux familles de primitives que le
+     * remplissage n'emprunte pas.
+     *
+     * <p>Trois brisures sur la même géométrie, devant et derrière le mur, dans
+     * les deux modes de profondeur ; puis quatre points, qui sont le seul chemin
+     * de {@code scg_submit_points}. La brisure occultée derrière le mur ne doit
+     * <b>rien</b> peindre, et c'est le témoin devant le mur qui distingue cette
+     * absence d'un défaut rendant le mode occulté toujours invisible.
+     *
+     * <p>L'ordre des soumissions est celui de la scène de référence, et il
+     * compte : le tracé n'écrit jamais la profondeur, donc deux traits qui se
+     * croisent se départagent par leur rang.
+     *
+     * @return l'empreinte, ou {@code null} si une vérification a échoué
+     */
+    private static String renderTrace() {
+        long[] out = new long[1];
+        if (Screengine.create(sceneConfig(), out) < 0) {
+            check(false, "création du contexte de tracé");
+            return null;
+        }
+        long ctx = out[0];
+        float[] model = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
+
+        check(Screengine.submit(ctx, model, TRACE_WALL, TRACE_INDICES, TRACE_COLORS)
+                        == Screengine.OK,
+                "le mur de la scène de tracé est accepté");
+        check(Screengine.submitLines(ctx, model, tracePolyline(0.0f, 2.5f),
+                        traceColor(0xE0, 0x40, 0x30), Screengine.DEPTH_TESTED) == Screengine.OK,
+                "la brisure occultée est acceptée");
+        check(Screengine.submitLines(ctx, model, tracePolyline(0.0f, -2.5f),
+                        traceColor(0x40, 0xE0, 0x80), Screengine.DEPTH_ALWAYS) == Screengine.OK,
+                "la brisure à travers est acceptée");
+        check(Screengine.submitLines(ctx, model, tracePolyline(-2.25f, 2.5f),
+                        traceColor(0x80, 0xC0, 0xFF), Screengine.DEPTH_TESTED) == Screengine.OK,
+                "le témoin devant le mur est accepté");
+
+        float[] dots = new float[12];
+        for (int i = 0; i < 4; i++) {
+            dots[i * 3] = TRACE_CORNERS[i][0] - 4.0f;
+            dots[i * 3 + 1] = TRACE_CORNERS[i][1];
+            dots[i * 3 + 2] = TRACE_CORNERS[i][2];
+        }
+        check(Screengine.submitPoints(ctx, model, dots, traceColor(0xFF, 0xE0, 0x40),
+                        Screengine.DEPTH_TESTED) == Screengine.OK,
+                "les points sont acceptés");
+
+        ByteBuffer pixels = ByteBuffer.allocateDirect(STRIDE * HEIGHT * Screengine.BYTES_PER_PIXEL);
+        int code = Screengine.frameEnd(ctx, pixels, 0, STRIDE);
+        check(code == Screengine.OK, "l'image de tracé se rend");
+        String hash = fingerprint(pixels, 0, STRIDE);
+        Screengine.destroy(ctx);
+        return code == Screengine.OK ? hash : null;
+    }
+
+    /**
      * Toutes les vérifications, puis l'empreinte sur la sortie standard.
      *
      * @param args le répertoire des bibliothèques, qui porte aussi le maillage
@@ -1254,12 +1472,14 @@ public final class Test {
         String mesh = renderMesh(args[0] + "/caisse.mesh");
         String composite = renderComposite(args[0] + "/caisse.mesh");
         String rooms = renderRooms(args[0] + "/salles.world");
+        String trace = renderTrace();
         String sweeps = renderSweeps(args[0] + "/collision.world", args[0] + "/collision.sweeps");
+        String picks = renderPicks(args[0] + "/collision.world", args[0] + "/selection.picks");
 
         if (failures > 0 || hash == null || textured == null || bilinear == null
                 || graded == null || lit == null || overbright == null || fog == null
                 || lights == null || mesh == null || composite == null || rooms == null
-                || sweeps == null) {
+                || trace == null || sweeps == null || picks == null) {
             System.err.println(failures + " vérification(s) en échec");
             System.exit(1);
         }
@@ -1274,7 +1494,9 @@ public final class Test {
         System.out.println(mesh);
         System.out.println(composite);
         System.out.println(rooms);
+        System.out.println(trace);
         System.out.println(sweeps);
+        System.out.println(picks);
         System.exit(0);
     }
 }

@@ -1492,6 +1492,127 @@ static uint64_t render_rooms(int *ok, const char *path)
     return hash;
 }
 
+/* Le mur de la scène `trace`, plein cadre et à mi-distance : il coupe les
+ * brisures en deux, si bien qu'une moitié de chaque trait éprouve le mode de
+ * profondeur et l'autre la règle de couverture. Pris dans l'autre sens, il est
+ * un dos et disparaît — sans erreur, et la scène ne figerait plus que des
+ * lignes dans le vide. */
+static const ScgVertex TRACE_WALL[4] = {
+    { 6.0f, 4.0f, -3.0f },
+    { 6.0f, -4.0f, -3.0f },
+    { 6.0f, -4.0f, 3.0f },
+    { 6.0f, 4.0f, 3.0f },
+};
+
+static const ScgTriangle TRACE_FACES[2] = {
+    { 0, 1, 2, 0x30, 0x38, 0x48, 0xFF },
+    { 0, 2, 3, 0x30, 0x38, 0x48, 0xFF },
+};
+
+/* Les cinq sommets de la brisure, le dernier ramené sur le premier.
+ *
+ * **Ils sont partagés d'un segment au suivant**, et c'est tout l'objet : la
+ * règle de sortie du losange ne les peint qu'une fois. Les quatre segments
+ * prennent les quatre familles de pente que cette règle départage
+ * différemment. */
+static const float TRACE_CORNERS[5][3] = {
+    { 8.0f, -3.0f, -2.0f },
+    { 8.0f, 1.0f, -2.0f },
+    { 8.0f, 1.0f, 2.0f },
+    { 8.0f, -3.0f, 2.0f },
+    { 8.0f, -3.0f, -2.0f },
+};
+
+/* Écrit les quatre segments d'une brisure, décalée de `dx` en X et de `shift`
+ * en Y.
+ *
+ * Les deux décalages tombent juste en binaire, et c'est voulu : un hôte qui
+ * les appliquerait dans un autre ordre que la scène de référence rendrait les
+ * mêmes bits quand même. */
+static void trace_polyline(ScgLine out[4], float dx, float shift, uint8_t r, uint8_t g, uint8_t b)
+{
+    for (int i = 0; i < 4; i++) {
+        out[i].ax = TRACE_CORNERS[i][0] + dx;
+        out[i].ay = TRACE_CORNERS[i][1] + shift;
+        out[i].az = TRACE_CORNERS[i][2];
+        out[i].bx = TRACE_CORNERS[i + 1][0] + dx;
+        out[i].by = TRACE_CORNERS[i + 1][1] + shift;
+        out[i].bz = TRACE_CORNERS[i + 1][2];
+        out[i].r = r;
+        out[i].g = g;
+        out[i].b = b;
+        out[i].a = 0xFF;
+    }
+}
+
+/* La scène `trace` : les deux familles de primitives que le remplissage
+ * n'emprunte pas.
+ *
+ * Trois brisures sur la même géométrie, devant et derrière le mur, dans les
+ * deux modes de profondeur ; puis quatre points, qui sont le seul chemin de
+ * `scg_submit_points`. La brisure occultée derrière le mur ne doit **rien**
+ * peindre, et son absence est le sujet autant que les traits visibles : c'est
+ * pour cela que la troisième, devant le mur, est là — un défaut qui rendrait le
+ * mode occulté toujours invisible passerait sans elle.
+ *
+ * L'ordre des soumissions est celui de la scène de référence, et il compte : le
+ * tracé n'écrit jamais la profondeur, donc deux traits qui se croisent se
+ * départagent par leur rang. */
+static uint64_t render_trace(int *ok)
+{
+    ScgContextConfig config = scene_config();
+    ScgContext *ctx = NULL;
+    uint8_t *pixels = malloc((size_t)STRIDE * HEIGHT * 4);
+    uint64_t hash = 0;
+
+    *ok = 0;
+    if (pixels == NULL) {
+        check(0, "allocation du tampon de la scene de trace");
+        return 0;
+    }
+
+    check(scg_create(&config, &ctx) == SCG_OK, "creation du contexte de trace");
+    if (ctx != NULL) {
+        ScgLine occulted[4];
+        ScgLine through[4];
+        ScgLine witness[4];
+        ScgPoint dots[4];
+
+        trace_polyline(occulted, 0.0f, 2.5f, 0xE0, 0x40, 0x30);
+        trace_polyline(through, 0.0f, -2.5f, 0x40, 0xE0, 0x80);
+        trace_polyline(witness, -2.25f, 2.5f, 0x80, 0xC0, 0xFF);
+        for (int i = 0; i < 4; i++) {
+            dots[i].x = TRACE_CORNERS[i][0] - 4.0f;
+            dots[i].y = TRACE_CORNERS[i][1];
+            dots[i].z = TRACE_CORNERS[i][2];
+            dots[i].r = 0xFF;
+            dots[i].g = 0xE0;
+            dots[i].b = 0x40;
+            dots[i].a = 0xFF;
+        }
+
+        check(scg_submit(ctx, &IDENTITY, TRACE_WALL, 4, TRACE_FACES, 2) == SCG_OK,
+              "le mur de la scene de trace est accepte");
+        check(scg_submit_lines(ctx, &IDENTITY, occulted, 4, SCG_DEPTH_TESTED) == SCG_OK,
+              "la brisure occultee est acceptee");
+        check(scg_submit_lines(ctx, &IDENTITY, through, 4, SCG_DEPTH_ALWAYS) == SCG_OK,
+              "la brisure a travers est acceptee");
+        check(scg_submit_lines(ctx, &IDENTITY, witness, 4, SCG_DEPTH_TESTED) == SCG_OK,
+              "le temoin devant le mur est accepte");
+        check(scg_submit_points(ctx, &IDENTITY, dots, 4, SCG_DEPTH_TESTED) == SCG_OK,
+              "les points sont acceptes");
+
+        int32_t code = scg_frame_end(ctx, pixels, STRIDE);
+        check(code == SCG_OK, "l'image de trace se rend");
+        *ok = code == SCG_OK;
+        hash = fingerprint(pixels, WIDTH, HEIGHT, STRIDE);
+    }
+
+    scg_destroy(ctx);
+    free(pixels);
+    return hash;
+}
+
 /* Lit un flottant écrit octet de poids faible en tête.
  *
  * Par memcpy et non par un transtypage de pointeur : la liste n'est alignée sur
@@ -1623,6 +1744,93 @@ static uint64_t render_sweeps(int *ok, const char *world_path, const char *sweep
     return *ok ? hash : 0;
 }
 
+/* La scène `selection` : le même décor que la collision, interrogé au rayon.
+ *
+ * Ce qu'elle ajoute à la précédente est le **filtre**, et c'est la seule chose
+ * qui sépare un rayon d'un balayage d'étendue nulle : chaque rayon est posé deux
+ * fois, contre les surfaces solides puis contre toutes. Le filtre entre dans
+ * l'empreinte avec le résultat, sans quoi les deux moitiés de la liste se
+ * hacheraient comme si elles posaient la même question.
+ *
+ * Vingt-huit octets par rayon : six flottants puis le filtre. */
+static uint64_t render_picks(int *ok, const char *world_path, const char *picks_path)
+{
+    ScgWorld *world = NULL;
+    size_t world_len = 0;
+    size_t list_len = 0;
+    uint8_t *world_bytes = read_file(world_path, &world_len);
+    uint8_t *list = read_file(picks_path, &list_len);
+    uint64_t hash = 0xcbf29ce484222325u;
+
+    *ok = 0;
+    if (world_bytes == NULL || list == NULL) {
+        check(0, "lecture du decor de collision et de la liste de rayons");
+        free(world_bytes);
+        free(list);
+        return 0;
+    }
+
+    int loaded = scg_world_load(world_bytes, world_len, &world) == SCG_OK;
+    check(loaded, "le decor de selection se charge");
+    free(world_bytes);
+
+    int formed = list_len >= 12 && memcmp(list, "SCGPICKS", 8) == 0;
+    check(formed, "la liste de rayons porte sa magie");
+
+    uint32_t count = 0;
+    if (formed) {
+        count = (uint32_t)list[8] | ((uint32_t)list[9] << 8) | ((uint32_t)list[10] << 16)
+                | ((uint32_t)list[11] << 24);
+        formed = list_len == (size_t)12 + (size_t)count * 28;
+        check(formed, "la liste annonce le nombre de rayons qu'elle porte");
+    }
+
+    if (loaded && formed) {
+        for (uint32_t i = 0; i < count; i++) {
+            const uint8_t *record = list + 12 + (size_t)i * 28;
+            float from[3];
+            float to[3];
+            for (int axis = 0; axis < 3; axis++) {
+                from[axis] = sweep_float(record + axis * 4);
+                to[axis] = sweep_float(record + 12 + axis * 4);
+            }
+            uint32_t filter = (uint32_t)record[24] | ((uint32_t)record[25] << 8)
+                              | ((uint32_t)record[26] << 16) | ((uint32_t)record[27] << 24);
+
+            uint32_t cell = 0;
+            if (scg_world_locate(world, from, &cell) != SCG_OK) {
+                check(0, "la cellule de depart du rayon se cherche");
+                break;
+            }
+
+            ScgSweepHit hit;
+            memset(&hit, 0, sizeof hit);
+            int32_t status = scg_world_pick(world, cell, from, to, filter, &hit);
+            if (status < 0) {
+                check(0, "le rayon est accepte");
+                break;
+            }
+
+            hash = absorb_float(hash, hit.fraction);
+            for (int axis = 0; axis < 3; axis++) {
+                hash = absorb_float(hash, hit.normal[axis]);
+            }
+            for (int axis = 0; axis < 3; axis++) {
+                hash = absorb_float(hash, hit.point[axis]);
+            }
+            hash = absorb(hash, hit.surface_id, 4);
+            hash = absorb(hash, hit.cell_id, 4);
+            hash = absorb(hash, (uint32_t)status, 1);
+            hash = absorb(hash, filter, 4);
+        }
+        *ok = 1;
+    }
+
+    free(list);
+    scg_world_destroy(world);
+    return *ok ? hash : 0;
+}
+
 /* Toutes les vérifications, puis les empreintes sur la sortie standard, une
  * par ligne et dans l'ordre que le Makefile attend.
  *
@@ -1631,10 +1839,10 @@ static uint64_t render_sweeps(int *ok, const char *world_path, const char *sweep
  * un hôte lancé depuis un autre répertoire ne le trouverait pas. */
 int main(int argc, char **argv)
 {
-    if (argc != 5) {
+    if (argc != 6) {
         fprintf(stderr,
                 "usage : %s <fichier de maillage> <fichier de carte> "
-                "<decor de collision> <liste de balayages>\n",
+                "<decor de collision> <liste de balayages> <liste de rayons>\n",
                 argv[0]);
         return 2;
     }
@@ -1689,12 +1897,18 @@ int main(int argc, char **argv)
     int rooms_ok = 0;
     uint64_t rooms = render_rooms(&rooms_ok, argv[2]);
 
+    int trace_ok = 0;
+    uint64_t trace = render_trace(&trace_ok);
+
     int sweeps_ok = 0;
     uint64_t sweeps = render_sweeps(&sweeps_ok, argv[3], argv[4]);
 
+    int picks_ok = 0;
+    uint64_t picks = render_picks(&picks_ok, argv[3], argv[5]);
+
     if (failures > 0 || !ok || !textured_ok || !bilinear_ok || !graded_ok || !lit_ok
         || !overbright_ok || !fog_ok || !lights_ok || !mesh_ok || !composite_ok || !rooms_ok
-        || !sweeps_ok) {
+        || !trace_ok || !sweeps_ok || !picks_ok) {
         fprintf(stderr, "%d vérification(s) en échec\n", failures);
         return 1;
     }
@@ -1709,6 +1923,8 @@ int main(int argc, char **argv)
     printf("%016llx\n", (unsigned long long)mesh);
     printf("%016llx\n", (unsigned long long)composite);
     printf("%016llx\n", (unsigned long long)rooms);
+    printf("%016llx\n", (unsigned long long)trace);
     printf("%016llx\n", (unsigned long long)sweeps);
+    printf("%016llx\n", (unsigned long long)picks);
     return 0;
 }

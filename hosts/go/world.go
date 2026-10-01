@@ -517,3 +517,81 @@ func renderSweeps(worldPath, sweepsPath string) (uint64, bool) {
 
 	return hashBytes(digest), true
 }
+
+// La taille d'un enregistrement de la liste de rayons : six flottants puis le
+// filtre.
+const pickRecord = 28
+
+// Rejoue les rayons du fichier versionné et hache leurs résultats.
+//
+// Ce que cette scène ajoute à la précédente est le **filtre**, et c'est la seule
+// chose qui sépare un rayon d'un balayage d'étendue nulle : chaque rayon est posé
+// deux fois, contre les surfaces solides puis contre toutes. Le filtre entre dans
+// l'empreinte avec le résultat, sans quoi les deux moitiés de la liste se
+// hacheraient comme si elles posaient la même question.
+func renderPicks(worldPath, picksPath string) (uint64, bool) {
+	worldBytes := readFile(worldPath)
+	list := readFile(picksPath)
+	if worldBytes == nil || list == nil {
+		return 0, false
+	}
+
+	block := toNative(worldBytes)
+	var world *C.ScgWorld
+	loaded := C.scg_world_load((*C.uint8_t)(block), C.size_t(len(worldBytes)), &world) == C.SCG_OK
+	release(block)
+	check(loaded, "le décor de sélection se charge")
+	if !loaded {
+		return 0, false
+	}
+	defer C.scg_world_destroy(world)
+
+	if len(list) < 12 || string(list[:8]) != "SCGPICKS" {
+		check(false, "la liste de rayons porte sa magie")
+		return 0, false
+	}
+	count := int(binary.LittleEndian.Uint32(list[8:12]))
+	if len(list) != 12+count*pickRecord {
+		check(false, "la liste annonce le nombre de rayons qu'elle porte")
+		return 0, false
+	}
+
+	vectors := alloc(6 * 4)
+	defer release(vectors)
+	hit := alloc(44)
+	defer release(hit)
+	hitView := view(hit, 44)
+
+	digest := make([]byte, 0, count*41)
+	for i := 0; i < count; i++ {
+		record := list[12+i*pickRecord:]
+		floats := unsafe.Slice((*C.float)(vectors), 6)
+		for rank := 0; rank < 6; rank++ {
+			bits := binary.LittleEndian.Uint32(record[rank*4:])
+			floats[rank] = C.float(math.Float32frombits(bits))
+		}
+		from := (*C.float)(vectors)
+		to := (*C.float)(unsafe.Pointer(uintptr(vectors) + 12))
+		filter := binary.LittleEndian.Uint32(record[24:28])
+
+		var cell C.uint32_t
+		if C.scg_world_locate(world, from, &cell) != C.SCG_OK {
+			check(false, "la cellule de départ du rayon se cherche")
+			return 0, false
+		}
+		status := C.scg_world_pick(world, cell, from, to, C.uint32_t(filter),
+			(*C.ScgSweepHit)(hit))
+		if status < 0 {
+			check(false, "le rayon est accepté")
+			return 0, false
+		}
+
+		// Les trente-six premiers octets portent le résultat, dans l'ordre que
+		// l'empreinte veut ; le statut et le filtre les suivent.
+		digest = append(digest, hitView[:36]...)
+		digest = append(digest, byte(status))
+		digest = binary.LittleEndian.AppendUint32(digest, filter)
+	}
+
+	return hashBytes(digest), true
+}
