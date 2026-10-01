@@ -22,6 +22,7 @@ fn sane() -> Config {
         height: 360,
         tile_size: 64,
         max_triangles: 0,
+        max_lines: 0,
     }
 }
 
@@ -148,6 +149,7 @@ fn small() -> Context {
         height: 64,
         tile_size: 32,
         max_triangles: 0,
+        max_lines: 0,
     })
     .expect("configuration saine")
 }
@@ -445,6 +447,7 @@ fn resizable() -> Context {
         height: 32,
         tile_size: 32,
         max_triangles: 0,
+        max_lines: 0,
     })
     .expect("configuration saine")
 }
@@ -521,6 +524,7 @@ fn un_contexte_redimensionne_rend_l_image_d_un_contexte_neuf() {
         height,
         tile_size: 32,
         max_triangles: 0,
+        max_lines: 0,
     })
     .expect("configuration saine");
     neuf.submit(Affine3::IDENTITY, &ahead(), &one())

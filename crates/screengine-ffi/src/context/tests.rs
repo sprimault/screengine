@@ -20,7 +20,7 @@ fn sane() -> ScgContextConfig {
         height: 360,
         tile_size: 64,
         max_triangles: 0,
-        reserved1: 0,
+        max_lines: 0,
         reserved2: 0,
     }
 }
@@ -33,32 +33,33 @@ fn convertit_une_configuration_saine() {
     assert_eq!(config.tile_size, 64);
 }
 
-/// Les deux champs encore réservés, un par un : c'est ce refus qui permettra
-/// d'en utiliser un plus tard sans casser une liaison déjà écrite, et il ne
-/// vaut que s'il couvre chacun d'eux.
+/// Le champ encore réservé : c'est ce refus qui permettra de l'utiliser plus
+/// tard sans casser une liaison déjà écrite.
+///
+/// Il n'en reste qu'un. Les deux autres ont servi comme la clause d'extension
+/// l'annonçait — `max_triangles` à l'étape 1, `max_lines` à l'étape 8 —, chaque
+/// fois sans toucher un décalage ni `SCG_ABI_VERSION`.
 #[test]
 fn refuse_un_champ_reserve_non_nul() {
-    for set in [
-        (|c: &mut ScgContextConfig| c.reserved1 = 1) as fn(&mut ScgContextConfig),
-        |c| c.reserved2 = 1,
-    ] {
-        let mut config = sane();
-        set(&mut config);
-        assert_eq!(config.to_core().unwrap_err(), AbiError::RESERVED);
-    }
+    let mut config = sane();
+    config.reserved2 = 1;
+    assert_eq!(config.to_core().unwrap_err(), AbiError::RESERVED);
 }
 
-/// Le champ qui était réservé porte désormais la capacité, et ne se refuse
-/// plus quand il est non nul.
+/// Les deux champs qui étaient réservés portent désormais une capacité, et ne
+/// se refusent plus quand ils sont non nuls.
 ///
 /// C'est l'usage prévu d'un champ réservé : un hôte de la version précédente
-/// passait zéro, et zéro reste le défaut.
+/// passait zéro, et zéro reste le défaut. Les deux sont éprouvés ensemble parce
+/// que c'est la **même clause** qui les libère — les séparer aurait donné deux
+/// tests dont la documentation se recopie, et le second n'aurait rien prouvé que
+/// le premier ne prouve.
 #[test]
-fn le_champ_de_capacite_ne_se_refuse_plus() {
+fn les_champs_liberes_portent_leur_capacite() {
     let mut config = sane();
     config.max_triangles = 1_000;
-    assert_eq!(
-        config.to_core().expect("capacité choisie").max_triangles,
-        1_000
-    );
+    config.max_lines = 128;
+    let core = config.to_core().expect("capacités choisies");
+    assert_eq!(core.max_triangles, 1_000);
+    assert_eq!(core.max_lines, 128);
 }

@@ -418,7 +418,7 @@ fn config(max_triangles: u32) -> ScgContextConfig {
         height: 64,
         tile_size: 32,
         max_triangles,
-        reserved1: 0,
+        max_lines: 0,
         reserved2: 0,
     }
 }

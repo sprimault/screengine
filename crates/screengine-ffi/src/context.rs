@@ -48,8 +48,17 @@ pub struct ScgContextConfig {
     /// zero, so a host written against that header keeps the default and needs
     /// no change; `SCG_ABI_VERSION` is unchanged.
     pub max_triangles: u32,
-    /// Reserved. Must be zero.
-    pub reserved1: u32,
+    /// Drawing primitives one frame may hold, or 0 for the default of 4096.
+    ///
+    /// Lines and points share a budget of their own, separate from
+    /// `max_triangles`: a line is not a prepared triangle, it has its own list
+    /// and its own tile binning. One line costs one slot, one point costs one
+    /// slot, and a clipped line still costs one.
+    ///
+    /// This field was reserved in ABI version 1 and reserved fields had to be
+    /// zero, so a host written against that header keeps the default and needs
+    /// no change; `SCG_ABI_VERSION` is unchanged.
+    pub max_lines: u32,
     /// Reserved. Must be zero.
     pub reserved2: u32,
 }
@@ -58,7 +67,7 @@ impl ScgContextConfig {
     /// Convertit vers la configuration du noyau, ou refuse un champ réservé non
     /// nul.
     pub(crate) fn to_core(self) -> Result<Config, AbiError> {
-        if self.reserved1 | self.reserved2 != 0 {
+        if self.reserved2 != 0 {
             return Err(AbiError::RESERVED);
         }
         Ok(Config {
@@ -68,6 +77,7 @@ impl ScgContextConfig {
             height: self.height,
             tile_size: self.tile_size,
             max_triangles: self.max_triangles,
+            max_lines: self.max_lines,
         })
     }
 }
@@ -210,7 +220,7 @@ const _: () = {
     assert!(offset_of!(ScgContextConfig, height) == 12);
     assert!(offset_of!(ScgContextConfig, tile_size) == 16);
     assert!(offset_of!(ScgContextConfig, max_triangles) == 20);
-    assert!(offset_of!(ScgContextConfig, reserved1) == 24);
+    assert!(offset_of!(ScgContextConfig, max_lines) == 24);
     assert!(offset_of!(ScgContextConfig, reserved2) == 28);
 };
 

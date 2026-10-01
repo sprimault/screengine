@@ -77,10 +77,15 @@ impl Grid {
         }
     }
 
-    /// Les tuiles que la boîte d'un triangle touche, `(colonne, ligne)` de la
-    /// première puis de la dernière, ou `None` s'il est hors de l'image.
-    fn span(&self, triangle: &Prepared) -> Option<(u32, u32, u32, u32)> {
-        let (x0, y0, x1, y1) = triangle.bounds();
+    /// Les tuiles qu'une boîte touche, `(colonne, ligne)` de la première puis de
+    /// la dernière, ou `None` si elle est hors de l'image.
+    ///
+    /// Prend la boîte et non la primitive : les triangles et les segments sont
+    /// deux familles qui ne partagent aucun type, mais leur répartition ne lit
+    /// que ces quatre entiers. Écrire deux fois le même pavage pour cela aurait
+    /// été deux fois la même occasion de se tromper d'un pixel.
+    fn span(&self, bounds: (i32, i32, i32, i32)) -> Option<(u32, u32, u32, u32)> {
+        let (x0, y0, x1, y1) = bounds;
         let x0 = x0.max(0);
         let y0 = y0.max(0);
         let x1 = x1.min(self.width as i32 - 1);
@@ -134,6 +139,21 @@ impl Bins {
     /// trop ne change rien à l'image, une tuile oubliée la trouerait dans une
     /// seule configuration.
     pub fn build(&mut self, grid: &Grid, triangles: &[Prepared]) {
+        self.build_bounds(grid, triangles.len(), |i| triangles[i].bounds());
+    }
+
+    /// Répartit `count` primitives dont `bounds` donne la boîte englobante.
+    ///
+    /// La forme générale, que [`Bins::build`] spécialise aux triangles : les
+    /// segments passent par ici avec la leur. La répartition ne lit que la
+    /// boîte, et rien de ce qui distingue les deux familles n'a sa place dans ce
+    /// pavage.
+    pub fn build_bounds<F: Fn(usize) -> (i32, i32, i32, i32)>(
+        &mut self,
+        grid: &Grid,
+        count_items: usize,
+        bounds: F,
+    ) {
         let count = grid.count() as usize;
         self.offsets.clear();
         self.offsets.resize(count + 1, 0);
@@ -144,8 +164,8 @@ impl Bins {
             (tx1 - tx0 + 1) * (ty1 - ty0 + 1) <= LARGE_TILES
         };
 
-        for (index, triangle) in triangles.iter().enumerate() {
-            let Some(span) = grid.span(triangle) else {
+        for index in 0..count_items {
+            let Some(span) = grid.span(bounds(index)) else {
                 continue;
             };
             if !small(span) {
@@ -171,8 +191,8 @@ impl Bins {
 
         // Même parcours, dans le même ordre : les références de chaque tuile
         // sortent triées par index de soumission, sans tri.
-        for (index, triangle) in triangles.iter().enumerate() {
-            let Some(span) = grid.span(triangle).filter(|span| small(*span)) else {
+        for index in 0..count_items {
+            let Some(span) = grid.span(bounds(index)).filter(|span| small(*span)) else {
                 continue;
             };
             let (tx0, ty0, tx1, ty1) = span;

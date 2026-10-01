@@ -760,6 +760,7 @@ fn la_traversee_ne_troue_pas_le_decor_de_validation() {
                 height,
                 tile_size: 64,
                 max_triangles: 0,
+                max_lines: 0,
             })
             .expect("configuration saine");
             context.set_camera(camera).expect("caméra valide");

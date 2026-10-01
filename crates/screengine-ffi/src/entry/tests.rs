@@ -21,6 +21,7 @@ fn context() -> ScgContext {
         height: 8,
         tile_size: 32,
         max_triangles: 0,
+        max_lines: 0,
     };
     ScgContext::new(Context::new(config).expect("configuration saine"))
 }

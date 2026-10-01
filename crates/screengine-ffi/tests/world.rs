@@ -196,7 +196,7 @@ fn config() -> ScgContextConfig {
         height: 64,
         tile_size: 32,
         max_triangles: 0,
-        reserved1: 0,
+        max_lines: 0,
         reserved2: 0,
     }
 }

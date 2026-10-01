@@ -118,6 +118,7 @@ impl Pass {
             height: if resized { 1 } else { max_height },
             tile_size: self.tile_size(),
             max_triangles: 0,
+            max_lines: 0,
         })?;
         if resized {
             context.set_resolution(width, height)?;

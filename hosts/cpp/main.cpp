@@ -613,8 +613,10 @@ void check_refusals()
     check(scg_create(&config, &raw) == SCG_ERR_INVALID_ARGUMENT, "taille de tuile 48 refusée");
     check(raw == nullptr, "rien n'est écrit dans le paramètre de sortie après un refus");
 
+    // Le dernier champ réservé de la configuration. Les deux autres ont servi
+    // comme la clause d'extension l'annonçait — max_triangles, puis max_lines.
     config = scene_config();
-    config.reserved1 = 1;
+    config.reserved2 = 1;
     check(scg_create(&config, &raw) == SCG_ERR_INVALID_ARGUMENT, "champ réservé non nul refusé");
 
     config = scene_config();

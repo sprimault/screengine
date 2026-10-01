@@ -286,8 +286,17 @@ typedef struct ScgContextConfig {
   // zero, so a host written against that header keeps the default and needs
   // no change; `SCG_ABI_VERSION` is unchanged.
   uint32_t max_triangles;
-  // Reserved. Must be zero.
-  uint32_t reserved1;
+  // Drawing primitives one frame may hold, or 0 for the default of 4096.
+  //
+  // Lines and points share a budget of their own, separate from
+  // `max_triangles`: a line is not a prepared triangle, it has its own list
+  // and its own tile binning. One line costs one slot, one point costs one
+  // slot, and a clipped line still costs one.
+  //
+  // This field was reserved in ABI version 1 and reserved fields had to be
+  // zero, so a host written against that header keeps the default and needs
+  // no change; `SCG_ABI_VERSION` is unchanged.
+  uint32_t max_lines;
   // Reserved. Must be zero.
   uint32_t reserved2;
 } ScgContextConfig;
@@ -1876,7 +1885,7 @@ SCREENGINE_LAYOUT_ASSERT(offsetof(ScgContextConfig, width) == 8, "width moved");
 SCREENGINE_LAYOUT_ASSERT(offsetof(ScgContextConfig, height) == 12, "height moved");
 SCREENGINE_LAYOUT_ASSERT(offsetof(ScgContextConfig, tile_size) == 16, "tile_size moved");
 SCREENGINE_LAYOUT_ASSERT(offsetof(ScgContextConfig, max_triangles) == 20, "max_triangles moved");
-SCREENGINE_LAYOUT_ASSERT(offsetof(ScgContextConfig, reserved1) == 24, "reserved1 moved");
+SCREENGINE_LAYOUT_ASSERT(offsetof(ScgContextConfig, max_lines) == 24, "max_lines moved");
 SCREENGINE_LAYOUT_ASSERT(offsetof(ScgContextConfig, reserved2) == 28, "reserved2 moved");
 SCREENGINE_LAYOUT_ASSERT(sizeof(ScgVertex) == 12, "ScgVertex changed size");
 SCREENGINE_LAYOUT_ASSERT(offsetof(ScgVertex, z) == 8, "ScgVertex.z moved");

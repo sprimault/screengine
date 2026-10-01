@@ -827,8 +827,16 @@ function checkRefusals(engine) {
   check(e.scg_create(config, out) === scg.SCG_ERR_INVALID_ARGUMENT, "taille de tuile 48 refusée");
   check(engine.readU32(out) === untouched, "rien n'est écrit dans le paramètre de sortie après un refus");
 
-  engine.writeConfig(config, { ...sceneConfig(), reserved: [0, 1, 0] });
+  // Le dernier champ réservé. Les deux précédents ont servi comme la clause
+  // d'extension l'annonçait — maxTriangles, puis maxLines.
+  engine.writeConfig(config, { ...sceneConfig(), reserved: [1] });
   check(e.scg_create(config, out) === scg.SCG_ERR_INVALID_ARGUMENT, "champ réservé non nul refusé");
+
+  // Et la capacité de tracé, elle, est acceptée non nulle : sans ce contrôle,
+  // la libération du champ se lirait comme une permission accidentelle.
+  engine.writeConfig(config, { ...sceneConfig(), maxLines: 256 });
+  check(e.scg_create(config, out) === scg.SCG_OK, "la capacité de tracé est acceptée");
+  e.scg_destroy(engine.readU32(out));
 
   engine.writeConfig(config, sceneConfig());
   check(e.scg_create(config, 0) === scg.SCG_ERR_NULL, "paramètre de sortie nul refusé");

@@ -21,10 +21,11 @@ use crate::math::projection::ClipVertex;
 use crate::math::{Affine3, Projection, Vec3};
 use crate::raster::{
     Bins, Grid, Lighting, MAX_CLIP_TRIANGLES, MODULATED, NO_LIGHTING, NO_TEXTURE, Prepared, Rect,
-    Vertex, clip, prepare, prepare_lit,
+    Segment, Vertex, clip, clip_segment, prepare, prepare_lit,
 };
 use crate::scene::{
-    Camera, Color, Light, Sprite, SpriteOrientation, Triangle, VertexUv, VertexUv2,
+    Camera, Color, DepthMode, Light, Line, Point, Sprite, SpriteOrientation, Triangle, VertexUv,
+    VertexUv2,
 };
 use crate::texture::{Filter, Texture};
 use crate::world::atlas::GUTTER;
@@ -55,6 +56,14 @@ pub const BYTES_PER_PIXEL: usize = 4;
 ///
 /// La capacité de triangles par défaut, quand la configuration passe zéro.
 pub const TRIANGLE_CAPACITY: usize = 16_384;
+
+/// Les primitives de tracé qu'une image peut recevoir.
+///
+/// La capacité par défaut, quand la configuration passe zéro. Quatre fois moins
+/// que les triangles : un éditeur trace des repères et des arêtes sélectionnées,
+/// pas un décor, et une cellule de cinquante surfaces n'en demande que quelques
+/// centaines.
+pub const LINE_CAPACITY: usize = 4_096;
 
 /// Le noir opaque dont chaque image part.
 const CLEAR_COLOR: u32 = OPAQUE;
@@ -116,6 +125,17 @@ pub struct Config {
     /// le plan proche en produit jusqu'à six, et c'est l'appel qui déborde qui
     /// est refusé, jamais une image entière déjà soumise.
     pub max_triangles: u32,
+    /// Primitives de tracé qu'une image peut recevoir, ou `0` pour
+    /// [`LINE_CAPACITY`].
+    ///
+    /// Un budget à part et non une part de `max_triangles` : une ligne n'est
+    /// pas un triangle préparé, elle a sa propre liste et sa propre
+    /// répartition. Les faire tenir dans le même budget obligerait un hôte à
+    /// réserver pour le pire des deux, et un éditeur qui trace mille repères
+    /// viderait la capacité de son décor sans comprendre pourquoi.
+    ///
+    /// Un point consomme une place, une ligne aussi.
+    pub max_lines: u32,
 }
 
 impl Config {
@@ -142,6 +162,15 @@ impl Config {
             TRIANGLE_CAPACITY
         } else {
             self.max_triangles as usize
+        }
+    }
+
+    /// La capacité de primitives de tracé effective, `0` valant le défaut.
+    fn line_capacity(&self) -> usize {
+        if self.max_lines == 0 {
+            LINE_CAPACITY
+        } else {
+            self.max_lines as usize
         }
     }
 }
@@ -177,6 +206,14 @@ pub struct Context {
     /// d'image est exactement ce que le moteur s'interdit.
     lighting: Vec<Lighting>,
     bins: Bins,
+    /// Les primitives de tracé de l'image en cours, dans l'ordre de soumission.
+    ///
+    /// Une seconde liste et non des entrées de la première : une ligne n'a ni
+    /// couverture d'aire, ni plans d'attributs, ni texture, et le triangle
+    /// préparé est plein à ses deux lignes de cache.
+    segments: Vec<Segment>,
+    /// La répartition des segments par tuile, parallèle à [`Context::bins`].
+    segment_bins: Bins,
     /// Vrai pour chaque tuile déjà prise dans l'image en cours.
     ///
     /// Atomique parce que des tuiles distinctes se rendent depuis des threads
@@ -363,6 +400,7 @@ impl Context {
 
         let camera = Camera::DEFAULT;
         let capacity = config.capacity();
+        let lines = config.line_capacity();
         Ok(Self {
             config,
             width: config.width,
@@ -371,6 +409,8 @@ impl Context {
             textures: reserved(texture_capacity(capacity))?,
             lighting: reserved(lighting_capacity(capacity))?,
             bins: Bins::new(tiles as usize, capacity)?,
+            segments: reserved(lines)?,
+            segment_bins: Bins::new(tiles as usize, lines)?,
             taken,
             grid: Grid::new(config.width, config.height, config.tile_size),
             camera,
@@ -712,6 +752,7 @@ impl Context {
     fn drop_closed_frame(&mut self) {
         if *self.stale.get_mut() {
             self.triangles.clear();
+            self.segments.clear();
             self.lighting.clear();
             // Les textures meurent avec les triangles qui les référencent :
             // les garder ferait vivre une ressource que plus rien ne dessine.
@@ -737,7 +778,10 @@ impl Context {
     /// dans l'image, donc rien à mêler.
     fn require_empty_frame(&mut self) -> Result<()> {
         self.drop_closed_frame();
-        if self.triangles.is_empty() {
+        // Les segments comptent autant que les triangles : ils sont projetés à
+        // la soumission eux aussi, donc une caméra changée après eux laisserait
+        // deux espaces écran dans la même image.
+        if self.triangles.is_empty() && self.segments.is_empty() {
             Ok(())
         } else {
             Err(Error::InvalidState)
@@ -762,6 +806,12 @@ impl Context {
     fn seal(&mut self) {
         self.grid = Grid::new(self.width, self.height, self.config.tile_size);
         self.bins.build(&self.grid, &self.triangles);
+        // Les segments se répartissent dans la même phase et par le même
+        // pavage : ils sont dessinés après les triangles dans chaque tuile, et
+        // leur ordre de soumission est contractuel comme le leur.
+        let segments = &self.segments;
+        self.segment_bins
+            .build_bounds(&self.grid, segments.len(), |i| segments[i].bounds());
         for flag in &mut self.taken[..self.grid.count() as usize] {
             *flag.get_mut() = false;
         }
@@ -1834,6 +1884,130 @@ impl Context {
     ///
     /// Un sommet qu'on ne peut pas projeter fait disparaître le triangle sans
     /// erreur : c'est une donnée, pas un défaut du moteur.
+    /// Soumet des lignes, dans le repère que `model` porte.
+    ///
+    /// **Le lot est accepté ou refusé en entier**, comme tout lot : une
+    /// coordonnée non finie ou un dépassement de capacité le rejette sans rien
+    /// laisser dans l'image. Une ligne qui ne se projette pas — derrière le plan
+    /// proche, hors de la bande de garde — disparaît sans erreur : c'est une
+    /// donnée.
+    ///
+    /// Un segment découpé reste un segment : il consomme une place, et une
+    /// seule, ce qui rend la capacité lisible pour l'appelant — contrairement
+    /// aux triangles, dont le découpage multiplie les places consommées.
+    pub fn submit_lines(&mut self, model: Affine3, lines: &[Line], depth: DepthMode) -> Result<()> {
+        self.submit_segments(model, lines.len(), depth, |i| {
+            let line = &lines[i];
+            (line.a, line.b, line.color)
+        })
+    }
+
+    /// Soumet des points, dans le repère que `model` porte.
+    ///
+    /// Un point est un segment de longueur nulle du côté de l'hôte, mais pas du
+    /// côté du tracé : la règle du losange n'allumerait rien pour lui. Il est
+    /// donc porté jusqu'au pixel qui le contient par un chemin à lui, et c'est
+    /// la seule chose qui distingue les deux soumissions.
+    pub fn submit_points(
+        &mut self,
+        model: Affine3,
+        points: &[Point],
+        depth: DepthMode,
+    ) -> Result<()> {
+        self.submit_segments(model, points.len(), depth, |i| {
+            let point = &points[i];
+            (point.at, point.at, point.color)
+        })
+    }
+
+    /// Le corps commun des deux soumissions de tracé.
+    ///
+    /// Un point arrive ici avec ses deux extrémités confondues, ce que la
+    /// préparation reconnaît et traite à part.
+    fn submit_segments<F>(
+        &mut self,
+        model: Affine3,
+        count: usize,
+        depth: DepthMode,
+        read: F,
+    ) -> Result<()>
+    where
+        F: Fn(usize) -> (Vec3, Vec3, Color),
+    {
+        if *self.state.get_mut() != RECORDING {
+            return Err(Error::InvalidState);
+        }
+        self.drop_closed_frame();
+
+        let mark = self.segments.len();
+        let transform = self.view.product(model);
+        for i in 0..count {
+            let (a, b, color) = read(i);
+            // Avant la transformation, comme pour un sommet de triangle : c'est
+            // la valeur écrite par l'hôte qu'on refuse, pas ce que la caméra en
+            // fait.
+            if [a, b]
+                .iter()
+                .any(|p| !p.x.is_finite() || !p.y.is_finite() || !p.z.is_finite())
+            {
+                self.segments.truncate(mark);
+                return Err(Error::InvalidArgument(Argument::VertexCoordinate));
+            }
+            if let Err(error) = self.push_segment(transform, a, b, color, depth) {
+                self.segments.truncate(mark);
+                return Err(error);
+            }
+        }
+        Ok(())
+    }
+
+    /// Projette un segment et le retient, ou ne retient rien s'il sort du tronc.
+    fn push_segment(
+        &mut self,
+        transform: Affine3,
+        a: Vec3,
+        b: Vec3,
+        color: Color,
+        depth: DepthMode,
+    ) -> Result<()> {
+        let point = a == b;
+        let to_clip = |p: Vec3| {
+            self.projection
+                .to_clip(transform.transform_point(p), 0.0, 0.0, 0.0, 0.0, [0.0; 3])
+        };
+        let (Some(ca), Some(cb)) = (to_clip(a), to_clip(b)) else {
+            return Ok(());
+        };
+        let Some((ca, cb)) = clip_segment(ca, cb, self.projection.frustum()) else {
+            return Ok(());
+        };
+
+        let (pa, pb) = (self.projection.to_vertex(ca), self.projection.to_vertex(cb));
+        // Un point se trace comme un segment d'un seizième de pixel partant de
+        // lui : la règle du losange allume alors exactement le pixel qui le
+        // contient, et un seul. Écarté : un chemin de couverture à part, qui
+        // aurait été une seconde règle à tenir d'accord avec la première.
+        let (x1, y1) = if point {
+            (pa.x + 1, pa.y)
+        } else {
+            (pb.x, pb.y)
+        };
+        if self.segments.len() >= self.config.line_capacity() {
+            return Err(Error::InvalidArgument(Argument::LineCapacity));
+        }
+        self.segments.push(Segment {
+            x0: pa.x,
+            y0: pa.y,
+            z0: pa.z,
+            x1,
+            y1,
+            z1: pb.z,
+            color: color.packed(),
+            tested: depth == DepthMode::Tested,
+        });
+        Ok(())
+    }
+
     fn submit_view(
         &mut self,
         view: [ClipSource; 3],

@@ -323,5 +323,51 @@ pub struct Sprite {
     pub color: Color,
 }
 
+/// Ce que le tracé fait de la profondeur.
+///
+/// Un paramètre de soumission et non un réglage du contexte : une image
+/// d'éditeur porte dans la même vue des arêtes occultées par le décor et des
+/// repères visibles à travers. Un réglage vaudrait pour l'image entière, ce qui
+/// est l'inverse du besoin.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DepthMode {
+    /// Le tracé est occulté par ce qui est devant lui.
+    Tested,
+    /// Le tracé se voit à travers le décor.
+    Always,
+}
+
+/// Une ligne à tracer, dans le repère de l'objet.
+///
+/// **Une seconde famille de primitives, pas un triangle dégénéré** : une ligne
+/// n'a pas de couverture d'aire, donc rien de ce que les fonctions de bord
+/// décident ne s'applique à elle, et sa couverture suit la règle de sortie du
+/// losange.
+///
+/// Les coordonnées sont celles du monde, jamais de l'écran : un rectangle de
+/// sélection ou une barre de vie se dessinent par l'hôte dans son propre tampon,
+/// après la fin de l'image.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Line {
+    /// La première extrémité.
+    pub a: Vec3,
+    /// La seconde.
+    pub b: Vec3,
+    /// La couleur du trait, écrite telle quelle, sans mélange.
+    pub color: Color,
+}
+
+/// Un point à tracer, dans le repère de l'objet.
+///
+/// Il allume le pixel qui le contient, et un seul : l'épaisseur est écartée pour
+/// la ligne, elle l'est aussi ici.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Point {
+    /// La position.
+    pub at: Vec3,
+    /// La couleur, écrite telle quelle.
+    pub color: Color,
+}
+
 #[cfg(test)]
 mod tests;

@@ -64,6 +64,9 @@ impl fmt::Display for Error {
                 Argument::TriangleCapacity => {
                     f.write_str("more triangles submitted than the engine reserved")
                 }
+                Argument::LineCapacity => {
+                    f.write_str("more drawing primitives submitted than the engine reserved")
+                }
                 Argument::VertexIndex => {
                     f.write_str("a triangle indexes a vertex beyond its batch")
                 }

@@ -78,6 +78,7 @@ fn chaque_argument_refuse_a_son_message() {
         Argument::Region,
         Argument::ScratchLength,
         Argument::TriangleCapacity,
+        Argument::LineCapacity,
         Argument::VertexIndex,
         Argument::Projection,
         Argument::VertexCoordinate,
@@ -116,25 +117,26 @@ fn chaque_argument_refuse_a_son_message() {
         Argument::Region => 5,
         Argument::ScratchLength => 6,
         Argument::TriangleCapacity => 7,
-        Argument::VertexIndex => 8,
-        Argument::Projection => 9,
-        Argument::VertexCoordinate => 10,
-        Argument::TextureCapacity => 11,
-        Argument::TextureCoordinate => 12,
-        Argument::TextureSize => 13,
-        Argument::TextureLength => 14,
-        Argument::Overbright => 15,
-        Argument::Fog => 16,
-        Argument::LightCapacity => 17,
-        Argument::Light => 18,
-        Argument::Grade => 19,
-        Argument::FrameIndex => 20,
-        Argument::FrameFactor => 21,
+        Argument::LineCapacity => 8,
+        Argument::VertexIndex => 9,
+        Argument::Projection => 10,
+        Argument::VertexCoordinate => 11,
+        Argument::TextureCapacity => 12,
+        Argument::TextureCoordinate => 13,
+        Argument::TextureSize => 14,
+        Argument::TextureLength => 15,
+        Argument::Overbright => 16,
+        Argument::Fog => 17,
+        Argument::LightCapacity => 18,
+        Argument::Light => 19,
+        Argument::Grade => 20,
+        Argument::FrameIndex => 21,
+        Argument::FrameFactor => 22,
     };
     for (i, a) in arguments.iter().enumerate() {
         assert_eq!(rank(*a), i, "{a:?} n'est pas à sa place");
     }
-    assert_eq!(arguments.len(), 22, "une variante manque à la liste");
+    assert_eq!(arguments.len(), 23, "une variante manque à la liste");
 }
 
 /// Même règle pour un bloc refusé : un seul code, et un message par cause.

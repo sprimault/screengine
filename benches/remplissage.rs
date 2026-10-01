@@ -97,6 +97,7 @@ fn contexte() -> Context {
         height: HEIGHT,
         tile_size: 64,
         max_triangles: 0,
+        max_lines: 0,
     })
     .expect("configuration valide")
 }

@@ -53,7 +53,7 @@ SCREENGINE_LAYOUT_ASSERT(offsetof(ScgContextConfig, width) == 8, "width moved");
 SCREENGINE_LAYOUT_ASSERT(offsetof(ScgContextConfig, height) == 12, "height moved");
 SCREENGINE_LAYOUT_ASSERT(offsetof(ScgContextConfig, tile_size) == 16, "tile_size moved");
 SCREENGINE_LAYOUT_ASSERT(offsetof(ScgContextConfig, max_triangles) == 20, "max_triangles moved");
-SCREENGINE_LAYOUT_ASSERT(offsetof(ScgContextConfig, reserved1) == 24, "reserved1 moved");
+SCREENGINE_LAYOUT_ASSERT(offsetof(ScgContextConfig, max_lines) == 24, "max_lines moved");
 SCREENGINE_LAYOUT_ASSERT(offsetof(ScgContextConfig, reserved2) == 28, "reserved2 moved");
 SCREENGINE_LAYOUT_ASSERT(sizeof(ScgVertex) == 12, "ScgVertex changed size");
 SCREENGINE_LAYOUT_ASSERT(offsetof(ScgVertex, z) == 8, "ScgVertex.z moved");

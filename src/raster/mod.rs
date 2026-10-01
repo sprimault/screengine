@@ -10,11 +10,13 @@
 
 mod bins;
 mod clip;
+mod line;
 mod plane;
 mod triangle;
 
 pub use bins::{Bins, Grid};
 pub use clip::{MAX_CLIP_TRIANGLES, clip};
+pub use line::{Segment, clip_segment, cover};
 pub(crate) use triangle::DITHER;
 pub use triangle::{
     Lighting, Lit, MODULATED, NO_LIGHTING, NO_TEXTURE, Prepared, Sampling, Vertex, fill, prepare,

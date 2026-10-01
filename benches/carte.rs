@@ -136,6 +136,7 @@ fn scene() -> (Context, Vec<u8>, std::sync::Arc<Texture>) {
         height: HEIGHT,
         tile_size: 64,
         max_triangles: 0,
+        max_lines: 0,
     })
     .expect("configuration valide");
     let pixels = vec![0u8; WIDTH as usize * HEIGHT as usize * BYTES_PER_PIXEL];

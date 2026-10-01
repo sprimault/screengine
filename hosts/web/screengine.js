@@ -296,7 +296,8 @@ const BYTE = Array.from({ length: 256 }, (_, i) => BigInt(i));
  * @property {number} height hauteur initiale
  * @property {number} tileSize côté de tuile, 32 ou 64
  * @property {number} [maxTriangles] triangles préparés par image, 0 pour le défaut
- * @property {number[]} [reserved] les deux champs réservés, nuls par défaut
+ * @property {number} [maxLines] primitives de tracé par image, 0 pour le défaut
+ * @property {number[]} [reserved] le champ encore réservé, nul par défaut
  */
 
 /** Une instance du module et l'accès à sa mémoire. */
@@ -382,7 +383,10 @@ export class Screengine {
    */
   writeConfig(ptr, config) {
     const view = new DataView(this.memory.buffer, ptr, CONFIG_SIZE);
-    const reserved = config.reserved ?? [0, 0];
+    // Un seul champ réservé depuis l'étape 8 : celui qui le précédait est
+    // devenu `max_lines`, la capacité de tracé, comme celui d'avant était
+    // devenu `max_triangles`.
+    const reserved = config.reserved ?? [0];
     new Uint8Array(this.memory.buffer, ptr, CONFIG_SIZE).fill(0);
     view.setUint32(0, config.maxWidth, true);
     view.setUint32(4, config.maxHeight, true);
@@ -390,8 +394,8 @@ export class Screengine {
     view.setUint32(12, config.height, true);
     view.setUint32(16, config.tileSize, true);
     view.setUint32(20, config.maxTriangles ?? 0, true);
-    view.setUint32(24, reserved[0], true);
-    view.setUint32(28, reserved[1], true);
+    view.setUint32(24, config.maxLines ?? 0, true);
+    view.setUint32(28, reserved[0], true);
   }
 
   /**

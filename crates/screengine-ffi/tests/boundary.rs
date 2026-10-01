@@ -22,7 +22,7 @@ fn sane() -> ScgContextConfig {
         height: 32,
         tile_size: 32,
         max_triangles: 0,
-        reserved1: 0,
+        max_lines: 0,
         reserved2: 0,
     }
 }
@@ -117,25 +117,19 @@ fn refuse_une_configuration_invalide_et_dit_pourquoi() {
 /// sens, puisqu'il ne sert qu'aux liaisons qui écrivent la structure elles-mêmes.
 #[test]
 fn refuse_un_champ_reserve_non_nul() {
-    // Les deux, séparément : un contrôle écrit sur un seul champ laisse passer
-    // celui qu'on ajoute à l'autre, et c'est précisément le champ qu'un hôte
-    // écrit par erreur qui n'est pas celui que le test a choisi.
-    for (quoi, modifier) in [
-        (
-            "reserved1",
-            (|c: &mut ScgContextConfig| c.reserved1 = 1) as fn(&mut _),
-        ),
-        ("reserved2", |c: &mut ScgContextConfig| c.reserved2 = 1),
-    ] {
-        let mut config = sane();
-        modifier(&mut config);
+    // Il n'en reste qu'un : `reserved1` est devenu `max_lines` à l'étape 8,
+    // comme le premier était devenu `max_triangles` à l'étape 1. Le refus reste
+    // écrit pour le dernier, et c'est lui qui permettra de l'employer à son tour
+    // sans casser une liaison déjà écrite. La boucle qui parcourait les champs a
+    // disparu avec l'avant-dernier : elle n'aurait plus qu'un tour.
+    let mut config = sane();
+    config.reserved2 = 1;
 
-        let mut ctx = ptr::null_mut();
-        // SAFETY: les deux pointeurs visent des valeurs locales vivantes.
-        let code = unsafe { scg_create(&config, &mut ctx) };
-        assert_eq!(code, SCG_ERR_INVALID_ARGUMENT, "{quoi}");
-        assert_eq!(last_error(ptr::null()), "reserved fields must be zero");
-    }
+    let mut ctx = ptr::null_mut();
+    // SAFETY: les deux pointeurs visent des valeurs locales vivantes.
+    let code = unsafe { scg_create(&config, &mut ctx) };
+    assert_eq!(code, SCG_ERR_INVALID_ARGUMENT);
+    assert_eq!(last_error(ptr::null()), "reserved fields must be zero");
 }
 
 /// Un handle nul sur une fonction qui prend aussi un tampon : le contexte se

@@ -53,7 +53,7 @@ static jint create(JNIEnv *env, jclass cls, jintArray config, jlongArray out)
         fields.height = (uint32_t)values[3];
         fields.tile_size = (uint32_t)values[4];
         fields.max_triangles = (uint32_t)values[5];
-        fields.reserved1 = (uint32_t)values[6];
+        fields.max_lines = (uint32_t)values[6];
         fields.reserved2 = (uint32_t)values[7];
         config_ptr = &fields;
     }
