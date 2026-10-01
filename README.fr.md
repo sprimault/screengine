@@ -48,11 +48,13 @@ Windows, dans un navigateur et sur un téléphone.
 
 ## État
 
-**Étape 7 franchie, publiée en 0.7.0 : la collision.** Une boîte se balaie contre
-les cellules d'une carte et rend le temps de l'impact, sa normale et la surface
-touchée, **sans contexte de rendu**. La réponse appartient à l'hôte, comme tout
-ce qui n'est pas de la géométrie de cellule. Un cinquième hôte arrive avec
-l'étape, en Go.
+**Étape 8 franchie, publiée en 0.8.0 : ce qu'il faut pour éditer.** Le moteur
+n'a pas d'éditeur ; il expose ce qu'un éditeur réclame. Des lignes et des points
+se tracent dans le tampon, occultés par le décor ou visibles à travers, en
+coordonnées de monde — pour des repères et une sélection, jamais pour un HUD. Un
+rayon interroge la scène et rend la surface touchée, les surfaces non solides
+comprises. Et modifier une carte, c'est la remplacer entière : aucune fonction
+pour cela, et `ScgWorld` reste immuable.
 
 La feuille de route compte dix étapes, publiées à chacune.
 

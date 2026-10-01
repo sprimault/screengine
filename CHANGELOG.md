@@ -46,19 +46,70 @@ publié, et explique les conventions du dépôt à qui y contribue.
 
 ## [Non publié]
 
+## [0.8.0] — 2026-10-01 — Ce qu'il faut pour éditer
+
+**Rien à reprendre pour une liaison existante.** `SCG_ABI_VERSION` reste à 1,
+trois fonctions s'ajoutent, et `max_lines` prend un champ réservé de
+`ScgContextConfig` sans déplacer un décalage. Le format des cartes et des
+maillages ne bouge pas, et aucune empreinte de conformance n'a changé.
+
 ### Ajouté
-- **Le contrat de l'étape 8 est figé** dans `docs/abi.md` : tracé de lignes et de
-  points, interrogation de la scène par le rayon, et la modification d'une carte,
-  qui n'ajoute aucune fonction. `max_lines` prend le second champ réservé de
-  `ScgContextConfig`, sans toucher un décalage ni `SCG_ABI_VERSION`.
+- **Le tracé de lignes et de points**, `scg_submit_lines` et
+  `scg_submit_points`, avec deux modes de profondeur par lot : occulté par le
+  décor, ou visible à travers. En coordonnées de monde — le tracé existe pour un
+  éditeur, pas pour un HUD.
+- **L'interrogation de la scène par un rayon**, `scg_world_pick`. Son filtre voit
+  aussi les surfaces **non solides** — grille, vitre, volume de déclenchement —,
+  que la collision traverse et qu'un éditeur doit pouvoir désigner.
+- **`max_lines`**, le budget du tracé, dans un champ réservé de
+  `ScgContextConfig`. Zéro vaut le défaut.
+- **`docs/cartes.md`** : comment écrire un décor, que rien ne disait.
+
+### Modifié
+- **Modifier une carte, c'est la remplacer entière** : charger à côté, basculer,
+  détruire l'ancienne. Aucune fonction pour cela, et `ScgWorld` reste immuable —
+  donc le balayage concurrent acquis en 0.7.0.
+- **`scg_world_surface_material` répond par recherche dichotomique** là où elle
+  parcourait la carte entière.
+
+### Corrigé
+- **L'exemple `hello` rendait une fenêtre noire** : son triangle était décrit à
+  l'envers. Les deux `README` portaient le même code.
+- **`Line`, `Point`, `DepthMode`, `Hit` et `Surfaces` manquaient aux réexports de
+  `screengine-play`** : publiques, et pourtant inappelables de l'extérieur.
 
 ***
 
+## [0.8.0] — 2026-10-01 — What editing needs
+
+**Nothing for an existing binding to revisit.** `SCG_ABI_VERSION` stays at 1,
+three functions are added, and `max_lines` takes a reserved field of
+`ScgContextConfig` without moving an offset. The map and mesh formats are
+unchanged, and no conformance fingerprint moved.
+
 ### Added
-- **The step 8 contract is frozen** in `docs/abi.md`: line and point drawing,
-  scene picking by ray, and map modification, which adds no function.
-  `max_lines` takes the second reserved field of `ScgContextConfig`, moving no
-  offset and leaving `SCG_ABI_VERSION` alone.
+- **Line and point drawing**, `scg_submit_lines` and `scg_submit_points`, with
+  two depth modes per batch: occluded by the scenery, or visible through it. In
+  world coordinates — drawing exists for an editor, not for a HUD.
+- **Scene picking by ray**, `scg_world_pick`. Its filter also sees surfaces
+  flagged **non-solid** — a grate, a pane, a trigger volume — which collision
+  passes through and which an editor must be able to select.
+- **`max_lines`**, the drawing budget, in a reserved field of
+  `ScgContextConfig`. Zero means the default.
+- **`docs/cartes.md`** (French): how to author a level, which nothing stated.
+
+### Changed
+- **Modifying a map means replacing it whole**: load alongside, switch, destroy
+  the old one. No function for it, and `ScgWorld` stays immutable — so does the
+  concurrent sweeping gained in 0.7.0.
+- **`scg_world_surface_material` answers by binary search** where it scanned the
+  whole map.
+
+### Fixed
+- **The `hello` example rendered a black window**: its triangle was wound
+  backwards. Both `README` files carried the same code.
+- **`Line`, `Point`, `DepthMode`, `Hit` and `Surfaces` were missing from
+  `screengine-play`'s re-exports**: public, yet uncallable from outside.
 
 ## [0.7.0] — 2026-09-30 — Collision
 

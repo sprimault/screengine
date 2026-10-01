@@ -337,6 +337,8 @@ Les raisons sont dans `docs/abi.md`.
 
 L'éditeur lui-même vit dans un hôte, jamais ici.
 
+**Franchie, publiée en 0.8.0.**
+
 ## 9 — SIMD
 
 NEON, SSE/AVX, `simd128`, sélectionnés à l'exécution. Rendu des tuiles en
