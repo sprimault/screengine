@@ -27,7 +27,44 @@ fn segment(x0: i32, y0: i32, x1: i32, y1: i32) -> Segment {
         z1: 1 << 31,
         color: 0x00FF_FFFF,
         tested: false,
+        point: false,
     }
+}
+
+/// Un point de la boîte d'épreuve, aux coordonnées données en sous-pixels.
+fn point_at(x: i32, y: i32) -> Segment {
+    Segment {
+        point: true,
+        ..segment(x, y, x, y)
+    }
+}
+
+/// **Un point allume le pixel qui le contient**, et un seul.
+///
+/// Il ne passe pas par la règle du losange, et c'est le seul endroit où les deux
+/// familles divergent : un segment assez court pour tenir dans un pixel n'en
+/// sort jamais, donc n'allumerait rien. La première écriture faisait exactement
+/// cela, et la scène de conformance du tracé l'a montré.
+#[test]
+fn un_point_allume_le_pixel_qui_le_contient() {
+    // Au centre du pixel (3, 2), puis dans son coin : les deux doivent allumer
+    // le même pixel, ce qu'un parcours de segment ne garantirait pas.
+    for (x, y) in [(3 * 16 + 8, 2 * 16 + 8), (3 * 16 + 1, 2 * 16 + 15)] {
+        let pixels = fast(&point_at(x, y), window());
+        assert_eq!(pixels, [(3, 2)], "point en sous-pixels ({x}, {y})");
+    }
+}
+
+/// Un point hors de la fenêtre n'allume rien, et ne déborde d'aucun tableau.
+#[test]
+fn un_point_hors_fenetre_n_allume_rien() {
+    let dehors = Rect {
+        x: 10,
+        y: 10,
+        width: 4,
+        height: 4,
+    };
+    assert!(fast(&point_at(3 * 16 + 8, 2 * 16 + 8), dehors).is_empty());
 }
 
 /// Une fenêtre qui contient tout ce que les épreuves tracent.
