@@ -36,13 +36,13 @@ use crate::hash;
 /// de celles des cinq hôtes, qui hachent l'entier que la frontière leur rend
 /// sans le traduire. C'est ce qui leur épargne un branchement, et ce qui rend la
 /// recopie détectable au lieu d'être silencieuse.
-const STATUS_OK: u8 = 0;
+pub const STATUS_OK: u8 = 0;
 /// La région examinée a été tronquée par la borne de cellules.
-const STATUS_INCOMPLETE: u8 = 1;
+pub const STATUS_INCOMPLETE: u8 = 1;
 /// Le départ n'était dans aucune cellule.
-const STATUS_NO_CELL: u8 = 2;
+pub const STATUS_NO_CELL: u8 = 2;
 /// La boîte partait dans le solide.
-const STATUS_START_SOLID: u8 = 3;
+pub const STATUS_START_SOLID: u8 = 3;
 
 /// Le pas du treillis de départs, en unités de monde.
 const STEP: f32 = 2.0;
@@ -61,7 +61,7 @@ const INSET: f32 = 1.0;
 ///
 /// Assez pour traverser le couloir de part en part depuis la salle, ce qui est le
 /// seul cas où la traversée franchit un portail.
-const REACH: f32 = 10.0;
+pub const REACH: f32 = 10.0;
 
 /// Les demi-étendues des deux boîtes d'épreuve.
 ///
@@ -81,7 +81,7 @@ const HALVES: [f32; 2] = [0.45, 0.55];
 /// Les six axes, puis les quatre diagonales horizontales : ce sont elles qui font
 /// travailler les prismes d'arêtes, qu'un balayage aligné sur un axe ne rencontre
 /// jamais de biais.
-const DIRECTIONS: [[f32; 3]; 10] = [
+pub const DIRECTIONS: [[f32; 3]; 10] = [
     [1.0, 0.0, 0.0],
     [-1.0, 0.0, 0.0],
     [0.0, 1.0, 0.0],
@@ -109,21 +109,7 @@ pub struct Sweep {
 /// L'ordre est contractuel : c'est lui qui fait qu'une empreinte se compare, et
 /// le changer déplacerait la référence sans que rien n'ait bougé du moteur.
 pub fn all() -> Vec<Sweep> {
-    let mut starts = Vec::new();
-    // **Un treillis par cellule, dans sa propre boîte englobante**, plutôt qu'un
-    // treillis unique sur le décor entier : le couloir ne fait qu'une unité de
-    // large, et un pas de deux unités sur une boîte commune ne serait jamais
-    // tombé dedans. La règle suit la carte, et les deux ne peuvent pas dériver.
-    for footprint in [&collision_file::ROOM[..], &collision_file::CORRIDOR[..]] {
-        let (low, high) = bounds(footprint);
-        for z in axis(collision_file::FLOOR_Z, collision_file::CEILING_Z) {
-            for y in axis(low[1], high[1]) {
-                for x in axis(low[0], high[0]) {
-                    starts.push(Vec3::new(x, y, z));
-                }
-            }
-        }
-    }
+    let starts = starts();
 
     let mut sweeps = Vec::new();
     for half in HALVES {
@@ -143,6 +129,32 @@ pub fn all() -> Vec<Sweep> {
         }
     }
     sweeps
+}
+
+/// Les départs du treillis, partagés avec la scène d'interrogation.
+///
+/// **Le même treillis pour les deux scènes**, et non deux règles voisines : ce
+/// qui fait l'intérêt de ces départs — ils tombent dans les cellules et non dans
+/// les murs — vaut autant pour un rayon que pour une boîte, et deux règles à
+/// tenir d'accord auraient fini par diverger sur le décalage d'un demi-pas, qui
+/// est précisément ce qui décide de leur utilité.
+pub fn starts() -> Vec<Vec3> {
+    let mut starts = Vec::new();
+    // **Un treillis par cellule, dans sa propre boîte englobante**, plutôt qu'un
+    // treillis unique sur le décor entier : le couloir ne fait qu'une unité de
+    // large, et un pas de deux unités sur une boîte commune ne serait jamais
+    // tombé dedans. La règle suit la carte, et les deux ne peuvent pas dériver.
+    for footprint in [&collision_file::ROOM[..], &collision_file::CORRIDOR[..]] {
+        let (low, high) = bounds(footprint);
+        for z in axis(collision_file::FLOOR_Z, collision_file::CEILING_Z) {
+            for y in axis(low[1], high[1]) {
+                for x in axis(low[0], high[0]) {
+                    starts.push(Vec3::new(x, y, z));
+                }
+            }
+        }
+    }
+    starts
 }
 
 /// La magie du fichier de balayages, en tête de celui-ci.

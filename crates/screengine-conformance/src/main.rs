@@ -17,6 +17,7 @@
 //! le chemin Rust natif auquel les hôtes comparent la leur.
 
 mod hash;
+mod picks;
 mod sweeps;
 
 use std::path::{Path, PathBuf};
@@ -241,6 +242,12 @@ enum Mode {
     /// prouverait qu'ils l'ont tous reporté juste au lieu de prouver ce qu'elle
     /// existe pour prouver.
     Sweeps(PathBuf),
+    /// Écrit la liste des rayons d'interrogation à ce chemin.
+    ///
+    /// Le pendant du précédent pour l'étape 8, et il porte la question de la
+    /// même façon : les rayons et leur filtre, que les hôtes rejouent sans
+    /// réengendrer le treillis.
+    Picks(PathBuf),
 }
 
 /// Les scènes que la suite sait rendre.
@@ -573,6 +580,17 @@ enum Scene {
     /// mode occulté ne se distinguerait pas du mode à travers, et la moitié de
     /// ce que la scène fige ne serait pas figée.
     Trace,
+    /// **L'interrogation par rayon**, sur le décor de la collision.
+    ///
+    /// La seconde scène qui ne rend aucune image, et elle reprend tout de la
+    /// première : le même décor, le même treillis de départs, les mêmes
+    /// directions. Ce qu'elle ajoute est le **filtre** — chaque rayon est joué
+    /// une fois contre les surfaces solides, une fois contre toutes —, et c'est
+    /// la seule chose qui sépare un rayon d'un balayage d'étendue nulle.
+    ///
+    /// Elle joue chaque rayon **deux fois**, par la traversée et par la force
+    /// brute, et exige les mêmes bits : le théorème de l'étape 7 transposé.
+    Selection,
 }
 
 /// La matrice qui place la caisse : deux rotations composées, puis cinq unités
@@ -987,9 +1005,22 @@ impl View {
     }
 }
 
+/// Ce qu'une scène d'interrogation sait produire : une empreinte, et le texte
+/// qui tient lieu d'image.
+///
+/// Des pointeurs de fonction et non des résultats déjà calculés : savoir qu'une
+/// scène interroge le moteur se demande à plusieurs endroits, et ne doit pas
+/// coûter huit cents rayons.
+struct Query {
+    /// L'empreinte que la référence versionnée fige.
+    digest: fn() -> Result<u64, String>,
+    /// Le rapport texte, un résultat par ligne.
+    report: fn() -> Result<String, String>,
+}
+
 impl Scene {
     /// Toutes les scènes, dans l'ordre où `--check` les rejoue.
-    const ALL: [Self; 28] = [
+    const ALL: [Self; 29] = [
         Self::Edge,
         Self::Guard,
         Self::Lateral,
@@ -1017,6 +1048,7 @@ impl Scene {
         Self::Rooms,
         Self::Collision,
         Self::Trace,
+        Self::Selection,
         Self::Composite,
     ];
 
@@ -1071,18 +1103,34 @@ impl Scene {
             Self::Rooms => "salles",
             Self::Collision => "collision",
             Self::Trace => "trace",
+            Self::Selection => "selection",
         }
     }
 
-    /// Vrai si la scène interroge le moteur au lieu de lui faire rendre une
-    /// image.
+    /// Ce que la scène interroge, ou `None` quand elle fait rendre une image.
     ///
-    /// Les six passes de découpage n'ont alors pas d'objet : il n'y a ni tuile, ni
-    /// résolution, ni tampon. Une scène d'interrogation calcule son empreinte une
-    /// fois, et tout le reste de la mécanique — le fichier de référence, la
+    /// Les six passes de découpage n'ont alors pas d'objet : il n'y a ni tuile,
+    /// ni résolution, ni tampon. Une scène d'interrogation calcule son empreinte
+    /// une fois, et tout le reste de la mécanique — le fichier de référence, la
     /// comparaison octet pour octet, le message d'écart — lui sert tel quel.
-    fn is_query(self) -> bool {
-        matches!(self, Self::Collision)
+    ///
+    /// **Le branchement vit ici et nulle part ailleurs.** Il était écrit quatre
+    /// fois en appelant `sweeps` en dur — à la comparaison, au rapport, à
+    /// `--print` et dans un test —, ce qui tenait tant qu'il n'y avait qu'une
+    /// scène d'interrogation ; à la deuxième, trois de ces quatre endroits
+    /// auraient rendu l'empreinte de la première sans que rien ne le signale.
+    fn query(self) -> Option<Query> {
+        match self {
+            Self::Collision => Some(Query {
+                digest: sweeps::digest,
+                report: sweeps::report,
+            }),
+            Self::Selection => Some(Query {
+                digest: picks::digest,
+                report: picks::report,
+            }),
+            _ => None,
+        }
     }
 
     /// Les lumières dynamiques que la scène règle, ou aucune.
@@ -1304,7 +1352,7 @@ impl Scene {
             // `render_all` l'a déjà détournée avant d'arriver ici. Le cas est
             // écrit plutôt que laissé à un joker, pour qu'une scène d'image
             // ajoutée plus tard ne passe pas par lui en silence.
-            Self::Collision => Ok(()),
+            Self::Collision | Self::Selection => Ok(()),
             // Le même quadrilatère que `arete`, tourné autour de l'axe de
             // visée. L'axe passe par son centre, donc il reste dans le champ et
             // garde sa fuite en perspective ; ce qui change, c'est
@@ -2056,8 +2104,8 @@ impl Scene {
     fn render_all(self) -> Result<u64, String> {
         // Une scène d'interrogation n'a pas de passes : elle rend son empreinte
         // ici, et le reste de la mécanique la traite comme les autres.
-        if self.is_query() {
-            return sweeps::digest();
+        if let Some(query) = self.query() {
+            return (query.digest)();
         }
         let views = self.views();
         let mut reference: Vec<u64> = Vec::with_capacity(views.len());
@@ -2197,9 +2245,9 @@ fn dump(scene: Scene, dir: &Path) -> Result<String, String> {
     // plus besoin d'être regardée : une empreinte dit qu'un résultat a changé,
     // jamais qu'il est juste, et un décor où tout traverserait tout se figerait
     // aussi bien qu'un autre. Elle écrit donc son texte, un balayage par ligne.
-    if scene.is_query() {
+    if let Some(query) = scene.query() {
         let path = dir.join(format!("{}.txt", scene.name()));
-        let text = sweeps::report()?;
+        let text = (query.report)()?;
         fs::write(&path, text).map_err(|error| format!("{} : {error}", path.display()))?;
         return Ok(format!("{} : {}", scene.name(), path.display()));
     }
@@ -2239,7 +2287,8 @@ fn dump(scene: Scene, dir: &Path) -> Result<String, String> {
 fn parse_mode(args: &[String]) -> Result<Mode, String> {
     let usage = "usage : screengine-conformance --check | --update | --print <scène> | \
                  --dump <répertoire> | --mesh <fichier> | --world <fichier> | \
-                 --rooms <fichier> | --collision <fichier> | --sweeps <fichier>";
+                 --rooms <fichier> | --collision <fichier> | --sweeps <fichier> | \
+                 --picks <fichier>";
     match args {
         [only] if only == "--check" => Ok(Mode::Check),
         [only] if only == "--update" => Ok(Mode::Update),
@@ -2252,6 +2301,7 @@ fn parse_mode(args: &[String]) -> Result<Mode, String> {
         [rooms, path] if rooms == "--rooms" => Ok(Mode::Rooms(PathBuf::from(path))),
         [collision, path] if collision == "--collision" => Ok(Mode::Collision(PathBuf::from(path))),
         [sweeps, path] if sweeps == "--sweeps" => Ok(Mode::Sweeps(PathBuf::from(path))),
+        [picks, path] if picks == "--picks" => Ok(Mode::Picks(PathBuf::from(path))),
         _ => Err(usage.to_string()),
     }
 }
@@ -2263,8 +2313,8 @@ fn parse_mode(args: &[String]) -> Result<Mode, String> {
 /// image vide pour la scène d'interrogation — une valeur, pas une erreur, que
 /// rien ne pouvait prendre en défaut avant qu'un hôte la cherche.
 fn printed(scene: Scene) -> Result<u64, String> {
-    if scene.is_query() {
-        return sweeps::digest();
+    if let Some(query) = scene.query() {
+        return (query.digest)();
     }
     // L'empreinte de la première vue, et non celle de la scène : un hôte hache
     // une image, pas une suite d'images.
@@ -2313,6 +2363,7 @@ fn main() -> ExitCode {
         Mode::Rooms(path) => return write_data(&path, &rooms_file::bytes()),
         Mode::Collision(path) => return write_data(&path, &collision_file::bytes()),
         Mode::Sweeps(path) => return write_data(&path, &sweeps::file_bytes()),
+        Mode::Picks(path) => return write_data(&path, &picks::file_bytes()),
         Mode::Print(scene) => {
             return match printed(scene) {
                 Ok(hash) => {

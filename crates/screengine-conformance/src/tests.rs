@@ -88,7 +88,7 @@ fn toutes_les_passes_rendent_l_empreinte_des_hotes() {
         // résolution, ni tampon à découper. Ce que ce test garantit pour les
         // autres — une empreinte qui ne dépend pas du découpage — lui est vrai
         // par construction, son empreinte ne se calculant qu'une fois.
-        if scene.is_query() {
+        if scene.query().is_some() {
             continue;
         }
         assert_eq!(scene.render_all(), Ok(host_hash(scene)), "{}", scene.name());
@@ -105,8 +105,15 @@ fn toutes_les_passes_rendent_l_empreinte_des_hotes() {
 /// l'imprime.
 #[test]
 fn une_scene_d_interrogation_imprime_l_empreinte_de_ses_balayages() {
-    for scene in Scene::ALL.into_iter().filter(|scene| scene.is_query()) {
-        assert_eq!(printed(scene), crate::sweeps::digest(), "{}", scene.name());
+    for scene in Scene::ALL {
+        // **Par la scène et non par un module nommé en dur.** Écrit
+        // `sweeps::digest()`, ce test passait tant qu'il n'y avait qu'une scène
+        // d'interrogation, et exigeait de la seconde l'empreinte de la première
+        // dès qu'elle est arrivée — ce qu'il a fait au premier essai.
+        let Some(query) = scene.query() else {
+            continue;
+        };
+        assert_eq!(printed(scene), (query.digest)(), "{}", scene.name());
         assert_ne!(
             printed(scene),
             Ok(host_hash(scene)),
@@ -119,10 +126,13 @@ fn une_scene_d_interrogation_imprime_l_empreinte_de_ses_balayages() {
 /// Ce qu'une scène d'image imprime est l'empreinte de sa première vue.
 ///
 /// L'autre moitié de la clause ci-dessus : le cas d'interrogation ne doit pas
-/// avoir déplacé ce que les onze autres scènes rendent aux hôtes.
+/// avoir déplacé ce que les scènes d'image rendent aux hôtes.
 #[test]
 fn une_scene_d_image_imprime_l_empreinte_de_sa_premiere_vue() {
-    for scene in Scene::ALL.into_iter().filter(|scene| !scene.is_query()) {
+    for scene in Scene::ALL {
+        if scene.query().is_some() {
+            continue;
+        }
         let view = scene.views()[0];
         let image = scene
             .render_view(Scene::HOST_PASS, view)
@@ -173,7 +183,7 @@ fn chaque_scene_couvre_une_part_de_l_image() {
         // ne montrant rien — a son équivalent dans `sweeps::tests` : la plupart
         // de ses départs doivent tomber dans une cellule, faute de quoi elle
         // figerait une empreinte sans avoir rien balayé.
-        if scene.is_query() {
+        if scene.query().is_some() {
             continue;
         }
         for view in scene.views() {
@@ -556,6 +566,21 @@ fn la_liste_de_balayages_versionnee_est_a_jour() {
         "hosts/collision.sweeps",
         VERSIONED,
         &crate::sweeps::file_bytes(),
+    );
+}
+
+/// La liste de rayons versionnée est celle que la conformance engendre.
+///
+/// Le pendant de la précédente pour l'étape 8, et pour la même raison : les
+/// hôtes rejouent cette liste au lieu de réengendrer le treillis, donc une
+/// dérive entre les deux ferait comparer deux questions différentes.
+#[test]
+fn la_liste_de_rayons_versionnee_est_a_jour() {
+    const VERSIONED: &[u8] = include_bytes!("../../../hosts/selection.picks");
+    compare_versionne(
+        "hosts/selection.picks",
+        VERSIONED,
+        &crate::picks::file_bytes(),
     );
 }
 
