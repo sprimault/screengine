@@ -72,8 +72,9 @@ Two paths, depending on what you are writing.
 ### Making a game, in Rust
 
 `screengine-play` provides the window, keyboard, mouse and a fixed-step loop,
-and scales the image up by an integer factor. With no settings at all, it opens
-a working window:
+and scales the image up by an integer factor. It also hands back the finished
+image before it goes to the window — that is where an interface is drawn, and
+nowhere else. With no settings at all, it opens a working window:
 
 ```rust
 use screengine_play::{Affine3, Color, KeyCode, Play, Triangle, Vec3};

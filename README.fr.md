@@ -74,8 +74,9 @@ Deux chemins, selon ce qu'on écrit.
 ### Faire un jeu, en Rust
 
 `screengine-play` fournit la fenêtre, le clavier, la souris et une boucle à pas
-fixe, et remonte l'image par facteur entier. Sans aucun réglage, il ouvre une
-fenêtre qui marche :
+fixe, et remonte l'image par facteur entier. Il rend aussi l'image finie avant
+qu'elle parte à la fenêtre — c'est là qu'une interface se dessine, et nulle part
+ailleurs. Sans aucun réglage, il ouvre une fenêtre qui marche :
 
 ```rust
 use screengine_play::{Affine3, Color, KeyCode, Play, Triangle, Vec3};

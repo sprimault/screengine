@@ -19,7 +19,7 @@ use winit::window::{CursorGrabMode, Window, WindowId};
 use crate::clock::Clock;
 use crate::input::Input;
 use crate::scale::{Scale, Scaler};
-use crate::{DEFAULT_WINDOW_FACTOR, Error, Play, Tick};
+use crate::{DEFAULT_WINDOW_FACTOR, Error, Output, Play, Tick};
 
 /// La fenêtre et sa surface, qui vivent et meurent ensemble.
 ///
@@ -56,12 +56,13 @@ fn grab_cursor(window: &Window, capture: bool) -> bool {
 }
 
 /// L'état de la boucle, et ce que l'appelant lui a confié.
-struct Runner<S, U, R> {
+struct Runner<S, U, R, O> {
     play: Play,
     context: Context,
     state: S,
     update: U,
     render: R,
+    output: O,
     graphics: softbuffer::Context<OwnedDisplayHandle>,
     display: Option<Display>,
     pixels: Vec<u8>,
@@ -76,16 +77,18 @@ struct Runner<S, U, R> {
 }
 
 /// Lance la boucle, et rend la première erreur qui l'a arrêtée.
-pub(crate) fn run<S, U, R>(
+pub(crate) fn run<S, U, R, O>(
     play: Play,
     context: Context,
     state: S,
     update: U,
     render: R,
+    output: O,
 ) -> Result<(), Error>
 where
     U: FnMut(&mut S, &mut Tick<'_>),
     R: FnMut(&mut S, &mut Context),
+    O: FnMut(&mut S, &mut Output<'_>),
 {
     let event_loop = EventLoop::new().map_err(Error::EventLoop)?;
     let graphics = softbuffer::Context::new(event_loop.owned_display_handle())?;
@@ -106,6 +109,7 @@ where
         state,
         update,
         render,
+        output,
         graphics,
         display: None,
         input: Input::default(),
@@ -119,10 +123,11 @@ where
     runner.failure.map_or(Ok(()), Err)
 }
 
-impl<S, U, R> Runner<S, U, R>
+impl<S, U, R, O> Runner<S, U, R, O>
 where
     U: FnMut(&mut S, &mut Tick<'_>),
     R: FnMut(&mut S, &mut Context),
+    O: FnMut(&mut S, &mut Output<'_>),
 {
     /// Retient l'erreur et arrête la boucle : `run` la rendra.
     fn fail(&mut self, event_loop: &ActiveEventLoop, error: Error) {
@@ -218,6 +223,19 @@ where
         }
         self.context.frame_end(&mut self.pixels, width)?;
 
+        // **L'hôte écrit par-dessus l'image finie, avant la recopie.** C'est le
+        // pendant exact de ce qu'un hôte C fait après `scg_frame_end`, et le seul
+        // endroit où une interface — jauge, score, arme en main — a sa place : le
+        // moteur ne la connaît pas, et le tracé de lignes ne la sert pas, qui
+        // prend des coordonnées de monde.
+        //
+        // Le tampon est dimensionné sur le plafond, donc plus grand que l'image :
+        // c'est `Output` qui en borne l'accès sur la résolution courante.
+        (self.output)(
+            &mut self.state,
+            &mut Output::new(&mut self.pixels, width, height, width),
+        );
+
         let mut buffer = display.surface.buffer_mut()?;
         self.scaler.blit(&self.pixels, &mut buffer);
         buffer.present()?;
@@ -225,10 +243,11 @@ where
     }
 }
 
-impl<S, U, R> ApplicationHandler for Runner<S, U, R>
+impl<S, U, R, O> ApplicationHandler for Runner<S, U, R, O>
 where
     U: FnMut(&mut S, &mut Tick<'_>),
     R: FnMut(&mut S, &mut Context),
+    O: FnMut(&mut S, &mut Output<'_>),
 {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         if self.display.is_some() {
