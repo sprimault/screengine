@@ -769,6 +769,8 @@ function checkLayout(header) {
     ScgGrade: scg.GRADE_SIZE,
     ScgCamera: scg.CAMERA_SIZE,
     ScgSprite: scg.SPRITE_SIZE,
+    ScgLine: scg.LINE_SIZE,
+    ScgPoint: scg.POINT_SIZE,
     ScgSweepHit: scg.SWEEP_HIT_SIZE,
   };
 
@@ -1761,14 +1763,247 @@ function renderSweeps(engine, worldBytes, list) {
 /** La taille d'un enregistrement de la liste : neuf flottants. */
 const SWEEP_RECORD = 36;
 
+/**
+ * Le mur de la scène `trace`, plein cadre et à mi-distance : il coupe les
+ * brisures en deux, si bien qu'une moitié de chaque trait éprouve le mode de
+ * profondeur et l'autre la règle de couverture.
+ */
+const TRACE_WALL = [
+  [6.0, 4.0, -3.0],
+  [6.0, -4.0, -3.0],
+  [6.0, -4.0, 3.0],
+  [6.0, 4.0, 3.0],
+];
+
+/** Ses deux triangles, de la couleur du mur. */
+const TRACE_FACES = [
+  { indices: [0, 1, 2], color: [0x30, 0x38, 0x48, 0xff] },
+  { indices: [0, 2, 3], color: [0x30, 0x38, 0x48, 0xff] },
+];
+
+/**
+ * Les cinq sommets de la brisure, le dernier ramené sur le premier.
+ *
+ * **Ils sont partagés d'un segment au suivant**, et c'est tout l'objet : la
+ * règle de sortie du losange ne les peint qu'une fois. Les quatre segments
+ * prennent les quatre familles de pente qu'elle départage différemment.
+ */
+const TRACE_CORNERS = [
+  [8.0, -3.0, -2.0],
+  [8.0, 1.0, -2.0],
+  [8.0, 1.0, 2.0],
+  [8.0, -3.0, 2.0],
+  [8.0, -3.0, -2.0],
+];
+
+/**
+ * Les quatre segments d'une brisure, décalée de `dx` en X et de `shift` en Y.
+ *
+ * @param {number} dx décalage en X
+ * @param {number} shift décalage en Y
+ * @param {number[]} color les quatre canaux
+ * @returns {{a: number[], b: number[], color: number[]}[]}
+ */
+function tracePolyline(dx, shift, color) {
+  const shifted = ([x, y, z]) => [x + dx, y + shift, z];
+  return TRACE_CORNERS.slice(0, 4).map((corner, i) => ({
+    a: shifted(corner),
+    b: shifted(TRACE_CORNERS[i + 1]),
+    color,
+  }));
+}
+
+/**
+ * La scène `trace` : les deux familles de primitives que le remplissage
+ * n'emprunte pas.
+ *
+ * Trois brisures sur la même géométrie, devant et derrière le mur, dans les deux
+ * modes de profondeur ; puis quatre points, qui sont le seul chemin de
+ * `scg_submit_points`. La brisure occultée derrière le mur ne doit **rien**
+ * peindre, et c'est le témoin devant le mur qui distingue cette absence d'un
+ * défaut rendant le mode occulté toujours invisible.
+ *
+ * **C'est ici que les dispositions de `ScgLine` et de `ScgPoint` sont réellement
+ * éprouvées** : cet hôte est le seul à les écrire octet par octet, les autres
+ * les laissant au compilateur, qui lit le header.
+ *
+ * L'ordre des soumissions est celui de la scène de référence, et il compte : le
+ * tracé n'écrit jamais la profondeur, donc deux traits qui se croisent se
+ * départagent par leur rang.
+ *
+ * @param {scg.Screengine} engine
+ * @returns {string | null} l'empreinte, ou null si une vérification a échoué
+ */
+function renderTrace(engine) {
+  const e = engine.exports;
+  const body = STRIDE * HEIGHT * scg.BYTES_PER_PIXEL;
+  const pixels = engine.alloc(body);
+  const config = engine.alloc(scg.CONFIG_SIZE);
+  const out = engine.alloc(4);
+
+  engine.writeConfig(config, sceneConfig());
+  if (pixels === 0 || e.scg_create(config, out) < 0) {
+    check(false, "création du contexte de tracé");
+    return null;
+  }
+  const ctx = engine.readU32(out);
+
+  const model = engine.alloc(scg.MAT4_SIZE);
+  const vertices = engine.alloc(TRACE_WALL.length * scg.VERTEX_SIZE);
+  const faces = engine.alloc(TRACE_FACES.length * scg.TRIANGLE_SIZE);
+  const lines = engine.alloc(4 * scg.LINE_SIZE);
+  const dots = engine.alloc(4 * scg.POINT_SIZE);
+
+  engine.writeIdentity(model);
+  engine.writeVertices(vertices, TRACE_WALL);
+  engine.writeTriangles(faces, TRACE_FACES);
+  check(
+    e.scg_submit(ctx, model, vertices, TRACE_WALL.length, faces, TRACE_FACES.length) === scg.SCG_OK,
+    "le mur de la scène de tracé est accepté",
+  );
+
+  const submitted = [
+    [tracePolyline(0.0, 2.5, [0xe0, 0x40, 0x30, 0xff]), scg.SCG_DEPTH_TESTED, "la brisure occultée"],
+    [tracePolyline(0.0, -2.5, [0x40, 0xe0, 0x80, 0xff]), scg.SCG_DEPTH_ALWAYS, "la brisure à travers"],
+    [
+      tracePolyline(-2.25, 2.5, [0x80, 0xc0, 0xff, 0xff]),
+      scg.SCG_DEPTH_TESTED,
+      "le témoin devant le mur",
+    ],
+  ];
+  for (const [polyline, depth, what] of submitted) {
+    engine.writeLines(lines, polyline);
+    check(
+      e.scg_submit_lines(ctx, model, lines, polyline.length, depth) === scg.SCG_OK,
+      `${what} est acceptée`,
+    );
+  }
+
+  engine.writeDots(
+    dots,
+    TRACE_CORNERS.slice(0, 4).map(([x, y, z]) => ({
+      at: [x - 4.0, y, z],
+      color: [0xff, 0xe0, 0x40, 0xff],
+    })),
+  );
+  check(
+    e.scg_submit_points(ctx, model, dots, 4, scg.SCG_DEPTH_TESTED) === scg.SCG_OK,
+    "les points sont acceptés",
+  );
+
+  const code = e.scg_frame_end(ctx, pixels, STRIDE);
+  check(code === scg.SCG_OK, "l'image de tracé se rend");
+  const hash = engine.fingerprint(pixels, WIDTH, HEIGHT, STRIDE);
+
+  e.scg_destroy(ctx);
+  engine.free(dots, 4 * scg.POINT_SIZE);
+  engine.free(lines, 4 * scg.LINE_SIZE);
+  engine.free(faces, TRACE_FACES.length * scg.TRIANGLE_SIZE);
+  engine.free(vertices, TRACE_WALL.length * scg.VERTEX_SIZE);
+  engine.free(model, scg.MAT4_SIZE);
+  engine.free(out, 4);
+  engine.free(config, scg.CONFIG_SIZE);
+  engine.free(pixels, body);
+  return code === scg.SCG_OK ? hash : null;
+}
+
+/** La taille d'un enregistrement de la liste de rayons : six flottants puis le
+ * filtre. */
+const PICK_RECORD = 28;
+
+/**
+ * La scène `selection` : le même décor que la collision, interrogé au rayon.
+ *
+ * Ce qu'elle ajoute à la précédente est le **filtre**, et c'est la seule chose
+ * qui sépare un rayon d'un balayage d'étendue nulle : chaque rayon est posé deux
+ * fois, contre les surfaces solides puis contre toutes. Le filtre entre dans
+ * l'empreinte avec le résultat, sans quoi les deux moitiés de la liste se
+ * hacheraient comme si elles posaient la même question.
+ *
+ * @param {scg.Screengine} engine
+ * @param {Uint8Array} worldBytes le décor de collision
+ * @param {Uint8Array} list la liste de rayons, magie comprise
+ * @returns {string | null} l'empreinte, ou null si une vérification a échoué
+ */
+function renderPicks(engine, worldBytes, list) {
+  const e = engine.exports;
+  const out = engine.alloc(4);
+
+  const block = engine.alloc(worldBytes.length);
+  engine.bytes().set(worldBytes, block);
+  if (e.scg_world_load(block, worldBytes.length, out) < 0) {
+    check(false, "le décor de sélection se charge");
+    return null;
+  }
+  const world = engine.readU32(out);
+  engine.free(block, worldBytes.length);
+
+  const magic = new TextDecoder().decode(list.subarray(0, 8));
+  if (list.length < 12 || magic !== "SCGPICKS") {
+    check(false, "la liste de rayons porte sa magie");
+    return null;
+  }
+  const source = new DataView(list.buffer, list.byteOffset, list.byteLength);
+  const count = source.getUint32(8, true);
+  if (list.length !== 12 + count * PICK_RECORD) {
+    check(false, "la liste annonce le nombre de rayons qu'elle porte");
+    return null;
+  }
+
+  const vectors = engine.alloc(6 * 4);
+  const hit = engine.alloc(scg.SWEEP_HIT_SIZE);
+  const digest = new Uint8Array(count * 41);
+  let written = 0;
+
+  for (let i = 0; i < count; i++) {
+    const base = 12 + i * PICK_RECORD;
+    const view = new DataView(engine.memory.buffer);
+    for (let rank = 0; rank < 6; rank++) {
+      view.setFloat32(vectors + rank * 4, source.getFloat32(base + rank * 4, true), true);
+    }
+    const from = vectors;
+    const to = vectors + 12;
+    const filter = source.getUint32(base + 24, true);
+
+    if (e.scg_world_locate(world, from, out) < 0) {
+      check(false, "la cellule de départ du rayon se cherche");
+      return null;
+    }
+    const status = e.scg_world_pick(world, engine.readU32(out), from, to, filter, hit);
+    if (status < 0) {
+      check(false, "le rayon est accepté");
+      return null;
+    }
+
+    digest.set(engine.bytes().subarray(hit, hit + 36), written);
+    digest[written + 36] = status;
+    new DataView(digest.buffer).setUint32(written + 37, filter, true);
+    written += 41;
+  }
+
+  engine.free(vectors, 6 * 4);
+  engine.free(hit, scg.SWEEP_HIT_SIZE);
+  engine.free(out, 4);
+  e.scg_world_destroy(world);
+  return engine.hashBytes(digest);
+}
+
 /** Toutes les vérifications, puis l'empreinte sur la sortie standard. */
 async function main() {
-  const [wasmPath, headerPath, meshPath, worldPath, collisionPath, sweepsPath] =
+  const [wasmPath, headerPath, meshPath, worldPath, collisionPath, sweepsPath, picksPath] =
     process.argv.slice(2);
-  if (!wasmPath || !headerPath || !meshPath || !worldPath || !collisionPath || !sweepsPath) {
+  if (
+    !wasmPath ||
+    !headerPath ||
+    !meshPath ||
+    !worldPath ||
+    !collisionPath ||
+    !sweepsPath ||
+    !picksPath
+  ) {
     process.stderr.write(
       "usage : node test.js <module.wasm> <screengine.h> <caisse.mesh> <salles.world> " +
-        "<collision.world> <collision.sweeps>\n",
+        "<collision.world> <collision.sweeps> <selection.picks>\n",
     );
     return 2;
   }
@@ -1805,14 +2040,15 @@ async function main() {
   const mesh = renderMesh(engine, meshBytes);
   const composite = renderComposite(engine, meshBytes);
   const rooms = renderRooms(engine, new Uint8Array(await readFile(worldPath)));
-  const sweeps = renderSweeps(
-    engine,
-    new Uint8Array(await readFile(collisionPath)),
-    new Uint8Array(await readFile(sweepsPath)),
-  );
+  const trace = renderTrace(engine);
+  const collision = new Uint8Array(await readFile(collisionPath));
+  const sweeps = renderSweeps(engine, collision, new Uint8Array(await readFile(sweepsPath)));
+  const picks = renderPicks(engine, collision, new Uint8Array(await readFile(picksPath)));
   if (
     failures > 0 ||
+    picks === null ||
     sweeps === null ||
+    trace === null ||
     rooms === null ||
     composite === null ||
     textured === null ||
@@ -1830,7 +2066,7 @@ async function main() {
 
   process.stdout.write(
     `${hash}\n${textured}\n${bilinear}\n${graded}\n${lit}\n${overbright}\n${fog}\n${lights}\n` +
-      `${mesh}\n${composite}\n${rooms}\n${sweeps}\n`,
+      `${mesh}\n${composite}\n${rooms}\n${trace}\n${sweeps}\n${picks}\n`,
   );
   return 0;
 }

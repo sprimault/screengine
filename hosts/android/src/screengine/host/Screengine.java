@@ -66,6 +66,29 @@ public final class Screengine {
     /** Le quadrilatère se met plein face à la caméra. */
     public static final int SPRITE_FACING = 2;
 
+    /**
+     * Tracer en testant la profondeur : le trait est occulté par ce qui est
+     * devant.
+     *
+     * Un et non zéro, comme tout mode passé à une soumission : le mode décrit le
+     * lot, et une image d'éditeur porte dans la même vue des arêtes occultées et
+     * des repères visibles à travers.
+     */
+    public static final int DEPTH_TESTED = 1;
+
+    /** Tracer à travers le décor : ce qu'un repère veut. */
+    public static final int DEPTH_ALWAYS = 2;
+
+    /** Interroger les seules surfaces solides : ce que le balayage arrête. */
+    public static final int PICK_SOLID = 1;
+
+    /**
+     * Interroger toutes les surfaces, non solides comprises : une grille, une
+     * vitre, un volume de déclenchement, que la collision traverse par
+     * construction et qu'une sélection doit pouvoir désigner.
+     */
+    public static final int PICK_ALL = 2;
+
     /** Pas d'instance : des fonctions, comme l'ABI. */
     private Screengine() {}
 
@@ -269,6 +292,44 @@ public final class Screengine {
             long texture, int orientation);
 
     /**
+     * {@code scg_submit_lines}.
+     *
+     * <p>Six {@code float} par segment — les deux extrémités —, quatre octets de
+     * couleur à part, pour la raison qui vaut sur toute cette frontière : Java
+     * n'a pas de structure à disposition mémoire garantie, et c'est la couche JNI
+     * qui remplit {@code ScgLine}.
+     *
+     * <p>Le tracé partage son budget avec les points et n'écrit jamais la
+     * profondeur, dans aucun des deux modes.
+     *
+     * @param ctx le contexte
+     * @param model seize {@code float}
+     * @param segments six {@code float} par segment
+     * @param colors quatre octets par segment
+     * @param depth {@link #DEPTH_TESTED} ou {@link #DEPTH_ALWAYS} ; zéro est
+     *     refusé, jamais rabattu sur un défaut
+     * @return un code de retour de l'ABI
+     */
+    static native int submitLines(long ctx, float[] model, float[] segments, byte[] colors,
+            int depth);
+
+    /**
+     * {@code scg_submit_points}.
+     *
+     * <p>Même contrat, même budget : trois {@code float} par point, qui allume
+     * le pixel le contenant et celui-là seul.
+     *
+     * @param ctx le contexte
+     * @param model seize {@code float}
+     * @param positions trois {@code float} par point
+     * @param colors quatre octets par point
+     * @param depth {@link #DEPTH_TESTED} ou {@link #DEPTH_ALWAYS}
+     * @return un code de retour de l'ABI
+     */
+    static native int submitPoints(long ctx, float[] model, float[] positions, byte[] colors,
+            int depth);
+
+    /**
      * {@code scg_texture_destroy}.
      *
      * @param texture handle rendu par {@link #textureLoad}, ou 0
@@ -442,6 +503,24 @@ public final class Screengine {
      */
     static native int worldSweep(
             long world, int fromCell, float[] half, float[] from, float[] to, byte[] out);
+
+    /**
+     * {@code scg_world_pick}.
+     *
+     * <p>Le balayage d'une boîte d'étendue nulle, et le filtre est tout ce qui
+     * l'en sépare : même résultat, mêmes statuts, mêmes trente-six octets.
+     *
+     * @param world handle rendu par {@link #worldLoad}
+     * @param fromCell la cellule de départ, ou 0 pour « nulle part »
+     * @param from les trois coordonnées du départ
+     * @param to celles de l'arrivée
+     * @param filter {@link #PICK_SOLID} ou {@link #PICK_ALL}
+     * @param out trente-six octets, les champs de {@code ScgSweepHit} hors
+     *     réservés
+     * @return le statut de l'interrogation
+     */
+    static native int worldPick(
+            long world, int fromCell, float[] from, float[] to, int filter, byte[] out);
 
     /**
      * {@code scg_world_surface_material}.

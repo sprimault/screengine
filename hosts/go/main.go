@@ -23,10 +23,10 @@ import (
 // s'exécute depuis un répertoire de sortie qui n'est pas celui du dépôt, et les
 // y écrire en dur les rendrait introuvables.
 func main() {
-	if len(os.Args) != 5 {
+	if len(os.Args) != 6 {
 		fmt.Fprintf(os.Stderr,
 			"usage : %s <fichier de maillage> <fichier de carte> "+
-				"<decor de collision> <liste de balayages>\n", os.Args[0])
+				"<decor de collision> <liste de balayages> <liste de rayons>\n", os.Args[0])
 		os.Exit(2)
 	}
 
@@ -46,7 +46,9 @@ func main() {
 	mesh, meshOK := renderMesh(os.Args[1])
 	composite, compositeOK := renderComposite(os.Args[1])
 	rooms, roomsOK := renderRooms(os.Args[2])
+	trace, traceOK := renderTrace()
 	sweeps, sweepsOK := renderSweeps(os.Args[3], os.Args[4])
+	picks, picksOK := renderPicks(os.Args[3], os.Args[5])
 
 	rendered := []struct {
 		hash uint64
@@ -54,7 +56,8 @@ func main() {
 	}{
 		{edge, edgeOK}, {textured, texturedOK}, {bilinear, bilinearOK}, {graded, gradedOK},
 		{lit, litOK}, {overbright, overbrightOK}, {fog, fogOK}, {lights, lightsOK},
-		{mesh, meshOK}, {composite, compositeOK}, {rooms, roomsOK}, {sweeps, sweepsOK},
+		{mesh, meshOK}, {composite, compositeOK}, {rooms, roomsOK}, {trace, traceOK},
+		{sweeps, sweepsOK}, {picks, picksOK},
 	}
 
 	for _, scene := range rendered {

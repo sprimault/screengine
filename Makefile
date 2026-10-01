@@ -193,22 +193,32 @@ HOST_OUT = $(abspath $(SORTIE))/host-$(host_dir_$*)
 #                         points d'entrée que les dix précédentes n'atteignent
 #                         pas, et dont deux ont manqué au code pendant une
 #                         version entière sans que rien ne le dise
+#   trace                 les deux familles de primitives que le remplissage
+#                         n'emprunte pas : trois brisures devant et derrière un
+#                         mur, dans les deux modes de profondeur, puis quatre
+#                         points. Les dispositions de ScgLine et ScgPoint
+#                         entrent avec elles, et l'hôte web est le seul à les
+#                         écrire octet par octet
 #   collision             la seule qui ne rende aucune image : elle rejoue les
 #                         balayages de hosts/collision.sweeps contre
 #                         hosts/collision.world et hache leurs résultats. Elle
 #                         atteint les deux points d'entrée du balayage, qu'aucun
 #                         rendu ne touche — et un moteur sert aussi sans tampon,
 #                         ce qu'aucune des onze précédentes ne démontrait
+#   selection             le même décor, interrogé au rayon : le seul chemin de
+#                         scg_world_pick, et le filtre, qui est tout ce qui
+#                         sépare un rayon d'un balayage d'étendue nulle
 #
 # Une scène ajoutée ici est une scène à écrire dans les cinq hôtes, et c'est
 # voulu : c'est ce qui rend leur comparaison possible.
-HOST_SCENES := arete texture texture-bilineaire gamma lumiere lumiere-surbrillance brouillard lumieres maillage composite salles collision
+HOST_SCENES := arete texture texture-bilineaire gamma lumiere lumiere-surbrillance brouillard lumieres maillage composite salles trace collision selection
 
 # Les fichiers que les scènes chargent, passés à chaque hôte. Un seul endroit :
 # la liste était recopiée sur quatre recettes, et une scène ajoutée y manquait
 # à l'une d'elles sans que rien ne le dise avant l'empreinte.
 HOST_DATA = WORLD=$(abspath hosts/salles.world) MESH=$(abspath hosts/caisse.mesh) \
-            COLLISION=$(abspath hosts/collision.world) SWEEPS=$(abspath hosts/collision.sweeps)
+            COLLISION=$(abspath hosts/collision.world) SWEEPS=$(abspath hosts/collision.sweeps) \
+            PICKS=$(abspath hosts/selection.picks)
 
 # Sans l'outillage de l'hôte, la cible saute et dit pourquoi. En intégration
 # continue (CI défini), le même saut est une erreur : un contrôle qui ne tourne

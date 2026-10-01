@@ -20,12 +20,13 @@ OUT     ?= ../../.tmp/host-go
 TARGET  := $(or $(CARGO_TARGET_DIR),../../target)
 INCLUDE ?= ../../include
 
-# Les quatre fichiers de données que les scènes chargent, versionnés et partagés
+# Les cinq fichiers de données que les scènes chargent, versionnés et partagés
 # par les cinq hôtes.
 MESH      ?= ../../hosts/caisse.mesh
 WORLD     ?= ../../hosts/salles.world
 COLLISION ?= ../../hosts/collision.world
 SWEEPS    ?= ../../hosts/collision.sweeps
+PICKS     ?= ../../hosts/selection.picks
 
 # Go n'est pas toujours dans le PATH — sous Windows son répertoire
 # d'installation n'y entre pas pour un shell POSIX. `makefile.local` le pose
@@ -110,4 +111,4 @@ all: $(EXE) $(LIBCOPY)
 
 # Écrit l'empreinte sur la sortie standard, les échecs sur la sortie d'erreur.
 run: all
-	@$(EXE) "$(MESH)" "$(WORLD)" "$(COLLISION)" "$(SWEEPS)"
+	@$(EXE) "$(MESH)" "$(WORLD)" "$(COLLISION)" "$(SWEEPS)" "$(PICKS)"

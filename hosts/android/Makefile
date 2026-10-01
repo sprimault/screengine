@@ -57,7 +57,7 @@ ABIS := arm64-v8a armeabi-v7a x86_64
 # Un seul nombre pour les cinq paliers : ceux qui rendraient un nombre
 # différent de scènes ne se compareraient plus ligne à ligne, et la divergence
 # passerait pour une égalité.
-SCENE_COUNT ?= 12
+SCENE_COUNT ?= 14
 
 # Le maillage versionné que les cinq hôtes chargent. Les deux premiers paliers
 # le lisent depuis le dépôt ; le troisième et le quatrième depuis l'appareil, où
@@ -68,11 +68,13 @@ MESH := $(abspath ../../hosts/caisse.mesh)
 # avec le maillage dans les ressources : une application ne lit pas le dépôt.
 WORLD := $(abspath ../../hosts/salles.world)
 
-# Le décor de collision et la liste de balayages, pour les cinq paliers de
-# `run`. Pas dans les ressources de l'APK : la démonstration rend une image et
-# ne balaie rien, et deux fichiers qu'elle n'ouvre pas n'ont rien à y faire.
+# Le décor de collision et les deux listes qu'il rejoue — balayages et rayons —,
+# pour les cinq paliers de `run`. Pas dans les ressources de l'APK : la
+# démonstration rend une image et n'interroge rien, et des fichiers qu'elle
+# n'ouvre pas n'ont rien à y faire.
 COLLISION := $(abspath ../../hosts/collision.world)
 SWEEPS    := $(abspath ../../hosts/collision.sweeps)
+PICKS     := $(abspath ../../hosts/selection.picks)
 
 triple_arm64-v8a   := aarch64-linux-android
 triple_armeabi-v7a := armv7-linux-androideabi
@@ -194,14 +196,14 @@ all: native dex apk
 # empreinte par palier et par ABI, qui doivent toutes être identiques.
 run: all
 	@set -e; rm -f $(OUT)/paliers.txt; \
-	$(foreach abi,$(ABIS),h=$$($(qemu_$(abi)) $(OUT)/$(abi)/screengine-abi-static $(MESH) $(WORLD) $(COLLISION) $(SWEEPS) | tr -d '\r'); \
+	$(foreach abi,$(ABIS),h=$$($(qemu_$(abi)) $(OUT)/$(abi)/screengine-abi-static $(MESH) $(WORLD) $(COLLISION) $(SWEEPS) $(PICKS) | tr -d '\r'); \
 	  echo "$(abi) statique : $$(echo $$h)" >&2; echo "$$h" >> $(OUT)/paliers.txt; ) \
 	adb shell rm -rf $(DEVICE_DIR) >/dev/null; \
 	adb shell mkdir -p $(DEVICE_DIR) >/dev/null; \
 	adb push $(OUT)/x86_64/libscreengine.so $(OUT)/x86_64/libscreengine_jni.so \
 	  $(OUT)/x86_64/screengine-abi $(OUT)/dex/classes.dex $(MESH) $(WORLD) $(COLLISION) $(SWEEPS) \
-	  $(DEVICE_DIR)/ >/dev/null; \
-	h=$$(adb shell "LD_LIBRARY_PATH=$(DEVICE_DIR) $(DEVICE_DIR)/screengine-abi $(DEVICE_DIR)/caisse.mesh $(DEVICE_DIR)/salles.world $(DEVICE_DIR)/collision.world $(DEVICE_DIR)/collision.sweeps" | tr -d '\r'); \
+	  $(PICKS) $(DEVICE_DIR)/ >/dev/null; \
+	h=$$(adb shell "LD_LIBRARY_PATH=$(DEVICE_DIR) $(DEVICE_DIR)/screengine-abi $(DEVICE_DIR)/caisse.mesh $(DEVICE_DIR)/salles.world $(DEVICE_DIR)/collision.world $(DEVICE_DIR)/collision.sweeps $(DEVICE_DIR)/selection.picks" | tr -d '\r'); \
 	echo "x86_64 appareil, C : $$(echo $$h)" >&2; echo "$$h" >> $(OUT)/paliers.txt; \
 	h=$$(adb shell "LD_LIBRARY_PATH=$(DEVICE_DIR) CLASSPATH=$(DEVICE_DIR)/classes.dex app_process $(DEVICE_DIR) screengine.host.Test $(DEVICE_DIR)" | tr -d '\r'); \
 	echo "x86_64 appareil, JNI : $$(echo $$h)" >&2; echo "$$h" >> $(OUT)/paliers.txt; \
