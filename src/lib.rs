@@ -28,7 +28,7 @@ mod testing;
 mod texture;
 mod world;
 
-pub use collide::{Hit, SWEEP_CELLS};
+pub use collide::{Hit, SWEEP_CELLS, Surfaces};
 pub use context::{
     BYTES_PER_PIXEL, Config, Context, Frame, MAX_RESOLUTION, Output, Rows, TILE_SIZES,
     TRIANGLE_CAPACITY, Visibility,

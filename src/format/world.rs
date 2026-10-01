@@ -19,7 +19,7 @@ use alloc::vec::Vec;
 use super::ears::{MAX_POLYGON, triangulate};
 use super::{Cursor, decode};
 use crate::buffer::{owned, reserved};
-use crate::collide::Hit;
+use crate::collide::{Hit, Surfaces};
 use crate::error::{Error, Malformation, Result};
 use crate::math::{MAX_TEXEL_COORD, Quat, Vec3};
 use crate::scene::{Color, Light, VertexUv};
@@ -602,7 +602,47 @@ impl World {
     /// règle d'usage est dans `docs/rust.md`, au même endroit que la clause du
     /// `f64`.
     pub fn sweep(&self, from_cell: u32, half: Vec3, from: Vec3, to: Vec3) -> Option<Hit> {
-        crate::collide::sweep(self, from_cell, half.into(), from.into(), to.into())
+        crate::collide::sweep(
+            self,
+            from_cell,
+            half.into(),
+            from.into(),
+            to.into(),
+            Surfaces::Solid,
+        )
+    }
+
+    /// Interroge la scène par un rayon, et rend la surface touchée.
+    ///
+    /// **C'est le balayage d'une boîte d'étendue nulle**, et une seule fonction
+    /// pour les deux : un rayon est ce cas-là, et deux parcours auraient été le
+    /// même code à valider l'un contre l'autre. La dilatation de sécurité suit —
+    /// elle est relative à la plus grande demi-étendue, donc **nulle pour un
+    /// rayon**, qui touche exactement ce qu'il croise et non ce qui l'approche.
+    ///
+    /// Ce qu'elle ajoute au balayage est `surfaces`, et rien d'autre : une
+    /// sélection doit pouvoir attraper une grille ou une vitre, que la collision
+    /// ignore par construction.
+    ///
+    /// Rend `None` quand la cellule de départ n'existe pas, comme le balayage.
+    pub fn pick(&self, from_cell: u32, from: Vec3, to: Vec3, surfaces: Surfaces) -> Option<Hit> {
+        crate::collide::sweep(
+            self,
+            from_cell,
+            Vec3::ZERO.into(),
+            from.into(),
+            to.into(),
+            surfaces,
+        )
+    }
+
+    /// Le même rayon, contre **toutes** les cellules et sans traversée.
+    ///
+    /// La moitié d'un oracle, comme [`World::sweep_brute`] l'est du balayage :
+    /// sur une carte bien formée, les deux chemins rendent les mêmes bits, et
+    /// c'est ce qui attrape une traversée trop étroite.
+    pub fn pick_brute(&self, from: Vec3, to: Vec3, surfaces: Surfaces) -> Hit {
+        crate::collide::sweep_brute(self, Vec3::ZERO.into(), from.into(), to.into(), surfaces)
     }
 
     /// Le même balayage, contre **toutes** les cellules et sans traversée.
@@ -615,7 +655,7 @@ impl World {
     /// Il ne prend pas de cellule de départ : n'en connaissant aucune, il ne peut
     /// pas se tromper de cellule, et c'est ce qui en fait une référence.
     pub fn sweep_brute(&self, half: Vec3, from: Vec3, to: Vec3) -> Hit {
-        crate::collide::sweep_brute(self, half.into(), from.into(), to.into())
+        crate::collide::sweep_brute(self, half.into(), from.into(), to.into(), Surfaces::Solid)
     }
 
     /// Le matériau d'une surface, par son identifiant stable.

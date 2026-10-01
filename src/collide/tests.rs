@@ -15,6 +15,21 @@ use super::*;
 use crate::format::world::tests::{cell_bytes, file, material, portal_bytes, surface_in_plane};
 use crate::testing::Rng;
 
+/// Le balayage de ces épreuves : contre les **surfaces solides**, celles qui
+/// arrêtent un volume.
+///
+/// Enveloppé une fois plutôt que nommé à chaque appel : tout ce fichier porte
+/// sur la collision, et c'est elle qui définit le filtre. Ce que l'autre filtre
+/// change est éprouvé à part, là où il est le sujet.
+fn sweep(world: &World, from_cell: u32, half: Vec3d, from: Vec3d, to: Vec3d) -> Option<Hit> {
+    super::sweep(world, from_cell, half, from, to, Surfaces::Solid)
+}
+
+/// L'oracle de force brute, même filtre et pour la même raison.
+fn sweep_brute(world: &World, half: Vec3d, from: Vec3d, to: Vec3d) -> Hit {
+    super::brute::sweep_brute(world, half, from, to, Surfaces::Solid)
+}
+
 /// Les huit coins d'un cube de huit unités, à l'origine.
 const CUBE: [[f32; 3]; 8] = [
     [0.0, 0.0, 0.0],
@@ -153,6 +168,105 @@ fn une_boite_dans_un_mur_rend_un_depart_solide() {
     assert!(hit.start_solid);
     assert_eq!(hit.fraction, 0.0);
     assert_ne!(hit.surface, 0, "la surface la moins pénétrée est nommée");
+}
+
+/// **Le rayon voit ce que le balayage ignore**, et c'est tout ce qui les
+/// sépare.
+///
+/// Une sélection d'éditeur doit attraper une grille, une vitre, un volume de
+/// déclenchement — des surfaces que la carte marque « non solides » et que la
+/// collision traverse par construction. Sans ce filtre, l'éditeur ne pourrait
+/// désigner que ce qui arrête un personnage.
+#[test]
+fn le_rayon_voit_les_surfaces_non_solides() {
+    let world = room(0b100);
+    let from = Vec3d::new(4.0, 4.0, 4.0);
+    let to = Vec3d::new(4.0, 4.0, -20.0);
+
+    let solide = world
+        .pick(7, to_f32(from), to_f32(to), Surfaces::Solid)
+        .expect("cellule connue");
+    assert_eq!(
+        solide.fraction, 1.0,
+        "le sol non solide ne doit pas arrêter"
+    );
+    assert_eq!(solide.surface, 0, "et rien n'est nommé");
+
+    let toutes = world
+        .pick(7, to_f32(from), to_f32(to), Surfaces::All)
+        .expect("cellule connue");
+    assert!(toutes.fraction < 1.0, "la sélection touche le sol");
+    assert_eq!(toutes.surface, 11, "et le nomme par son identifiant stable");
+}
+
+/// **Le rayon n'est pas dilaté**, là où le balayage l'est.
+///
+/// La marge de sécurité est relative à la plus grande demi-étendue, donc nulle
+/// pour une boîte d'étendue nulle : un rayon touche ce qu'il croise, jamais ce
+/// qu'il frôle. Une sélection dilatée désignerait une surface voisine de celle
+/// que l'utilisateur vise, ce qui est le défaut qu'un éditeur pardonne le moins.
+#[test]
+fn le_rayon_ne_porte_aucune_marge() {
+    let world = room(0);
+    // Droit vers le mur en `x = 8`, depuis le centre : le contact tombe à
+    // quatre unités sur les huit du trajet.
+    let from = Vec3d::new(4.0, 4.0, 4.0);
+    let to = Vec3d::new(12.0, 4.0, 4.0);
+
+    let rayon = world
+        .pick(7, to_f32(from), to_f32(to), Surfaces::Solid)
+        .expect("cellule connue");
+    assert_eq!(
+        rayon.fraction, 0.5,
+        "le rayon s'arrête exactement sur le plan"
+    );
+
+    // La même trajectoire avec une boîte s'arrête **avant**, de la dilatation
+    // plus la demi-étendue : c'est ce qui rend la comparaison parlante.
+    let boite = world
+        .sweep(7, to_f32(cube_half()), to_f32(from), to_f32(to))
+        .expect("cellule connue");
+    assert!(
+        boite.fraction < rayon.fraction,
+        "la boîte s'arrête avant le rayon : {} contre {}",
+        boite.fraction,
+        rayon.fraction
+    );
+}
+
+/// **Le théorème du lot** : le rayon qui traverse rend ce que la force brute
+/// rend.
+///
+/// Le même que pour le balayage, et il porte sur les deux filtres : c'est la
+/// traversée par portails qui est éprouvée, et elle ne doit pas dépendre de ce
+/// que la requête retient.
+#[test]
+fn le_rayon_par_portails_egale_la_force_brute() {
+    for flags in [0, 0b100] {
+        let world = room(flags);
+        let mut rng = Rng::new(0x5241_594F_4E00_0001);
+
+        for surfaces in [Surfaces::Solid, Surfaces::All] {
+            for round in 0..256 {
+                let from = to_f32(random_point(&mut rng));
+                let to = to_f32(random_point(&mut rng));
+                let fast = world.pick(7, from, to, surfaces).expect("cellule connue");
+                let slow = world.pick_brute(from, to, surfaces);
+                assert_eq!(
+                    fast, slow,
+                    "tour {round}, drapeaux {flags:#b}, filtre {surfaces:?}"
+                );
+            }
+        }
+    }
+}
+
+/// Une cellule de départ inconnue rend `None`, comme pour le balayage.
+#[test]
+fn le_rayon_refuse_une_cellule_inconnue() {
+    let world = room(0);
+    let at = to_f32(Vec3d::new(4.0, 4.0, 4.0));
+    assert_eq!(world.pick(99, at, at, Surfaces::All), None);
 }
 
 /// Un sol non solide ne retient rien, mais le reste de la salle si.
