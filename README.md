@@ -60,6 +60,8 @@ The roadmap has ten steps, each one published.
   (French; the generated header carries the essentials in English)
 - [`docs/construction.md`](docs/construction.md) — targets, build matrix, header
   generation (French)
+- [`docs/cartes.md`](docs/cartes.md) — how to author a level: cells, portals,
+  lightmap frames (French)
 
 ## Usage
 

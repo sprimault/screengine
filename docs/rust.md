@@ -781,6 +781,11 @@ que les formats de virgule fixe l'ont été avant le premier remplissage : ce qu
 s'écrit après s'écrit contre ce qui existe déjà, et le format en garde la forme
 pour toujours.
 
+Ce que ces octets exigent d'un décor — cellules fermées, enroulement, portails
+appariés au bit près, contraintes du repère de lightmap — est dans
+[`cartes.md`](cartes.md), qui s'adresse à qui écrit un décor plutôt qu'à qui
+écrit le moteur. Ce document-ci garde les dispositions et leurs raisons.
+
 ### En-tête et sections
 
 Vingt octets : la signature `S C G 0x1A`, le genre en quatre octets ASCII
