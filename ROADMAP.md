@@ -311,12 +311,29 @@ JavaScript et Java ne passent jamais d'adresse.
 ## 8 — Ce qu'il faut pour éditer
 
 Le moteur n'a pas d'éditeur : il expose ce qu'un éditeur réclame — tracé de
-lignes et de points dans le tampon, interrogation de la scène, modification d'une
-cellule sans rechargement complet, recalcul de ses seules lightmaps.
+lignes et de points dans le tampon, interrogation de la scène, et de quoi
+modifier une carte chargée. Le recalcul des lightmaps d'une **seule** cellule
+existe depuis l'étape 5 et ne se refait pas ici.
+
+**Modifier une carte, c'est la remplacer entière**, et cette étape n'ajoute
+aucune fonction pour cela : on charge la carte modifiée à côté, on bascule, on
+détruit l'ancienne. Le libellé de cette étape a longtemps dit « sans rechargement
+complet », ce qui annonçait le remplacement d'une cellule dans une carte vivante.
+Mesuré, puis écarté : il aurait rendu `ScgWorld` mutable, donc retiré au balayage
+la concurrence sans limite acquise à l'étape 7, pour un cas que l'hôte résout
+sans le moteur — un éditeur dessine son aperçu pendant un glissé et ne recharge
+qu'au relâchement. Les identifiants stables et le cache de lightmaps, tous deux
+antérieurs, sont ce qui rend la bascule praticable.
 
 **Séparation stricte entre état du monde et état de jeu.** Le premier est
 rechargeable à chaud, le second est jeté au rechargement. Mélangés, l'édition à
 chaud devient impossible et l'étape entière perd son objet.
+
+**Hors de cette étape, et nommément** : le tampon d'identifiants, qui donnerait
+la sélection au rectangle mais ferait payer la tuile de toutes les scènes ;
+l'épaisseur de trait et le pointillé, les deux seuls qui entrent dans la boucle
+de pixels ; et le HUD, qui est la porte d'entrée du code de jeu dans le rendu.
+Les raisons sont dans `docs/abi.md`.
 
 L'éditeur lui-même vit dans un hôte, jamais ici.
 

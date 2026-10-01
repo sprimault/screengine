@@ -46,6 +46,20 @@ publié, et explique les conventions du dépôt à qui y contribue.
 
 ## [Non publié]
 
+### Ajouté
+- **Le contrat de l'étape 8 est figé** dans `docs/abi.md` : tracé de lignes et de
+  points, interrogation de la scène par le rayon, et la modification d'une carte,
+  qui n'ajoute aucune fonction. `max_lines` prend le second champ réservé de
+  `ScgContextConfig`, sans toucher un décalage ni `SCG_ABI_VERSION`.
+
+***
+
+### Added
+- **The step 8 contract is frozen** in `docs/abi.md`: line and point drawing,
+  scene picking by ray, and map modification, which adds no function.
+  `max_lines` takes the second reserved field of `ScgContextConfig`, moving no
+  offset and leaving `SCG_ABI_VERSION` alone.
+
 ## [0.7.0] — 2026-09-30 — Collision
 
 **Ce qu'un hôte de la 0.6.1 doit reprendre pour compiler : rien.**

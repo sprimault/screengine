@@ -19,6 +19,13 @@ avant son premier décodeur**, comme ceux des étapes 4, 5 et 6 l'ont été. Cha
 pourquoi. Un seul point reste marqué **À trancher** : la dépréciation, qui attend
 le gel de l'ABI en 1.0.
 
+**Le contrat de l'étape 8 est figé ci-dessous, et rien n'en est encore exposé** :
+tracé de lignes et de points, interrogation par le rayon, et la modification
+d'une carte — qui n'ajoute aucune fonction. Une bibliothèque de la série `0.7`
+n'exporte aucun de ces symboles, et une liaison écrite contre eux échoue à la
+résolution ; c'est le comportement décrit sous « Versionnement », et c'est
+attendu.
+
 `SCG_ABI_VERSION` reste à **1** : aucune signature publiée n'a changé, les étapes
 6 et 7 n'ayant fait qu'ajouter des fonctions. Ce qui change pour une liaison est
 ailleurs : les **codes de retour positifs**, dont les deux premiers sont apparus
@@ -384,7 +391,7 @@ dans la mémoire linéaire après le trap, sans rappeler le module.
       uint32_t height;
       uint32_t tile_size;
       uint32_t max_triangles;
-      uint32_t reserved1;
+      uint32_t max_lines;
       uint32_t reserved2;
   } ScgContextConfig;
   ```
@@ -408,6 +415,11 @@ dans la mémoire linéaire après le trap, sans rappeler le module.
   au moment où elle est faite, jamais pendant le rendu. Écartée : une constante
   du noyau, trop petite pour un niveau détaillé ou trop coûteuse sur téléphone
   selon la valeur qu'on lui donne.
+
+  **Le second est devenu `max_lines` à l'étape 8**, la capacité de primitives de
+  tracé par image, et `0` y vaut 4096. Deux champs réservés employés sur trois,
+  chaque fois sans toucher un décalage ni la version d'ABI : c'est ce que la
+  clause d'extensibilité promettait, et il en reste un.
 
   **`max_width` et `max_height` sont plafonnés à 2048**, au-delà la création rend
   `SCG_ERR_INVALID_ARGUMENT`. Ce n'est pas un confort : les pires cas des formats
@@ -1892,6 +1904,213 @@ ne s'applique à lui. Il se teste chez l'hôte, qui l'a placé et connaît sa po
 
 Voir `ROADMAP.md`, « Hors périmètre v1 ».
 
+### Étape 8
+
+**Trois fonctions, deux structures, quatre constantes, un champ réservé employé,
+aucun code d'erreur nouveau et aucun statut nouveau.** Aucune signature publiée,
+aucune structure, aucune précondition ne bouge : `SCG_ABI_VERSION` reste à **1**,
+et `version_format` non plus.
+
+Le contrat est figé avant le premier tracé, pour la raison dite en tête de
+document — et pour une seconde, propre à cette étape : la **règle de sortie du
+losange** donne sa forme à la boucle de tracé, exactement comme la règle top-left
+a donné la sienne au remplissage.
+
+```c
+/* le tracé : une seconde famille de primitives, pas un triangle dégénéré */
+int32_t scg_submit_lines(ScgContext *ctx, const ScgMat4 *model,
+                         const ScgLine *lines, uint32_t line_count,
+                         uint32_t depth);
+int32_t scg_submit_points(ScgContext *ctx, const ScgMat4 *model,
+                          const ScgPoint *points, uint32_t point_count,
+                          uint32_t depth);
+
+/* l'interrogation : le rayon, et ce qu'il doit voir que le balayage ignore */
+int32_t scg_world_pick(const ScgWorld *world, uint32_t from_cell,
+                       const float from[3], const float to[3],
+                       uint32_t filter, ScgSweepHit *out);
+```
+
+```c
+typedef struct ScgLine {
+    float   ax, ay, az;
+    float   bx, by, bz;
+    uint8_t r, g, b, a;
+} ScgLine;
+
+typedef struct ScgPoint {
+    float   x, y, z;
+    uint8_t r, g, b, a;
+} ScgPoint;
+```
+
+Constantes : `SCG_DEPTH_TESTED` (1), `SCG_DEPTH_ALWAYS` (2), `SCG_PICK_SOLID`
+(1) et `SCG_PICK_ALL` (2).
+
+**Vingt-huit octets pour `ScgLine`, décalages 0 à 24 ; seize pour `ScgPoint`,
+décalages 0 à 12.** Identiques sur les quatre cibles, sans un octet de bourrage :
+que des champs de quatre octets, puis quatre octets de couleur. C'est la
+disposition de `ScgSprite`, et pour la même raison. La couleur a le sens de celle
+d'un `ScgTriangle`.
+
+#### La capacité du tracé prend le second champ réservé
+
+`ScgContextConfig.reserved1` devient **`max_lines`**, la capacité de primitives
+de tracé par image, et `0` y vaut 4096. C'est l'usage prévu des champs réservés,
+et le second à servir après `max_triangles` à l'étape 1 : les décalages ne
+bougent pas, un hôte écrit avant obtient le défaut en passant des zéros, et
+`SCG_ABI_VERSION` ne change pas.
+
+**Une capacité propre, et non un partage de `max_triangles`.** Une ligne n'est
+pas un triangle préparé : elle a sa propre répartition par tuiles et sa propre
+liste. Les faire tenir dans le même budget obligerait un hôte à réserver pour le
+pire des deux, et un éditeur qui trace mille repères viderait la capacité de son
+décor sans comprendre pourquoi.
+
+Un point consomme une place, une ligne aussi. Le dépassement rend
+`SCG_ERR_INVALID_ARGUMENT` **au moment de la soumission**, jamais pendant le
+rendu, et refuse le lot entier — même clause que les triangles.
+
+#### Le tracé
+
+- **En coordonnées du monde, jamais de l'écran.** `model` place les points, le
+  contexte y compose la vue de sa caméra, comme pour toute autre soumission. Un
+  rectangle de sélection ou une barre de vie se dessinent en espace écran : ce
+  sont des pixels que l'hôte pose dans **son** tampon après `scg_frame_end`, et
+  le tracé n'existe pas pour eux. Voir « Ce que l'étape ne fait pas ».
+- **Le mode de profondeur est un paramètre de soumission**, pas un réglage de
+  contexte : une image d'éditeur porte dans la même vue des arêtes occultées par
+  le décor et des repères visibles à travers. `SCG_DEPTH_TESTED` teste la
+  profondeur, `SCG_DEPTH_ALWAYS` l'ignore ; zéro et toute valeur inconnue rendent
+  `SCG_ERR_INVALID_ARGUMENT`, la clause « zéro ne vaut défaut que pour un réglage
+  de contexte » s'appliquant ici comme à `blend` et `orientation`.
+- **Le tracé ne retouche jamais la profondeur**, dans les deux modes. Deux lignes
+  qui se croisent se départagent donc par l'ordre de soumission, qui est
+  contractuel et indépendant des tuiles ; si l'une écrivait la profondeur, leur
+  croisement dépendrait de la répartition.
+- **Il a lieu après tout le remplissage de la tuile**, quel que soit l'ordre dans
+  lequel l'hôte a soumis. Sans cette clause, `SCG_DEPTH_ALWAYS` ne voudrait rien
+  dire : un triangle soumis après une ligne la recouvrirait.
+- **Et après le brouillard, avant la courbe de sortie.** Le brouillard effacerait
+  un repère au fond d'un couloir, ce qui est l'inverse de ce qu'un repère existe
+  pour faire ; la courbe s'applique parce qu'il n'y a qu'un chemin de sortie, et
+  qu'une image d'éditeur doit se lire comme l'image rendue.
+- **Un trait d'un pixel, sans épaisseur ni pointillé.** Ce sont les deux seules
+  choses qui entreraient dans la boucle de pixels, et le pointillé traînerait en
+  plus la clause du tuilage — son motif devrait s'indexer sur la longueur en
+  coordonnées image, comme le motif de tramage. Les deux s'ajouteront par une
+  fonction de plus si un éditeur les réclame, sans reprendre ce qui est publié
+  ici.
+- **La couverture suit la règle de sortie du losange** : un pixel s'allume quand
+  le segment sort du losange qui lui est inscrit. C'est ce qui fait qu'une
+  polyligne ne peint ses sommets partagés qu'une fois, et c'est à la ligne ce que
+  la règle top-left est au triangle. La forme entière est dans
+  [`rust.md`](rust.md).
+- **Un point est un pixel**, celui qui contient le point projeté, et non un carré
+  de côté réglable — l'épaisseur est écartée pour la ligne, elle l'est aussi ici.
+- **Les deux fonctions sont refusées pendant une image**, comme toute soumission,
+  et une primitive qui ne se projette pas — derrière le plan proche, hors de la
+  bande de garde — disparaît sans erreur : c'est une donnée.
+
+#### L'interrogation
+
+- **Une fonction, et aucune structure nouvelle.** `scg_world_pick` remplit un
+  `ScgSweepHit`, celui de l'étape 7 : un rayon rend exactement ce qu'un balayage
+  rend — fraction, normale, point de contact, surface et cellule touchées.
+  Inventer une structure jumelle aurait figé pour toujours une seconde forme
+  pour la même information.
+- **Elle ne prend pas de contexte**, comme `scg_world_sweep` et pour la même
+  raison : un éditeur interroge une carte sans rendre d'image, et son erreur se
+  lit par `scg_last_error(NULL)`. Elle est appelable depuis n'importe quel
+  thread, sur le même handle, simultanément — `ScgWorld` est immuable.
+- **Ce qu'elle ajoute au balayage est le filtre, et rien d'autre.**
+  `SCG_PICK_SOLID` voit ce que le balayage voit ; `SCG_PICK_ALL` voit **aussi les
+  surfaces non solides**, qu'une sélection doit pouvoir attraper — une grille, une
+  vitre, un volume de déclenchement sont des surfaces qu'un éditeur sélectionne
+  et que la collision ignore. Zéro et toute valeur inconnue rendent
+  `SCG_ERR_INVALID_ARGUMENT`.
+- **Les trois statuts sont ceux du balayage**, et pour les mêmes raisons :
+  `SCG_STATUS_NO_CELL` quand `from_cell` vaut `0`, `SCG_STATUS_INCOMPLETE` quand
+  le budget `SCG_SWEEP_CELLS` est épuisé — le rayon est alors tronqué, réponse
+  conservatrice —, et `SCG_STATUS_START_SOLID` quand le point de départ est déjà
+  dans le solide.
+- **Ce qu'elle rend reste valide tant que l'hôte le garde**, la structure étant à
+  lui. Mais `surface_id` et `cell_id` ne désignent quelque chose **que pour une
+  carte qui porte ces identifiants** : ce sont ceux de l'éditeur, stables d'un
+  chargement à l'autre, et c'est précisément ce qui permet à une sélection de
+  survivre au rechargement décrit juste en dessous. Une surface supprimée entre
+  les deux rend `SCG_ERR_UNKNOWN_RESOURCE` à la première fonction qui la relit,
+  et c'est ainsi qu'un éditeur apprend que sa sélection n'existe plus.
+- **La sélection au rectangle n'est pas ici**, et n'y sera pas : elle se fait par
+  la géométrie, en testant les surfaces contre un tronc, ce qu'un hôte compose
+  avec ce que l'ABI lui donne déjà. Le tampon d'identifiants qui l'aurait rendue
+  immédiate est écarté — voir « Ce que l'étape ne fait pas ».
+
+#### Modifier une carte
+
+**Aucune fonction nouvelle, et c'est le résultat de l'étape, pas un manque.**
+Modifier une carte, c'est en **construire une autre à côté et basculer** :
+`scg_world_load` sur les octets modifiés, puis `scg_world_destroy` sur
+l'ancienne quand plus rien ne la soumet. `ScgWorld` reste immuable, partageable
+en lecture entre contextes et entre threads, et `scg_world_sweep` garde la
+concurrence sans limite que l'étape 7 lui a donnée.
+
+Écarté : le remplacement d'une cellule dans une carte vivante. Il aurait
+demandé un `ScgWorld` mutable, donc retiré au balayage cette concurrence, pour
+un cas que l'hôte résout sans le moteur — un éditeur dessine son propre aperçu
+pendant un glissé et ne recharge qu'au relâchement. Céder une propriété acquise
+coûte pour toujours ; recharger coûte une fois par opération validée.
+
+Ce qu'un intégrateur doit savoir du coût, parce qu'il décide de son interface :
+le rechargement complet est **linéaire en nombre de cellules** et
+**super-linéaire en surfaces d'une même cellule**. Il interdit de recharger à
+chaque mouvement de souris, et rien d'autre.
+
+- **Les identifiants survivent au rechargement**, et c'est ce qui rend la
+  bascule utilisable : la cellule, la surface ou l'entité qu'un éditeur avait
+  sélectionnée se retrouve par son identifiant dans la nouvelle carte.
+- **Le cache de lightmaps aussi.** `scg_lighting_save` sur l'ancienne,
+  `scg_lighting_restore` sur la nouvelle : les entrées dont l'empreinte concorde
+  encore sont reprises, les autres écartées sans erreur, et seules les cellules
+  modifiées — et leurs voisines immédiates, dont la lumière passait par la
+  porte — restent à recuire. C'est ce qui empêche une modification de coûter la
+  cuisson d'un niveau entier, et le cache a été conçu pour l'édition à chaud
+  avant qu'elle existe.
+- **`SCG_LIGHTMAP_STALE` n'a toujours pas de producteur, et c'est une
+  conséquence de ce qui précède.** Une entrée périmée est **écartée** par
+  `scg_lighting_restore`, si bien que sa cellule ressort `SCG_LIGHTMAP_ABSENT` et
+  non « périmée ». Le code reste défini et ne change pas de sens — un code publié
+  ne le fait jamais —, mais aucun appel ne le rend. Un auteur de liaison le
+  traite comme les autres états et n'écrit pas de chemin pour lui.
+
+#### La plage `-400` à `-499` reste vide
+
+Comme celle du monde à l'étape 5 et celle de la collision à l'étape 7. Chaque cas
+d'échec de cette étape tombe dans un code déjà défini, et c'est le signe que les
+plages sont bien tracées : un mode inconnu, une capacité dépassée ou un `filter`
+nul sont `SCG_ERR_INVALID_ARGUMENT` ; une cellule ou une surface qu'aucun
+identifiant ne porte est `SCG_ERR_UNKNOWN_RESOURCE` ; une soumission pendant une
+image est `SCG_ERR_INVALID_STATE`.
+
+Une plage vide ne coûte rien, et un code s'y ajoutera plus tard sans incrémenter
+`SCG_ABI_VERSION`.
+
+#### Ce que l'étape ne fait pas
+
+- **Pas de tampon d'identifiants.** Il donnerait exactement ce qu'on voit,
+  masquage compris, et la sélection au rectangle ; il coûte quatre octets par
+  pixel, soit 48 Ko par tuile de 64 avec la couleur et la profondeur, au-delà
+  d'un L1 de 32 Ko. Il pousserait la tuile à 32 **pour toutes les scènes**, y
+  compris celles qui n'éditent rien : le rendu de tout le monde paierait un
+  service qui ne sert qu'à l'éditeur.
+- **Pas d'épaisseur de trait ni de pointillé**, pour la raison dite plus haut.
+- **Pas de HUD.** Le tracé existe pour un éditeur — repères, arêtes, sélection.
+  Une barre de vie, un score, un viseur se dessinent par l'hôte dans son propre
+  tampon, après `scg_frame_end` : faire passer un HUD par le moteur serait la
+  première marche vers du code de jeu dans le rendu, que l'invariant interdit.
+- **Pas d'éditeur.** Le moteur expose ce qu'un éditeur réclame ; l'éditeur vit
+  dans un hôte.
+
 ### Étapes suivantes
 
 Prévisionnel. Ce qui doit être exposé est arrêté par la feuille de route ; les
@@ -1906,7 +2125,7 @@ noms ne le sont pas.
 | 5 | ✓ rendu du monde depuis la caméra, suivi de sa cellule, calcul des lightmaps d'une cellule et reprise d'un cache |
 | 6 | ✓ modes d'écriture de pixel, quadrilatères orientés, trames, normale par sommet — voir « Étape 6 » |
 | 7 | ✓ balayage d'une boîte contre les cellules, utilisable sans contexte de rendu — voir « Étape 7 » |
-| 8 | tracé de lignes et de points, interrogation de la scène, modification d'une cellule par identifiant |
+| 8 | tracé de lignes et de points, interrogation de la scène par le rayon, et la modification d'une carte, qui n'ajoute aucune fonction — voir « Étape 8 » |
 
 ## Ce qu'un auteur de liaison doit savoir
 
