@@ -11,13 +11,19 @@
 use screengine_play::{Affine3, Color, KeyCode, Play, Triangle, Vec3};
 
 /// Le triangle, à quatre unités devant la caméra par défaut.
+///
+/// **L'ordre des trois sommets décide de tout**, et il se lit dans le repère de
+/// vue : la caméra neutre regarde le +X du monde, son axe droit est le −Y et son
+/// haut le +Z. Le sommet du milieu est donc celui du haut, et les deux autres
+/// vont de la gauche vers la droite de l'écran.
 const VERTICES: [Vec3; 3] = [
     Vec3::new(4.0, 1.5, -1.0),
-    Vec3::new(4.0, 0.0, 1.5),
     Vec3::new(4.0, -1.5, -1.0),
+    Vec3::new(4.0, 0.0, 1.5),
 ];
 
-/// Sa face avant regarde la caméra ; l'autre sens en ferait un dos, éliminé.
+/// Sa face avant regarde la caméra ; l'autre sens en ferait un dos, éliminé —
+/// et une fenêtre noire, ce que cet exemple a rendu jusqu'ici.
 const TRIANGLES: [Triangle; 1] = [Triangle {
     indices: [0, 1, 2],
     color: Color::new(0xE0, 0xA0, 0x30, 0xFF),

@@ -78,8 +78,8 @@ use screengine_play::{Affine3, Color, KeyCode, Play, Triangle, Vec3};
 
 const VERTICES: [Vec3; 3] = [
     Vec3::new(4.0, 1.5, -1.0),
-    Vec3::new(4.0, 0.0, 1.5),
     Vec3::new(4.0, -1.5, -1.0),
+    Vec3::new(4.0, 0.0, 1.5),
 ];
 
 const TRIANGLES: [Triangle; 1] = [Triangle {
