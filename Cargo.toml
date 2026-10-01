@@ -29,6 +29,15 @@ harness = false
 name = "carte"
 harness = false
 
+# Séparé du précédent, qui porte la référence de la traversée sur les décors du
+# dépôt. Celui-ci mesure une **pente** — comment le coût de chargement croît avec
+# le nombre de cellules et avec leur taille —, ce qui demande des cartes
+# engendrées plutôt que versionnées : deux points de mesure doivent différer d'un
+# seul paramètre.
+[[bench]]
+name = "chargement"
+harness = false
+
 [lints]
 workspace = true
 
