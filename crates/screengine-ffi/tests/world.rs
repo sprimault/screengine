@@ -1101,3 +1101,106 @@ fn une_carte_se_lit_depuis_plusieurs_threads() {
     // SAFETY: handle vivant, détruit une seule fois, après la portée.
     unsafe { scg_world_destroy(world) };
 }
+
+/// La carte d'épreuve dont un sommet a bougé, comme un éditeur le ferait.
+///
+/// Elle porte les **mêmes identifiants** — c'est le propre d'une modification :
+/// la cellule 7 reste la cellule 7, et la surface 11 la surface 11.
+fn one_cell_world_edited() -> Vec<u8> {
+    let mut surface = words(&[11, 0, 1, 4]);
+    surface.extend_from_slice(&words(&[0, 1, 2, 3]));
+    surface.extend_from_slice(&unit_frame());
+    surface.extend_from_slice(&unit_frame());
+
+    let mut body = words(&[7, 0, 4, 1, 0]);
+    for point in [
+        [0.0, 0.0, 0.0],
+        [4.0, 0.0, 0.0],
+        // Le sommet tiré d'une unité : la cellule change, son identifiant non.
+        [5.0, 4.0, 0.0],
+        [0.0, 4.0, 0.0],
+    ] {
+        body.extend_from_slice(&floats(&point));
+    }
+    body.extend_from_slice(&surface);
+
+    let mut cells = words(&[body.len() as u32]);
+    cells.extend_from_slice(&body);
+
+    let mut mats = Vec::new();
+    for (id, name) in [(1u32, "mur"), (2, "plafond")] {
+        mats.extend_from_slice(&words(&[id]));
+        mats.extend_from_slice(&(name.len() as u16).to_le_bytes());
+        mats.extend_from_slice(name.as_bytes());
+    }
+
+    file(&cells, &mats, b"WRLD", 1)
+}
+
+/// **Modifier une carte, vu depuis l'ABI : on la recharge.**
+///
+/// L'étape 8 n'ajoute aucune fonction pour cela, et c'est le résultat de son
+/// arbitrage : `ScgWorld` reste immuable, donc partageable entre threads, et le
+/// balayage garde la concurrence sans limite de l'étape 7. Ce test est ce qui
+/// rend la promesse vérifiable — sans lui, le cycle n'existerait que dans la
+/// documentation.
+///
+/// Il suit exactement ce qu'un éditeur écrit : charger la carte modifiée **à
+/// côté**, reprendre ce que le cache a de valable, puis détruire l'ancienne.
+#[test]
+fn modifier_une_carte_c_est_la_recharger() {
+    let avant = load(&one_cell_world());
+    let mut lighting = ptr::null_mut();
+    // SAFETY: carte vivante, pointeur de sortie local.
+    assert_eq!(unsafe { scg_lighting_create(avant, &mut lighting) }, SCG_OK);
+    // SAFETY: handle vivant.
+    assert_eq!(unsafe { scg_lighting_build(lighting, 7) }, SCG_OK);
+
+    let mut len = 0usize;
+    // SAFETY: handle vivant, tampon nul avec capacité nulle, sortie locale.
+    let mesure = unsafe { scg_lighting_save(lighting, ptr::null_mut(), 0, &mut len) };
+    assert_eq!(mesure, SCG_OK);
+
+    let mut block = vec![0u8; len];
+    let mut written = 0usize;
+    // SAFETY: handle vivant, tampon local de `len` octets, sortie locale.
+    let ecriture = unsafe { scg_lighting_save(lighting, block.as_mut_ptr(), len, &mut written) };
+    assert_eq!(ecriture, SCG_OK);
+
+    // La carte modifiée se charge **à côté** : rien n'a muté, et les deux
+    // coexistent le temps de la bascule.
+    let apres = load(&one_cell_world_edited());
+    let mut repris = ptr::null_mut();
+    // SAFETY: carte vivante, pointeur de sortie local.
+    assert_eq!(unsafe { scg_lighting_create(apres, &mut repris) }, SCG_OK);
+
+    let mut accepted = 1u32;
+    // SAFETY: handle vivant, bloc local de `len` octets, sortie locale.
+    let restored = unsafe { scg_lighting_restore(repris, block.as_ptr(), len, &mut accepted) };
+    assert_eq!(restored, SCG_OK, "une entrée périmée n'est pas une erreur");
+    assert_eq!(accepted, 0, "la cellule modifiée n'est pas reprise");
+
+    let mut state = 0u32;
+    // SAFETY: handle vivant, sortie locale.
+    assert_eq!(unsafe { scg_lighting_state(repris, 7, &mut state) }, SCG_OK);
+    assert_eq!(
+        state, SCG_LIGHTMAP_ABSENT,
+        "elle est à recuire, et non « périmée » : restore l'a écartée"
+    );
+
+    // L'identifiant désigne la même surface des deux côtés : c'est ce qui permet
+    // à une sélection d'éditeur de survivre au rechargement.
+    let mut material = 0u32;
+    // SAFETY: carte vivante, sortie locale.
+    let traduit = unsafe { scg_world_surface_material(apres, 11, &mut material) };
+    assert_eq!(traduit, SCG_OK);
+
+    // SAFETY: handles vivants, détruits une seule fois chacun. L'ancienne carte
+    // part en dernier, quand plus rien ne la lit.
+    unsafe {
+        scg_lighting_destroy(repris);
+        scg_lighting_destroy(lighting);
+        scg_world_destroy(apres);
+        scg_world_destroy(avant);
+    }
+}
