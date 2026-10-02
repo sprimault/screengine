@@ -22,7 +22,8 @@ pourquoi. Un seul point reste marqué **À trancher** : la dépréciation, qui a
 le gel de l'ABI en 1.0.
 
 `SCG_ABI_VERSION` reste à **1** : aucune signature publiée n'a changé, les étapes
-6, 7 et 8 n'ayant fait qu'ajouter des fonctions. Ce qui change pour une liaison est
+6, 7 et 8 n'ayant fait qu'ajouter des fonctions — comme `scg_world_light_id`,
+ajoutée après la 0.8.1 sur le constat d'un intégrateur. Ce qui change pour une liaison est
 ailleurs : les **codes de retour positifs**, dont les deux premiers sont apparus
 en 0.5.0 et qui font d'un test « différent de zéro » un refus de succès.
 
@@ -1073,9 +1074,10 @@ Huit fonctions ajoutées, trois structures nouvelles, aucune constante :
 
 ### Étape 4
 
-**Les douze fonctions sont exposées**, et les sept accesseurs que la carte
-réclame en propre avec elles. Ce qui suit est le contrat auquel elles se
-conforment, figé avant le premier décodeur pour la raison dite en tête de
+**Les douze fonctions sont exposées**, et les huit accesseurs que la carte
+réclame en propre avec elles — sept à la publication de l'étape, le huitième
+ajouté depuis sans toucher à `SCG_ABI_VERSION`. Ce qui suit est le contrat auquel
+elles se conforment, figé avant le premier décodeur pour la raison dite en tête de
 document. Les dispositions binaires elles-mêmes sont dans `docs/rust.md`,
 section « Formats de fichier » : elles n'appartiennent pas à l'ABI, qui ne voit
 qu'un bloc d'octets.
@@ -1101,12 +1103,14 @@ ressources chargées depuis un bloc n'ont aucune raison de se manipuler
 autrement, et une liaison écrite pour l'une se relit pour l'autre.
 
 **Une carte porte en plus ce qu'elle seule a** : des lumières statiques et des
-entités, que sept fonctions donnent à lire.
+entités, que huit fonctions donnent à lire.
 
 ```c
 int32_t scg_world_light_count(const struct ScgWorld *world, uint32_t *out);
 int32_t scg_world_light(const struct ScgWorld *world, uint32_t index,
                         struct ScgLight *out);
+int32_t scg_world_light_id(const struct ScgWorld *world, uint32_t index,
+                           uint32_t *out);
 int32_t scg_world_entity_count(const struct ScgWorld *world, uint32_t *out);
 int32_t scg_world_entity_ids(const struct ScgWorld *world, uint32_t index,
                              uint32_t *id, uint32_t *cell);
@@ -1131,6 +1135,17 @@ int32_t scg_world_entity_data(const struct ScgWorld *world, uint32_t index,
   réutiliser, et en inventer une la figerait pour toujours au profit d'un seul
   accesseur — d'où les sept flottants de `scg_world_entity_pose`, trois de
   position puis quatre d'un quaternion normalisé.
+- **L'identifiant d'une lumière se lit par `scg_world_light_id`, jamais dans
+  `ScgLight`.** Celle-ci traverse **par valeur**, et un champ de plus y
+  déplacerait les décalages d'une structure publiée : la règle d'extension
+  l'interdit, et c'est exactement le cas qu'elle existe pour couvrir. L'appel vient
+  donc par rang, celui que `scg_world_light` prend.
+
+  Elle a été ajoutée après la publication de l'étape, sur le constat d'un
+  intégrateur : sans elle, un hôte qui a écrit la carte ne peut relier une lumière
+  relue à celle qu'il a posée que par l'ordre d'écriture, que rien ne garantit.
+  Une fonction s'ajoute sans incrémenter `SCG_ABI_VERSION`, et c'est ce qui l'a
+  rendue possible sans rien reprendre.
 - **Les identifiants d'une entité sont ceux de l'éditeur**, jamais des index :
   `index` désigne un rang dans ce que `scg_world_entity_count` a rendu, `id` et
   `cell` sont stables d'un chargement à l'autre.

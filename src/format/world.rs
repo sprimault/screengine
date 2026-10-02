@@ -401,8 +401,11 @@ impl Cell {
 pub(crate) struct StaticLight {
     /// Son identifiant stable, jamais nul.
     ///
-    /// Sans accesseur : à cette étape, l'hôte lit une lumière pour la repasser
-    /// au moteur, et le calcul de lightmap qui la désignera est interne.
+    /// **Lu par [`World::light_id`] et non porté par [`Light`]**, et c'est le
+    /// genre de décision qu'on propose de nouveau dans six mois : `Light`
+    /// traverse la frontière C **par valeur**, si bien que lui ajouter un champ
+    /// déplacerait les décalages d'une structure publiée — donc casserait l'ABI.
+    /// Un accesseur de plus ne grave rien.
     id: u32,
     /// Ce que le moteur connaît d'une lumière, et rien de plus.
     light: Light,
@@ -735,6 +738,18 @@ impl World {
     /// sans rien reconstruire, ce qui est tout ce qu'il en fait à cette étape.
     pub fn light(&self, index: u32) -> Option<Light> {
         self.lights.get(index as usize).map(|light| light.light)
+    }
+
+    /// L'identifiant stable d'une lumière, ou `None` au-delà de la dernière.
+    ///
+    /// **Par rang, celui que [`World::light`] prend.** Sans lui, un hôte qui a
+    /// écrit la carte ne peut relier une lumière relue à celle qu'il a posée que
+    /// par l'ordre d'écriture, et cet ordre n'est garanti par rien.
+    ///
+    /// Une lumière n'a pas de cellule, d'où le singulier là où une entité rend
+    /// une paire.
+    pub fn light_id(&self, index: u32) -> Option<u32> {
+        self.lights.get(index as usize).map(|light| light.id)
     }
 
     /// Combien d'entités la carte porte.
