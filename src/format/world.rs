@@ -1503,12 +1503,25 @@ fn perpendicular(dot: f64, square_a: f64, square_b: f64) -> bool {
 
 /// Vrai si le repère de lightmap d'une surface est utilisable pour la cuire.
 ///
-/// Quatre propriétés, et aucune ne remplace une autre.
+/// Trois propriétés, et aucune ne remplace une autre.
 ///
-/// La longueur **au carré** de chaque axe est une puissance de deux, ce qui rend
-/// son inverse exact : la reconstruction d'un luxel vers un point du monde se
-/// fait alors par deux multiplications et trois additions, sans division, donc
-/// sans arrondi à rendre déterministe.
+/// La longueur au carré de chaque axe est **finie et non nulle**, et rien de
+/// plus : un axe dégénéré n'a pas de direction, donc pas de réciproque.
+///
+/// **La puissance de deux n'est plus exigée, et l'exiger interdisait toute pente
+/// autre que 45°.** Elle existait pour rendre `1/|u|²` exact, mais la cuisson
+/// **divise de toute façon** — une fois par surface, jamais par luxel —, si bien
+/// que le contrôle ne supprimait pas la division : il en rendait seulement le
+/// quotient exact. Une division IEEE est exactement arrondie, donc elle rend les
+/// mêmes bits sur toutes les cibles, et c'est tout ce que le déterminisme demande.
+/// Ce qui était interdit à bon droit reste interdit : une division **par luxel**.
+///
+/// Ce que la clause coûtait, mesuré sur un décor réel : un repère écrit en nombres
+/// ronds impose à `course² + montée²` d'être une puissance de deux, ce qui ne
+/// laisse que `course = montée` ou l'axial. Une rampe 1:2, 1:3, 2:3, à 30°, à 60°,
+/// ou de normale `(1, 1, 1)` faisait donc **refuser le fichier entier** — et le
+/// drapeau « ne reçoit pas de lightmap » n'y échappait pas, ce contrôle étant
+/// antérieur à toute lecture de drapeau.
 ///
 /// L'origine tombe sur un nœud de sa propre grille, mesurée depuis le zéro du
 /// monde. Le contrôle est local à la surface et emporte le global : deux origines
@@ -1522,16 +1535,11 @@ fn perpendicular(dot: f64, square_a: f64, square_b: f64) -> bool {
 /// Ces deux derniers contrôles tolèrent un résidu, pour la raison écrite sur
 /// [`SQUARE_TOLERANCE`].
 fn aligned(mapping: Mapping, corners: &[Vec3]) -> bool {
-    // Mantisse nulle : la valeur est une puissance de deux. **L'exposant n'a pas à
-    // être pair**, et l'exiger interdisait tout mur oblique : un axe dans un plan
-    // à 45° s'écrit `(p, −p, 0)`, de carré `2p²`, donc d'exposant impair, et le
-    // second axe ne peut pas être à la fois orthogonal à lui et dans le plan.
-    let power_of_two =
-        |value: f32| value > 0.0 && value.is_finite() && value.to_bits() & 0x007f_ffff == 0;
-
     let square_u = mapping.u.dot(mapping.u);
     let square_v = mapping.v.dot(mapping.v);
-    if !power_of_two(square_u) || !power_of_two(square_v) {
+    // Un axe dégénéré n'a pas de direction à porter, et sa réciproque n'existe
+    // pas : c'est tout ce que la longueur doit garantir.
+    if !(square_u > 0.0 && square_u.is_finite() && square_v > 0.0 && square_v.is_finite()) {
         return false;
     }
 

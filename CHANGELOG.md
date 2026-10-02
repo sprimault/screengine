@@ -50,6 +50,11 @@ publié, et explique les conventions du dépôt à qui y contribue.
 empreintes `collision` et `selection` sont mises à jour. Un rayon n'est pas
 concerné.
 
+### Ajouté
+- Les cartes acceptent désormais **toute pente**. Le repère de lightmap n'exige
+  plus qu'un axe ait un carré en puissance de deux, ce qui limitait les surfaces à
+  l'axial et au 45° et faisait refuser le fichier entier au-delà.
+
 ### Corrigé
 - Une boîte posée au sol s'arrêtait net à chaque jointure de deux cellules.
 - Une boîte traversait une surface oblique le long de son arête amont.
@@ -62,6 +67,11 @@ concerné.
 
 **Collision results change on sloped surfaces**, and the `collision` and
 `selection` digests are updated. A ray is unaffected.
+
+### Added
+- Maps now accept **any slope**. A lightmap frame no longer requires an axis whose
+  squared length is a power of two, which confined surfaces to axis-aligned and 45°
+  and rejected the whole file beyond that.
 
 ### Fixed
 - A box resting on the floor stopped dead at every joint between two cells.
