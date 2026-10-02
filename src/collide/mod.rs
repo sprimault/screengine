@@ -262,7 +262,19 @@ pub(crate) fn sweep(
                     best.truncate(reached);
                 }
                 best.hit.incomplete = true;
-                break;
+                // **Et les portails suivants se regardent quand même**, là où un
+                // arrêt net serait une **sur-déclaration de validité** : la borne
+                // retenue est un minimum, donc en abandonner des candidats ne peut
+                // que la laisser trop grande — le moteur déclarerait valide une
+                // portion qu'il n'a pas examinée, et un contact manqué ne se
+                // signalerait par rien. Le minimum sur tous est conservateur.
+                //
+                // Cela retire aussi au résultat sa dépendance à l'ordre des
+                // portails dans le fichier, qu'aucune clause n'annonçait et qu'un
+                // hôte ne pourrait pas exploiter : prédire sa troncature lui
+                // demanderait de raisonner sur l'ordre d'écriture de sa propre
+                // carte.
+                continue;
             }
             seen[count] = linked;
             count += 1;

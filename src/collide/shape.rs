@@ -55,6 +55,34 @@ fn abs(value: f64) -> f64 {
     if value < 0.0 { -value } else { value }
 }
 
+/// Le coin de la boîte qui touche la facette d'une face, selon sa normale.
+///
+/// C'est le point de la boîte qui maximise le produit scalaire avec `normal`,
+/// donc celui dont ce produit vaut exactement [`support`] : la facette du volume
+/// dilaté est le polygone translaté de ce coin, et le contact d'un centre sur la
+/// facette a lieu en ce centre moins ce décalage.
+///
+/// **Par comparaisons écrites, et une composante nulle de la normale ne décale
+/// rien** : `signum` rend `-1` sur le zéro négatif, ce qui décalerait une boîte le
+/// long d'un axe que la face ignore. Le résultat ne dépend pas de la norme de
+/// `normal`, qui n'est pas unitaire ici.
+fn facet_offset(normal: Vec3d, half: Vec3d) -> Vec3d {
+    let pick = |n: f64, h: f64| {
+        if n > 0.0 {
+            h
+        } else if n < 0.0 {
+            -h
+        } else {
+            0.0
+        }
+    };
+    Vec3d::new(
+        pick(normal.x, half.x),
+        pick(normal.y, half.y),
+        pick(normal.z, half.z),
+    )
+}
+
 /// Le contact du segment avec la **face** d'une surface.
 ///
 /// Le plan de la surface décalé du support, puis l'appartenance du point de
@@ -121,7 +149,18 @@ pub(crate) fn face(
         t
     };
     let centre = from + (to - from) * t;
-    if !inside(points, normal, centre) {
+    // **Le point à tester est celui de la surface, pas le centre de la boîte**, et
+    // les confondre a été un défaut silencieux sur toute face non axiale. La
+    // facette du volume dilaté est le polygone translaté du coin de la boîte le
+    // plus avancé selon la normale : quand le centre la touche, le contact réel a
+    // lieu en `centre − facet_offset`, qui est dans le plan du polygone. Pour une
+    // normale axiale les deux se projettent au même endroit — l'écart ne porte que
+    // sur l'axe que `plane_axes` laisse justement tomber —, d'où un test qui
+    // paraissait juste partout. Sur une rampe à 45°, le domaine de la face se
+    // décalait d'une demi-extension : trou de contact le long de l'arête amont,
+    // face fantôme au-delà de l'aval, et les deux chemins de balayage faux de la
+    // même façon.
+    if !inside(points, normal, centre - facet_offset(normal, half)) {
         return None;
     }
     Some(Touch {
