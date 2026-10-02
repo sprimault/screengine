@@ -51,24 +51,60 @@ const CUBE: [[f32; 3]; 8] = [
 /// `flags` s'applique au **sol**, ce qui permet à un seul constructeur de servir
 /// aussi le cas de la surface non solide.
 fn room(flags: u32) -> World {
-    let faces = [
-        // Sol et plafond, repère dans le plan `XY`.
-        surface_in_plane(11, flags, &[0, 3, 2, 1], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]),
-        surface_in_plane(12, 0, &[4, 5, 6, 7], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]),
-        // Les deux murs perpendiculaires à `Y`.
-        surface_in_plane(13, 0, &[0, 1, 5, 4], [1.0, 0.0, 0.0], [0.0, 0.0, 1.0]),
-        surface_in_plane(14, 0, &[3, 7, 6, 2], [1.0, 0.0, 0.0], [0.0, 0.0, 1.0]),
-        // Les deux murs perpendiculaires à `X`.
-        surface_in_plane(15, 0, &[0, 4, 7, 3], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]),
-        surface_in_plane(16, 0, &[1, 2, 6, 5], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]),
-    ];
-    let cell = cell_bytes(7, 0, &CUBE, &faces, &[]);
+    let cell = cell_bytes(7, 0, &CUBE, &cube_faces(11, flags), &[]);
     World::load(&file(&cell, &[], &[], &material(1, "mur"))).expect("carte valide")
 }
 
 /// Une boîte d'un côté, commode pour les cas où sa forme n'importe pas.
 fn cube_half() -> Vec3d {
     Vec3d::new(0.5, 0.5, 0.5)
+}
+
+/// Les six faces d'une salle cubique, à partir du rang de son premier sommet.
+///
+/// Extrait de [`room`] quand une seconde salle a eu besoin des mêmes faces sur
+/// d'autres sommets : la liste des enroulements est ce qu'on recopie de travers,
+/// et une face retournée ne se voit sur aucune image, cette carte n'en rendant
+/// aucune.
+fn cube_faces(first_id: u32, floor_flags: u32) -> Vec<Vec<u8>> {
+    let x = [1.0, 0.0, 0.0];
+    let y = [0.0, 1.0, 0.0];
+    let z = [0.0, 0.0, 1.0];
+    alloc::vec![
+        // Sol et plafond, repère dans le plan `XY`.
+        surface_in_plane(first_id, floor_flags, &[0, 3, 2, 1], x, y),
+        surface_in_plane(first_id + 1, 0, &[4, 5, 6, 7], x, y),
+        // Les deux murs perpendiculaires à `Y`.
+        surface_in_plane(first_id + 2, 0, &[0, 1, 5, 4], x, z),
+        surface_in_plane(first_id + 3, 0, &[3, 7, 6, 2], x, z),
+        // Les deux murs perpendiculaires à `X`.
+        surface_in_plane(first_id + 4, 0, &[0, 4, 7, 3], y, z),
+        surface_in_plane(first_id + 5, 0, &[1, 2, 6, 5], y, z),
+    ]
+}
+
+/// Les huit coins du cube, décalés le long de `Y`.
+fn shifted_cube(dy: f32) -> [[f32; 3]; 8] {
+    let mut points = CUBE;
+    for point in &mut points {
+        point[1] += dy;
+    }
+    points
+}
+
+/// Deux salles cubiques disjointes, sans portail entre elles.
+///
+/// **Les deux sont convexes, et c'est tout l'intérêt.** Le cas de la cellule en U
+/// demande une cellule non convexe parce que la face fautive y est celle du
+/// départ ; celui-ci n'en demande aucune, parce que la face fautive appartient à
+/// **l'autre** cellule. C'est la forme sous laquelle un intégrateur rencontre le
+/// défaut, et c'est aussi la seule où les deux chemins **divergent** : la force
+/// brute examine la seconde salle, la traversée ne l'atteint par aucun portail.
+fn two_rooms() -> World {
+    let mut cells = cell_bytes(7, 0, &CUBE, &cube_faces(11, 0), &[]);
+    let far = shifted_cube(16.0);
+    cells.extend_from_slice(&cell_bytes(8, 0, &far, &cube_faces(21, 0), &[]));
+    World::load(&file(&cells, &[], &[], &material(1, "mur"))).expect("carte valide")
 }
 
 /// Un balayage qui ne rencontre rien parcourt tout son déplacement.
@@ -657,4 +693,157 @@ fn un_balayage_repris_au_point_d_arret_ne_traverse_pas() {
             at.y - half.y
         );
     }
+}
+
+/// Les seize coins d'une cellule en U, extrudée de `z = 0` à `z = 8`.
+///
+/// Les huit premiers dessinent le contour au sol, en sens antihoraire vu de
+/// dessus ; les huit suivants les répètent au plafond. La région est la base
+/// `y ≤ 2` et les deux branches `x ≤ 2` et `x ≥ 6`.
+const U_ROOM: [[f32; 3]; 16] = [
+    [0.0, 0.0, 0.0],
+    [8.0, 0.0, 0.0],
+    [8.0, 8.0, 0.0],
+    [6.0, 8.0, 0.0],
+    [6.0, 2.0, 0.0],
+    [2.0, 2.0, 0.0],
+    [2.0, 8.0, 0.0],
+    [0.0, 8.0, 0.0],
+    [0.0, 0.0, 8.0],
+    [8.0, 0.0, 8.0],
+    [8.0, 8.0, 8.0],
+    [6.0, 8.0, 8.0],
+    [6.0, 2.0, 8.0],
+    [2.0, 2.0, 8.0],
+    [2.0, 8.0, 8.0],
+    [0.0, 8.0, 8.0],
+];
+
+/// Une cellule en U fermée, dont les faces s'enroulent vers l'extérieur.
+///
+/// **Ce que la salle cubique ne peut pas porter : un point intérieur situé
+/// derrière le plan d'une de ses propres faces.** Dans un convexe, aucun point
+/// intérieur ne l'est, et une salle en L non plus — la région derrière le plan
+/// d'une de ses faces est précisément son quart manquant. Il faut un U : un
+/// point de la branche gauche est derrière le plan de la face intérieure de la
+/// branche droite, et sa projection tombe **dans** cette face.
+fn u_room() -> World {
+    let wall_x = ([0.0, 1.0, 0.0], [0.0, 0.0, 1.0]);
+    let wall_y = ([1.0, 0.0, 0.0], [0.0, 0.0, 1.0]);
+    let mut faces = Vec::new();
+    faces.push(surface_in_plane(
+        11,
+        0,
+        &[0, 7, 6, 5, 4, 3, 2, 1],
+        [1.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0],
+    ));
+    faces.push(surface_in_plane(
+        12,
+        0,
+        &[8, 9, 10, 11, 12, 13, 14, 15],
+        [1.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0],
+    ));
+    // Un mur par arête du contour, dans l'ordre : chacun porte les deux sommets
+    // du sol puis les deux du plafond, ce qui l'enroule vers l'extérieur.
+    for i in 0..8u32 {
+        let j = (i + 1) % 8;
+        // L'arête est-elle perpendiculaire à X ? Alors son repère prend Y.
+        let frame = if U_ROOM[i as usize][0] == U_ROOM[j as usize][0] {
+            wall_x
+        } else {
+            wall_y
+        };
+        faces.push(surface_in_plane(
+            13 + i,
+            0,
+            &[i, j, j + 8, i + 8],
+            frame.0,
+            frame.1,
+        ));
+    }
+    let cell = cell_bytes(7, 0, &U_ROOM, &faces, &[]);
+    World::load(&file(&cell, &[], &[], &material(1, "mur"))).expect("carte valide")
+}
+
+/// **Un pas qui s'éloigne d'une face vue de derrière ne rencontre rien.**
+///
+/// Le contact immédiat qu'un instant d'impact négatif décrit vaut dans la dalle
+/// dilatée, `|d| ≤ s`, et nulle part ailleurs. Sans cette borne, le départ en
+/// `(1, 5, 4)` — dans la branche gauche du U, donc cinq unités derrière le plan
+/// de la face intérieure de la branche droite — rendait un contact à la fraction
+/// zéro contre cette face, que le segment ne croise jamais.
+///
+/// **Les deux chemins étaient faux de la même façon**, et leur égalité restait
+/// verte : c'est la limite que le module de force brute annonce, et c'est
+/// pourquoi ce cas est un test du noyau et non une comparaison d'oracle.
+#[test]
+fn un_pas_qui_s_eloigne_d_une_face_vue_de_derriere_ne_rencontre_rien() {
+    let world = u_room();
+    let half = cube_half();
+    let from = Vec3d::new(1.0, 5.0, 4.0);
+    let to = Vec3d::new(0.75, 5.0, 4.0);
+
+    let fast = sweep(&world, 7, half, from, to).expect("cellule connue");
+    assert_eq!(fast.fraction, 1.0, "le pas est libre");
+    assert_eq!(fast.surface, 0, "aucune surface n'est touchée");
+    assert!(!fast.start_solid);
+
+    let slow = sweep_brute(&world, half, from, to);
+    assert_eq!(slow.fraction, fast.fraction);
+    assert_eq!(slow.surface, fast.surface);
+}
+
+/// **Un départ derrière la face d'une autre cellule ne rencontre rien**, et
+/// aucune cellule n'a besoin d'être non convexe pour cela.
+///
+/// C'est la forme sous laquelle le défaut s'est présenté chez un intégrateur, et
+/// elle se distingue du cas de la cellule en U sur les deux points qui comptent :
+/// la face fautive appartient à une **autre** cellule, donc deux salles convexes
+/// suffisent ; et la traversée ne l'atteignant par aucun portail, les deux chemins
+/// **divergeaient** — un pas libre contre une fraction nulle — au lieu d'être faux
+/// ensemble.
+#[test]
+fn un_depart_derriere_la_face_d_une_autre_cellule_ne_rencontre_rien() {
+    let world = two_rooms();
+    let half = cube_half();
+    let from = Vec3d::new(4.0, 4.0, 4.0);
+    let to = Vec3d::new(4.0, 3.0, 4.0);
+
+    let fast = sweep(&world, 7, half, from, to).expect("cellule connue");
+    assert_eq!(fast.fraction, 1.0, "le pas est libre");
+    assert_eq!(fast.surface, 0, "aucune surface n'est touchée");
+
+    let slow = sweep_brute(&world, half, from, to);
+    assert_eq!(slow.fraction, fast.fraction, "la salle au loin est muette");
+    assert_eq!(slow.surface, fast.surface);
+}
+
+/// **Une boîte lancée contre une face vue de derrière ne l'accroche pas non
+/// plus**, et c'est l'autre moitié du même cas.
+///
+/// Le pas précédent s'éloigne du plan ; celui-ci part de derrière et traverse la
+/// branche, donc il atteint pour de bon la face opposée. Ce qu'il vérifie est
+/// que la borne de la dalle n'a pas changé le contact légitime en absence de
+/// contact : la boîte s'arrête, et elle s'arrête sur la face qu'elle rencontre.
+#[test]
+fn une_boite_qui_traverse_un_u_s_arrete_sur_la_face_qu_elle_rencontre() {
+    let world = u_room();
+    let half = cube_half();
+    let from = Vec3d::new(1.0, 5.0, 4.0);
+    let to = Vec3d::new(1.0, 12.0, 4.0);
+
+    let hit = sweep(&world, 7, half, from, to).expect("cellule connue");
+    assert!(hit.fraction < 1.0, "le fond de la branche arrête la boîte");
+    assert_eq!(hit.surface, 19, "c'est le mur `y = 8` de la branche gauche");
+    let centre = from + (to - from) * f64::from(hit.fraction);
+    assert!(
+        centre.y + half.y <= 8.0,
+        "la boîte reste en deçà du mur : {centre:?}"
+    );
+
+    let slow = sweep_brute(&world, half, from, to);
+    assert_eq!(slow.fraction, hit.fraction);
+    assert_eq!(slow.surface, hit.surface);
 }

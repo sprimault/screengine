@@ -15,6 +15,22 @@
 //! l'égalité reste verte. C'est le prédicat statique qui ferme ce cas, et il ne
 //! partage aucune algèbre avec ce qui précède.
 //!
+//! **Sauf là où les deux ne regardent pas la même géométrie**, et c'est ce que le
+//! décor de conformance exploite depuis qu'il porte une cellule sans portail : une
+//! formule fausse contre une surface que la traversée ne visite pas les fait
+//! diverger, et l'égalité redevient alors le contrôle qui l'attrape. Un décor
+//! d'un seul tenant ne l'offre pas.
+//!
+//! **Et une égalité stricte ne tient pas sur un départ dans le solide**, qui est
+//! le troisième cas et celui qui égare : les deux chemins s'accordent alors sur la
+//! fraction, nulle, mais pas nécessairement sur la **surface**. Celle-ci se
+//! départage par la moindre pénétration, jamais par l'ordre du fichier entre
+//! cellules, et les deux n'en examinent pas le même ensemble — la plus
+//! superficielle peut donc vivre dans une cellule que la traversée n'atteint pas.
+//! Une comparaison qui exige la même surface échoue là **sans qu'aucune formule
+//! soit en cause**, et c'est au décor de rester hors de ce cas plutôt qu'à la
+//! comparaison de se relâcher.
+//!
 //! Il n'a pas de borne de cellules : il les visite toutes, donc il ne rend jamais
 //! de résultat tronqué. Une comparaison avec le chemin rapide sur un décor qui
 //! atteint la borne comparerait deux choses différentes, et c'est au décor de

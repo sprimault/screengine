@@ -1653,12 +1653,30 @@ mur. Les deux se voient chez l'intégrateur, jamais dans un test qui joue un
 balayage à la fois.
 
 Un instant d'impact **négatif** est donc un contact à l'instant zéro, et non une
-absence de contact. Pour une face, il suffit de le ramener à zéro. Pour un prisme
-ou une boîte de sommet, il n'y a pas d'instant d'entrée du tout — tous les plans
-sont franchis avant le départ —, et le contact se rend alors avec la normale du
-plan dont on est le plus proche de sortir, celle qui demande le moins de recul.
+absence de contact. Pour un prisme ou une boîte de sommet, il n'y a pas d'instant
+d'entrée du tout — tous les plans sont franchis avant le départ —, et le contact
+se rend alors avec la normale du plan dont on est le plus proche de sortir, celle
+qui demande le moins de recul.
 
-**Dans les deux cas, seulement si le mouvement s'enfonce**, au sens strict. Un
+**Pour une face, le ramener à zéro ne suffit pas, et le croire a été un défaut.**
+Le volume dilaté d'une face est une **dalle** d'épaisseur deux fois son support,
+jamais un demi-espace : un départ au-delà d'elle est derrière la face, et aucun
+contact n'y a lieu — ni en s'éloignant, ni en revenant, qu'un élément franchi en
+sortant écarte déjà. Une face est à sens unique, et un contact par l'arrière n'en
+est pas un. Le contact immédiat se borne donc à `|d| ≤ support`.
+
+Ce que son absence coûtait, sous deux formes qu'il faut distinguer parce qu'elles
+ne se voient pas de la même façon. Un départ derrière une face en rendait un
+contact à l'instant zéro depuis **n'importe quelle distance**, dès que sa
+projection tombait dans le polygone : si la face est celle de la **cellule du
+départ** — ce qu'une cellule non convexe suffit à produire, un couloir qui se
+replie le fait à chaque pas —, les deux chemins sont faux de la même façon et
+l'égalité d'oracle reste verte ; si elle est celle d'une **autre cellule** — ce
+que deux cellules convexes suffisent à produire —, le chemin brut l'examine quand
+la traversée ne l'atteint pas, et les deux **divergent**. C'est sous la seconde
+forme qu'un intégrateur l'a rencontré.
+
+**Dans tous les cas, seulement si le mouvement s'enfonce**, au sens strict. Un
 mobile qui ressort n'est pas arrêté, sans quoi rien ne l'en tirerait ; un
 mouvement tangent glisse et ne bloque pas davantage ; et un déplacement nul ne
 rend rien, la question « suis-je déjà dedans » appartenant au départ dans le
@@ -1668,6 +1686,14 @@ solide.
 treillis, et aucun ne tombe à une dilatation d'un mur. Ce qui la garde, ce sont
 les tests du noyau, dont un qui enchaîne deux balayages en repartant du point
 d'arrêt — la seule forme où le défaut apparaisse.
+
+**Elle couvre en revanche la dalle, et par deux mécanismes distincts.** Sa
+cellule en U porte le départ derrière le plan d'une face de sa propre cellule,
+qu'aucun convexe ni aucune salle en L ne peut porter ; et elle est **sans portail
+et loin des deux autres**, si bien que le chemin de force brute l'examine quand
+la traversée ne la visite pas — un faux contact les fait alors **diverger** au
+lieu de les tromper ensemble. Les tests du noyau gardent le premier mécanisme,
+qui reste invisible à l'égalité d'oracle ; la conformance garde le second.
 
 La constante est une puissance de deux relative à la plus grande demi-extension,
 donc exacte, sans échelle de monde à inventer et sans sous-normal — même clause

@@ -1,7 +1,7 @@
 // Copyright 2026 Stéphane Primault <sprimault@users.noreply.github.com>
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
-//! Le décor de validation du balayage : deux cellules, sept cas.
+//! Le décor de validation du balayage : trois cellules, neuf cas.
 //!
 //! **Une carte à part plutôt que des cas ajoutés à `salles.world`.** Celle-ci a
 //! pour métier de figer une image, et chaque cas de collision qu'on y ajouterait
@@ -10,7 +10,7 @@
 //! d'une boîte, un portail qui ne mène nulle part, une surface qui n'arrête rien.
 //! Les deux points de gel restent ainsi découplés.
 //!
-//! Les sept cas, et ce que chacun éprouve que les autres n'éprouvent pas :
+//! Les neuf cas, et ce que chacun éprouve que les autres n'éprouvent pas :
 //!
 //! - **les coins rentrants** de la salle en L — cinq angles droits vus de
 //!   l'intérieur : leur arête partagée est éteinte au chargement, et une boîte
@@ -30,7 +30,15 @@
 //!   qui rend la constante de dilatation **mesurable** au lieu d'arbitraire — une
 //!   boîte qui n'y passe plus dit que la marge est trop grande ;
 //! - **le passage plus étroit que la boîte**, qui est le même couloir balayé avec
-//!   une boîte plus grande : il doit refuser franchement, jamais laisser passer.
+//!   une boîte plus grande : il doit refuser franchement, jamais laisser passer ;
+//! - **le départ derrière le plan d'une face de sa propre cellule**, que la
+//!   cellule en U porte et que ni un convexe ni un L ne peuvent porter : le
+//!   contact immédiat d'un instant d'impact négatif doit s'arrêter à la dalle
+//!   dilatée, et au-delà il n'y a pas de contact. Voir [`BRANCHES`] ;
+//! - **une cellule que la traversée ne visite pas**, la même : sans portail et
+//!   loin des deux autres, elle est la seule part du décor où le chemin de force
+//!   brute regarde une géométrie que la traversée ignore. C'est là qu'un faux
+//!   contact les fait diverger plutôt que de les tromper ensemble.
 //!
 //! **Les deux portails s'apparient au bit près**, ce qui décide de la géométrie :
 //! la salle porte deux sommets colinéaires sur son mur de droite, en `y = 2` et
@@ -77,6 +85,38 @@ pub const ROOM: [[f32; 2]; 8] = [
 /// L'empreinte du couloir étroit, large d'une unité.
 pub const CORRIDOR: [[f32; 2]; 4] = [[8.0, 2.0], [16.0, 2.0], [16.0, 3.0], [8.0, 3.0]];
 
+/// L'empreinte de la cellule en U : une base et deux branches.
+///
+/// **Ce qu'un L ne peut pas porter.** Le volume dilaté d'une face est une dalle
+/// autour de son plan, et le balayage doit refuser un contact immédiat au départ
+/// qui tombe au-delà d'elle. Encore faut-il un départ qui y tombe : il lui faut
+/// être derrière le plan d'une face de sa propre cellule **et** s'y projeter
+/// dedans. Aucun point intérieur d'un convexe ne l'est, et aucun point de la
+/// salle en L non plus — la région derrière le plan d'une de ses faces est
+/// précisément son quart manquant. Un U l'a : un point de la branche gauche est
+/// à quatre unités derrière le plan de la face intérieure de la branche droite,
+/// et se projette en plein milieu d'elle.
+///
+/// **Elle est loin des deux autres et n'a aucun portail**, et les deux tiennent
+/// à la même raison : le chemin de force brute la voit, la traversée ne la
+/// visite jamais depuis la salle. C'est la seule configuration du décor où les
+/// deux chemins ne regardent pas la même géométrie, et c'est celle où un faux
+/// contact les fait **diverger** au lieu de les tromper ensemble — le reste du
+/// décor étant d'un seul tenant, une formule fausse y restait invisible.
+///
+/// Les huit arêtes mesurent 8, 8, 2, 4, 4, 4, 2 et 8 unités : le carré de
+/// chacune est une puissance de deux, ce que le repère de lightmap exige.
+pub const BRANCHES: [[f32; 2]; 8] = [
+    [0.0, 16.0],
+    [8.0, 16.0],
+    [8.0, 24.0],
+    [6.0, 24.0],
+    [6.0, 20.0],
+    [2.0, 20.0],
+    [2.0, 24.0],
+    [0.0, 24.0],
+];
+
 /// Le rang de l'arête de la salle qui porte le portail vers le couloir.
 const ROOM_PORTAL: usize = 2;
 
@@ -98,6 +138,7 @@ pub fn bytes() -> Vec<u8> {
         &mut cells,
     );
     prism(8, 200, &CORRIDOR, &[CORRIDOR_PORTAL], true, &mut cells);
+    prism(9, 300, &BRANCHES, &[], false, &mut cells);
 
     let mut materials = Vec::new();
     for (id, name) in [(1u32, "mur"), (2, "sol")] {
