@@ -46,6 +46,18 @@ publié, et explique les conventions du dépôt à qui y contribue.
 
 ## [Non publié]
 
+### Corrigé
+- **Une fenêtre redimensionnée gardait l'image précédente à l'ancienne
+  géométrie**, le temps d'une période de mise à jour : la zone découverte restait
+  noire. `screengine-play` redessine désormais aussitôt.
+
+***
+
+### Fixed
+- **A resized window kept the previous frame at the old geometry** for one update
+  period, leaving the uncovered area black. `screengine-play` now redraws at
+  once.
+
 ## [0.8.0] — 2026-10-01 — Ce qu'il faut pour éditer
 
 **Rien à reprendre pour une liaison existante.** `SCG_ABI_VERSION` reste à 1,
