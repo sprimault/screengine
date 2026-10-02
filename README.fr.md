@@ -116,6 +116,12 @@ exécute.
 Le chemin Rust ajoute du confort, jamais de capacité : tout ce qu'il permet se
 fait aussi par l'ABI C.
 
+**Un exemple d'intégration**, hors de ce dépôt :
+[screengine-dedale](https://github.com/sprimault/screengine-dedale), un jeu de
+labyrinthe qui consomme cette bibliothèque comme n'importe quel autre
+utilisateur. Les exemples ci-dessus montrent une fonction à la fois ; lui montre
+les contraintes qui n'apparaissent qu'en les assemblant.
+
 ### Intégrer, depuis n'importe quel langage
 
 L'hôte garde sa fenêtre, sa boucle et ses entrées. La bibliothèque expose une

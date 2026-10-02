@@ -113,6 +113,12 @@ tested** — they open a window, so no check runs them.
 The Rust path adds convenience, never capability: everything it allows can also
 be done through the C ABI.
 
+**An integration example**, outside this repository:
+[screengine-dedale](https://github.com/sprimault/screengine-dedale), a maze game
+consuming this library as any other user would. The examples above show one
+feature at a time; it shows the constraints that only appear once they are put
+together.
+
 ### Embedding, from any language
 
 The host keeps its window, loop and input. The library exposes a stable C ABI
