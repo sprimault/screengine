@@ -531,23 +531,43 @@ fn un_portail_concave_est_refuse() {
     assert!(World::load(&file(&cell, &[], &[], &material(1, "mur"))).is_ok());
 }
 
-/// Un axe de lightmap dont la longueur n'est pas une puissance de deux est
-/// refusé.
+/// Un axe de lightmap **dégénéré** est refusé, et c'est tout ce que la longueur
+/// doit garantir.
 ///
-/// C'est cet alignement qui évite une marche d'éclairage à la jointure de deux
-/// surfaces coplanaires, et il se vérifie plutôt qu'il ne se convient.
+/// Un axe de longueur nulle n'a pas de direction à porter, donc pas de
+/// réciproque : la cuisson diviserait par zéro. C'est le seul refus qui reste sur
+/// la longueur — voir le test voisin pour ce qui a cessé d'en être un.
 #[test]
-fn un_repere_de_lightmap_mal_aligne_est_refuse() {
+fn un_axe_de_lightmap_degenere_est_refuse() {
     let mut body = words(&[11, 0, 1, 4]);
     body.extend_from_slice(&words(&[0, 1, 2, 3]));
     body.extend_from_slice(&unit_frame());
-    body.extend_from_slice(&frame([0.0, 0.0, 0.0], [3.0, 0.0, 0.0], [0.0, 1.0, 0.0]));
+    body.extend_from_slice(&frame([0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 1.0, 0.0]));
 
     let cell = cell_bytes(7, 0, &SQUARE, &[body], &[]);
     assert_eq!(
         World::load(&file(&cell, &[], &[], &material(1, "mur"))).unwrap_err(),
         refused(Malformation::Mapping)
     );
+}
+
+/// **Un repère dont le carré n'est pas une puissance de deux est accepté**, et
+/// c'est ce qui ouvre les pentes autres que 45°.
+///
+/// `(1, 2, 0)` a pour carré 5. L'ancien contrôle le refusait, et refusait avec lui
+/// le **fichier entier** : pour un repère écrit en nombres ronds, exiger une
+/// puissance de deux force `course² + montée²` à en être une, ce qui ne laisse que
+/// `course = montée` ou l'axial. Une rampe de parking à 1:2, une pente à 30° ou à
+/// 60°, une rampe de coin n'étaient pas chargeables — pas même en renonçant à leur
+/// lightmap, le contrôle précédant toute lecture de drapeau.
+///
+/// Ce que cela coûte : `1/|u|²` n'est plus exact. Il reste **exactement arrondi**,
+/// donc identique sur toutes les cibles, et il se calcule une fois par surface —
+/// jamais par luxel, ce qui est la division que la doctrine interdit.
+#[test]
+fn un_repere_de_lightmap_de_pente_quelconque_est_accepte() {
+    let slope = frame([0.0, 0.0, 0.0], [1.0, 2.0, 0.0], [-2.0, 1.0, 0.0]);
+    World::load(&map_with_lightmap(&slope)).expect("une pente 1:2 s'éclaire");
 }
 
 /// Un repère de lightmap en diagonale est accepté.
@@ -1588,4 +1608,64 @@ fn le_conteneur_garde_ses_refus() {
         World::load(&file).unwrap_err(),
         refused(Malformation::SectionKind)
     );
+}
+
+/// **Toute pente est acceptée, et c'est l'origine du repère qui décide.**
+///
+/// Deux conclusions d'une seule mesure, et la seconde est celle qu'un auteur de
+/// décor doit lire. Les pentes de 15° à 45° passent toutes, y compris celles dont
+/// la tangente est irrationnelle — l'orthogonalité et l'appartenance au plan
+/// tolèrent le résidu d'une construction oblique. Mais **l'origine sur un nœud de
+/// sa grille est exacte, sans tolérance** : posée sur un coin de la surface, elle
+/// est refusée **même à 45°**, le produit scalaire valant 3,99999976 au lieu de 4
+/// sur des composantes en simple précision.
+///
+/// La règle pratique est donc : l'origine du monde la garantit toujours, un coin de
+/// facette presque jamais. C'est écrit dans [`cartes.md`], et ce test est ce qui
+/// l'empêche de devenir faux.
+///
+/// [`cartes.md`]: https://github.com/sprimault/screengine/blob/master/docs/cartes.md
+#[test]
+fn toute_pente_est_acceptee_et_l_origine_decide() {
+    // Cosinus et sinus écrits en dur : le noyau n'appelle aucune trigonométrie,
+    // et un test n'a pas à être la première exception.
+    let angles: [(&str, f32, f32); 5] = [
+        ("45", 0.707_106_77, 0.707_106_77),
+        ("30", 0.866_025_4, 0.5),
+        ("25", 0.906_307_8, 0.422_618_26),
+        ("20", 0.939_692_6, 0.342_020_14),
+        ("15", 0.965_925_8, 0.258_819_04),
+    ];
+    let mut lignes = alloc::vec::Vec::new();
+    for (nom, c, s) in angles {
+        let corners = [
+            Vec3::new(0.0, 0.0, 0.0),
+            Vec3::new(4.0, 0.0, 0.0),
+            Vec3::new(4.0, 4.0 * c, 4.0 * s),
+            Vec3::new(0.0, 4.0 * c, 4.0 * s),
+        ];
+        // Origine nulle, axe transversal unitaire, axe de pente unitaire.
+        let at_origin = Mapping {
+            origin: Vec3::new(0.0, 0.0, 0.0),
+            u: Vec3::new(1.0, 0.0, 0.0),
+            v: Vec3::new(0.0, c, s),
+        };
+        // La même, dont l'origine est un coin de la surface : ce que fait un
+        // éditeur qui pose un repère par surface.
+        let at_corner = Mapping {
+            origin: Vec3::new(0.0, 4.0 * c, 4.0 * s),
+            u: at_origin.u,
+            v: at_origin.v,
+        };
+        lignes.push(nom);
+        assert!(
+            aligned(at_origin, &corners),
+            "{nom}° : une pente quelconque doit se charger, origine au zéro du monde"
+        );
+        assert!(
+            !aligned(at_corner, &corners),
+            "{nom}° : une origine hors nœud doit être refusée"
+        );
+    }
+    assert_eq!(lignes.len(), 5, "les cinq pentes ont été éprouvées");
 }

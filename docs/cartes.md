@@ -206,43 +206,63 @@ son étendue.
 volontiers un repère par matériau et le partage entre les surfaces qu'il
 habille ; le calcul des lightmaps rabat lui-même le point sur le plan.
 
-### Les quatre contraintes du repère de lightmap
+### Les trois contraintes du repère de lightmap
 
 Le chargement les vérifie, et une carte qu'elles refusent était déjà fausse.
 Chacune répond à un besoin distinct, et aucune ne remplace une autre :
 
-1. **la longueur au carré de chaque axe est une puissance de deux**, ce qui rend
-   son inverse exact : un luxel se reconstruit vers un point du monde sans une
-   division, donc sans arrondi à rendre déterministe ;
+1. **la longueur au carré de chaque axe est finie et non nulle**, et rien de
+   plus : un axe dégénéré n'a pas de direction, donc pas de réciproque ;
 2. **l'origine tombe sur un nœud de sa propre grille**, mesurée depuis le zéro du
    monde, sans quoi deux grilles de même pas restent décalées en phase ;
 3. **les deux axes sont orthogonaux**, faute de quoi la reconstruction demande
-   l'inverse d'une 2×2 quelconque ;
+   l'inverse d'une 2×2 quelconque, donc une division par luxel ;
 4. **ils sont contenus dans le plan de la surface**, faute de quoi la grille de
    luxels ne recouvre pas ce qu'elle éclaire.
 
-La première commande la géométrie du décor, et c'est ce qui surprend. L'axe
-horizontal du repère d'un mur est naturellement **l'arête de ce mur multipliée
-par le pas de lightmap** — c'est ce que font les décors du dépôt, à un luxel par
-unité, si bien que l'axe *est* l'arête. La contrainte retombe donc sur la
-géométrie : **la somme des carrés des composantes de l'arête doit être une
-puissance de deux.** Une arête de 4 ou de 8 unités donne 16 et 64 ; un
-déplacement de `(4, −4)` donne 32. Un mur dont le déplacement est `(3, 1)` donne
-10, et c'est le **fichier entier** qui est alors refusé — pas seulement sa
-surface.
+**Aucune pente n'est interdite, et il y a eu un temps où elles l'étaient presque
+toutes.** La longueur au carré d'un axe a dû être une puissance de deux, ce qui
+retombait sur la géométrie : l'axe horizontal du repère d'un mur est naturellement
+**l'arête de ce mur multipliée par le pas de lightmap**, si bien que la somme des
+carrés des composantes de l'arête devait en être une. Une arête de 4 ou 8 unités
+passait, un déplacement de `(4, −4)` aussi — mais `(3, 1)` donne 10, et c'était le
+**fichier entier** qui était refusé, pas seulement sa surface. Autrement dit :
+l'axial ou le 45°, rien d'autre. Une rampe de parking à 1:2, une pente à 30°, une
+rampe de coin étaient hors d'atteinte, et renoncer à leur lightmap n'y changeait
+rien.
 
-C'est pour cela que les décors du dépôt n'ont que des arêtes axiales ou à 45°,
-de longueur puissance de deux. Un pas différent de un déplace la contrainte sans
-la lever : c'est toujours le carré de l'axe, pas celui de l'arête, qui doit être
-une puissance de deux.
+La clause est tombée parce que sa raison ne tenait pas : la cuisson **divise de
+toute façon**, une fois par surface, et le contrôle n'en rendait que le quotient
+exact. Une division IEEE est exactement arrondie, donc identique sur toutes les
+cibles. Ce qui reste proscrit est une division **par luxel**, et c'est la
+contrainte d'orthogonalité qui l'écarte.
 
-L'exposant n'a pas à être pair, et l'exiger serait un défaut : un axe dans un
-plan à 45° s'écrit `(p, −p, 0)`, de carré `2p²`, dont l'exposant est impair. La
-clause interdirait alors d'éclairer tout mur oblique.
+Ce qu'un générateur perd en échange, et c'est peu : deux surfaces coplanaires
+adjacentes n'alignent plus leurs grilles automatiquement. Leur donner le même pas
+suffit à les aligner, et l'oubli ne coûte qu'une marche d'éclairage à la jointure
+— ni la justesse, ni le déterminisme.
+
+**Et c'est alors la deuxième contrainte qui décide, pas la pente.** L'origine doit
+tomber sur un nœud de sa grille, et ce contrôle est **exact, sans tolérance** : le
+produit scalaire de l'origine par chaque axe doit être un entier en arithmétique
+double, sur des composantes écrites en simple précision. Deux conséquences qui ne
+se devinent pas :
+
+- **l'origine du monde le garantit toujours**, le produit scalaire valant zéro ;
+- **un coin de la surface presque jamais**, et pas même sur une pente à 45° : pour
+  un axe unitaire posé sur l'hypoténuse, le produit vaut 3,99999976 au lieu de 4,
+  et le fichier est refusé. Une surface oblique prend donc l'origine du monde, ou
+  un point dont le générateur a vérifié le produit.
+
+**Pour une voûte facettée** — un tunnel, une rampe courbe, une coupole approchée
+par facettes —, les deux clauses se lisent ensemble : l'origine du monde pour
+toutes les facettes, et le **même pas** pour toutes. Sans le pas commun, chaque
+jointure porte sa marche d'éclairage, ce qui se lit comme des bandes concentriques
+sur la voûte.
 
 **Les deux premières contraintes sont exactes, les deux dernières tolèrent un
-résidu relatif**, et c'est à savoir avant d'écrire un générateur : une puissance
-de deux est exacte ou n'est pas, alors qu'un repère oblique posé sur une surface
+résidu relatif**, et c'est à savoir avant d'écrire un générateur : une origine
+tombe sur un nœud ou n'y tombe pas, alors qu'un repère oblique posé sur une surface
 oblique porte le résidu de sa propre construction. Il n'y a donc rien à arrondir
 pour satisfaire les deux premières, et rien à craindre des derniers bits sur les
 deux autres.

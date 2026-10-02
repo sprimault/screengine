@@ -1083,39 +1083,43 @@ reconstruire le repère par moindres carrés à chaque opération, et deux édit
 le reconstruiraient différemment : le repère est la source, les coordonnées la
 dérivée.
 
-**Le repère de lightmap se vérifie au chargement sur quatre points**, et chacun
+**Le repère de lightmap se vérifie au chargement sur trois points**, et chacun
 répond à un besoin distinct — c'est pourquoi aucun ne remplace un autre :
 
-- **la longueur au carré de chaque axe est une puissance de deux**, ce qui rend son
-  inverse exact : la reconstruction d'un luxel vers un point du monde se fait alors
-  par deux multiplications et trois additions, sans division et donc sans arrondi
-  à rendre déterministe ;
+- **la longueur au carré de chaque axe est finie et non nulle**, et rien de plus :
+  un axe dégénéré n'a pas de direction, donc pas de réciproque ;
 - **l'origine tombe sur un nœud de sa propre grille**, mesurée depuis le zéro du
   monde, sans quoi deux grilles de même pas restent décalées en phase ;
 - **les deux axes sont orthogonaux**, faute de quoi la reconstruction demande
-  l'inverse d'une 2×2 quelconque, donc une division ;
+  l'inverse d'une 2×2 quelconque, donc une division par luxel ;
 - **ils sont contenus dans le plan de la surface**, faute de quoi la grille de
   luxels ne recouvre pas ce qu'elle éclaire.
 
 Ce sont des contrôles et non une disposition : `version_format` ne bouge pas, et
 une carte que ces clauses refusent était déjà fausse.
 
-**L'exposant de ce carré n'a pas à être pair, et l'exiger était un défaut.** La
-longueur elle-même serait alors une puissance de deux, ce qui alignerait les
-grilles de deux surfaces coplanaires adjacentes sans rien demander à l'éditeur.
-Mais un axe dans un plan à 45° s'écrit `(p, −p, 0)`, de carré `2p²` : son exposant
-est impair, et le second axe ne peut être à la fois orthogonal à lui et dans le
-plan. La clause interdisait donc d'éclairer **tout mur oblique**, ce qu'un décor de
-cette classe produit à la première coupe de coin. L'alignement des grilles
-redevient ce qu'il était : une propriété que l'éditeur tient en donnant le même pas
-à deux surfaces coplanaires, et qui ne coûte rien à vérifier puisqu'elle ne touche
-ni la justesse ni le déterminisme — seulement une marche d'éclairage à une
-jointure.
+**La puissance de deux a été exigée, et c'était un défaut qui interdisait toute
+pente autre que 45°.** Elle existait pour rendre `1/|u|²` exact — mais la cuisson
+**divise de toute façon**, une fois par surface, si bien que le contrôle ne
+supprimait aucune division : il en rendait seulement le quotient exact. Or une
+division IEEE est exactement arrondie, donc elle rend les mêmes bits sur toutes
+les cibles, et c'est tout ce que le déterminisme réclame. Ce qui reste interdit, et
+que la clause voisine tient, c'est une division **par luxel**.
 
-**Les deux premiers sont exacts, les deux derniers tolèrent un résidu relatif**,
-et la différence n'est pas un relâchement : une puissance de deux est exacte ou
-n'est pas, alors qu'un repère oblique posé sur une surface oblique porte le résidu
-de sa propre construction. Une tolérance serait interdite sur l'appariement des
+Ce que la clause coûtait, et pourquoi elle est tombée : un repère écrit en nombres
+ronds impose alors à `course² + montée²` d'être une puissance de deux, ce qui ne
+laisse que `course = montée` ou l'axial. Une rampe 1:2, 1:3, 2:3, à 30°, à 60°, ou
+de normale `(1, 1, 1)` faisait **refuser le fichier entier**, et le drapeau « ne
+reçoit pas de lightmap » n'y échappait pas — le contrôle précède toute lecture de
+drapeau. L'alignement des grilles de deux surfaces coplanaires redevient ce qu'il
+était avant cette clause : une propriété que l'éditeur tient en leur donnant le
+même pas, qui ne touche ni la justesse ni le déterminisme, et dont l'absence ne
+coûte qu'une marche d'éclairage à une jointure.
+
+**Le premier et le deuxième sont exacts, les deux derniers tolèrent un résidu
+relatif**, et la différence n'est pas un relâchement : une origine tombe sur un
+nœud ou n'y tombe pas, alors qu'un repère oblique posé sur une surface oblique
+porte le résidu de sa propre construction. Une tolérance serait interdite sur l'appariement des
 portails, qui est une **relation** — un epsilon la rendrait non transitive ; ici
 c'est un **prédicat**, dont le verdict est le même sur toutes les cibles dès que
 son calcul l'est. Il se fait en `f64`, permis hors image, ce qui dispense de se
@@ -1238,12 +1242,14 @@ doivent produire au bit près.
 
 ### Ce que la géométrie doit garantir
 
-**La reconstruction d'un luxel vers un point du monde est exacte, sans division.**
-Le luxel `(i, j)` s'évalue en `origine + (min_u + i)·u/|u|² + (min_v + j)·v/|v|²`.
-Les quatre contrôles du repère de lightmap, plus haut, sont exactement ce qui rend
-cette expression exacte : `|u|²` puissance de deux rend son inverse exact, et
-l'orthogonalité évite l'inverse d'une 2×2 quelconque. Sans eux il faudrait une
-division par pixel de lightmap, donc un arrondi de plus à rendre contractuel.
+**La reconstruction d'un luxel vers un point du monde ne divise pas par luxel**, et
+c'est la seule exactitude qui compte ici. Le luxel `(i, j)` s'évalue en
+`origine + (min_u + i)·u/|u|² + (min_v + j)·v/|v|²`, où les deux réciproques se
+calculent **une fois par surface** : l'orthogonalité des axes est ce qui l'autorise,
+en évitant l'inverse d'une 2×2 quelconque. Ces deux divisions sont exactement
+arrondies par IEEE, donc identiques sur toutes les cibles — ce que le déterminisme
+demande. Ce qui est proscrit est une division **par pixel de lightmap**, et elle ne
+s'y trouve pas.
 
 **Le point obtenu se rabat ensuite sur le plan de la surface, contre l'un de ses
 sommets.** L'origine du repère n'appartient pas nécessairement à ce plan, et le
