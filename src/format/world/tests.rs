@@ -581,6 +581,36 @@ fn une_origine_de_lightmap_hors_grille_est_refusee() {
     );
 }
 
+/// La même origine hors grille, sur un axe **plus court** que l'unité de monde.
+///
+/// Le cas que le test ci-dessus ne pouvait pas voir : avec un axe unitaire, le
+/// contrôle divisait par `1`, donc la division fautive restait invisible. Ici
+/// `|u|² = 1/4`, et l'origine se projette sur `1/4` — un quart de luxel après un
+/// nœud. L'ancien contrôle en faisait `1/4 ÷ 1/4 = 1`, un entier, et acceptait la
+/// carte : deux surfaces coplanaires ainsi décalées ne partagent plus leur grille,
+/// ce que cette clause existe pour interdire.
+#[test]
+fn une_origine_hors_grille_sur_axe_court_est_refusee() {
+    let fine = frame([0.5, 0.0, 0.0], [0.5, 0.0, 0.0], [0.0, 0.5, 0.0]);
+    assert_eq!(
+        World::load(&map_with_lightmap(&fine)).unwrap_err(),
+        refused(Malformation::Mapping)
+    );
+}
+
+/// Une origine **sur** un nœud, sur un axe plus long que l'unité de monde, est
+/// acceptée.
+///
+/// L'autre face du même défaut, et celle qu'aucun refus ne signale : l'ancien
+/// contrôle divisait `1` par `|u|² = 4` et refusait une carte juste. Le pas de la
+/// grille est `u / |u|² = 1/2`, et l'origine à `(1/2, 1/2, 0)` tombe exactement sur
+/// le premier nœud après le zéro du monde.
+#[test]
+fn une_origine_sur_un_noeud_d_axe_long_est_acceptee() {
+    let coarse = frame([0.5, 0.5, 0.0], [2.0, 0.0, 0.0], [0.0, 2.0, 0.0]);
+    World::load(&map_with_lightmap(&coarse)).expect("une origine sur un nœud s'accepte");
+}
+
 /// Deux axes de lightmap qui ne sont pas orthogonaux sont refusés.
 ///
 /// Pris confondus, le cas le plus net : sans orthogonalité, retrouver le point du

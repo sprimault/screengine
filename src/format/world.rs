@@ -1430,9 +1430,15 @@ fn aligned(mapping: Mapping, corners: &[Vec3]) -> bool {
         return false;
     }
 
-    if !whole(dot64(mapping.origin, mapping.u) / f64::from(square_u))
-        || !whole(dot64(mapping.origin, mapping.v) / f64::from(square_v))
-    {
+    // **Sans diviser par le carré de la longueur**, comme [`Mapping::project`] et
+    // comme [`luxel_extent`] : le produit scalaire *est* la coordonnée, donc
+    // c'est lui qui doit être entier. La division rendait ce contrôle faux dans
+    // les deux sens, et neutre sur un axe unitaire — ce que sont tous les décors
+    // du dépôt, d'où une version entière sans que rien ne le montre. Sur un axe
+    // de carré `1/4`, une origine à un quart de luxel d'un nœud donnait un
+    // quotient entier et passait ; sur un axe de carré `4`, une origine
+    // exactement sur un nœud était refusée.
+    if !whole(dot64(mapping.origin, mapping.u)) || !whole(dot64(mapping.origin, mapping.v)) {
         return false;
     }
 
@@ -1483,8 +1489,6 @@ fn floor_i32(value: f64) -> Option<i32> {
 /// le résultat sur `min(-0,0, 0,0)` n'est pas spécifié : deux cibles refuseraient
 /// alors des cartes différentes.
 fn luxel_extent(mapping: Mapping, corners: &[Vec3]) -> Option<Extent> {
-    let square_u = f64::from(mapping.u.dot(mapping.u));
-    let square_v = f64::from(mapping.v.dot(mapping.v));
     let mut bounds = [(f64::MAX, f64::MIN); 2];
 
     for corner in corners {
@@ -1499,7 +1503,6 @@ fn luxel_extent(mapping: Mapping, corners: &[Vec3]) -> Option<Extent> {
         // étendue en désaccord avec les coordonnées que la soumission calcule — et
         // rien ne le montrerait tant que les axes sont unitaires, ce qu'ils sont
         // dans tous les décors du dépôt.
-        let _ = (square_u, square_v);
         let coordinates = [dot64(offset, mapping.u), dot64(offset, mapping.v)];
         for (bound, value) in bounds.iter_mut().zip(coordinates) {
             if !value.is_finite() {

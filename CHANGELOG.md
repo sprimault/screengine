@@ -46,56 +46,52 @@ publié, et explique les conventions du dépôt à qui y contribue.
 
 ## [Non publié]
 
+**Aucune empreinte de conformance ne change.**
+
 ### Ajouté
-- **`screengine::Error` implémente `Display` et `core::error::Error`**, et expose
-  `message()`, qui rend son texte anglais. Un appelant Rust peut donc l'afficher
-  et la propager par `?` vers un `Box<dyn Error>`, sans écrire sa propre
-  traduction ni se rabattre sur `{:?}`.
-- **`Play::max_triangles` et `Play::max_lines`**, les deux budgets d'une image,
-  que `screengine-play` laissait au défaut du moteur sans moyen de les relever.
-  Un décor soumis en entier, sans traversée, dépasse ce défaut dès quelques
-  milliers de cellules — et c'est le chemin que la conformance compare au chemin
-  déplié.
+- `screengine::Error` implémente `Display` et `core::error::Error`, et expose
+  `message()`.
+- `Play::max_triangles` et `Play::max_lines`, les deux budgets d'une image, qui
+  restaient au défaut du moteur.
+- `Output::new`, `Context`, `Visibility`, `TRIANGLE_CAPACITY` et `LINE_CAPACITY`
+  entrent dans la surface publique de `screengine-play`.
 
 ### Modifié
-- **Les messages de `screengine-play` sont désormais ceux du noyau** : un même
-  refus avait deux formulations, celle que lisait un hôte Rust et celle que
-  `scg_last_error` rend. Les textes rendus par la frontière C ne changent pas.
+- Les messages de `screengine-play` sont ceux du noyau. Les textes rendus par la
+  frontière C ne changent pas.
 
 ### Corrigé
-- **`LINE_CAPACITY` était inatteignable**, absente des réexports du noyau alors
-  que la documentation de `max_lines` y renvoie. `Output::new`, `Context`,
-  `Visibility` et les deux capacités rejoignent la surface publique de
-  `screengine-play`, qui obligeait à les nommer sans les donner.
-- **Une fenêtre redimensionnée gardait l'image précédente à l'ancienne
-  géométrie**, le temps d'une période de mise à jour : la zone découverte restait
-  noire. `screengine-play` redessine désormais aussitôt.
+- Le contrôle d'alignement d'un repère de lightmap divisait par le carré de la
+  longueur de l'axe. Sur un axe non unitaire, une origine hors grille passait, et
+  une origine juste était refusée.
+- `LINE_CAPACITY` manquait aux réexports du noyau, que la documentation de
+  `max_lines` cite.
+- Une fenêtre redimensionnée gardait l'image précédente jusqu'au pas suivant, la
+  zone découverte restant noire.
 
 ***
 
+**No conformance fingerprint changes.**
+
 ### Added
-- **`screengine::Error` now implements `Display` and `core::error::Error`**, and
-  exposes `message()`, which returns its English text. A Rust caller can print it
-  and propagate it through `?` into a `Box<dyn Error>`, without writing its own
-  translation or falling back to `{:?}`.
-- **`Play::max_triangles` and `Play::max_lines`**, the two per-frame budgets,
-  which `screengine-play` left at the engine default with no way to raise them. A
-  world submitted whole, without traversal, outgrows that default within a few
-  thousand cells — and that is the path conformance compares to the unfolded one.
+- `screengine::Error` implements `Display` and `core::error::Error`, and exposes
+  `message()`.
+- `Play::max_triangles` and `Play::max_lines`, the two per-frame budgets, which
+  stayed at the engine default.
+- `Output::new`, `Context`, `Visibility`, `TRIANGLE_CAPACITY` and `LINE_CAPACITY`
+  join the public surface of `screengine-play`.
 
 ### Changed
-- **`screengine-play` messages are now the engine's**: the same rejection had two
-  wordings, the one a Rust host read and the one `scg_last_error` returns. The
-  texts returned across the C boundary are unchanged.
+- `screengine-play` messages are now the engine's. The texts returned across the C
+  boundary are unchanged.
 
 ### Fixed
-- **`LINE_CAPACITY` could not be reached**, missing from the engine's re-exports
-  although the documentation of `max_lines` points at it. `Output::new`,
-  `Context`, `Visibility` and both capacities join the public surface of
-  `screengine-play`, which required naming them without handing them out.
-- **A resized window kept the previous frame at the old geometry** for one update
-  period, leaving the uncovered area black. `screengine-play` now redraws at
-  once.
+- The lightmap frame alignment check divided by the squared axis length. On a
+  non-unit axis, an off-grid origin passed, and a correct origin was rejected.
+- `LINE_CAPACITY` was missing from the engine's re-exports, which the documentation
+  of `max_lines` cites.
+- A resized window kept the previous frame until the next step, leaving the
+  uncovered area black.
 
 ## [0.8.0] — 2026-10-01 — Ce qu'il faut pour éditer
 
