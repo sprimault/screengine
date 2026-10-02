@@ -42,10 +42,23 @@ pub(crate) fn locate(world: &World, point: Vec3) -> Option<u32> {
 /// moteur ne se relocalise jamais de lui-même ; c'est à l'hôte de rappeler
 /// [`locate`].
 ///
-/// **Plusieurs cellules peuvent être franchies d'un seul pas**, et la boucle les
-/// suit jusqu'à la borne de la traversée. Sans elle, un pas rapide rendrait la
-/// première voisine alors que le point d'arrivée est deux cellules plus loin, et
-/// la cellule rendue ne contiendrait pas la caméra.
+/// **Plusieurs cellules peuvent être franchies d'un seul pas**, et le suivi
+/// avance le long du segment : à chaque cellule, le portail retenu est celui dont
+/// l'intersection vient **après** la précédente, et la plus proche de celles qui
+/// restent. Deux portails à la même intersection — le segment passe pile sur leur
+/// arête commune — se départagent par l'ordre du fichier, comme [`locate`]
+/// départage deux cellules superposées.
+///
+/// **L'ordre du fichier ne peut pas servir à les choisir**, et c'est le piège :
+/// `from` et `to` ne bougent pas pendant la boucle, si bien qu'une cellule traversée
+/// de part en part voit *deux* de ses portails franchis, celui de l'entrée et celui
+/// de la sortie. Sans les ordonner, le suivi repart en arrière et oscille.
+///
+/// [`MAX_DEPTH`] borne donc la longueur d'un pas, et plus une oscillation : un
+/// segment droit ne franchit le plan d'un portail qu'une fois, donc `passed` croît
+/// strictement dans un ensemble fini et la boucle s'arrêterait d'elle-même. Reste
+/// que **l'épuiser rend `None` comme un pas sorti dehors** : même conduite pour
+/// l'hôte, rappeler [`locate`], mais pas la même cause, et aucun code ne les sépare.
 pub(crate) fn track(world: &World, from_cell: u32, from: Vec3, to: Vec3) -> Option<u32> {
     let cells = world.cells();
     if from_cell as usize >= cells.len() {
@@ -53,24 +66,36 @@ pub(crate) fn track(world: &World, from_cell: u32, from: Vec3, to: Vec3) -> Opti
     }
 
     let mut current = from_cell;
+    // Strictement croissant, et c'est l'invariant de la boucle. Zéro laisse passer
+    // tout franchissement : `crossing` exige des extrémités de part et d'autre du
+    // plan, donc son paramètre est dans `]0, 1[`.
+    let mut passed = 0.0;
     for _ in 0..MAX_DEPTH {
         if contains(world, current, to) {
             return Some(current);
         }
         let cell = &cells[current as usize];
-        let mut crossed = None;
+        let mut crossed: Option<(u32, f32)> = None;
         for portal in &cell.portals {
             let Some((next, _)) = portal.link else {
                 continue;
             };
-            if crosses(&portal.points, from, to) {
-                crossed = Some(next);
-                break;
+            let Some(at) = crossing(&portal.points, from, to) else {
+                continue;
+            };
+            if at <= passed {
+                continue;
+            }
+            // Strictement : à égalité, le premier de l'ordre du fichier reste.
+            if crossed.is_none_or(|(_, best)| at < best) {
+                crossed = Some((next, at));
             }
         }
         // Sans portail franchi et sans arrivée dans la cellule, le segment est
         // sorti par une surface : la caméra est dehors.
-        current = crossed?;
+        let (next, at) = crossed?;
+        current = next;
+        passed = at;
     }
     None
 }
@@ -189,19 +214,25 @@ fn hits(corners: [Vec3; 3], point: Vec3) -> bool {
     to_plane * normal.x > 0.0
 }
 
-/// Vrai si le segment franchit ce polygone plan convexe.
+/// Où le segment franchit ce polygone plan convexe, en paramètre sur `[from, to]`,
+/// ou `None` s'il ne le franchit pas.
 ///
 /// Le portail est plan et convexe, vérifié au chargement : son plan se prend sur
 /// ses trois premiers sommets, et l'appartenance du point d'intersection se lit
 /// sur le signe des produits mixtes, tous du même côté.
 ///
+/// **Le paramètre, et pas seulement un verdict**, parce que c'est ce qui permet à
+/// [`track`] d'ordonner plusieurs franchissements le long d'un même pas. Il sortait
+/// déjà du calcul de l'intersection, et le jeter était tout le défaut.
+///
 /// **Le franchissement est strict aux deux bouts.** Un segment qui s'arrête
 /// exactement dans le plan du portail ne le franchit pas : sans cela, une caméra
 /// posée pile sur un seuil oscillerait entre les deux cellules d'un pas à l'autre,
-/// et l'image sauterait sans que rien ne bouge.
-fn crosses(points: &[Vec3], from: Vec3, to: Vec3) -> bool {
+/// et l'image sauterait sans que rien ne bouge. Le paramètre rendu est donc
+/// toujours dans `]0, 1[`.
+fn crossing(points: &[Vec3], from: Vec3, to: Vec3) -> Option<f32> {
     if points.len() < 3 {
-        return false;
+        return None;
     }
     let edge1 = points[1] - points[0];
     let edge2 = points[2] - points[0];
@@ -211,7 +242,7 @@ fn crosses(points: &[Vec3], from: Vec3, to: Vec3) -> bool {
     let side_to = normal.dot(to - points[0]);
     // Les deux extrémités doivent être strictement de part et d'autre.
     if !((side_from > 0.0 && side_to < 0.0) || (side_from < 0.0 && side_to > 0.0)) {
-        return false;
+        return None;
     }
 
     // Le point d'intersection, par interpolation linéaire du paramètre. Le
@@ -239,7 +270,7 @@ fn crosses(points: &[Vec3], from: Vec3, to: Vec3) -> bool {
             negative += 1;
         }
     }
-    positive == 0 || negative == 0
+    (positive == 0 || negative == 0).then_some(t)
 }
 
 /// Vrai si l'arête appartient au triangle qui la porte dans ce sens.

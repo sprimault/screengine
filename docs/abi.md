@@ -1323,6 +1323,18 @@ statut que la profondeur, pour la même raison : l'image est complète de ce qui
   rend alors la **première dans l'ordre du fichier**. Ce n'est pas une erreur,
   c'est un arbitrage, et il est écrit ici pour que deux constructions ne le
   tranchent pas différemment.
+- **Un pas peut franchir plusieurs portails de la même cellule**, et
+  `scg_world_track` les suit **dans l'ordre où le segment les rencontre**, non dans
+  celui du fichier. C'est une clause et non un détail : une cellule traversée de
+  part en part voit deux de ses portails franchis, celui de l'entrée et celui de la
+  sortie, et l'ordre du fichier y ferait repartir le suivi en arrière. Deux portails
+  rencontrés au même point — le segment passe sur leur arête commune — se départagent
+  alors par l'ordre du fichier, comme pour `scg_world_locate`.
+
+  Corollaire pour l'hôte : **`0` ne distingue pas « sorti de la carte » d'un pas
+  trop long**, qui franchirait plus de cellules que la traversée n'en déplie. La
+  conduite est la même dans les deux cas — rappeler `scg_world_locate` — mais la
+  cause ne l'est pas, et aucun code ne les sépare.
 - **`scg_world_locate` et `scg_world_track` ne prennent pas de contexte** et ne
   dessinent rien : ce sont des interrogations de la carte, appelables depuis
   n'importe quel thread, dont l'erreur se lit par `scg_last_error(NULL)`.
