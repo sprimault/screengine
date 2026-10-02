@@ -5,10 +5,10 @@
 
 /// Une erreur du noyau.
 ///
-/// **Sans chaîne de caractères**, et c'est ce qui la rend utilisable sans
-/// `std` : formater un message demanderait d'allouer, donc d'échouer une
-/// seconde fois là où la première échoue déjà. Ce qui l'enveloppe traduit
-/// chaque variante dans les termes de son appelant.
+/// **Aucune variante ne porte de chaîne**, et c'est ce qui la rend utilisable
+/// sans `std` : construire un message demanderait d'allouer, donc d'échouer une
+/// seconde fois là où la première échoue déjà. Le texte vient de
+/// [`message`](Self::message), qui ne rend que des littéraux.
 ///
 /// L'énumération n'est volontairement pas `non_exhaustive` : un traducteur
 /// écrit dehors cesse alors de compiler le jour où une variante apparaît, au
@@ -288,5 +288,177 @@ pub enum Malformation {
     Portal,
 }
 
+impl Error {
+    /// Le texte de cette erreur, toujours un littéral.
+    ///
+    /// En anglais, jamais localisé, et c'est `docs/abi.md` qui l'arrête :
+    /// `scg_last_error` rend ce texte à travers la frontière, et un message qui
+    /// changerait avec l'environnement donnerait des journaux qu'on ne peut plus
+    /// rapprocher d'un poste à l'autre.
+    ///
+    /// Une table plate, indexée par le couple complet, plutôt qu'un préfixe
+    /// composé avec le texte de l'[`Argument`] ou de la [`Malformation`] :
+    /// composer demanderait un tampon, et c'est ce `&'static str` qui permet à la
+    /// frontière C d'en rendre un pointeur sans rien allouer.
+    #[must_use]
+    pub fn message(self) -> &'static str {
+        match self {
+            Self::InvalidArgument(Argument::Resolution) => {
+                "invalid resolution: each side must be between 1 and 2048, and the current resolution within the maximum"
+            }
+            Self::InvalidArgument(Argument::TileSize) => "invalid tile size: must be 32 or 64",
+            Self::InvalidArgument(Argument::Stride) => {
+                "invalid stride: must be at least the internal width"
+            }
+            Self::InvalidArgument(Argument::BufferLength) => {
+                "pixel buffer too short: needs stride x height x 4 bytes"
+            }
+            Self::InvalidArgument(Argument::TileIndex) => {
+                "invalid tile index: must be less than the tile count of the frame"
+            }
+            Self::InvalidArgument(Argument::Region) => "invalid region: must lie within the image",
+            Self::InvalidArgument(Argument::ScratchLength) => {
+                "scratch buffer too short: needs one word per pixel of the region"
+            }
+            Self::InvalidArgument(Argument::TriangleCapacity) => {
+                "too many triangles submitted for the capacity reserved at creation"
+            }
+            Self::InvalidArgument(Argument::LineCapacity) => {
+                "too many drawing primitives submitted for max_lines reserved at creation"
+            }
+            Self::InvalidArgument(Argument::VertexIndex) => {
+                "invalid triangle index: must be less than the vertex count of the batch"
+            }
+            Self::InvalidArgument(Argument::Projection) => {
+                "invalid projection: the vertical field of view must be within ]0, pi[ radians, and the near plane positive and finite"
+            }
+            Self::InvalidArgument(Argument::VertexCoordinate) => {
+                "vertex coordinate is not finite: NaN and infinities are rejected, and the whole batch with them"
+            }
+            Self::InvalidArgument(Argument::TextureCapacity) => {
+                "too many distinct textures in one frame for the capacity reserved at creation"
+            }
+            Self::InvalidArgument(Argument::FrameIndex) => {
+                "frame index beyond what the mesh carries: see scg_mesh_frame_count"
+            }
+            Self::InvalidArgument(Argument::FrameFactor) => {
+                "interpolation factor must be finite and within [0, 1]: it is never clamped, since extrapolating is the game's decision"
+            }
+            Self::InvalidArgument(Argument::TextureCoordinate) => {
+                "texture coordinate is not finite, or beyond 16384 texels"
+            }
+            Self::InvalidArgument(Argument::TextureSize) => {
+                "invalid texture size: each side must be a power of two between 1 and 2048"
+            }
+            Self::InvalidArgument(Argument::Overbright) => {
+                "invalid overbright shift: must be 0, 1 or 2"
+            }
+            Self::InvalidArgument(Argument::Fog) => {
+                "invalid fog range: start must be finite and not negative, end finite and beyond start"
+            }
+            Self::InvalidArgument(Argument::LightCapacity) => {
+                "too many dynamic lights for one frame"
+            }
+            Self::InvalidArgument(Argument::Light) => {
+                "invalid light: position must be finite, and radius finite and positive"
+            }
+            Self::InvalidArgument(Argument::Grade) => {
+                "invalid output curve: gamma must be within ]0, 8], each channel gain within [0, 4], \
+                 each channel offset within [-1, 1]"
+            }
+            Self::InvalidArgument(Argument::TextureLength) => {
+                "pixel block of the wrong length: needs width x height x 4 bytes"
+            }
+            Self::OutOfMemory => "out of memory",
+            // Un seul message pour toute la variante, et il ne nomme aucun cas :
+            // le noyau ne distingue pas une tuile déjà rendue d'une soumission
+            // pendant le rendu, et un texte qui parlerait de tuiles enverrait sur
+            // une fausse piste l'hôte qui a simplement soumis trop tard.
+            Self::InvalidState => {
+                "call out of sequence: check the frame state and whether this tile was already rendered"
+            }
+            Self::Faulted => "a tile did not return from rendering; this frame is incomplete",
+            Self::InvalidFormat(Malformation::Truncated) => {
+                "malformed data file: a field, the section table or a section runs past the end of the block"
+            }
+            Self::InvalidFormat(Malformation::Signature) => {
+                "not a Screengine data file: the four signature bytes do not match"
+            }
+            Self::InvalidFormat(Malformation::Kind) => {
+                "wrong kind of data file: a mesh was given where a world was expected, or the reverse"
+            }
+            Self::InvalidFormat(Malformation::Length) => {
+                "malformed data file: the declared total length is not the length of the block received"
+            }
+            Self::InvalidFormat(Malformation::SectionKind) => {
+                "malformed data file: a section of a kind this version does not know"
+            }
+            Self::InvalidFormat(Malformation::SectionOrder) => {
+                "malformed data file: sections must be in increasing kind order, at most one of each"
+            }
+            Self::InvalidFormat(Malformation::SectionBounds) => {
+                "malformed data file: sections must pave the file, with no gap and no overlap"
+            }
+            Self::InvalidFormat(Malformation::NonFinite) => {
+                "malformed data file: a floating-point value is not finite"
+            }
+            Self::InvalidFormat(Malformation::NonUtf8) => {
+                "malformed data file: a name is not valid UTF-8"
+            }
+            Self::InvalidFormat(Malformation::Index) => {
+                "malformed data file: an index is beyond what it points into"
+            }
+            Self::InvalidFormat(Malformation::Identifier) => {
+                "malformed data file: an identifier is zero, or used twice in its family"
+            }
+            Self::InvalidFormat(Malformation::GroupBounds) => {
+                "malformed data file: surface groups must pave the triangles in order, with no gap and no overlap"
+            }
+            Self::InvalidFormat(Malformation::Count) => {
+                "malformed data file: a count does not match the length that bounds it"
+            }
+            Self::InvalidFormat(Malformation::Flags) => {
+                "malformed data file: undefined flag bits must be zero"
+            }
+            Self::InvalidFormat(Malformation::Polygon) => {
+                "malformed data file: a polygon is degenerate, too large, or not convex where convexity is required"
+            }
+            Self::InvalidFormat(Malformation::Mapping) => {
+                "malformed data file: a mapping frame is unusable, or the coordinates it derives are not finite"
+            }
+            Self::InvalidFormat(Malformation::Light) => {
+                "malformed data file: a static light has a radius that is not finite and positive"
+            }
+            Self::InvalidFormat(Malformation::Pose) => {
+                "malformed data file: an orientation is a zero quaternion, which carries no direction"
+            }
+            Self::InvalidFormat(Malformation::Portal) => {
+                "malformed data file: three portals share the same vertices"
+            }
+            Self::UnsupportedFormatVersion => {
+                "unsupported data format version: take a newer library, or export the data again"
+            }
+            Self::UnknownResource => "unknown identifier: the resource holds no such cell",
+        }
+    }
+}
+
+impl core::fmt::Display for Error {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.write_str(self.message())
+    }
+}
+
+/// Le trait d'erreur de `core`, pour qu'un appelant Rust propage par `?` vers un
+/// `Box<dyn Error>` sans avoir à envelopper.
+///
+/// `core::error::Error` et non celui de `std` : le même trait, réexporté là-bas,
+/// et c'est ce qui permet au noyau de l'implémenter sans rien savoir du système.
+/// Aucune `source` — les variantes ne contiennent rien d'autre qu'elles-mêmes.
+impl core::error::Error for Error {}
+
 /// Le résultat d'un appel du noyau.
 pub type Result<T> = core::result::Result<T, Error>;
+
+#[cfg(test)]
+mod tests;

@@ -46,12 +46,34 @@ publié, et explique les conventions du dépôt à qui y contribue.
 
 ## [Non publié]
 
+### Ajouté
+- **`screengine::Error` implémente `Display` et `core::error::Error`**, et expose
+  `message()`, qui rend son texte anglais. Un appelant Rust peut donc l'afficher
+  et la propager par `?` vers un `Box<dyn Error>`, sans écrire sa propre
+  traduction ni se rabattre sur `{:?}`.
+
+### Modifié
+- **Les messages de `screengine-play` sont désormais ceux du noyau** : un même
+  refus avait deux formulations, celle que lisait un hôte Rust et celle que
+  `scg_last_error` rend. Les textes rendus par la frontière C ne changent pas.
+
 ### Corrigé
 - **Une fenêtre redimensionnée gardait l'image précédente à l'ancienne
   géométrie**, le temps d'une période de mise à jour : la zone découverte restait
   noire. `screengine-play` redessine désormais aussitôt.
 
 ***
+
+### Added
+- **`screengine::Error` now implements `Display` and `core::error::Error`**, and
+  exposes `message()`, which returns its English text. A Rust caller can print it
+  and propagate it through `?` into a `Box<dyn Error>`, without writing its own
+  translation or falling back to `{:?}`.
+
+### Changed
+- **`screengine-play` messages are now the engine's**: the same rejection had two
+  wordings, the one a Rust host read and the one `scg_last_error` returns. The
+  texts returned across the C boundary are unchanged.
 
 ### Fixed
 - **A resized window kept the previous frame at the old geometry** for one update

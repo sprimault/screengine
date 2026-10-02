@@ -5,8 +5,6 @@
 
 use std::fmt;
 
-use screengine::{Argument, Malformation};
-
 /// Une erreur de l'étage d'accueil.
 ///
 /// Rendue par `run`, jamais levée en panique : une boucle événementielle qui
@@ -47,135 +45,10 @@ pub enum Error {
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Engine(screengine::Error::InvalidArgument(argument)) => match argument {
-                Argument::Resolution => f.write_str(
-                    "internal resolution out of range: each side must be between 1 and 2048",
-                ),
-                Argument::TileSize => f.write_str("tile size must be 32 or 64"),
-                Argument::Stride => f.write_str("stride is smaller than the internal width"),
-                Argument::BufferLength => {
-                    f.write_str("pixel buffer is shorter than stride x height x 4 bytes")
-                }
-                Argument::TileIndex => f.write_str("tile index beyond the tile count of the frame"),
-                Argument::Region => f.write_str("region extends beyond the image"),
-                Argument::ScratchLength => {
-                    f.write_str("scratch buffer is shorter than the pixels of its region")
-                }
-                Argument::TriangleCapacity => {
-                    f.write_str("more triangles submitted than the engine reserved")
-                }
-                Argument::LineCapacity => {
-                    f.write_str("more drawing primitives submitted than the engine reserved")
-                }
-                Argument::VertexIndex => {
-                    f.write_str("a triangle indexes a vertex beyond its batch")
-                }
-                Argument::Projection => f.write_str(
-                    "field of view must be within ]0, pi[ radians, and the near plane positive",
-                ),
-                Argument::VertexCoordinate => {
-                    f.write_str("a submitted vertex coordinate is NaN or infinite")
-                }
-                Argument::TextureCapacity => {
-                    f.write_str("more distinct textures in one frame than the engine reserved")
-                }
-                Argument::FrameIndex => {
-                    f.write_str("a frame index goes beyond what the mesh carries")
-                }
-                Argument::FrameFactor => f.write_str(
-                    "the interpolation factor must be finite and within [0, 1], and is never clamped",
-                ),
-                Argument::TextureCoordinate => {
-                    f.write_str("a texture coordinate is not finite, or beyond 16384 texels")
-                }
-                Argument::TextureSize => {
-                    f.write_str("texture sides must be powers of two between 1 and 2048")
-                }
-                Argument::TextureLength => {
-                    f.write_str("pixel block is not exactly width x height x 4 bytes")
-                }
-                Argument::Overbright => f.write_str("overbright shift must be 0, 1 or 2"),
-                Argument::Fog => {
-                    f.write_str("fog range must be finite, not negative, and end beyond start")
-                }
-                Argument::LightCapacity => {
-                    f.write_str("more dynamic lights in one frame than the engine holds")
-                }
-                Argument::Light => f.write_str(
-                    "a light has a non-finite position, or a radius that is not positive",
-                ),
-                Argument::Grade => f.write_str(
-                    "output curve out of range: gamma within ]0, 8], channel gains within [0, 4]",
-                ),
-            },
-            Self::Engine(screengine::Error::OutOfMemory) => {
-                f.write_str("the engine could not allocate its buffers")
-            }
-            Self::Engine(screengine::Error::InvalidState) => {
-                f.write_str("a tile was rendered twice in the same frame")
-            }
-            Self::Engine(screengine::Error::Faulted) => {
-                f.write_str("a tile did not return from rendering; this frame is incomplete")
-            }
-            Self::Engine(screengine::Error::InvalidFormat(malformation)) => match malformation {
-                Malformation::Truncated => {
-                    f.write_str("a field or a section of the data file runs past its end")
-                }
-                Malformation::Signature => {
-                    f.write_str("not a Screengine data file: wrong signature")
-                }
-                Malformation::Kind => {
-                    f.write_str("wrong kind of data file: a mesh where a world was expected")
-                }
-                Malformation::Length => {
-                    f.write_str("the declared total length is not the length of the file")
-                }
-                Malformation::SectionKind => {
-                    f.write_str("the data file has a section of an unknown kind")
-                }
-                Malformation::SectionOrder => f.write_str(
-                    "sections must be in increasing kind order, at most one of each kind",
-                ),
-                Malformation::SectionBounds => {
-                    f.write_str("sections must pave the file, with no gap and no overlap")
-                }
-                Malformation::NonFinite => {
-                    f.write_str("a floating-point value in the data file is not finite")
-                }
-                Malformation::NonUtf8 => f.write_str("a name in the data file is not valid UTF-8"),
-                Malformation::Index => {
-                    f.write_str("an index in the data file is beyond what it points into")
-                }
-                Malformation::Identifier => {
-                    f.write_str("an identifier is zero, or used twice in its family")
-                }
-                Malformation::GroupBounds => f.write_str(
-                    "surface groups must pave the triangles in order, with no gap and no overlap",
-                ),
-                Malformation::Count => {
-                    f.write_str("a count does not match the length that bounds it")
-                }
-                Malformation::Flags => f.write_str("undefined flag bits must be zero"),
-                Malformation::Polygon => f.write_str(
-                    "a polygon is degenerate, too large, or not convex where convexity is required",
-                ),
-                Malformation::Mapping => f.write_str(
-                    "a mapping frame is unusable, or derives coordinates that are not finite",
-                ),
-                Malformation::Light => {
-                    f.write_str("a static light has a radius that is not finite and positive")
-                }
-                Malformation::Pose => {
-                    f.write_str("an orientation is a zero quaternion, which carries no direction")
-                }
-                Malformation::Portal => f.write_str("three portals share the same vertices"),
-            },
-            Self::Engine(screengine::Error::UnsupportedFormatVersion) => {
-                f.write_str("unsupported data format version: export the data again")
-            }
-            Self::Engine(screengine::Error::UnknownResource) => {
-                f.write_str("unknown identifier: the resource holds no such cell")
-            }
+            // Le noyau porte le texte de ses propres erreurs : le redire ici
+            // donnait deux formulations du même refus, celle que lit un hôte Rust
+            // et celle que `scg_last_error` rend à un hôte C.
+            Self::Engine(error) => f.write_str(error.message()),
             Self::Setting(what) => f.write_str(what),
             Self::ScaleTooLarge {
                 factor,
@@ -197,11 +70,12 @@ impl fmt::Display for Error {
 impl std::error::Error for Error {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
+            Self::Engine(e) => Some(e),
             Self::EventLoop(e) => Some(e),
             Self::Window(e) => Some(e),
             Self::Surface(e) => Some(e),
             Self::Png(e) => Some(e),
-            Self::Engine(_) | Self::Setting(_) | Self::ScaleTooLarge { .. } => None,
+            Self::Setting(_) | Self::ScaleTooLarge { .. } => None,
         }
     }
 }

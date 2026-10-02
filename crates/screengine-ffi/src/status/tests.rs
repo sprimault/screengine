@@ -6,6 +6,8 @@
 //! Un code publié ne change jamais de sens : ces tests figent la plage et
 //! l'unicité, pas les valeurs elles-mêmes, qui sont dans le header.
 
+use screengine::{Argument, Malformation};
+
 use super::*;
 
 /// La catégorie d'un code est `(-code) / 100`, et les codes généraux sont
@@ -98,7 +100,7 @@ fn chaque_argument_refuse_a_son_message() {
         let error = Error::InvalidArgument(*a);
         assert_eq!(code_of(error), SCG_ERR_INVALID_ARGUMENT);
         for b in &arguments[i + 1..] {
-            assert_ne!(message_of(error), message_of(Error::InvalidArgument(*b)));
+            assert_ne!(error.message(), Error::InvalidArgument(*b).message());
         }
     }
 
@@ -171,7 +173,7 @@ fn chaque_malformation_a_son_message() {
         let error = Error::InvalidFormat(*a);
         assert_eq!(code_of(error), SCG_ERR_INVALID_FORMAT);
         for b in &malformations[i + 1..] {
-            assert_ne!(message_of(error), message_of(Error::InvalidFormat(*b)));
+            assert_ne!(error.message(), Error::InvalidFormat(*b).message());
         }
     }
 
