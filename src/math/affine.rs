@@ -144,7 +144,7 @@ impl Affine3 {
     ///
     /// Un déterminant nul n'est pas un cas d'erreur : les normales aplaties en
     /// sortent nulles, et une normale nulle est déjà une normale absente pour
-    /// [`crate::light::dynamic`], qui retombe sur l'atténuation par la distance.
+    /// l'éclairage dynamique, qui retombe sur l'atténuation par la distance.
     pub fn cofactors(self) -> (Self, f32) {
         let m = &self.m;
         let columns = [

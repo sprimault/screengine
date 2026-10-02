@@ -63,6 +63,10 @@ publié, et explique les conventions du dépôt à qui y contribue.
   `scg_last_error` rend. Les textes rendus par la frontière C ne changent pas.
 
 ### Corrigé
+- **`LINE_CAPACITY` était inatteignable**, absente des réexports du noyau alors
+  que la documentation de `max_lines` y renvoie. `Output::new`, `Context`,
+  `Visibility` et les deux capacités rejoignent la surface publique de
+  `screengine-play`, qui obligeait à les nommer sans les donner.
 - **Une fenêtre redimensionnée gardait l'image précédente à l'ancienne
   géométrie**, le temps d'une période de mise à jour : la zone découverte restait
   noire. `screengine-play` redessine désormais aussitôt.
@@ -85,6 +89,10 @@ publié, et explique les conventions du dépôt à qui y contribue.
   texts returned across the C boundary are unchanged.
 
 ### Fixed
+- **`LINE_CAPACITY` could not be reached**, missing from the engine's re-exports
+  although the documentation of `max_lines` points at it. `Output::new`,
+  `Context`, `Visibility` and both capacities join the public surface of
+  `screengine-play`, which required naming them without handing them out.
 - **A resized window kept the previous frame at the old geometry** for one update
   period, leaving the uncovered area black. `screengine-play` now redraws at
   once.

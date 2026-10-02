@@ -26,7 +26,18 @@ impl<'a> Output<'a> {
     ///
     /// Le tampon reçu est dimensionné sur le plafond de résolution, donc plus
     /// grand que l'image courante : c'est cette structure qui en borne l'accès.
-    pub(crate) fn new(pixels: &'a mut [u8], width: u32, height: u32, stride: u32) -> Self {
+    ///
+    /// **Public pour qu'un appelant puisse éprouver son propre dessin** sans
+    /// ouvrir de fenêtre : en passant par la boucle, le seul chemin vers un
+    /// `Output` exigeait un écran, et ce qu'on écrit par-dessus l'image ne se
+    /// vérifiait qu'en le regardant.
+    ///
+    /// `pixels` doit couvrir `stride × height × 4` octets — c'est une
+    /// précondition et non un contrôle, de la même forme que celle que la
+    /// frontière C tient sur son tampon de sortie. En deçà, [`pixel`](Self::pixel)
+    /// sort du tampon et panique : il borne sur la zone utile, qui est ce qu'un
+    /// dessin doit respecter, pas sur la longueur reçue.
+    pub fn new(pixels: &'a mut [u8], width: u32, height: u32, stride: u32) -> Self {
         Self {
             pixels,
             width,

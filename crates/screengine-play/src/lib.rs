@@ -49,16 +49,28 @@ pub use screengine;
 // Réexportés et non redéfinis : ce crate ajoute du comportement, jamais des
 // données. Deux modèles de scène qui divergeraient seraient la seule façon de
 // le rater.
+//
+// Le critère d'entrée dans cette liste est ce que la surface de ce crate
+// **oblige** à nommer : `Context` est le paramètre des rappels de rendu,
+// `Visibility` ce que rend `submit_world_visible`, et les deux capacités sont
+// les défauts des budgets que `Play` règle. Tout le reste du noyau reste
+// joignable par `screengine::`, qui est réexporté entier juste au-dessus — cette
+// liste est un raccourci, pas une frontière.
+//
+// `screengine::Output` n'y entre pas : ce crate a le sien, et les deux se
+// rendraient inutilisables par le même nom.
 pub use screengine::{
-    Affine3, Angle, Camera, Color, DepthMode, Filter, Hit, Light, Lightmap, Lightmaps, Line, Mesh,
-    Point, Quat, Sprite, SpriteOrientation, Surfaces, Texture, Triangle, Vec3, VertexUv, VertexUv2,
-    World,
+    Affine3, Angle, Camera, Color, Context, DepthMode, Filter, Hit, LINE_CAPACITY, Light, Lightmap,
+    Lightmaps, Line, Mesh, Point, Quat, Sprite, SpriteOrientation, Surfaces, TRIANGLE_CAPACITY,
+    Texture, Triangle, Vec3, VertexUv, VertexUv2, Visibility, World,
 };
 pub use texture::{load_png, load_png_masked};
 pub use winit::event::MouseButton;
 pub use winit::keyboard::KeyCode;
 
-use screengine::{Config, Context};
+// `Context` n'est plus ici : il entre dans la portée par le réexport public
+// ci-dessus, et l'importer deux fois ne compile pas.
+use screengine::Config;
 
 /// La résolution interne par défaut.
 ///
