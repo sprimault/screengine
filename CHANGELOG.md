@@ -51,6 +51,11 @@ publié, et explique les conventions du dépôt à qui y contribue.
   `message()`, qui rend son texte anglais. Un appelant Rust peut donc l'afficher
   et la propager par `?` vers un `Box<dyn Error>`, sans écrire sa propre
   traduction ni se rabattre sur `{:?}`.
+- **`Play::max_triangles` et `Play::max_lines`**, les deux budgets d'une image,
+  que `screengine-play` laissait au défaut du moteur sans moyen de les relever.
+  Un décor soumis en entier, sans traversée, dépasse ce défaut dès quelques
+  milliers de cellules — et c'est le chemin que la conformance compare au chemin
+  déplié.
 
 ### Modifié
 - **Les messages de `screengine-play` sont désormais ceux du noyau** : un même
@@ -69,6 +74,10 @@ publié, et explique les conventions du dépôt à qui y contribue.
   exposes `message()`, which returns its English text. A Rust caller can print it
   and propagate it through `?` into a `Box<dyn Error>`, without writing its own
   translation or falling back to `{:?}`.
+- **`Play::max_triangles` and `Play::max_lines`**, the two per-frame budgets,
+  which `screengine-play` left at the engine default with no way to raise them. A
+  world submitted whole, without traversal, outgrows that default within a few
+  thousand cells — and that is the path conformance compares to the unfolded one.
 
 ### Changed
 - **`screengine-play` messages are now the engine's**: the same rejection had two

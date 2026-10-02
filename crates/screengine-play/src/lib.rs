@@ -36,6 +36,8 @@ mod input;
 mod output;
 mod runner;
 mod scale;
+#[cfg(test)]
+mod tests;
 mod texture;
 
 pub use camera::FreeCamera;
@@ -78,6 +80,10 @@ pub struct Play {
     /// Le plafond des changements de résolution, ou la résolution d'ouverture.
     max_resolution: Option<(u32, u32)>,
     tile_size: u32,
+    /// Les deux budgets d'une image, `0` valant chacun le défaut du moteur.
+    /// Séparés comme le noyau les sépare : une ligne n'est pas un triangle.
+    max_triangles: u32,
+    max_lines: u32,
     scale: Scale,
     rate: u32,
     exit_on_escape: bool,
@@ -97,6 +103,8 @@ impl Play {
             resolution: DEFAULT_RESOLUTION,
             max_resolution: None,
             tile_size: 64,
+            max_triangles: 0,
+            max_lines: 0,
             scale: Scale::Integer,
             rate: 60,
             exit_on_escape: true,
@@ -133,6 +141,34 @@ impl Play {
     /// Le côté des tuiles du moteur, 32 ou 64.
     pub fn tile_size(mut self, size: u32) -> Self {
         self.tile_size = size;
+        self
+    }
+
+    /// Les triangles qu'une image peut recevoir, `0` valant le défaut du moteur.
+    ///
+    /// Le défaut suffit à tout ce que cet étage montre, et c'est pourquoi il est
+    /// resté seul longtemps. Il ne suffit plus dès qu'un décor part **sans
+    /// traversée** : le chemin qui soumet toutes les cellules d'un coup compte
+    /// les triangles de la carte entière, pas ceux que la vue atteint, et
+    /// quelques milliers de cellules en viennent à bout. C'est aussi ce chemin
+    /// que la conformance compare au chemin déplié, donc un hôte qui ne peut pas
+    /// relever ce budget ne peut plus éprouver l'égalité des deux.
+    ///
+    /// La valeur compte des triangles **préparés** : le plan proche en découpe un
+    /// en jusqu'à six.
+    pub fn max_triangles(mut self, count: u32) -> Self {
+        self.max_triangles = count;
+        self
+    }
+
+    /// Les primitives de tracé qu'une image peut recevoir, `0` valant le défaut
+    /// du moteur.
+    ///
+    /// Un budget à part, et non une part du précédent : c'est le noyau qui en
+    /// décide ainsi, et un calque d'éditeur qui trace mille repères ne doit pas
+    /// vider la capacité de son décor.
+    pub fn max_lines(mut self, count: u32) -> Self {
+        self.max_lines = count;
         self
     }
 
@@ -200,19 +236,30 @@ impl Play {
             return Err(Error::Setting("scale factor must be at least 1"));
         }
 
+        let context = Context::new(self.config())?;
+
+        runner::run(self, context, state, update, render, output)
+    }
+
+    /// La configuration que ces réglages demandent au moteur.
+    ///
+    /// À part du lancement, parce que c'est le seul endroit où un réglage peut se
+    /// perdre en silence — et que le reste de `run` exige une fenêtre, donc ne se
+    /// vérifie pas. Rien n'est validé ici : `Context::new` refuse, et
+    /// [`run_with_output`](Self::run_with_output) rend ce refus avant d'ouvrir
+    /// quoi que ce soit.
+    fn config(&self) -> Config {
         let (width, height) = self.resolution;
         let (max_width, max_height) = self.max_resolution.unwrap_or(self.resolution);
-        let context = Context::new(Config {
+        Config {
             max_width,
             max_height,
             width,
             height,
             tile_size: self.tile_size,
-            max_triangles: 0,
-            max_lines: 0,
-        })?;
-
-        runner::run(self, context, state, update, render, output)
+            max_triangles: self.max_triangles,
+            max_lines: self.max_lines,
+        }
     }
 }
 
