@@ -84,7 +84,11 @@ struct Frame {
 ///
 /// Rend `true` quand l'exploration a été tronquée — profondeur ou nombre de
 /// visites atteints. L'image reste alors complète de tout ce qui a été atteint,
-/// et ce qui manque commence une cellule plus loin.
+/// mais **ce qui manque n'est pas au même endroit selon la borne** : à la
+/// profondeur, la cellule du fond est dessinée et seuls ses portails restent
+/// pliés, donc le trou commence une cellule plus loin ; à la borne de visites, la
+/// cellule n'est pas enregistrée du tout, et le parcours étant en profondeur, elle
+/// peut être une voisine de la caméra qu'un second portail atteignait.
 ///
 /// `visits` est vidée à l'entrée et triée à la sortie : ses entrées sortent dans
 /// l'ordre des index de cellules, qui est celui du fichier. Les fenêtres d'une

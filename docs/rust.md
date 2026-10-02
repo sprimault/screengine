@@ -1240,7 +1240,7 @@ doivent produire au bit près.
 
 **La reconstruction d'un luxel vers un point du monde est exacte, sans division.**
 Le luxel `(i, j)` s'évalue en `origine + (min_u + i)·u/|u|² + (min_v + j)·v/|v|²`.
-Les cinq contrôles du repère de lightmap, plus haut, sont exactement ce qui rend
+Les quatre contrôles du repère de lightmap, plus haut, sont exactement ce qui rend
 cette expression exacte : `|u|²` puissance de deux rend son inverse exact, et
 l'orthogonalité évite l'inverse d'une 2×2 quelconque. Sans eux il faudrait une
 division par pixel de lightmap, donc un arrondi de plus à rendre contractuel.
@@ -1695,10 +1695,18 @@ la traversée ne la visite pas — un faux contact les fait alors **diverger** a
 lieu de les tromper ensemble. Les tests du noyau gardent le premier mécanisme,
 qui reste invisible à l'égalité d'oracle ; la conformance garde le second.
 
+**Sur une surface oblique, la bande est plus épaisse, jamais autre.** Le jeu entre
+la vraie boîte et la dilatée se mesure le long de la normale et vaut la marge
+multipliée par la somme des valeurs absolues de la normale unitaire : une marge
+sur un sol axial, **√2 sur une rampe à 45°**, jusqu'à √3 sur un coin. Le mobile
+posé y est bien hors du solide et le balayage suivant y voit bien son contact
+immédiat ; ce qui change est l'amplitude du flottement, que l'hôte verra comme un
+personnage qui décolle un peu plus d'une pente que d'un plancher.
+
 La constante est une puissance de deux relative à la plus grande demi-extension,
 donc exacte, sans échelle de monde à inventer et sans sous-normal — même clause
 que le décalage d'échantillonnage de la cuisson. **Sa valeur se juge sur un décor
-réel**, à la marche d'escalier et au chambranle de porte, et non sur le papier :
+réel**, à la marche d'escalier, au chambranle de porte et à la rampe, et non sur le papier :
 elle se fige avec la scène de conformance, dans le même lot, avant que sa
 référence soit écrite. Les tests écrits avant elle portent donc sur des
 **propriétés vraies pour tout un intervalle** — pas de pénétration, glissement

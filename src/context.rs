@@ -86,9 +86,14 @@ pub enum Visibility {
     Complete,
     /// L'exploration s'est arrêtée à une de ses bornes.
     ///
-    /// La cellule du fond est dessinée entière ; seuls ses portails ne sont pas
-    /// dépliés, si bien que ce qui manque commence une cellule plus loin. C'est
-    /// une condition de décor, jamais une faute d'appel — la profondeur et le
+    /// **Ce qui manque n'est pas au même endroit selon la borne atteinte**, et le
+    /// statut ne les distingue pas : à la profondeur, la cellule du fond est
+    /// dessinée entière et seuls ses portails restent pliés, donc le trou commence
+    /// une cellule plus loin ; à la borne de visites, la cellule n'est pas
+    /// enregistrée, donc pas dessinée, et le parcours étant en profondeur elle peut
+    /// être une voisine de la caméra.
+    ///
+    /// C'est une condition de décor, jamais une faute d'appel — la profondeur et le
     /// nombre de visites sont des constantes du noyau, et l'hôte n'a aucun levier
     /// dessus.
     Incomplete,

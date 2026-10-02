@@ -46,6 +46,25 @@ publié, et explique les conventions du dépôt à qui y contribue.
 
 ## [Non publié]
 
+### Corrigé
+- Le contrat annonçait la même troncature pour les deux bornes de traversée. À la
+  borne de **cellules**, la cellule n'est pas dessinée du tout et peut être
+  n'importe où dans le champ de vision, pas au point de fuite.
+- Trois plafonds n'étaient écrits nulle part : le dépassement de `max_triangles`
+  annule la soumission entière du décor, les triangles éclairés sont bornés à
+  65535 par image, et `near_plane` est le seul levier contre le départage des
+  surfaces lointaines.
+
+***
+
+### Fixed
+- The contract claimed the same truncation for both traversal bounds. At the
+  **cell** bound the cell is not drawn at all and may sit anywhere in view, not at
+  the vanishing point.
+- Three ceilings were written nowhere: exceeding `max_triangles` cancels the whole
+  world submission, lit triangles are capped at 65535 per frame, and `near_plane`
+  is the only lever against distant depth ties.
+
 ## [0.8.2] — 2026-10-02 — Ce qu'un labyrinthe révèle
 
 **Rien à reprendre pour une liaison existante.** `SCG_ABI_VERSION` reste à 1, aucune

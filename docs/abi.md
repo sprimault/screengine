@@ -811,6 +811,15 @@ typedef struct ScgMat4 { float m[16]; } ScgMat4;
 - **Avec l'orientation neutre, la caméra regarde le +X du monde**, le zénith
   vers le haut de l'écran et le −Y vers la droite. Le monde est en main droite,
   Z en haut.
+- **`near_plane` est le seul levier contre le départage des surfaces lointaines**,
+  et rien ne le disait. La profondeur est `near/w` sur trente-deux bits : deux
+  surfaces séparées de `Δ` unités cessent d'être départagées de façon sûre au-delà
+  de `w ≈ 5792·√(near·Δ)`, la marge venant de l'arrondi des équations de plan. À
+  `near_plane` de 0,1, un décalage de deux centimètres tient jusqu'à environ 260
+  unités, dix centimètres jusqu'à 580, une unité jusqu'à 1800. **Monter
+  `near_plane` d'un facteur dix achète donc un facteur trois de distance utile**,
+  au prix de ce qu'on peut approcher de la caméra. Un plan lointain n'existe pas :
+  il est à l'infini, et rien d'autre ne se règle.
 - **`near_plane` et non `near`** : `windows.h` définit encore `near` et `far`
   comme macros vides, héritées de la mémoire segmentée 16 bits, et un champ de
   ce nom disparaîtrait dans toute unité de compilation qui l'inclut d'abord.
@@ -1275,8 +1284,24 @@ cellules qu'une image peut retenir. Elle existe parce que la traversée doit gar
 la fenêtre de chaque cellule visitée quelque part, et que ce quelque part ne peut
 être dimensionné ni sur la carte — que le contexte ne connaît pas à sa création —
 ni à la soumission, où toute allocation est interdite. L'atteindre rend le même
-statut que la profondeur, pour la même raison : l'image est complète de ce qui a
-été atteint, et ce qui manque commence plus loin.
+statut que la profondeur, mais **pas pour la même raison, et c'est une nuance
+qu'un intégrateur doit lire** :
+
+- **à la profondeur**, la cellule du fond est dessinée entière et seuls ses
+  portails restent pliés : ce qui manque commence bien **une cellule plus loin**,
+  donc au point de fuite, et la fenêtre de propagation y est de l'ordre du pixel ;
+- **à la borne de cellules**, la cellule n'est pas retenue, donc **pas dessinée du
+  tout** — et ce n'est pas « plus loin » : la traversée explore en profondeur, si
+  bien que la cellule perdue est celle qu'elle n'avait pas encore atteinte, et une
+  voisine de la caméra accessible par un second portail peut en faire partie.
+  **Ce qui manque est alors quelconque dans le champ de vision**, et un hôte qui
+  attend un trou lointain cherchera son défaut ailleurs.
+
+**Ce statut est le régime normal d'un décor à longues lignes de vue** — un circuit,
+un parking, une enfilade —, pas un incident : un hôte qui le journalise à chaque
+image inonde son journal. Ce qu'il doit en faire dépend de la borne atteinte, et
+l'ABI ne les distingue pas ; la perte est visuellement bornée dans le premier cas,
+pas dans le second.
 
 #### La traversée
 
@@ -1317,9 +1342,10 @@ statut que la profondeur, pour la même raison : l'image est complète de ce qui
   pourrait plus la suivre. L'image reste fonction de la carte, de la caméra, de la
   résolution et de rien d'autre.
 
-  Quand la borne est atteinte, l'appel rend **`SCG_STATUS_INCOMPLETE`** : la
-  cellule du fond est dessinée entière, seuls ses portails ne sont pas dépliés, si
-  bien que ce qui manque commence une cellule plus loin que la borne. Écarté : la
+  Quand la borne de **profondeur** est atteinte, l'appel rend
+  **`SCG_STATUS_INCOMPLETE`** : la cellule du fond est dessinée entière, seuls ses
+  portails ne sont pas dépliés, si bien que ce qui manque commence une cellule plus
+  loin que la borne. Écarté : la
   troncature silencieuse, qui est une image trouée sans erreur. Écarté : un code
   négatif, une profondeur de 64 étant une condition de décor et non une faute
   d'appel — et l'hôte n'a aucun levier, la borne n'étant pas réglable. Écarté :
@@ -1329,11 +1355,29 @@ statut que la profondeur, pour la même raison : l'image est complète de ce qui
 - **Une cellule visitée est soumise une fois, dans l'ordre du fichier.** La
   traversée détermine d'abord ce qui est visible, puis une seconde passe soumet.
   Trois raisons, dont la deuxième décide : le total soumis reste inférieur ou égal
-  à ce que rend `scg_world_triangle_count`, qui demeure donc un dimensionnement
-  valide de `max_triangles` ; l'ordre du fichier départage deux surfaces
+  à ce que rend `scg_world_triangle_count` ; l'ordre du fichier départage deux surfaces
   coplanaires, et en ordre de traversée cet ordre deviendrait fonction de la
   position de la caméra ; et l'égalité avec le chemin brut est alors vraie par
   construction plutôt que par chance.
+- **`scg_world_triangle_count` est un dimensionnement nominal, jamais un pire
+  cas**, et c'est le grand décor ouvert qui met la nuance en défaut.
+  `max_triangles` compte des triangles **préparés**, et le clipping en produit
+  jusqu'à **six** pour un seul soumis : une dalle de sol qui traverse le plan
+  proche ou déborde de la bande de garde — ce qu'un circuit ou un parking fait par
+  construction — consomme donc plusieurs places. Le compte de la carte borne ce
+  que la traversée **soumet**, pas ce que le contexte **retient**.
+
+  **Et le dépassement n'est pas une dégradation, c'est une falaise.** La
+  soumission du décor est refusée **en entier** par `SCG_ERR_INVALID_ARGUMENT`, et
+  rien de lui n'est dessiné cette image — pas une partie du décor, rien. Un hôte
+  dont la capacité est juste au bord verra donc le monde disparaître à certaines
+  poses de caméra et revenir à d'autres.
+
+  **Un second plafond est indépassable, et il ne se configure pas** : les triangles
+  **éclairés** d'une image sont bornés à 65535, quelle que soit `max_triangles`.
+  Au-delà, un lot éclairé se refuse par la capacité de triangles. La valeur par
+  défaut étant très en dessous, les deux se confondent jusqu'à ce qu'un hôte règle
+  `max_triangles` au-delà de ce plafond.
 - **Deux cellules superposées peuvent contenir le même point.** `scg_world_locate`
   rend alors la **première dans l'ordre du fichier**. Ce n'est pas une erreur,
   c'est un arbitrage, et il est écrit ici pour que deux constructions ne le
@@ -1805,6 +1849,14 @@ disposition de `ScgSprite`, et pour la même raison.
   centre de la boîte à la fraction d'impact.** Un produit scalaire, sans racine,
   et le même sur toutes les cibles — c'est ce qui le rend opposable à la
   conformance.
+
+  **Sur une surface oblique, ce n'est ni le coin qui touche ni même un point de la
+  boîte**, et c'est la seule chose de cette structure qu'une liaison écrite de
+  mémoire se représentera de travers. Le pied de la perpendiculaire s'écarte du
+  contact réel d'autant que la normale est éloignée d'un axe : pour une boîte de
+  16 × 16 × 32 sur une rampe à 45°, l'écart approche six unités de monde. C'est la
+  sémantique publiée et elle ne change pas ; un hôte qui veut le coin le calcule
+  depuis la fraction, la normale et ses propres demi-extensions.
 - **Les deux champs réservés sont nuls obligatoires**, et leur usage prévu est
   connu : une profondeur de pénétration, dont le neutre *est* zéro, ce que la
   clause d'extensibilité exige.
@@ -1882,6 +1934,31 @@ dépendrait d'un champ de configuration échapperait à la conformance.
 **Une borne et non deux**, à la différence de l'étape 5 : l'étendue balayée borne
 déjà la région, et le nombre de cellules visitées est la seule chose qui puisse
 enfler. Elle ne se configure pas, et l'atteindre rend `SCG_STATUS_INCOMPLETE`.
+
+**C'est un nombre de cellules, jamais une distance**, et c'est la seule façon
+d'énoncer la borne qui n'induise pas en erreur. La région examinée est l'ensemble
+des cellules atteintes par portails que le **volume balayé** touche, et la
+traversée s'élague au premier contact : elle sature donc dès que ce volume touche
+plus de `SCG_SWEEP_CELLS` cellules. Une enfilade dégagée de soixante-cinq cellules
+y suffit, **quelle que soit leur taille** — ce qui fait de la distance une
+conséquence du découpage et non une limite du moteur : des cellules d'une unité
+saturent en soixante-cinq unités, des cellules de vingt en treize cents.
+
+**Un décor cloisonné, lui, ne l'atteint pas**, le contact arrivant d'abord : un
+couloir rend un mur à quelques unités, et la région examinée reste loin de la
+borne. Mesuré sur un labyrinthe de deux mille cent onze cellules, un pas de deux
+cent cinquante-six unités ne sature pour aucune taille de boîte, le mouvement étant
+obstrué à neuf unités. Le cas qui sature est donc le **trajet dégagé** — une halle,
+un circuit, un extérieur —, pas le décor dense, et c'est l'inverse de ce qu'on
+suppose.
+
+À taille de cellule égale, **un pas oblique touche plus de cellules qu'un pas axial
+de même longueur** : la boîte du mouvement croît dans les trois dimensions, là où
+celle d'un pas axial reste une dalle mince.
+
+Ce que l'hôte peut en faire : découper un long déplacement en plusieurs appels
+plutôt que d'en faire un seul. Deux pas successifs explorent chacun leur propre
+région, là où un pas double explore le volume qui les contient tous les deux.
 
 **Sa valeur se mesure avant d'être publiée**, sur le décor de validation, et elle
 est le seul élément de cette section à ne pas être arrêté ici. Un ordre de
