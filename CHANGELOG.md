@@ -46,8 +46,16 @@ publié, et explique les conventions du dépôt à qui y contribue.
 
 ## [Non publié]
 
+## [0.8.2] — 2026-10-02 — Ce qu'un labyrinthe révèle
+
+**Rien à reprendre pour une liaison existante.** `SCG_ABI_VERSION` reste à 1, aucune
+signature ne change, le format des cartes et des maillages ne bouge pas, et la
+fonction ajoutée n'oblige à rien.
+
 **Les résultats de collision changent**, et les empreintes `collision` et
-`selection` sont mises à jour.
+`selection` sont mises à jour. Un hôte qui balaie une carte à cellules concaves —
+un immeuble, une cage d'escalier — en voit la différence : son mobile ne s'arrête
+plus contre des surfaces qu'il ne croise pas.
 
 ### Ajouté
 - `scg_world_light_id` et `World::light_id` : l'identifiant d'une lumière de
@@ -63,8 +71,13 @@ publié, et explique les conventions du dépôt à qui y contribue.
 
 ***
 
+**Nothing to take up for an existing binding.** `SCG_ABI_VERSION` stays at 1, no
+signature changes, the map and mesh formats do not move, and the added function
+obliges you to nothing.
+
 **Collision results change**, and the `collision` and `selection` digests are
-updated.
+updated. A host sweeping a map with concave cells — a building, a stairwell —
+sees the difference: its mover no longer stops against surfaces it never crosses.
 
 ### Added
 - `scg_world_light_id` and `World::light_id`: the identifier of a map light,
