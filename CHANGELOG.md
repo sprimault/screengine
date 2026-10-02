@@ -51,6 +51,7 @@ empreintes `collision` et `selection` sont mises à jour. Un rayon n'est pas
 concerné.
 
 ### Corrigé
+- Une boîte posée au sol s'arrêtait net à chaque jointure de deux cellules.
 - Une boîte traversait une surface oblique le long de son arête amont.
 - Un balayage à sa borne de cellules annonçait valide plus loin qu'il n'avait vu.
 - Le contrat annonçait la même troncature pour les deux bornes de traversée.
@@ -63,6 +64,7 @@ concerné.
 `selection` digests are updated. A ray is unaffected.
 
 ### Fixed
+- A box resting on the floor stopped dead at every joint between two cells.
 - A box went through a sloped surface along its upper edge.
 - A sweep at its cell bound declared valid further than it had looked.
 - The contract claimed the same truncation for both traversal bounds.

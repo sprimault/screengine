@@ -948,3 +948,56 @@ fn la_rampe_rend_les_memes_bits_par_les_deux_chemins() {
         assert_eq!(slow.normal, fast.normal, "y={y}");
     }
 }
+
+/// **Une boîte posée au sol franchit la jointure de deux cellules.**
+///
+/// Le cas que l'intégrateur a rencontré à chaque pas de son décor, et qui ne se
+/// voit que dans la **bande de peau** : la vraie boîte n'y touche rien, la boîte
+/// dilatée y touche déjà, et c'est l'état qu'un balayage précédent laisse derrière
+/// lui par construction. Posée plus haut, la boîte passait ; posée dessus, elle
+/// partait légitimement dans le solide. Entre les deux, elle s'arrêtait net.
+///
+/// Ce qu'il attrape : le sol de chaque cellule voyait l'arête du seuil comme
+/// exposée, faute de regarder la cellule d'en face, et le prisme de cette arête
+/// barrait le passage — sur un sol horizontal, qui ne peut pas arrêter un
+/// mouvement horizontal. Mesuré avant correction à `fraction = 0.374878` contre
+/// la surface du sol de départ, soit la course du bord avant jusqu'au plan du
+/// portail.
+#[test]
+fn une_boite_posee_au_sol_franchit_la_jointure() {
+    let world = chain(3);
+    let half = Vec3d::new(0.5, 0.5, 0.5);
+
+    for part in [0.25f64, 0.5, 0.9] {
+        let z = half.z + SKIN * half.z * part;
+        let from = Vec3d::new(2.0, 2.0, z);
+        let to = Vec3d::new(6.0, 2.0, z);
+        let hit = sweep(&world, 1, half, from, to).expect("cellule connue");
+
+        assert_eq!(hit.fraction, 1.0, "part={part} : le seuil a bloqué le pas");
+        assert_eq!(hit.surface, 0, "part={part} : aucune surface n'est touchée");
+        assert!(!hit.start_solid, "part={part} : le départ était dégagé");
+    }
+}
+
+/// **Et le mur du bout arrête toujours**, dans la même bande.
+///
+/// Le contrôle négatif du précédent : éteindre une arête de trop ferait passer la
+/// boîte au travers du bout de l'enfilade, dont le portail n'est pas apparié et
+/// qui est donc un mur. Sans lui, un correctif trop large passerait au vert.
+#[test]
+fn le_bout_de_l_enfilade_arrete_une_boite_posee_au_sol() {
+    let world = chain(3);
+    let half = Vec3d::new(0.5, 0.5, 0.5);
+    let z = half.z + SKIN * half.z * 0.5;
+    let from = Vec3d::new(2.0, 2.0, z);
+    let to = Vec3d::new(20.0, 2.0, z);
+
+    let hit = sweep(&world, 1, half, from, to).expect("cellule connue");
+    assert!(hit.fraction < 1.0, "le mur du bout arrête la boîte");
+    let centre = from + (to - from) * f64::from(hit.fraction);
+    assert!(
+        centre.x + half.x <= 12.0,
+        "la boîte reste dans l'enfilade : {centre:?}"
+    );
+}
