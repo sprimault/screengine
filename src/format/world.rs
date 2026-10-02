@@ -85,8 +85,8 @@ const MAX_LUXELS: f32 = 256.0;
 /// L'écart relatif toléré sur l'orthogonalité des axes de lightmap et sur leur
 /// appartenance au plan de la surface.
 ///
-/// Les trois autres propriétés du repère — puissances de deux, exposant pair,
-/// origine sur la grille — sont exactes ou ne sont pas. Ces deux-ci portent le
+/// Les deux autres propriétés du repère — carrés puissances de deux, origine sur
+/// la grille — sont exactes ou ne sont pas. Ces deux-ci portent le
 /// résidu de la construction d'un repère oblique sur une surface oblique, et une
 /// tolérance y est admissible là où elle serait interdite sur l'appariement des
 /// portails : celui-ci est une relation, qu'un epsilon rendrait non transitive,
@@ -1406,19 +1406,12 @@ fn perpendicular(dot: f64, square_a: f64, square_b: f64) -> bool {
 
 /// Vrai si le repère de lightmap d'une surface est utilisable pour la cuire.
 ///
-/// Cinq propriétés, et aucune ne remplace une autre.
+/// Quatre propriétés, et aucune ne remplace une autre.
 ///
 /// La longueur **au carré** de chaque axe est une puissance de deux, ce qui rend
 /// son inverse exact : la reconstruction d'un luxel vers un point du monde se
 /// fait alors par deux multiplications et trois additions, sans division, donc
 /// sans arrondi à rendre déterministe.
-///
-/// Son exposant est **pair**, donc la longueur elle-même est une puissance de
-/// deux. Le pas de la grille en unités de monde étant cette longueur, le seul
-/// contrôle du carré laissait passer un axe de `√2` — et deux surfaces
-/// coplanaires adjacentes aux pas `2` et `√2` ne partagent plus leur grille,
-/// c'est-à-dire la marche d'éclairage à la jointure que ce contrôle existe pour
-/// interdire.
 ///
 /// L'origine tombe sur un nœud de sa propre grille, mesurée depuis le zéro du
 /// monde. Le contrôle est local à la surface et emporte le global : deux origines
