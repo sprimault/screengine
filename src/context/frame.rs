@@ -207,6 +207,11 @@ impl Drop for InFlight<'_> {
         // sans voir la tuile perdue. En deux atomiques, cet instant existe —
         // quelques instructions, mais c'est exactement le cas que la clause
         // sert à couvrir, et l'ordre correct ne se vérifierait par aucun test.
+        // 1.99 renomme cette méthode `try_update`, stable seulement depuis 1.95 : le
+        // renommage attend que `rust-version`, à 1.85, y arrive pour un autre motif.
+        // `allow` et non `expect` — sous 1.99 la dépréciation n'est pas émise, et
+        // l'attente non remplie est à son tour une erreur sous `-D warnings`.
+        #[allow(deprecated)]
         let _ = self
             .context
             .in_flight
