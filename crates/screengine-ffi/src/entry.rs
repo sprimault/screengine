@@ -19,7 +19,6 @@ use crate::fpenv::FpEnv;
 use crate::message;
 use crate::status::{
     SCG_ERR_FAULTED, SCG_ERR_INVALID_ARGUMENT, SCG_ERR_NULL, SCG_ERR_PANIC, SCG_OK, code_of,
-    message_of,
 };
 
 /// Une erreur qui porte son code d'ABI et son texte.
@@ -194,7 +193,7 @@ impl From<Error> for AbiError {
     fn from(error: Error) -> Self {
         Self {
             code: code_of(error),
-            message: message_of(error),
+            message: error.message(),
         }
     }
 }
