@@ -49,6 +49,10 @@ publié, et explique les conventions du dépôt à qui y contribue.
 **Les résultats de collision changent**, et les empreintes `collision` et
 `selection` sont mises à jour.
 
+### Ajouté
+- `screengine_play::SWEEP_CELLS`, la borne de cellules du balayage, aux côtés de
+  `Hit` et `Surfaces` que la liste portait déjà.
+
 ### Corrigé
 - Un balayage ou un rayon s'arrêtait net, à la fraction zéro, contre une surface
   qu'il ne croise jamais, dès que son départ tombait derrière le plan de cette
@@ -58,6 +62,10 @@ publié, et explique les conventions du dépôt à qui y contribue.
 
 **Collision results change**, and the `collision` and `selection` digests are
 updated.
+
+### Added
+- `screengine_play::SWEEP_CELLS`, the sweep's cell bound, alongside the `Hit` and
+  `Surfaces` the list already carried.
 
 ### Fixed
 - A sweep or a ray stopped dead, at fraction zero, against a surface it never

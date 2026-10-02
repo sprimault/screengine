@@ -50,19 +50,22 @@ pub use screengine;
 // données. Deux modèles de scène qui divergeraient seraient la seule façon de
 // le rater.
 //
-// Le critère d'entrée dans cette liste est ce que la surface de ce crate
-// **oblige** à nommer : `Context` est le paramètre des rappels de rendu,
-// `Visibility` ce que rend `submit_world_visible`, et les deux capacités sont
-// les défauts des budgets que `Play` règle. Tout le reste du noyau reste
-// joignable par `screengine::`, qui est réexporté entier juste au-dessus — cette
-// liste est un raccourci, pas une frontière.
+// Le critère d'entrée est le **vocabulaire qu'un hôte écrit**, et non ce que la
+// surface de ce crate oblige à nommer : `Hit`, `Surfaces` et `SWEEP_CELLS` ne
+// figurent dans aucune signature d'ici, et un hôte qui déplace un personnage les
+// écrit tous les trois. Ce que la surface impose en fait partie — `Context` est le
+// paramètre des rappels de rendu, `Visibility` ce que rend `submit_world_visible`,
+// les deux capacités sont les défauts des budgets que `Play` règle — mais ne
+// l'épuise pas, et l'annoncer comme le critère laissait trois entrées hors de lui.
+// Tout le reste du noyau reste joignable par `screengine::`, qui est réexporté
+// entier juste au-dessus — cette liste est un raccourci, pas une frontière.
 //
 // `screengine::Output` n'y entre pas : ce crate a le sien, et les deux se
 // rendraient inutilisables par le même nom.
 pub use screengine::{
     Affine3, Angle, Camera, Color, Context, DepthMode, Filter, Hit, LINE_CAPACITY, Light, Lightmap,
-    Lightmaps, Line, Mesh, Point, Quat, Sprite, SpriteOrientation, Surfaces, TRIANGLE_CAPACITY,
-    Texture, Triangle, Vec3, VertexUv, VertexUv2, Visibility, World,
+    Lightmaps, Line, Mesh, Point, Quat, SWEEP_CELLS, Sprite, SpriteOrientation, Surfaces,
+    TRIANGLE_CAPACITY, Texture, Triangle, Vec3, VertexUv, VertexUv2, Visibility, World,
 };
 pub use texture::{load_png, load_png_masked};
 pub use winit::event::MouseButton;
