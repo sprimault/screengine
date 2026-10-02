@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
 // Les quatre scènes qui chargent un fichier : la caisse, la composite de
-// l'étape 6, le décor à quatre cellules et les balayages.
+// l'étape 6, le décor de validation et les balayages.
 
 package main
 
@@ -383,8 +383,8 @@ func renderRooms(path string) (uint64, bool) {
 	// **Toutes les cellules, pas seulement celles que la vue montre** : une
 	// lightmap est un cache de la carte et non du point de vue.
 	var cells C.uint32_t
-	check(C.scg_world_cell_count(world, &cells) == C.SCG_OK && cells == 4,
-		"la carte porte quatre cellules")
+	check(C.scg_world_cell_count(world, &cells) == C.SCG_OK && cells == 6,
+		"la carte porte ses quatre salles et ses deux tronçons de tunnel")
 	for i := C.uint32_t(0); i < cells; i++ {
 		var id, luxels C.uint32_t
 		check(C.scg_world_cell_id(world, i, &id) == C.SCG_OK, "le rang rend un identifiant")

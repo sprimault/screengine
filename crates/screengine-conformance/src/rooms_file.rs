@@ -20,11 +20,17 @@
 //! `couloir.world` n'est pas touché : son empreinte reste, et c'est ce qui permet
 //! de distinguer une régression du rendu d'une évolution de ce décor-ci.
 //!
-//! **Chaque arête d'une empreinte a une longueur au carré puissance de deux.** Ce
-//! n'est pas une coquetterie : le repère de lightmap d'un mur a pour axes l'arête
-//! elle-même et la verticale, et le chargement exige que leurs carrés en soient
-//! une. Des arêtes de 4 et de 8 donnent 16 et 64 ; une diagonale de `(4, 4)` donne
-//! 32, ce qui est exactement ce qui rend un mur oblique éclairable.
+//! **Les empreintes du rez-de-chaussée gardent des arêtes dont le carré est une
+//! puissance de deux**, mais ce n'est plus une obligation : le chargement l'a
+//! exigé — le repère de lightmap d'un mur a pour axes l'arête et la verticale —
+//! et la clause est tombée, parce qu'elle interdisait toute pente autre que 45°.
+//! Ces arêtes-là restent ce qu'elles sont, pour ne pas déplacer des empreintes
+//! sans raison.
+//!
+//! **Le tunnel voûté, lui, est là pour le cas contraire** : ses facettes ont des
+//! cordes dont le carré n'est pas une puissance de deux, et leurs normales ne sont
+//! ni axiales ni à 45°. C'est la seule part du décor qui éprouve une surface
+//! oblique au chargement, à la cuisson et à la traversée.
 
 /// La hauteur du sol des cellules du rez-de-chaussée.
 const FLOOR_Z: f32 = 0.0;
@@ -171,6 +177,145 @@ fn prism(
     out.extend_from_slice(&body);
 }
 
+/// La demi-largeur du tunnel, en unités de monde : cinq mètres de voie.
+const VAULT_HALF: f32 = 2.5;
+
+/// La hauteur des piédroits, où la voûte commence.
+const VAULT_SPRING: f32 = 2.0;
+
+/// Où le tunnel passe, à l'écart du reste du décor.
+const VAULT_Y: f32 = -12.0;
+
+/// La section du tunnel, dans le plan `XZ` translaté en `VAULT_Y`.
+///
+/// **Un plein cintre à quatre facettes, et le compte n'est pas indifférent.** Six
+/// en placeraient une exactement à 45°, un nombre impair en placerait une à plat
+/// au sommet : dans les deux cas le décor retomberait sur les orientations que les
+/// autres cellules portent déjà. À quatre, les normales tombent à 22,5°, 67,5°,
+/// 112,5° et 157,5° — aucune axiale, aucune à 45° —, et la corde d'une facette a
+/// pour carré `2·R²·(1 − cos 45°)`, qui n'est pas une puissance de deux. C'est ce
+/// que le chargement refusait avant que la clause tombe.
+///
+/// Les cotes du cintre portent donc des irrationnels, ce qui est le cas réel d'un
+/// décor courbe : `R/√2` pour les deux naissances obliques.
+fn section() -> [[f32; 2]; 7] {
+    // `2.5 / √2`, écrit en littéral : le noyau n'appelle aucune racine, et un
+    // générateur n'a pas à être la première exception.
+    const DIAGONAL: f32 = 1.767_767;
+    let (w, s) = (VAULT_HALF, VAULT_SPRING);
+    [
+        [-w, 0.0],
+        [w, 0.0],
+        [w, s],
+        [DIAGONAL, s + DIAGONAL],
+        [0.0, s + w],
+        [-DIAGONAL, s + DIAGONAL],
+        [-w, s],
+    ]
+}
+
+/// Un tronçon de tunnel voûté, extrudé le long de `X`.
+///
+/// **Le pendant de [`prism`] pour une section verticale.** Celui-ci extrude une
+/// empreinte au sol et ne sait faire que des murs verticaux ; une voûte demande
+/// l'inverse — une section dans le plan transversal, tirée le long de l'axe de la
+/// voie —, et c'est tout ce qui les distingue.
+///
+/// `portals` désigne les extrémités ouvertes : `0` pour celle de `x0`, `1` pour
+/// celle de `x1`. Une extrémité qui n'y figure pas est un mur, et une qui y figure
+/// sans vis-à-vis en est un aussi — c'est le mot du format.
+///
+/// **L'origine de chaque repère de lightmap est le zéro du monde**, et c'est une
+/// obligation et non un choix : le contrôle du chargement exige que le produit
+/// scalaire de l'origine par chaque axe soit un entier **exact**, et un coin de
+/// facette oblique ne le donne pas — il vaudrait 3,99999976 au lieu de 4 sur des
+/// composantes en simple précision. Voir `docs/cartes.md`.
+fn vault(id: u32, first_id: u32, x0: f32, x1: f32, portals: &[usize], out: &mut Vec<u8>) {
+    let section = section();
+    let n = section.len();
+
+    let mut body = Vec::new();
+    // Une facette par arête de la section, plus celles des deux extrémités qui ne
+    // sont pas des portails.
+    let surfaces = n + (2 - portals.len());
+    let header = [id, 0, (n * 2) as u32, surfaces as u32, portals.len() as u32];
+    words(&header, &mut body);
+
+    // Les sommets : la section à `x0`, puis la même à `x1`.
+    for x in [x0, x1] {
+        for point in &section {
+            floats(&[x, VAULT_Y + point[0], point[1]], &mut body);
+        }
+    }
+
+    // Les deux extrémités, celles qui ne sont pas des portails. La section tourne
+    // dans le sens direct vue depuis `+X`, donc l'extrémité de `x0` se parcourt à
+    // l'envers pour que sa normale sorte de la cellule.
+    let mut next_id = first_id;
+    if !portals.contains(&0) {
+        let face: Vec<u32> = (0..n as u32).collect();
+        surface(
+            next_id,
+            WALLS,
+            &face,
+            [0.0, 1.0, 0.0],
+            [0.0, 0.0, 1.0],
+            &mut body,
+        );
+        next_id += 1;
+    }
+    if !portals.contains(&1) {
+        let face: Vec<u32> = (n as u32..(n * 2) as u32).rev().collect();
+        surface(
+            next_id,
+            WALLS,
+            &face,
+            [0.0, 1.0, 0.0],
+            [0.0, 0.0, 1.0],
+            &mut body,
+        );
+        next_id += 1;
+    }
+
+    // Une facette par arête de la section. Son repère prend l'axe de la voie et
+    // la corde : les deux sont dans le plan de la facette et orthogonaux entre
+    // eux, l'axe de la voie étant perpendiculaire au plan de section.
+    for i in 0..n {
+        let j = (i + 1) % n;
+        let (a, b) = (section[i], section[j]);
+        let chord = [0.0, b[0] - a[0], b[1] - a[1]];
+        let material = if i == 0 { FLOOR } else { WALLS };
+        // **L'ordre suit celui d'un mur de [`prism`]** : le coin de section à
+        // `x0`, le même à `x1`, puis le coin suivant en revenant. L'ordre miroir
+        // retourne la facette, et une cellule entière ainsi écrite rend une image
+        // **noire** — vu en écrivant ce tunnel, dont la première vue ne peignait
+        // pas un pixel.
+        surface(
+            next_id,
+            material,
+            &[i as u32, (i + n) as u32, (j + n) as u32, j as u32],
+            [1.0, 0.0, 0.0],
+            chord,
+            &mut body,
+        );
+        next_id += 1;
+    }
+
+    for end in portals {
+        let face: Vec<u32> = if *end == 0 {
+            (0..n as u32).collect()
+        } else {
+            (n as u32..(n * 2) as u32).rev().collect()
+        };
+        words(&[next_id, n as u32], &mut body);
+        words(&face, &mut body);
+        next_id += 1;
+    }
+
+    words(&[body.len() as u32], out);
+    out.extend_from_slice(&body);
+}
+
 /// Le fichier du décor de validation : quatre cellules.
 ///
 /// La salle en L s'ouvre sur un couloir dont le bout est coupé en biais ; ce biais
@@ -221,6 +366,20 @@ pub fn bytes() -> Vec<u8> {
         &mut cells,
     );
 
+    // **Deux tronçons de tunnel voûté**, à l'écart et reliés l'un à l'autre par
+    // une arche. Ce qu'ils portent et que les quatre autres cellules n'ont pas :
+    // des facettes dont aucune n'est axiale ni à 45°, donc des repères de lightmap
+    // dont le carré n'est pas une puissance de deux — ce que le chargement
+    // refusait. Leur jointure éprouve en plus le classement des arêtes au travers
+    // d'un portail, sur un sol que les deux tronçons partagent.
+    //
+    // **Autonomes, et c'est délibéré** : les relier au décor existant demanderait
+    // d'y percer une arche, donc de remanier la salle du bout qui porte le portail
+    // oblique et le losange que la conformance éprouve déjà. Un cas nouveau ne
+    // paie pas la remise en jeu de trois acquis.
+    vault(5, 500, 0.0, 16.0, &[1], &mut cells);
+    vault(6, 600, 16.0, 32.0, &[0], &mut cells);
+
     // **Une lampe devant l'angle rentrant de la salle en L**, et du bon côté des
     // deux murs qui le forment : c'est le seul endroit du décor où l'on voit si
     // l'orientation d'une face entre dans l'éclairage, et sans le terme de Lambert
@@ -246,6 +405,22 @@ pub fn bytes() -> Vec<u8> {
     words(&[3], &mut lights);
     floats(&[5.0, 2.0, 10.0, 20.0], &mut lights);
     lights.extend_from_slice(&[0xE0, 0xFF, 0xD0, 0x00]);
+    // **Une quatrième au milieu du premier tronçon de tunnel**, sous la voûte :
+    // sans elle la cuisson d'une facette oblique ne rendrait que du noir, et
+    // l'empreinte ne distinguerait plus un éclairage juste d'un éclairage absent.
+    // Posée assez bas pour que les piédroits et les naissances de voûte reçoivent
+    // des valeurs franchement différentes — c'est l'écart entre facettes qui dit
+    // si leur orientation entre dans le calcul.
+    words(&[4], &mut lights);
+    floats(&[8.0, VAULT_Y, 1.5, 18.0], &mut lights);
+    lights.extend_from_slice(&[0xFF, 0xD8, 0xA8, 0x00]);
+    // **Une cinquième dans le second tronçon**, et elle n'est pas décorative : sans
+    // elle le fond du tunnel reste noir, donc l'arche qui relie les deux tronçons
+    // ne se voit sur aucune image — or c'est elle que la vue existe pour montrer.
+    // Vu en regardant la première capture, pas en la figeant.
+    words(&[5], &mut lights);
+    floats(&[24.0, VAULT_Y, 1.5, 18.0], &mut lights);
+    lights.extend_from_slice(&[0xA8, 0xC0, 0xFF, 0x00]);
 
     let mut materials = Vec::new();
     for (id, name) in [(WALLS, "mur"), (FLOOR, "sol")] {

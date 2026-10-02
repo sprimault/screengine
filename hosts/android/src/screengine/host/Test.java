@@ -1070,7 +1070,7 @@ public final class Test {
         // Toutes les cellules, pas seulement celles que la vue montre : une
         // lightmap est un cache de la carte et non du point de vue.
         int cells = Screengine.worldCellCount(world);
-        check(cells == 4, "la carte porte quatre cellules");
+        check(cells == 6, "la carte porte ses quatre salles et ses deux tronçons de tunnel");
         for (int i = 0; i < cells && lighting != 0; i++) {
             int id = Screengine.worldCellId(world, i);
             // Ce qu'un hôte lit avant de cuire, pour pondérer sa progression :

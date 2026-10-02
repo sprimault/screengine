@@ -627,22 +627,25 @@ fn la_liste_de_balayages_se_relit_comme_un_hote_la_relit() {
     }
 }
 
-/// Le décor versionné porte bien ses quatre cellules, et leurs liens.
+/// Le décor versionné porte bien ses six cellules, et leurs liens.
 ///
 /// L'appariement des portails est déduit au chargement : le vérifier ici dit que le
 /// fichier écrit décrit les mêmes arêtes des deux côtés, ce qu'une comparaison
 /// d'octets avec le générateur ne dirait pas — les deux seraient faux ensemble.
 #[test]
-fn le_fichier_des_salles_porte_ses_quatre_cellules() {
+fn le_fichier_des_salles_porte_ses_six_cellules() {
     const VERSIONED: &[u8] = include_bytes!("../../../hosts/salles.world");
     let world = World::load(VERSIONED).expect("le fichier versionné se décode");
 
-    assert_eq!(world.cell_count(), 4);
-    assert_eq!(world.light_count(), 3);
+    assert_eq!(world.cell_count(), 6, "quatre salles, deux tronçons voûtés");
+    assert_eq!(world.light_count(), 5);
     // La caméra de la première vue est dans la salle en L ; l'étage lui est
     // superposé et ne s'atteint pas depuis le rez-de-chaussée.
     assert_eq!(world.locate(Vec3::new(2.0, 2.0, 2.0)), 1);
     assert_eq!(world.locate(Vec3::new(2.0, 2.0, 10.0)), 4);
+    // Et le tunnel, dont l'arche relie les deux tronçons : c'est le fichier
+    // versionné qui le porte, pas seulement le générateur.
+    assert_eq!(world.locate(Vec3::new(4.0, -12.0, 1.2)), 5);
 }
 
 /// Le fichier de carte versionné se décode, et porte le couloir.
@@ -692,8 +695,12 @@ fn le_fichier_de_maillage_versionne_porte_la_caisse() {
 fn le_decor_de_validation_porte_ses_trois_proprietes() {
     let world = World::load(&rooms_file::bytes()).expect("décor de validation valide");
 
-    assert_eq!(world.cell_count(), 4, "quatre cellules");
-    for (index, expected) in [(0u32, 1u32), (1, 2), (2, 3), (3, 4)] {
+    assert_eq!(
+        world.cell_count(),
+        6,
+        "quatre salles et deux tronçons de tunnel"
+    );
+    for (index, expected) in [(0u32, 1u32), (1, 2), (2, 3), (3, 4), (4, 5), (5, 6)] {
         assert_eq!(world.cell_id(index), Some(expected));
     }
 
@@ -726,6 +733,26 @@ fn le_decor_de_validation_porte_ses_trois_proprietes() {
         world.track(2, Vec3::new(10.0, 2.0, 2.0), Vec3::new(16.0, 4.0, 2.0)),
         3,
         "le portail oblique se franchit"
+    );
+
+    // **Le tunnel voûté, et ce qu'il porte que les quatre salles n'ont pas.** Il
+    // se charge, donc ses repères de lightmap obliques passent le contrôle — ce
+    // que la clause de puissance de deux refusait. Ses deux tronçons s'apparient
+    // par une arche de sept sommets, et il reste à l'écart : la traversée depuis
+    // la salle en L ne doit jamais l'atteindre.
+    let inside = Vec3::new(8.0, -12.0, 1.0);
+    assert_eq!(world.locate(inside), 5, "le premier tronçon");
+    assert_eq!(
+        world.track(5, inside, Vec3::new(24.0, -12.0, 1.0)),
+        6,
+        "l'arche entre les deux tronçons se franchit"
+    );
+    // Sous la naissance de la voûte, à l'aplomb du piédroit : dehors, et c'est ce
+    // qui distingue une section en arche d'un rectangle.
+    assert_eq!(
+        world.locate(Vec3::new(8.0, -12.0 + 2.4, 4.2)),
+        0,
+        "au-dessus du piédroit, la voûte a déjà rentré"
     );
 }
 
@@ -851,5 +878,36 @@ fn les_cellules_du_decor_sont_closes() {
         (19.0, 0),
     ] {
         assert_eq!(world.locate(Vec3::new(x, 2.0, 2.0)), expected, "à x={x}");
+    }
+}
+
+/// **Le tunnel arrête un volume dans ses quatre directions.**
+///
+/// Le décor n'a aucune autre cellule dont les faces soient obliques, et c'est la
+/// seule chose qui distingue ce test de ceux de la salle en L : les deux piédroits
+/// sont verticaux, le sol est plat, mais les pans de voûte ne le sont pas, et il
+/// faut que le balayage les retienne comme les autres.
+///
+/// **Il dit aussi où chercher si un hôte traverse** : une boîte posée au centre du
+/// premier tronçon est arrêtée dans toutes les directions, donc un hôte qui
+/// traverserait le ferait pour une raison qui lui appartient — une cellule de
+/// départ qui n'est pas la sienne, ou un départ dans le solide qu'il choisit de ne
+/// pas bloquer.
+#[test]
+fn le_tunnel_arrete_un_volume_dans_ses_quatre_directions() {
+    let world = World::load(&rooms_file::bytes()).expect("décor valide");
+    let half = Vec3::new(0.3, 0.3, 0.9);
+    let from = Vec3::new(8.0, -12.0, 1.0);
+
+    for (nom, to, surface) in [
+        ("le piédroit droit", Vec3::new(8.0, -8.0, 1.0), 502),
+        ("le piédroit gauche", Vec3::new(8.0, -16.0, 1.0), 507),
+        ("le sol", Vec3::new(8.0, -12.0, -3.0), 501),
+        ("la voûte", Vec3::new(8.0, -12.0, 6.0), 504),
+    ] {
+        let hit = world.sweep(5, half, from, to).expect("cellule connue");
+        assert!(hit.fraction < 1.0, "{nom} n'a pas arrêté le volume");
+        assert_eq!(hit.surface, surface, "{nom}");
+        assert!(!hit.start_solid, "{nom} : le centre du tunnel est dégagé");
     }
 }
