@@ -486,6 +486,10 @@ impl World {
         let (material_ids, material_names) = materials(sections[MATS])?;
         let mut cells = cells(sections[CELL], &material_ids)?;
         link_portals(&mut cells)?;
+        // Après l'appariement, et pas avant : c'est lui qui dit quelles cellules
+        // se touchent, donc quelles arêtes sont intérieures au bord solide bien
+        // qu'elles appartiennent à deux cellules.
+        classify_edges_across_cells(&mut cells)?;
 
         let mut triangle_count: u32 = 0;
         for cell in &cells {
@@ -1119,6 +1123,99 @@ fn classify_edges(vertices: &[VertexUv], surfaces: &mut [Surface], outward: bool
             }
         }
     }
+}
+
+/// Éteint les arêtes partagées **au travers d'un portail apparié**.
+///
+/// **Une seconde passe, et elle ne peut pas être la première.** [`classify_edges`]
+/// tourne au chargement d'une cellule, donc avant que les portails soient
+/// appariés : à ce moment, rien ne dit encore quelles cellules se touchent. Et
+/// chaque cellule possède ses sommets en propre — c'est la condition de
+/// l'appariement —, si bien que la comparaison se fait sur les **positions** et
+/// jamais sur des indices.
+///
+/// Ce que son absence coûtait : le sol d'une cellule et celui de la voisine sont
+/// coplanaires et partagent l'arête du seuil, mais chacun la voyait exposée. Elle
+/// portait donc un prisme de part et d'autre, et une boîte posée **dans la bande
+/// de dilatation** — ce qu'un balayage précédent produit par construction — s'y
+/// arrêtait net : un mur invisible à chaque jointure, sur un sol horizontal qui ne
+/// peut pas arrêter un mouvement horizontal.
+///
+/// Le coût est quadratique en surfaces d'un **couple** de cellules voisines, pas
+/// de la carte : quelques milliers de produits scalaires au chargement d'un décor
+/// de plusieurs milliers de cellules, une fois.
+fn classify_edges_across_cells(cells: &mut [Cell]) -> Result<()> {
+    // Les couples voisins, dédupliqués : un portail apparié lie ses deux cellules
+    // des deux côtés, et le même couple reviendrait autant de fois qu'il a de
+    // portails communs.
+    let mut pairs: Vec<(u32, u32)> = Vec::new();
+    for (a, cell) in cells.iter().enumerate() {
+        for portal in &cell.portals {
+            let Some((b, _)) = portal.link else {
+                continue;
+            };
+            let a = a as u32;
+            pairs.try_reserve(1).map_err(|_| Error::OutOfMemory)?;
+            pairs.push(if a < b { (a, b) } else { (b, a) });
+        }
+    }
+    pairs.sort_unstable();
+    pairs.dedup();
+
+    // Les extinctions se collectent avant d'être appliquées : les deux cellules
+    // d'un couple se lisent en même temps, et aucune ne peut l'être en exclusif
+    // pendant ce temps.
+    let mut off: Vec<(u32, u32, u32)> = Vec::new();
+    for (a, b) in pairs {
+        collect_shared_edges(cells, a, b, &mut off)?;
+        collect_shared_edges(cells, b, a, &mut off)?;
+    }
+    for (cell, surface, edge) in off {
+        cells[cell as usize].surfaces[surface as usize].edges &= !(1u64 << edge);
+    }
+    Ok(())
+}
+
+/// Les arêtes de `a` qu'une surface solide de `b` rend intérieures au bord.
+///
+/// Le verdict est celui de [`classify_edges`], au mot : la normale **intérieure**
+/// de la surface de `a`, le sommet voisin de l'arête dans celle de `b`, et un
+/// signe — jamais une tolérance, qui rendrait la relation non transitive.
+fn collect_shared_edges(
+    cells: &[Cell],
+    a: u32,
+    b: u32,
+    out: &mut Vec<(u32, u32, u32)>,
+) -> Result<()> {
+    let (left, right) = (&cells[a as usize], &cells[b as usize]);
+    for (sa, surface) in left.surfaces.iter().enumerate() {
+        if !surface.is_solid() {
+            continue;
+        }
+        for i in 0..surface.corners.len() {
+            // Une arête déjà éteinte dans sa propre cellule n'a rien à gagner ici.
+            if !surface.edge_is_exposed(i) {
+                continue;
+            }
+            let (p, q) = edge_of(&left.vertices, surface, i);
+            for other in &right.surfaces {
+                if !other.is_solid() {
+                    continue;
+                }
+                let Some(j) = shares_edge(&right.vertices, other, p, q) else {
+                    continue;
+                };
+                let count = other.corners.len();
+                let neighbour = corner_of(&right.vertices, other, (j + 2) % count);
+                if left.inward(surface).dot(neighbour - p) >= 0.0 {
+                    out.try_reserve(1).map_err(|_| Error::OutOfMemory)?;
+                    out.push((a, sa as u32, i as u32));
+                }
+                break;
+            }
+        }
+    }
+    Ok(())
 }
 
 /// Le masque de toutes les arêtes d'un polygone de `count` coins.
