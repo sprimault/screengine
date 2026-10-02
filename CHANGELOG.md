@@ -46,9 +46,15 @@ publié, et explique les conventions du dépôt à qui y contribue.
 
 ## [Non publié]
 
-**Les résultats de collision changent sur les surfaces obliques**, et les
-empreintes `collision` et `selection` sont mises à jour. Un rayon n'est pas
-concerné.
+## [0.8.3] — 2026-10-02 — Les surfaces obliques
+
+**Rien à reprendre pour une liaison existante.** `SCG_ABI_VERSION` reste à 1, aucune
+signature ne change, et le format des cartes et des maillages ne bouge pas.
+
+**Les résultats de collision changent**, et les empreintes `collision`, `selection`
+et `salles` sont mises à jour. Un décor à cellules concaves — un immeuble, une
+rampe, un tunnel — en voit la différence : un mobile ne s'arrête plus aux jointures
+de cellules et ne traverse plus les faces inclinées.
 
 ### Ajouté
 - Les cartes acceptent désormais **toute pente**. Le repère de lightmap n'exige
@@ -68,8 +74,12 @@ concerné.
 
 ***
 
-**Collision results change on sloped surfaces**, and the `collision` and
-`selection` digests are updated. A ray is unaffected.
+**Nothing to take up for an existing binding.** `SCG_ABI_VERSION` stays at 1, no
+signature changes, and the map and mesh formats do not move.
+
+**Collision results change**, and the `collision`, `selection` and `salles` digests
+are updated. A map with concave cells — a building, a ramp, a tunnel — sees the
+difference: a mover no longer stops at cell joints, nor goes through sloped faces.
 
 ### Added
 - Maps now accept **any slope**. A lightmap frame no longer requires an axis whose
