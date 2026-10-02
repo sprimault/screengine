@@ -706,16 +706,22 @@ fn refuse_les_pointeurs_nuls_de_la_soumission_d_une_carte() {
     }
 }
 
-/// Une carte peuplée rend sa lumière dans la structure que l'hôte lui donne.
+/// Une carte peuplée rend sa lumière dans la structure que l'hôte lui donne, et
+/// son identifiant à côté.
 ///
 /// **La structure est celle que l'hôte repasse à `scg_set_lights`** : c'est tout
 /// ce qu'il en fait à cette étape, et la lui faire reconstruire champ par champ
 /// n'aurait servi qu'à respecter la lettre d'un principe qui vise la mémoire du
 /// moteur, pas un tampon de l'appelant.
+///
+/// **L'identifiant vient par un appel séparé**, et c'est ce que ce test fixe :
+/// `ScgLight` traverse par valeur, donc un champ de plus y déplacerait des
+/// décalages publiés.
 #[test]
 fn rend_une_lumiere_dans_la_structure_de_l_hote() {
     let world = load(&peopled_world());
     let mut count = 0;
+    let mut id = 0;
     let mut light = ScgLight {
         x: 0.0,
         y: 0.0,
@@ -731,8 +737,10 @@ fn rend_une_lumiere_dans_la_structure_de_l_hote() {
     unsafe {
         assert_eq!(scg_world_light_count(world, &mut count), SCG_OK);
         assert_eq!(scg_world_light(world, 0, &mut light), SCG_OK);
+        assert_eq!(scg_world_light_id(world, 0, &mut id), SCG_OK);
     }
     assert_eq!(count, 1);
+    assert_eq!(id, 41, "l'identifiant est celui de l'éditeur, pas le rang");
     assert_eq!((light.x, light.y, light.z), (4.0, 5.0, 6.0));
     assert_eq!(light.radius, 8.0);
     assert_eq!((light.r, light.g, light.b), (0xF0, 0x80, 0x40));
@@ -822,6 +830,10 @@ fn refuse_un_index_au_dela_de_la_carte() {
     unsafe {
         assert_eq!(
             scg_world_light(world, 1, &mut light),
+            SCG_ERR_INVALID_ARGUMENT
+        );
+        assert_eq!(
+            scg_world_light_id(world, 1, &mut id),
             SCG_ERR_INVALID_ARGUMENT
         );
         assert_eq!(

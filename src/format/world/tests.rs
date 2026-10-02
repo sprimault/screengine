@@ -1135,6 +1135,10 @@ fn une_carte_rend_ses_lumieres_et_ses_entites() {
     assert_eq!(light.radius, 8.0);
     assert_eq!(light.color, Color::new(0xF0, 0x80, 0x40, 0xFF));
     assert!(world.light(1).is_none());
+    // L'identifiant se lit à part : `Light` traverse la frontière par valeur et
+    // ne peut plus gagner de champ.
+    assert_eq!(world.light_id(0), Some(41));
+    assert!(world.light_id(1).is_none());
 
     assert_eq!(world.entity_count(), 1);
     assert_eq!(world.entity_ids(0), Some((31, 7)));

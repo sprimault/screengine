@@ -50,6 +50,9 @@ publié, et explique les conventions du dépôt à qui y contribue.
 `selection` sont mises à jour.
 
 ### Ajouté
+- `scg_world_light_id` et `World::light_id` : l'identifiant d'une lumière de
+  carte, que rien ne rendait. Un hôte ne pouvait relier une lumière relue à celle
+  qu'il avait écrite que par l'ordre d'écriture. `SCG_ABI_VERSION` reste à 1.
 - `screengine_play::SWEEP_CELLS`, la borne de cellules du balayage, aux côtés de
   `Hit` et `Surfaces` que la liste portait déjà.
 
@@ -64,6 +67,9 @@ publié, et explique les conventions du dépôt à qui y contribue.
 updated.
 
 ### Added
+- `scg_world_light_id` and `World::light_id`: the identifier of a map light,
+  which nothing returned. A host could only match a light it read back to the one
+  it wrote by relying on write order. `SCG_ABI_VERSION` stays at 1.
 - `screengine_play::SWEEP_CELLS`, the sweep's cell bound, alongside the `Hit` and
   `Surfaces` the list already carried.
 

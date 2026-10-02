@@ -2439,6 +2439,33 @@ pub unsafe extern "C" fn scg_world_light(
     })
 }
 
+/// Writes the stable identifier of one static light to `out`.
+///
+/// **A separate call rather than a field on `ScgLight`.** That structure crosses
+/// the boundary **by value**: adding a field would move the offsets of a
+/// published structure, which breaks the ABI. The identifier therefore comes by
+/// rank — the same `index` `scg_world_light` takes.
+///
+/// Without it, a host that wrote the map can only match a light it reads back to
+/// the one it placed by relying on write order, which nothing guarantees. An
+/// `index` beyond `scg_world_light_count` returns `SCG_ERR_INVALID_ARGUMENT` and
+/// writes nothing.
+///
+/// # Safety
+///
+/// `world` must be a live handle from `scg_world_load`, and `out` must point to
+/// a writable `uint32_t`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn scg_world_light_id(
+    world: *const ScgWorld,
+    index: u32,
+    out: *mut u32,
+) -> i32 {
+    let read = |world: &ScgWorld| world.inner.light_id(index).ok_or(AbiError::WORLD_INDEX);
+    // SAFETY: mêmes préconditions que les autres accesseurs indexés.
+    unsafe { world_value(world, out, read) }
+}
+
 /// Sweeps an axis-aligned box from `from` to `to`, starting in `from_cell`.
 ///
 /// **The collision module needs no rendering context**, which is the whole point:
