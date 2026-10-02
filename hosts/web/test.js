@@ -1590,8 +1590,8 @@ function renderRooms(engine, worldBytes) {
   // **Toutes les cellules, pas seulement celles que la vue montre** : une
   // lightmap est un cache de la carte et non du point de vue.
   check(
-    e.scg_world_cell_count(world, out) === scg.SCG_OK && engine.readU32(out) === 4,
-    "la carte porte quatre cellules",
+    e.scg_world_cell_count(world, out) === scg.SCG_OK && engine.readU32(out) === 6,
+    "la carte porte ses quatre salles et ses deux tronçons de tunnel",
   );
   const cells = engine.readU32(out);
   for (let i = 0; i < cells; i++) {

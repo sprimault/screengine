@@ -1353,8 +1353,8 @@ uint64_t render_rooms(bool &ok, const char *path)
     // **Toutes les cellules, pas seulement celles que la vue montre** : une
     // lightmap est un cache de la carte et non du point de vue.
     uint32_t cells = 0;
-    check(scg_world_cell_count(world, &cells) == SCG_OK && cells == 4,
-          "la carte porte quatre cellules");
+    check(scg_world_cell_count(world, &cells) == SCG_OK && cells == 6,
+          "la carte porte ses quatre salles et ses deux troncons de tunnel");
     for (uint32_t i = 0; i < cells && lighting != nullptr; i++) {
         uint32_t id = 0, luxels = 0;
         check(scg_world_cell_id(world, i, &id) == SCG_OK, "le rang rend un identifiant");

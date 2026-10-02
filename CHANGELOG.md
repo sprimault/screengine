@@ -54,6 +54,9 @@ concerné.
 - Les cartes acceptent désormais **toute pente**. Le repère de lightmap n'exige
   plus qu'un axe ait un carré en puissance de deux, ce qui limitait les surfaces à
   l'axial et au 45° et faisait refuser le fichier entier au-delà.
+- Le décor de validation gagne un **tunnel voûté** : des facettes dont aucune
+  n'est axiale ni à 45°, chargées, cuites et traversées. L'empreinte `salles`
+  change.
 
 ### Corrigé
 - Une boîte posée au sol s'arrêtait net à chaque jointure de deux cellules.
@@ -72,6 +75,8 @@ concerné.
 - Maps now accept **any slope**. A lightmap frame no longer requires an axis whose
   squared length is a power of two, which confined surfaces to axis-aligned and 45°
   and rejected the whole file beyond that.
+- The validation map gains a **vaulted tunnel**: facets none of which are
+  axis-aligned or at 45°, loaded, baked and traversed. The `salles` digest changes.
 
 ### Fixed
 - A box resting on the floor stopped dead at every joint between two cells.

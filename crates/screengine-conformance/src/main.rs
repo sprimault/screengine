@@ -979,7 +979,7 @@ struct View {
 /// suffirait à figer une empreinte et ne prouverait presque rien : une fenêtre trop
 /// étroite ne troue l'image que depuis l'endroit d'où le portail est vu de biais,
 /// et une cellule oubliée ne manque que si on regarde vers elle.
-const ROOM_VIEWS: [([f32; 3], f32); 5] = [
+const ROOM_VIEWS: [([f32; 3], f32); 6] = [
     // Dans la salle en L, face à l'ouverture du couloir : la traversée doit
     // ramener le couloir, puis le losange derrière lui.
     ([2.0, 2.0, 2.0], 0.0),
@@ -996,6 +996,12 @@ const ROOM_VIEWS: [([f32; 3], f32); 5] = [
     // À l'étage, au-dessus de la salle en L : la cellule superposée, que rien ne
     // relie au rez-de-chaussée. La traversée ne doit en montrer qu'elle.
     ([2.0, 2.0, 10.0], 0.0),
+    // Dans le tunnel voûté, face à l'arche qui mène au second tronçon : la seule
+    // vue du décor où **toutes** les surfaces visibles sont obliques, et la seule
+    // où une lightmap est cuite sur des facettes dont la normale n'est ni axiale
+    // ni à 45°. Le portail y a sept sommets au lieu de quatre, ce qui met la
+    // réduction de fenêtre à l'épreuve d'une arche plutôt que d'un quadrilatère.
+    ([4.0, -12.0, 1.2], 0.0),
 ];
 
 impl View {
