@@ -46,7 +46,15 @@ publié, et explique les conventions du dépôt à qui y contribue.
 
 ## [Non publié]
 
-**Aucune empreinte de conformance ne change.**
+## [0.8.1] — 2026-10-02 — Ce qu'un premier intégrateur révèle
+
+**Rien à reprendre pour une liaison existante.** `SCG_ABI_VERSION` reste à 1,
+aucune signature ne change, le format des cartes et des maillages ne bouge pas, et
+aucune empreinte de conformance n'est touchée.
+
+Un hôte Rust verra en revanche d'autres textes d'erreur : `screengine-play` rend
+désormais ceux du noyau. Les messages de `scg_last_error` sont inchangés, mot pour
+mot.
 
 ### Ajouté
 - `screengine::Error` implémente `Display` et `core::error::Error`, et expose
@@ -74,7 +82,12 @@ publié, et explique les conventions du dépôt à qui y contribue.
 
 ***
 
-**No conformance fingerprint changes.**
+**Nothing to revisit for an existing binding.** `SCG_ABI_VERSION` stays at 1, no
+signature changes, the world and mesh format does not move, and no conformance
+fingerprint is touched.
+
+A Rust host will see different error texts, however: `screengine-play` now returns
+the engine's. The `scg_last_error` messages are unchanged, word for word.
 
 ### Added
 - `screengine::Error` implements `Display` and `core::error::Error`, and exposes
