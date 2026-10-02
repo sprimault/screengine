@@ -46,6 +46,24 @@ publié, et explique les conventions du dépôt à qui y contribue.
 
 ## [Non publié]
 
+**Les résultats de collision changent**, et les empreintes `collision` et
+`selection` sont mises à jour.
+
+### Corrigé
+- Un balayage ou un rayon s'arrêtait net, à la fraction zéro, contre une surface
+  qu'il ne croise jamais, dès que son départ tombait derrière le plan de cette
+  surface — à n'importe quelle distance d'elle.
+
+***
+
+**Collision results change**, and the `collision` and `selection` digests are
+updated.
+
+### Fixed
+- A sweep or a ray stopped dead, at fraction zero, against a surface it never
+  crosses, as soon as its start point lay behind that surface's plane — at any
+  distance from it.
+
 ## [0.8.1] — 2026-10-02 — Ce qu'un premier intégrateur révèle
 
 **Rien à reprendre pour une liaison existante.** `SCG_ABI_VERSION` reste à 1,

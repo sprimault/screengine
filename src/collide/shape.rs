@@ -96,7 +96,30 @@ pub(crate) fn face(
     // Une boîte arrêtée au contact par un balayage y retombait au suivant, et
     // traversait le mur un pas après l'autre — ce que seul un enchaînement de
     // deux balayages révèle.
-    let t = if t < 0.0 { 0.0 } else { t };
+    //
+    // **Mais le volume dilaté d'une face est une dalle, jamais un demi-espace**,
+    // et c'est ce que le contact immédiat doit borner : `|d| ≤ s`. Un départ
+    // au-delà de la dalle est derrière la face, et aucun contact n'y a lieu —
+    // ni en s'éloignant, qui est ce cas-ci, ni en revenant, que le rejet
+    // d'entrée ci-dessus a déjà écarté. Une face est à sens unique : un contact
+    // par l'arrière n'en est pas un.
+    //
+    // Sans cette borne, un départ situé derrière une face en rendait un contact
+    // à l'instant zéro depuis **n'importe quelle distance**, dès que sa
+    // projection tombait dans le polygone. Deux formes, et la seconde est celle
+    // qui se voit : la face est celle de la cellule du départ, ce qu'une cellule
+    // non convexe suffit à produire et ce qui trompe les deux chemins de la même
+    // façon ; ou elle est celle d'une **autre** cellule, ce que deux cellules
+    // convexes suffisent à produire et ce qui les fait diverger, le chemin brut
+    // examinant ce que la traversée n'atteint pas.
+    let t = if t < 0.0 {
+        if d0 < -s {
+            return None;
+        }
+        0.0
+    } else {
+        t
+    };
     let centre = from + (to - from) * t;
     if !inside(points, normal, centre) {
         return None;

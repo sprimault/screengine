@@ -144,7 +144,11 @@ pub fn starts() -> Vec<Vec3> {
     // treillis unique sur le décor entier : le couloir ne fait qu'une unité de
     // large, et un pas de deux unités sur une boîte commune ne serait jamais
     // tombé dedans. La règle suit la carte, et les deux ne peuvent pas dériver.
-    for footprint in [&collision_file::ROOM[..], &collision_file::CORRIDOR[..]] {
+    for footprint in [
+        &collision_file::ROOM[..],
+        &collision_file::CORRIDOR[..],
+        &collision_file::BRANCHES[..],
+    ] {
         let (low, high) = bounds(footprint);
         for z in axis(collision_file::FLOOR_Z, collision_file::CEILING_Z) {
             for y in axis(low[1], high[1]) {
@@ -331,6 +335,16 @@ fn absorb(hit: &Hit, status: u8, bytes: &mut Vec<u8>) {
 /// Par les bits et non par `==` : deux zéros de signes opposés se comparent
 /// égaux en flottant et donnent deux empreintes différentes. C'est précisément
 /// l'écart qu'une comparaison naïve laisserait passer ici.
+///
+/// **La comparaison exige la même surface, et c'est au décor de rester hors du
+/// seul cas où cela ne tient pas** : un départ dans le solide qui touche des
+/// surfaces de plusieurs cellules. La plus superficielle gagne — jamais l'ordre
+/// du fichier entre cellules —, et elle peut vivre dans une cellule que la
+/// traversée n'atteint pas. Les deux chemins s'accordent alors sur la fraction et
+/// divergent sur la surface, sans qu'aucune formule soit en cause ; relâcher la
+/// comparaison coûterait plus que choisir les départs. Un intégrateur l'a cherché
+/// une demi-journée comme un défaut du moteur, d'où cette clause et celle de
+/// `collide::brute`.
 fn same(a: &Hit, b: &Hit) -> bool {
     a.fraction.to_bits() == b.fraction.to_bits()
         && a.normal.x.to_bits() == b.normal.x.to_bits()
