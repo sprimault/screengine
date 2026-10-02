@@ -61,6 +61,9 @@ publié, et explique les conventions du dépôt à qui y contribue.
   frontière C ne changent pas.
 
 ### Corrigé
+- `scg_world_track` prenait le premier portail franchi dans l'ordre du fichier, et
+  non le premier le long du pas. Un pas qui traversait une cellule de part en part
+  pouvait repartir en arrière et rendre `0`, la caméra déclarée hors de la carte.
 - Le contrôle d'alignement d'un repère de lightmap divisait par le carré de la
   longueur de l'axe. Sur un axe non unitaire, une origine hors grille passait, et
   une origine juste était refusée.
@@ -86,6 +89,9 @@ publié, et explique les conventions du dépôt à qui y contribue.
   boundary are unchanged.
 
 ### Fixed
+- `scg_world_track` took the first portal crossed in file order, not the first along
+  the step. A step crossing a cell end to end could turn back and return `0`, the
+  camera reported outside the world.
 - The lightmap frame alignment check divided by the squared axis length. On a
   non-unit axis, an off-grid origin passed, and a correct origin was rejected.
 - `LINE_CAPACITY` was missing from the engine's re-exports, which the documentation

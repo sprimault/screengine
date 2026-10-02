@@ -113,6 +113,51 @@ fn two_cells() -> World {
     World::load(&file(&cells, &[], &[], &material(1, "mur"))).expect("carte valide")
 }
 
+/// Trois tronçons alignés, le tronçon du milieu n'ayant que des portails pour
+/// bouts.
+///
+/// **L'ordre des portails du milieu est l'inverse de l'ordre géométrique** : celui
+/// du retour, à `x = 8`, est écrit avant celui de la sortie, à `x = 16`. C'est ce
+/// qui rend le cas discriminant — un suivi qui prend le premier portail franchi
+/// dans l'ordre du fichier repart d'où il vient.
+fn three_cells() -> World {
+    let mut first_faces = faces(11);
+    first_faces.push(cap(19, [0, 1, 2, 3]));
+    let middle_faces = faces(21);
+    let mut last_faces = faces(31);
+    last_faces.push(cap(39, [4, 7, 6, 5]));
+
+    let first = cell_bytes(
+        7,
+        0,
+        &box_points(0.0, 8.0),
+        &first_faces,
+        &[portal_bytes(41, &[4, 5, 6, 7])],
+    );
+    let middle = cell_bytes(
+        8,
+        0,
+        &box_points(8.0, 16.0),
+        &middle_faces,
+        &[
+            portal_bytes(42, &[0, 1, 2, 3]),
+            portal_bytes(43, &[4, 5, 6, 7]),
+        ],
+    );
+    let last = cell_bytes(
+        9,
+        0,
+        &box_points(16.0, 24.0),
+        &last_faces,
+        &[portal_bytes(44, &[0, 1, 2, 3])],
+    );
+
+    let mut cells = first;
+    cells.extend_from_slice(&middle);
+    cells.extend_from_slice(&last);
+    World::load(&file(&cells, &[], &[], &material(1, "mur"))).expect("carte valide")
+}
+
 /// Un point au centre d'une boîte close est dans sa cellule.
 #[test]
 fn un_point_au_centre_est_dans_sa_cellule() {
@@ -205,6 +250,41 @@ fn un_pas_long_traverse_plusieurs_cellules() {
     let from = Vec3::new(1.0, 0.0, 0.0);
     let to = Vec3::new(15.0, 0.0, 0.0);
     assert_eq!(track(&world, 0, from, to), Some(1));
+}
+
+/// Un pas qui traverse une cellule de part en part avance au lieu de revenir.
+///
+/// **Le cas que deux cellules ne pouvaient pas produire** : avec deux, le point
+/// d'arrivée est dans la cellule où l'on entre, et le suivi s'arrête sur `contains`
+/// avant même de regarder les portails. Il faut une cellule intermédiaire que le
+/// segment franchit entièrement — elle voit alors *deux* de ses portails franchis,
+/// celui de l'entrée et celui de la sortie, puisque le segment ne bouge pas pendant
+/// la boucle.
+///
+/// Avec le portail du retour écrit en premier, un suivi qui ne les ordonne pas
+/// repart vers la cellule de départ, oscille jusqu'à la borne du pas et rend `None`
+/// — la caméra déclarée dehors alors qu'elle est deux cellules plus loin.
+#[test]
+fn un_pas_qui_traverse_une_cellule_entiere_ne_revient_pas() {
+    let world = three_cells();
+    let from = Vec3::new(1.0, 0.0, 0.0);
+    let to = Vec3::new(20.0, 0.0, 0.0);
+    assert_eq!(track(&world, 0, from, to), Some(2));
+}
+
+/// Le même pas en sens inverse aboutit aussi.
+///
+/// **Celui-ci ne discrimine pas le défaut, et c'est mesuré** : dans ce sens, le
+/// portail que l'ordre du fichier place en premier est justement celui qu'il faut
+/// prendre, si bien que le code fautif y tombait juste. Il est gardé comme garde-fou
+/// de symétrie — un suivi qui ne marcherait que dans le sens d'écriture des cellules
+/// serait un autre défaut, invisible du test ci-dessus.
+#[test]
+fn le_meme_pas_en_sens_inverse_aboutit_aussi() {
+    let world = three_cells();
+    let from = Vec3::new(20.0, 0.0, 0.0);
+    let to = Vec3::new(1.0, 0.0, 0.0);
+    assert_eq!(track(&world, 2, from, to), Some(0));
 }
 
 /// Une cellule de départ hors borne ne suit rien.
