@@ -192,6 +192,12 @@ where
                 display.surface.resize(width, height)?;
                 self.scaler.resize(size.width, size.height);
                 self.show(display, true);
+                // La surface vient d'être redimensionnée et son contenu ne vaut
+                // plus rien. Sans image demandée ici, la fenêtre garde la
+                // précédente à l'ancienne géométrie jusqu'au prochain pas joué,
+                // que `about_to_wait` est seul à provoquer : la zone découverte
+                // reste noire le temps d'une période de mise à jour.
+                display.window.request_redraw();
             }
             _ => self.show(display, false),
         }
