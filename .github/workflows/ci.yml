@@ -73,6 +73,12 @@ jobs:
       - name: Header
         run: make header-verif
 
+      # Le nom de ce job ne dit pas la documentation, et c'est volontaire : il est
+      # un contrôle requis de la branche par son nom exact, que le renommer
+      # rendrait introuvable.
+      - name: Documentation
+        run: make doc-verif
+
       # La version minimale que `Cargo.toml` déclare et que `CONTRIBUTING`
       # reprend : tout le reste se construit avec une chaîne récente, et une
       # fonction stabilisée depuis passerait sans bruit jusqu'à ce que quelqu'un

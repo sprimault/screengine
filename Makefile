@@ -68,7 +68,7 @@ android_build = for cible in $(CIBLES_ANDROID); do \
 
 .PHONY: build lib lib-wasm lib-android run example web test native-libs fmt fmt-fix lint lint-doc-tests \
         lint-android-versions nostd msrv bench \
-        conform conform-x86 conform-update conform-images mesh header header-verif audit deny doc hosts host-c host-cpp host-web host-go \
+        conform conform-x86 conform-update conform-images mesh header header-verif audit deny doc doc-verif hosts host-c host-cpp host-web host-go \
         host-android demo-c demo-cpp clean tools
 
 build:
@@ -515,6 +515,14 @@ deny:
 
 doc:
 	cargo doc --workspace --no-deps --open
+
+# Sans --open, et c'est tout l'intérêt : la cible ci-dessus ouvre un navigateur,
+# donc elle ne peut pas tourner en intégration continue, et rien ne contrôlait la
+# documentation. Un renvoi vers un item qu'aucun `pub use` n'expose produit une
+# page dont le lien ne mène nulle part, sans que rien ne rougisse : c'est ainsi
+# que `LINE_CAPACITY` est resté inatteignable une version entière.
+doc-verif:
+	RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps
 
 hosts: $(addprefix host-,$(HOSTS))
 

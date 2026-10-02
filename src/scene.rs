@@ -78,8 +78,8 @@ impl Camera {
 
     /// La transformation du monde vers l'espace de vue.
     ///
-    /// La pose de la caméra dans le monde, composée avec [`VIEW_BASIS`], puis
-    /// inversée. La composition est exacte au bit près — chaque coefficient du
+    /// La pose de la caméra dans le monde, composée avec le changement de base
+    /// de la vue, puis inversée. La composition est exacte au bit près — chaque coefficient du
     /// résultat est un coefficient de la rotation, au signe près, les autres
     /// termes étant des produits par zéro —, si bien qu'une caméra neutre rend
     /// une permutation d'axes et rien de plus.
