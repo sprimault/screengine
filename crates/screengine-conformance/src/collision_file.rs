@@ -126,6 +126,24 @@ const ROOM_DEAD_PORTAL: usize = 6;
 /// Celui de l'arête du couloir qui rejoint la salle.
 const CORRIDOR_PORTAL: usize = 3;
 
+/// L'empreinte au sol de la rampe, à l'écart des trois autres cellules.
+///
+/// **Une face oblique, que rien d'autre dans ce dépôt ne balayait.** Le test
+/// d'appartenance d'une face se faisait au centre de la boîte au lieu du point de
+/// la facette : exact tant que la normale est axiale — ce que toutes les autres
+/// surfaces du décor sont —, faux dès qu'elle ne l'est pas. Le défaut étant dans
+/// la formule que les deux chemins partagent, l'égalité d'oracle ne le voyait pas ;
+/// seule une empreinte peut le dire, et seulement si un départ tombe dans la bande
+/// fautive, d'où les départs choisis de la scène.
+pub const RAMP: [[f32; 2]; 4] = [[24.0, 0.0], [32.0, 0.0], [32.0, 8.0], [24.0, 8.0]];
+
+/// La pente de la rampe : son sol monte d'une unité par unité le long de `Y`.
+///
+/// **45° n'est pas un choix esthétique, c'est la seule pente chargeable** : l'axe
+/// de pente du repère de lightmap vaut alors `(0, 1, 1)`, de carré 2, et le
+/// chargement exige une puissance de deux. Une pente 1:2 ferait refuser le fichier.
+pub const RAMP_RISE: f32 = 1.0;
+
 /// Les octets du décor.
 pub fn bytes() -> Vec<u8> {
     let mut cells = Vec::new();
@@ -139,6 +157,7 @@ pub fn bytes() -> Vec<u8> {
     );
     prism(8, 200, &CORRIDOR, &[CORRIDOR_PORTAL], true, &mut cells);
     prism(9, 300, &BRANCHES, &[], false, &mut cells);
+    ramp(10, 400, &mut cells);
 
     let mut materials = Vec::new();
     for (id, name) in [(1u32, "mur"), (2, "sol")] {
@@ -148,6 +167,85 @@ pub fn bytes() -> Vec<u8> {
     }
 
     file(&cells, &materials)
+}
+
+/// La cellule à sol oblique : [`RAMP`] extrudée le long d'une pente.
+///
+/// **Pas un prisme, et c'est pour cela qu'elle a sa fonction** : son sol et son
+/// plafond montent avec `Y`, donc leurs normales ne sont alignées sur aucun axe.
+/// Les deux flancs gardent leurs repères dans leur plan en prenant `(0, 1, 1)` et
+/// `(0, −1, 1)` — orthogonaux, de carré 2 chacun, ce que le chargement exige.
+///
+/// La hauteur est celle des autres cellules, de sorte que le treillis de départs
+/// les traite de la même façon.
+fn ramp(id: u32, first_id: u32, out: &mut Vec<u8>) {
+    let height = CEILING_Z - FLOOR_Z;
+    let mut body = Vec::new();
+    words(&[id, 0, 8, 6, 0], &mut body);
+
+    // Les quatre coins au sol, puis les quatre au plafond : la cote monte de
+    // `RAMP_RISE` par unité de `Y`, et le plafond suit à hauteur constante.
+    for lift in [0.0, height] {
+        for point in &RAMP {
+            floats(
+                &[point[0], point[1], FLOOR_Z + point[1] * RAMP_RISE + lift],
+                &mut body,
+            );
+        }
+    }
+
+    // Le sol suit l'empreinte, le plafond la parcourt à l'envers : les deux
+    // normales sortent de la cellule, et le chargement les retourne ensemble.
+    let slope = [0.0, 1.0, 1.0];
+    let across = [1.0, 0.0, 0.0];
+    surface(first_id, FLOOR, &[0, 1, 2, 3], across, slope, &mut body);
+    surface(
+        first_id + 1,
+        FLOOR,
+        &[7, 6, 5, 4],
+        [1.0, 0.0, 0.0],
+        slope,
+        &mut body,
+    );
+
+    // Les deux bouts, perpendiculaires à `Y`, puis les deux flancs obliques.
+    let up = [0.0, 0.0, 1.0];
+    surface(
+        first_id + 2,
+        WALLS,
+        &[0, 4, 5, 1],
+        [1.0, 0.0, 0.0],
+        up,
+        &mut body,
+    );
+    surface(
+        first_id + 3,
+        WALLS,
+        &[2, 6, 7, 3],
+        [1.0, 0.0, 0.0],
+        up,
+        &mut body,
+    );
+    let down_slope = [0.0, -1.0, 1.0];
+    surface(
+        first_id + 4,
+        WALLS,
+        &[3, 7, 4, 0],
+        slope,
+        down_slope,
+        &mut body,
+    );
+    surface(
+        first_id + 5,
+        WALLS,
+        &[1, 5, 6, 2],
+        slope,
+        down_slope,
+        &mut body,
+    );
+
+    words(&[body.len() as u32], out);
+    out.extend_from_slice(&body);
 }
 
 /// Une cellule prismatique : une empreinte au sol, deux hauteurs.

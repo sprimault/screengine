@@ -138,6 +138,39 @@ pub fn all() -> Vec<Sweep> {
 /// les murs — vaut autant pour un rayon que pour une boîte, et deux règles à
 /// tenir d'accord auraient fini par diverger sur le décalage d'un demi-pas, qui
 /// est précisément ce qui décide de leur utilité.
+/// Les départs **choisis**, que le treillis ne peut pas produire.
+///
+/// **Un treillis régulier rate les bandes étroites**, et deux l'ont montré. Son
+/// pas vaut deux unités, là où les cas qui comptent se mesurent en fractions
+/// d'unité : rien ne garantit qu'un départ y tombe, et une empreinte prise sans en
+/// avoir un ne garde rien du tout.
+///
+/// Les deux bandes, et ce que chacune éprouve :
+///
+/// - **le long de l'arête amont de la rampe**, à une demi-extension du haut : le
+///   domaine d'une face obliquese décalait de cette largeur, si bien qu'une boîte
+///   y traversait le sol. Les cotes suivent la pente, puisque le sol monte ;
+/// - **dans la bande de dilatation d'un sol plat**, à une fraction de la marge
+///   au-dessus de lui : la vraie boîte n'y touche rien et la boîte dilatée y
+///   touche déjà, ce qui est exactement l'état qu'un balayage précédent laisse
+///   derrière lui. C'est la bande que la doctrine de test disait non couverte.
+fn chosen() -> Vec<Vec3> {
+    let mut chosen = Vec::new();
+    // La rampe monte d'une unité par unité : son sol est à la cote de `y`.
+    for tenths in [60u32, 65, 70, 72, 75] {
+        let y = f32::from(tenths as u16) / 10.0;
+        let floor = collision_file::FLOOR_Z + y * collision_file::RAMP_RISE;
+        chosen.push(Vec3::new(28.0, y, floor + 1.0));
+    }
+    // Le sol de la salle en L, approché par le dessous de la marge : les deux
+    // boîtes de la scène ont des marges différentes, donc les deux cotes servent.
+    for lift in [0.0004f32, 0.0009, 0.002] {
+        chosen.push(Vec3::new(3.0, 3.0, collision_file::FLOOR_Z + 0.45 + lift));
+        chosen.push(Vec3::new(5.0, 1.0, collision_file::FLOOR_Z + 0.55 + lift));
+    }
+    chosen
+}
+
 pub fn starts() -> Vec<Vec3> {
     let mut starts = Vec::new();
     // **Un treillis par cellule, dans sa propre boîte englobante**, plutôt qu'un
@@ -158,6 +191,10 @@ pub fn starts() -> Vec<Vec3> {
             }
         }
     }
+    // La rampe n'entre pas dans la boucle ci-dessus : son sol monte, donc une cote
+    // commune y tomberait sous le sol d'un bout et sous le plafond de l'autre. Ses
+    // départs sont choisis, et ils suivent la pente.
+    starts.extend(chosen());
     starts
 }
 

@@ -847,3 +847,104 @@ fn une_boite_qui_traverse_un_u_s_arrete_sur_la_face_qu_elle_rencontre() {
     assert_eq!(slow.fraction, hit.fraction);
     assert_eq!(slow.surface, hit.surface);
 }
+
+/// Une salle dont le sol est une **rampe à 45°**, montant le long de `Y`.
+///
+/// **45° est la seule pente que le chargement accepte**, et c'est ce qui rend ce
+/// décor possible : l'axe de pente `(0, 1, 1)` a pour carré 2, une puissance de
+/// deux, donc le contrôle du repère de lightmap le laisse passer. Une pente 1:2 ou
+/// 1:3 ferait refuser le fichier entier, ce qui est une autre affaire que celle-ci.
+///
+/// Le sol va de `z = 0` en `y = 0` à `z = 8` en `y = 8` ; le plafond le suit huit
+/// unités plus haut, si bien que la salle garde partout la même hauteur.
+fn ramp() -> World {
+    let points: [[f32; 3]; 8] = [
+        [0.0, 0.0, 0.0],
+        [8.0, 0.0, 0.0],
+        [8.0, 8.0, 8.0],
+        [0.0, 8.0, 8.0],
+        [0.0, 0.0, 8.0],
+        [8.0, 0.0, 8.0],
+        [8.0, 8.0, 16.0],
+        [0.0, 8.0, 16.0],
+    ];
+    let slope = [0.0, 1.0, 1.0];
+    let faces = alloc::vec![
+        // La rampe, et le plafond qui la suit : leur axe de pente est `(0, 1, 1)`.
+        surface_in_plane(11, 0, &[0, 3, 2, 1], [1.0, 0.0, 0.0], slope),
+        surface_in_plane(12, 0, &[4, 5, 6, 7], [1.0, 0.0, 0.0], slope),
+        // Les deux bouts, perpendiculaires à `Y`, et les deux flancs.
+        surface_in_plane(13, 0, &[0, 1, 5, 4], [1.0, 0.0, 0.0], [0.0, 0.0, 1.0]),
+        surface_in_plane(14, 0, &[3, 7, 6, 2], [1.0, 0.0, 0.0], [0.0, 0.0, 1.0]),
+        surface_in_plane(15, 0, &[0, 4, 7, 3], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]),
+        surface_in_plane(16, 0, &[1, 2, 6, 5], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]),
+    ];
+    let cell = cell_bytes(7, 0, &points, &faces, &[]);
+    World::load(&file(&cell, &[], &[], &material(1, "mur"))).expect("carte valide")
+}
+
+/// **Une boîte qui tombe sur une rampe est arrêtée, où qu'elle tombe dessus.**
+///
+/// C'est un **prédicat** et non une comparaison de chemins, et il ne pouvait pas
+/// être autre chose : la formule fautive vivait dans `shape::face`, que le
+/// balayage par portails et celui de force brute empruntent tous les deux. Les
+/// deux rendaient donc la même absence de contact, et leur égalité restait verte —
+/// le cas que le module de force brute nomme en tête.
+///
+/// Ce qu'il attrape : le test d'appartenance au polygone se faisait au **centre de
+/// la boîte** au lieu du point de la facette, si bien que le domaine de la face se
+/// décalait d'une demi-extension dès que la normale n'était pas axiale. Mesuré
+/// avant correction, la chute en `y = 7` traversait la rampe sans rien toucher,
+/// quand celles de `y = 1` à `y = 6` s'arrêtaient à `0.2498`.
+#[test]
+fn une_boite_qui_tombe_sur_une_rampe_est_arretee_partout() {
+    let world = ramp();
+    let half = cube_half();
+
+    for pas in 1..8u32 {
+        let y = f64::from(pas);
+        // Le sol est à `z = y` : deux unités au-dessus, quatre de descente, donc
+        // la chute croise le plan quelle que soit l'abscisse.
+        let from = Vec3d::new(4.0, y, y + 2.0);
+        let to = Vec3d::new(4.0, y, y - 2.0);
+        let hit = sweep(&world, 7, half, from, to).expect("cellule connue");
+
+        assert!(
+            hit.fraction < 1.0,
+            "y={y} : la rampe n'a pas arrêté la chute"
+        );
+        assert_eq!(hit.surface, 11, "y={y} : c'est la rampe qui arrête");
+        assert!(!hit.start_solid, "y={y} : le départ était dégagé");
+
+        // La propriété, pas la valeur : le bas de la boîte reste au-dessus de la
+        // rampe, dont la cote est `y` à cette abscisse.
+        let centre = from + (to - from) * f64::from(hit.fraction);
+        assert!(
+            centre.z - half.z >= y,
+            "y={y} : la boîte est entrée dans la rampe, bas à {}",
+            centre.z - half.z
+        );
+    }
+}
+
+/// **Le même prédicat par le chemin de force brute**, qui doit s'accorder.
+///
+/// Il n'attrape pas le défaut — les deux chemins partagent la formule —, mais il
+/// garde l'égalité vraie sur une géométrie oblique, qu'aucun autre test n'avait.
+#[test]
+fn la_rampe_rend_les_memes_bits_par_les_deux_chemins() {
+    let world = ramp();
+    let half = cube_half();
+
+    for pas in 1..8u32 {
+        let y = f64::from(pas);
+        let from = Vec3d::new(4.0, y, y + 2.0);
+        let to = Vec3d::new(4.0, y, y - 2.0);
+        let fast = sweep(&world, 7, half, from, to).expect("cellule connue");
+        let slow = sweep_brute(&world, half, from, to);
+
+        assert_eq!(slow.fraction, fast.fraction, "y={y}");
+        assert_eq!(slow.surface, fast.surface, "y={y}");
+        assert_eq!(slow.normal, fast.normal, "y={y}");
+    }
+}

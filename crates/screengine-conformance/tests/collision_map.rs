@@ -17,11 +17,45 @@ fn at(x: f32, y: f32, z: f32) -> Vec3 {
     Vec3::new(x, y, z)
 }
 
-/// La carte se charge, et elle porte ses trois cellules.
+/// La carte se charge, et elle porte ses quatre cellules.
 #[test]
 fn le_decor_se_charge() {
     let world = World::load(&collision_file::bytes()).expect("décor valide");
-    assert_eq!(world.cell_count(), 3);
+    assert_eq!(world.cell_count(), 4);
+}
+
+/// **La rampe se charge, et c'est déjà une information** : son sol et ses flancs
+/// ont des repères de lightmap obliques, que le contrôle du chargement accepte
+/// parce que leurs axes ont pour carré une puissance de deux. Une pente autre que
+/// 45° ferait refuser le fichier entier.
+///
+/// Et une boîte qui y tombe est arrêtée par le sol, où qu'elle tombe sur la
+/// largeur. C'est le prédicat du noyau rejoué sur le décor versionné que les cinq
+/// hôtes chargent : le test d'appartenance d'une face se faisait au centre de la
+/// boîte, ce qui décalait le domaine d'une demi-extension dès que la normale
+/// n'était pas axiale.
+#[test]
+fn une_boite_qui_tombe_sur_la_rampe_est_arretee() {
+    let world = World::load(&collision_file::bytes()).expect("décor valide");
+    let half = at(0.45, 0.45, 0.45);
+
+    for pas in 1..8u32 {
+        let y = f32::from(pas as u16);
+        let x = 28.0;
+        let floor = collision_file::FLOOR_Z + y * collision_file::RAMP_RISE;
+        let from = at(x, y, floor + 1.5);
+        let to = at(x, y, floor - 1.5);
+
+        let cell = world.locate(from);
+        assert_eq!(cell, 10, "y={y} : le départ est dans la rampe");
+        let hit = world.sweep(cell, half, from, to).expect("cellule connue");
+
+        assert!(hit.fraction < 1.0, "y={y} : la rampe n'arrête pas la chute");
+        assert!(
+            !hit.start_solid,
+            "y={y} : le départ devait être dégagé, pas solide"
+        );
+    }
 }
 
 /// **La cellule en U est à l'écart et sans portail**, et c'est sa raison d'être.
