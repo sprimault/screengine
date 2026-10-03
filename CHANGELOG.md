@@ -46,6 +46,12 @@ publié, et explique les conventions du dépôt à qui y contribue.
 
 ## [Non publié]
 
+### Ajouté
+- `scg_sweep_skin` rend **de combien le balayage dilate une boîte**, ce qu'un
+  hôte devait jusqu'ici recopier ou mesurer pour dimensionner une sonde. Une
+  fonction et non une constante : le facteur porte sur la plus grande
+  demi-étendue, et c'est cette règle qui se recopiait de travers.
+
 ### Corrigé
 - Un **départ dans le solide** garde sa fraction nulle et la normale de la
   surface qui pénètre, même quand le mouvement sort de la cellule de départ.
@@ -58,6 +64,12 @@ publié, et explique les conventions du dépôt à qui y contribue.
   cellule ne retenait plus rien et son sol se signalait vers le bas.
 
 ***
+
+### Added
+- `scg_sweep_skin` reports **how much a sweep grows a box**, which a host had to
+  copy or measure to size a ground probe. A function rather than a constant: the
+  factor applies to the largest half extent, and that rule was what got copied
+  wrong.
 
 ### Fixed
 - A **start inside solid geometry** keeps its zero fraction and the normal of
