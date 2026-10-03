@@ -46,12 +46,40 @@ publié, et explique les conventions du dépôt à qui y contribue.
 
 ## [Non publié]
 
+## [0.8.6] — 2026-10-03 — Le seuil, pour de bon
+
+**Rien à reprendre pour une liaison existante.** `SCG_ABI_VERSION` reste à 1,
+aucune signature ne change, aucune fonction ne s'ajoute, et le format des cartes
+et des maillages ne bouge pas.
+
+**Le rendu change, et aucune empreinte ne le montre**, comme en 0.8.5 et pour la
+même raison : le dépôt n'a aucune vue assez près d'un plan de portail. Celle-ci
+termine ce que la précédente n'avait corrigé qu'à moitié — le portail vu **de
+biais**, dont un bord est passé derrière l'œil, laissait encore une bande du champ
+se vider de tout décor.
+
+**Qui met à jour depuis la 0.8.4 n'a pas à connaître ce découpage** : les deux
+versions se lisent comme un seul correctif, et seule celle-ci le rend complet.
+
 ### Corrigé
 - Un portail **dont un bord est passé derrière l'œil** laisse voir la cellule
   d'en face. La 0.8.5 n'avait corrigé que le cas du portail vu de face : de biais,
   une bande du champ se vidait encore de tout décor.
 
 ***
+
+**Nothing to revisit in an existing binding.** `SCG_ABI_VERSION` stays at 1, no
+signature changes, no function is added, and the map and mesh formats do not
+move.
+
+**Rendering changes, and no fingerprint shows it**, as in 0.8.5 and for the same
+reason: the repository has no view close enough to a portal plane. This one
+finishes what the previous release only half fixed — a portal seen **at an
+angle**, with one edge behind the eye, still let a band of the view empty of all
+scenery.
+
+**Anyone updating from 0.8.4 need not know about this split**: the two releases
+read as a single fix, and only this one makes it complete.
 
 ### Fixed
 - A portal **with one edge behind the eye** now lets the cell beyond it be seen.
