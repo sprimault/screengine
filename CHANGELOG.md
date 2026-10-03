@@ -46,6 +46,22 @@ publié, et explique les conventions du dépôt à qui y contribue.
 
 ## [Non publié]
 
+## [0.8.5] — 2026-10-03 — Le seuil d'une porte
+
+**Rien à reprendre pour une liaison existante.** `SCG_ABI_VERSION` reste à 1,
+aucune signature ne change, aucune fonction ne s'ajoute, et le format des cartes
+et des maillages ne bouge pas.
+
+**Le rendu change, et aucune empreinte ne le montre.** Une scène inchangée
+laisse désormais voir la cellule située derrière un portail dont on approche à
+moins d'un plan proche, là où une bande du champ se vidait de tout décor. Le
+dépôt n'avait aucune vue assez près d'un portail pour que ses empreintes le
+disent — c'est un intégrateur qui l'a vu en marchant.
+
+**Les empreintes `collision` et `selection` changent**, mais parce que la scène
+elle-même a changé : son décor est posé loin de l'origine du monde et gagne une
+cage d'escalier. Un décor inchangé rend donc exactement ce qu'il rendait.
+
 ### Corrigé
 - Un **portail approché de moins d'un plan proche** laisse voir la cellule
   d'en face. Il la perdait, ou n'en montrait qu'une part : une bande du champ se
@@ -63,6 +79,20 @@ publié, et explique les conventions du dépôt à qui y contribue.
   `selection` changent ; le rendu, lui, ne change pas.
 
 ***
+
+**Nothing to revisit in an existing binding.** `SCG_ABI_VERSION` stays at 1, no
+signature changes, no function is added, and the map and mesh formats do not
+move.
+
+**Rendering changes, and no fingerprint shows it.** An unchanged scene now lets
+the cell behind a portal be seen when the eye comes closer to it than the near
+plane, where a band of the view used to empty of all scenery. The repository had
+no view close enough to a portal for its fingerprints to say so — an integrator
+saw it while walking.
+
+**The `collision` and `selection` fingerprints change**, but because the scene
+itself changed: its scenery now sits far from the world origin and gains a
+stairwell. Unchanged scenery therefore renders exactly what it rendered.
 
 ### Fixed
 - A **portal approached closer than the near plane** now lets the cell beyond it
