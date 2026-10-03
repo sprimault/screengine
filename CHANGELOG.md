@@ -53,6 +53,9 @@ publié, et explique les conventions du dépôt à qui y contribue.
   est un mur. Ils le traversaient, et un mobile sortait de la carte. Aucune
   surface n'est nommée : `surface_id` reste nul, donc le critère est
   `fraction < 1`. Les empreintes `collision` et `selection` changent.
+- Une cellule **loin de l'origine du monde** arrête de nouveau. Le signe de son
+  volume pouvait basculer avec sa position, retournant toutes ses normales : la
+  cellule ne retenait plus rien et son sol se signalait vers le bas.
 
 ***
 
@@ -63,6 +66,9 @@ publié, et explique les conventions du dépôt à qui y contribue.
   through it, and a moving body left the map. No surface is named: `surface_id`
   stays zero, so the test is `fraction < 1`. The `collision` and `selection`
   fingerprints change.
+- A cell **far from the world origin** stops again. The sign of its volume could
+  flip with its position, turning every normal around: the cell held nothing back
+  and its floor reported downwards.
 
 ## [0.8.3] — 2026-10-02 — Les surfaces obliques
 

@@ -514,6 +514,128 @@ fn la_fraction_reste_dans_ses_bornes() {
     }
 }
 
+/// Une cellule cubique dont le portail tourne dans le sens qu'on lui donne.
+///
+/// `flip` écrit le portail de `x = x1` à l'envers de ses murs. Le format
+/// l'autorise : il ne fixe que l'enroulement **inverse entre les deux portails
+/// d'une paire**, jamais celui d'un portail par rapport aux surfaces de sa propre
+/// cellule — et le générateur du décor de conformance écrit déjà les siens ainsi.
+///
+/// `origin` l'éloigne de l'origine du monde, ce qui est l'autre moitié du cas.
+fn cell_with_portal(origin: f32, flip: bool) -> World {
+    let x0 = origin;
+    let x1 = x0 + 4.0;
+    let points: [[f32; 3]; 8] = [
+        [x0, 0.0, 0.0],
+        [x1, 0.0, 0.0],
+        [x1, 4.0, 0.0],
+        [x0, 4.0, 0.0],
+        [x0, 0.0, 4.0],
+        [x1, 0.0, 4.0],
+        [x1, 4.0, 4.0],
+        [x0, 4.0, 4.0],
+    ];
+    let x = [1.0, 0.0, 0.0];
+    let y = [0.0, 1.0, 0.0];
+    let z = [0.0, 0.0, 1.0];
+    let surfaces = [
+        surface_in_plane(11, 0, &[0, 3, 2, 1], x, y),
+        surface_in_plane(12, 0, &[4, 5, 6, 7], x, y),
+        surface_in_plane(13, 0, &[0, 1, 5, 4], x, z),
+        surface_in_plane(14, 0, &[3, 7, 6, 2], x, z),
+        surface_in_plane(15, 0, &[0, 4, 7, 3], y, z),
+    ];
+    let portal = if flip {
+        portal_bytes(31, &[5, 6, 2, 1])
+    } else {
+        portal_bytes(31, &[1, 2, 6, 5])
+    };
+    let cells = cell_bytes(7, 0, &points, &surfaces, &[portal]);
+    World::load(&file(&cells, &[], &[], &material(1, "mur"))).expect("carte valide")
+}
+
+/// **Ni l'enroulement d'un portail ni la distance à l'origine ne décident de ce
+/// que la cellule arrête.**
+///
+/// Remonté d'un intégrateur : sur un labyrinthe de 16 cases de 4 unités, 161
+/// cellules sur 499 n'arrêtaient **aucun** de leurs murs — ni sol, ni plafond, ni
+/// parois —, 338 les arrêtaient tous, et aucune n'était mélangée. Un partage par
+/// cellule et jamais par surface désigne le signe du volume, que [`Cell::inward`]
+/// applique à toutes ses faces : faux, il retourne la cellule entière, le test
+/// « franchi en entrant » rejette tout, et le départ dans le solide nomme son sol
+/// avec une normale dirigée vers le bas. Les 161 cellules sourdes étaient les plus
+/// éloignées de l'origine, et un décor plus petit n'aurait rien montré.
+///
+/// Ce que le test met sous tension : ce signe se calcule par une somme de
+/// `point · normale` sur les surfaces **et** les portails, qui n'est invariante
+/// par translation que si les normales se compensent exactement — donc que si les
+/// deux familles tournent dans le même sens, ce que le format n'impose pas. Les
+/// quatre distances tiennent la seconde moitié : à sens cohérent le signe est bon
+/// partout, et c'est le déséquilibre qui croît avec l'éloignement.
+///
+/// [`Cell::inward`]: crate::format::world::Cell::inward
+#[test]
+fn ni_l_enroulement_ni_la_distance_ne_decident_de_ce_qui_arrete() {
+    let half = Vec3d::new(0.5, 0.5, 0.5);
+    for flip in [false, true] {
+        for origin in [0.0f32, 64.0, 512.0, 4096.0] {
+            let world = cell_with_portal(origin, flip);
+            let from = Vec3d::new(f64::from(origin) + 2.0, 2.0, 2.0);
+            // Vers le mur `y = 4`, qui est une surface et non un portail.
+            let to = Vec3d::new(from.x, 12.0, 2.0);
+            let hit = sweep(&world, 7, half, from, to).expect("cellule connue");
+
+            assert!(
+                hit.fraction < 1.0,
+                "portail inversé {flip}, origine {origin} : le mur n'arrête plus, \
+                 fraction {}",
+                hit.fraction
+            );
+            assert!(
+                hit.normal.y < 0.0,
+                "portail inversé {flip}, origine {origin} : normale {:?}, \
+                 elle devrait s'opposer au mouvement",
+                hit.normal
+            );
+        }
+    }
+}
+
+/// **Un portail qui ne partage aucune arête ne fait pas échouer le chargement.**
+///
+/// C'est le repli de la dérivation d'enroulement, et sans ce cas il resterait du
+/// code que rien n'exécute. La précondition — un portail partage au moins une
+/// arête avec une surface de sa cellule — tient par construction d'un décor plein,
+/// un portail remplaçant un mur et reprenant ses sommets. Une carte d'éditeur
+/// intermédiaire n'a pourtant pas à être refusée pour cela : le chargement passe,
+/// le portail compte dans son sens écrit, et rien ne panique.
+///
+/// Le portail est ici une **diagonale** du cube, dont aucune arête n'appartient à
+/// une face.
+#[test]
+fn un_portail_sans_arete_partagee_se_charge_quand_meme() {
+    let cells = cell_bytes(
+        7,
+        0,
+        &CUBE,
+        &cube_faces(11, 0),
+        &[portal_bytes(31, &[0, 2, 6, 4])],
+    );
+    let world = World::load(&file(&cells, &[], &[], &material(1, "mur")))
+        .expect("une carte d'éditeur intermédiaire reste chargeable");
+
+    // Et la cellule reste interrogeable : c'est tout ce qu'on lui demande.
+    let hit = sweep(
+        &world,
+        7,
+        cube_half(),
+        Vec3d::new(4.0, 4.0, 4.0),
+        Vec3d::new(4.0, 20.0, 4.0),
+    )
+    .expect("cellule connue");
+    assert!(hit.fraction <= 1.0, "fraction {}", hit.fraction);
+}
+
 /// **Aucune composante du résultat ne porte un zéro négatif ni un `NaN`.**
 ///
 /// `docs/rust.md` annonçait cette clause « tenue par un test qui inspecte les
