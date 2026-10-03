@@ -406,6 +406,19 @@ pub(super) fn start_solid(
             continue;
         }
         best.deepest = depth;
+        // **Le départ dans le solide absorbe le départage**, et ces deux lignes
+        // sont tout ce qui l'en empêchait. Sans elles, seule la fraction du
+        // résultat tombait à zéro : les trois critères restaient à leur
+        // initialisation, si bien qu'un contact trouvé dans une cellule atteinte
+        // ensuite par portail passait pour meilleur et remplaçait la normale de
+        // la surface qui pénètre par celle d'un mur plus loin — un hôte qui lit
+        // la normale pour se dégager recevait une direction qui ne dégage rien.
+        //
+        // Zéro et [`RANK_FACE`] sont le plus petit couple des deux premiers
+        // critères : plus aucun contact ne les bat, et [`Best::truncate`] ne peut
+        // plus reculer en deçà puisqu'elle ne descend jamais sous zéro.
+        best.fraction = 0.0;
+        best.rank = shape::RANK_FACE;
         best.hit.start_solid = true;
         best.hit.fraction = 0.0;
         best.hit.normal = to_f32(Vec3d::from(cell.inward(surface))).normalize();

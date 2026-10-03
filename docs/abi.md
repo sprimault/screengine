@@ -1901,6 +1901,13 @@ s'ajoute plus tard sans incrémenter `SCG_ABI_VERSION`.
   pénétration le long de sa propre normale intérieure, à égalité l'ordre du
   fichier.
 
+  **Il prime sur tout contact rencontré plus loin**, y compris dans une cellule
+  que le mouvement atteint par portail, et y compris sur une troncature : la
+  fraction reste nulle, la normale et la surface restent celles du départ. Sans
+  cette clause, un départ solide dont le pas sort de sa cellule nommerait une
+  surface qui ne le retient pas, et un hôte qui lit la normale pour se dégager
+  recevrait une direction qui ne dégage rien.
+
   **Un statut et non `fraction == 0`**, qui est ambigu : c'est aussi ce que rend
   un contact légitime immédiat, boîte au contact exact d'un mur et mouvement qui
   entre dedans. Les deux cas appellent des réponses opposées — glisser, ou se
