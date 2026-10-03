@@ -148,6 +148,36 @@ fn un_portail_de_biais_au_plan_proche_ne_reduit_rien() {
     );
 }
 
+/// **Un portail dont un bord est passé derrière l'œil ne réduit rien non plus**,
+/// et c'est le cas que la première clause manquait.
+///
+/// L'œil presque dans le plan d'un portail en voit un bord devant lui et l'autre
+/// **derrière** : celui-là a une profondeur négative, et une clause qui exige un
+/// sommet *devant* l'œil en deçà du plan proche ne le voit pas. Le découpage
+/// ampute alors la fenêtre comme si rien n'avait été corrigé.
+///
+/// Mesuré chez un intégrateur après la 0.8.5 : le régime de face réglé, le régime
+/// de biais **inchangé au pixel près** sur cinq écarts au plan. Le cas précédent
+/// de ce fichier plaçait son bord proche à `0,05`, donc devant l'œil, et ne
+/// couvrait qu'une moitié du régime qu'il prétendait garder.
+#[test]
+fn un_portail_dont_un_bord_est_derriere_l_oeil_ne_reduit_rien() {
+    // Le bord gauche est à `-0.5`, derrière l'œil ; le droit à trois unités
+    // devant. L'œil est donc presque dans le plan du portail.
+    let across = [
+        Vec3::new(-0.5, -2.0, -2.0),
+        Vec3::new(3.0, 2.0, -2.0),
+        Vec3::new(3.0, 2.0, 2.0),
+        Vec3::new(-0.5, -2.0, 2.0),
+    ];
+    let window = reduce(full(), &across, neutral(), &projection());
+
+    assert_eq!(
+        window.width, WIDTH,
+        "un bord derrière l'œil ampute encore la fenêtre : {window:?}"
+    );
+}
+
 /// Un portail plus grand que l'image ne réduit rien.
 ///
 /// Le cas compte parce qu'il est celui de la cellule où vit la caméra : ses

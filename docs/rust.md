@@ -657,11 +657,21 @@ la création du contexte rend une erreur plutôt que de déborder en silence.
   jusqu'à l'écran entier au moment de le franchir. La fenêtre reçue est donc
   rendue inchangée, ce qui préserve la monotonie dont la traversée a besoin.
 
-  Le test porte sur `w > 0` **autant que** sur la distance au plan : un portail
-  entièrement derrière l'œil a lui aussi des sommets du mauvais côté, et celui-là
-  doit continuer de vider la fenêtre. Les deux régimes du défaut sont nés chez un
-  intégrateur, qui les a séparés par la part d'image peinte — presque rien en deçà
-  de `near`, les deux tiers au-delà — là où le dépôt n'en voyait qu'un.
+  **Les deux conditions se croisent sur le portail entier**, et c'est ce qui les
+  rend justes : un sommet devant l'œil, un sommet en deçà du plan proche, sans
+  exiger que ce soit le même. Les trois cas qui comptent y entrent — le portail
+  tout entier entre l'œil et le plan, celui que le plan coupe, et celui dont l'œil
+  est presque dans le plan, un bord devant et l'autre derrière —, et le portail
+  entièrement derrière l'œil en reste dehors, qui doit bien continuer de vider la
+  fenêtre.
+
+  **Exiger les deux d'un même sommet ne couvre que la moitié du défaut**, et cela
+  a été livré ainsi : un bord passé derrière l'œil a une profondeur négative, donc
+  la clause ne le voyait pas et le découpage amputait la fenêtre comme avant. Les
+  deux régimes, puis cet angle mort, sont tous venus des mesures d'un intégrateur
+  — la part d'image peinte les a d'abord séparés, presque rien en deçà de `near`
+  contre les deux tiers au-delà ; une comparaison au pixel près a ensuite montré le
+  second inchangé.
 
   Le passage des sous-pixels au rectangle de pixels **inclut tout pixel que le
   polygone touche**, par `div_euclid` pour que le négatif tombe du bon côté, et
