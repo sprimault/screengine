@@ -218,9 +218,15 @@ pub(crate) fn reduce(
             // lumière, et seuls `x`, `y` et `w` décident de sa géométrie.
             match projection.to_clip(view.transform_point(corner), 0.0, 0.0, 0.0, 0.0, [0.0; 3]) {
                 Some(vertex) => *slot = vertex,
-                // Un sommet hors des limites de coordonnées ne réduit rien : le
-                // triangle est abandonné, ce qui laisse la fenêtre plus large et
-                // donc conservatrice.
+                // Un sommet hors des limites de coordonnées abandonne son
+                // triangle, ce qui **rétrécit** la fenêtre et n'est donc pas
+                // conservateur : `bounds` part de vide et accumule l'union des
+                // morceaux, si bien qu'un morceau perdu est un morceau de moins.
+                // Rien ne l'atteint — `to_clip` ne refuse que sur une coordonnée
+                // de clip non finie ou démesurée, qu'une carte chargée ne porte
+                // pas, ses coordonnées étant vérifiées finies. Le jour où quelque
+                // chose l'atteindrait, la réponse sûre est celle du plan proche
+                // plus bas : rendre la fenêtre reçue.
                 None => {
                     projected = false;
                     break;
