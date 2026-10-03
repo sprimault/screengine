@@ -1588,6 +1588,27 @@ apparié est un mur » —, et c'est ce qui garde la cellule fermée : passable,
 ferait tomber l'hôte hors du monde sur une carte en cours d'édition. Conséquence
 assumée : un mur invisible là où l'éditeur n'a pas fini.
 
+**Il ne porte que sa face**, ni prisme d'arête ni boîte de sommet. Ses arêtes ne
+passent pas par le classement du chargement, qui n'examine que les surfaces :
+toutes seraient donc tenues pour exposées, et le portail revendiquerait avec le
+mur voisin le volume le long de leur arête commune — une boîte qui glisse
+accrocherait à cette couture. Les surfaces qui entourent le portail couvrent déjà
+son bord.
+
+**Et sa normale est celle qui s'oppose au mouvement, jamais une normale
+intérieure dérivée de son enroulement.** Le format ne dit pas lequel de ses deux
+côtés est l'avant : il ne fixe que l'enroulement inverse **entre les deux
+portails d'une paire**, si bien qu'un portail et les surfaces de sa propre
+cellule peuvent tourner en sens contraires — le décor de validation le fait. Le
+signe du volume de la cellule ne rattrape rien, puisqu'il suppose justement la
+cohérence qui manque. C'est le traitement du drapeau « deux faces », pour la même
+raison et dans les mêmes mots : le portail est une paroi à double face, donc
+conservatrice, et c'est la seule réponse qui ne perde jamais le mobile.
+
+Il ne nomme aucune surface — `surface_id` reste nul, `cell_id` est celle du
+portail. Le contrat correspondant est dans [`abi.md`](abi.md), avec la table qui
+départage les trois cas où aucune surface n'est nommée.
+
 **Le drapeau « non solide » exclut du balayage, et de rien d'autre.** Deux
 clauses qui se rateront sans être écrites : la surface **compte toujours** dans
 la parité de `locate`, qui mesure la fermeture du volume et non la solidité — l'en
@@ -1630,6 +1651,15 @@ bits : deux résultats mathématiquement égaux dont l'un porte un zéro négati
 donneraient deux empreintes. La clause se tient par un test qui inspecte les bits
 sur des balayages tirés au hasard — et le test d'`abs` de `math/polygon.rs` dit
 d'où un `-0,0` peut venir, la valeur absolue laissant passer le sien.
+
+**Elle n'a longtemps tenu que par chance**, et il faut le dire parce que c'est le
+mode de panne de toute clause de ce genre : aucun test ne l'éprouvait, celui qui
+s'en approchait comparant des valeurs — et `-0,0 == 0,0` est vrai. Rien n'en
+produisait, jusqu'au premier chemin qui a eu à **retourner** un vecteur. La
+normale et le point sortent donc par un seul passage, qui ramène `-0,0` à `+0,0`
+en y ajoutant zéro ; et le test les inspecte désormais bit à bit, sur une chaîne
+dont les deux bouts sont des portails non appariés — là où ce retournement a
+lieu.
 
 ### La boîte de sécurité
 

@@ -31,7 +31,7 @@ mod overlap;
 mod shape;
 
 use crate::format::World;
-use crate::format::world::{Cell, Surface};
+use crate::format::world::{Cell, Portal, Surface};
 use crate::math::{Vec3, Vec3d};
 
 use shape::Touch;
@@ -421,8 +421,8 @@ pub(super) fn start_solid(
         best.rank = shape::RANK_FACE;
         best.hit.start_solid = true;
         best.hit.fraction = 0.0;
-        best.hit.normal = to_f32(Vec3d::from(cell.inward(surface))).normalize();
-        best.hit.point = to_f32(plane_point(cell, surface, from));
+        best.hit.normal = reported(to_f32(Vec3d::from(cell.inward(surface))).normalize());
+        best.hit.point = reported(to_f32(project_on_plane(surface_plane(cell, surface), from)));
         best.hit.surface = surface.id();
         best.hit.cell = cell.id();
     }
@@ -448,20 +448,133 @@ fn sweep_cell(
         let Some(touch) = sweep_surface(cell, surface, half, from, to) else {
             continue;
         };
-        let later = touch.fraction > best.fraction;
-        let equal_but_coarser = touch.fraction == best.fraction && touch.rank >= best.rank;
-        if later || equal_but_coarser {
+        let plane = surface_plane(cell, surface);
+        offer(best, touch, cell.id(), surface.id(), plane, from, to);
+    }
+
+    // **Un portail non apparié est un mur**, et c'est ce qui garde la cellule
+    // fermée : son volume l'est par ses surfaces *et* ses portails, ce que la
+    // parité de la localisation compte déjà. Sans eux, un mobile sort du volume
+    // par une ouverture inachevée, se retrouve hors de toute cellule, et le
+    // balayage suivant le déclare libre faute de cellule de départ — plus rien
+    // ne le retient. Conséquence assumée, celle que le format annonce : un mur
+    // invisible là où l'éditeur n'a pas fini. L'hôte qui veut laisser tomber
+    // marque la surface « non solide », drapeau prévu pour cela.
+    //
+    // Le filtre ne s'applique pas : il porte sur le drapeau d'une surface, et un
+    // portail n'en a pas. Un portail apparié, lui, n'arrête rien — on le franchit,
+    // et la cellule d'en face est empilée.
+    for portal in &cell.portals {
+        if portal.link.is_some() {
             continue;
         }
-        best.fraction = touch.fraction;
-        best.rank = touch.rank;
-        let centre = from + (to - from) * touch.fraction;
-        best.hit.fraction = touch.fraction as f32;
-        best.hit.normal = to_f32(touch.normal).normalize();
-        best.hit.point = to_f32(plane_point(cell, surface, centre));
-        best.hit.surface = surface.id();
-        best.hit.cell = cell.id();
+        let Some((touch, plane)) = sweep_portal(portal, half, from, to) else {
+            continue;
+        };
+        // **Aucune surface n'est nommée**, et c'est le patron de la troncature :
+        // le contact est réel, mais rien dans l'espace d'identifiants des
+        // surfaces ne le porte. Y mettre l'identifiant du portail ferait trouver
+        // une *autre* surface à `scg_world_surface_material`, les deux espaces
+        // étant séparés par famille mais pas disjoints en valeur.
+        offer(best, touch, cell.id(), 0, plane, from, to);
     }
+}
+
+/// Retient un contact s'il précède le meilleur connu, et le décrit.
+///
+/// **Les trois critères de départage vivent ici, en un seul endroit** : l'instant,
+/// puis la famille — face, arête, sommet —, puis l'ordre du fichier, que le
+/// parcours donne gratuitement en ne remplaçant jamais à égalité stricte.
+/// Recopiés pour les portails, ils auraient fini par diverger de ceux des
+/// surfaces, et un départage divergent ne rend pas une erreur : il rend une autre
+/// normale.
+///
+/// `plane` est le couple (normale, point d'ancrage) du **plan** de l'élément
+/// touché, qui n'est pas la normale du contact : celle d'une arête ou d'un sommet
+/// pointe ailleurs, et c'est bien sur le plan que le point se projette.
+fn offer(
+    best: &mut Best,
+    touch: Touch,
+    cell_id: u32,
+    surface_id: u32,
+    plane: (Vec3d, Vec3d),
+    from: Vec3d,
+    to: Vec3d,
+) {
+    let later = touch.fraction > best.fraction;
+    let equal_but_coarser = touch.fraction == best.fraction && touch.rank >= best.rank;
+    if later || equal_but_coarser {
+        return;
+    }
+    best.fraction = touch.fraction;
+    best.rank = touch.rank;
+    let centre = from + (to - from) * touch.fraction;
+    best.hit.fraction = touch.fraction as f32;
+    best.hit.normal = reported(to_f32(touch.normal).normalize());
+    best.hit.point = reported(to_f32(project_on_plane(plane, centre)));
+    best.hit.surface = surface_id;
+    best.hit.cell = cell_id;
+}
+
+/// Un vecteur rendu à l'hôte, débarrassé de ses zéros négatifs.
+///
+/// **Une empreinte hache des motifs de bits**, donc deux résultats
+/// mathématiquement égaux dont l'un porte un `-0,0` en rendent deux. La clause
+/// est dans `docs/rust.md` et elle tenait par chance : rien n'en produisait,
+/// jusqu'à ce qu'un chemin ait à **retourner** un vecteur — nier une composante
+/// nulle est précisément d'où un zéro négatif sort.
+///
+/// `x + 0,0` le ramène à `+0,0` et ne touche aucun autre motif de bits : c'est
+/// exact pour toute valeur finie, et le refus des non-finis au chargement les
+/// garantit telles. Écrit ici plutôt qu'à chaque appelant, parce que c'est le
+/// point par lequel tout vecteur sort du balayage.
+fn reported(v: Vec3) -> Vec3 {
+    Vec3::new(v.x + 0.0, v.y + 0.0, v.z + 0.0)
+}
+
+/// Balaie un portail non apparié : **sa face, et rien d'autre.**
+///
+/// Ni prisme d'arête ni boîte de sommet, à la différence d'une surface, et ce
+/// n'est pas une économie. Les arêtes d'un portail ne passent pas par le
+/// classement du chargement, qui n'examine que les surfaces : elles seraient donc
+/// toutes tenues pour exposées, et le portail revendiquerait avec le mur voisin le
+/// volume le long de leur arête commune. Une boîte qui glisse accrocherait à cette
+/// couture — exactement ce que la règle de l'arête partagée existe pour empêcher.
+/// La face suffit, les surfaces qui entourent le portail couvrant déjà son bord.
+///
+/// **Sa normale est celle qui s'oppose au mouvement**, et elle ne peut pas venir
+/// d'ailleurs. Le format ne dit pas lequel des deux côtés d'un portail est
+/// l'avant : il fixe seulement que les deux portails d'une paire ont des
+/// enroulements inverses, si bien qu'un portail et le mur voisin de sa propre
+/// cellule peuvent tourner en sens contraires — le décor de validation le fait.
+/// Le signe du volume de la cellule n'y change rien, puisqu'il suppose justement
+/// l'enroulement cohérent qui manque ici, et une normale prise à l'endroit une
+/// fois sur deux laisse le portail ne rien arrêter dans l'autre moitié des cas.
+///
+/// C'est le traitement que le projet réserve déjà au drapeau « deux faces »,
+/// pour la même raison et dans les mêmes mots. Le portail est donc une paroi à
+/// double face : on ne le franchit ni dans un sens ni dans l'autre, ce qui est
+/// la réponse conservatrice — la seule qui ne perde jamais le mobile.
+///
+/// Rend le contact et le plan du portail, celui sur lequel le point se projette.
+fn sweep_portal(
+    portal: &Portal,
+    half: Vec3d,
+    from: Vec3d,
+    to: Vec3d,
+) -> Option<(Touch, (Vec3d, Vec3d))> {
+    let mut points = heapless::Points::new();
+    for point in &portal.points {
+        points.push(Vec3d::from(*point));
+    }
+    // Par comparaison écrite, jamais par `signum` : celui-ci rend −1 sur le zéro
+    // négatif, et un mouvement parallèle au plan n'a pas de côté à choisir — il
+    // ne touche rien, ce que le cas `d0 == d1` du découpage écarte déjà.
+    let raw = Vec3d::from(crate::math::polygon::newell(&portal.points));
+    let normal = if raw.dot(to - from) > 0.0 { -raw } else { raw };
+    let anchor = *points.first()?;
+    let touch = shape::face(&points, normal, anchor, half, from, to)?;
+    Some((touch, (normal, anchor)))
 }
 
 /// Balaie une surface : sa face, puis ses arêtes exposées, puis ses sommets.
@@ -519,14 +632,19 @@ fn corners(cell: &Cell, surface: &Surface) -> heapless::Points {
     points
 }
 
+/// Le plan d'une surface : sa normale intérieure et un point qui lui appartient.
+fn surface_plane(cell: &Cell, surface: &Surface) -> (Vec3d, Vec3d) {
+    let normal = Vec3d::from(cell.inward(surface));
+    let anchor = Vec3d::from(cell.vertices[surface.first_vertex as usize].position);
+    (normal, anchor)
+}
+
 /// Le point de contact : la projection du centre de la boîte sur le plan.
 ///
 /// Un contact face contre face est un rectangle et non un point ; le moteur en
 /// choisit un et le fige, sans quoi la conformance n'aurait rien à comparer. Un
 /// produit scalaire, sans racine.
-fn plane_point(cell: &Cell, surface: &Surface, centre: Vec3d) -> Vec3d {
-    let normal = Vec3d::from(cell.inward(surface));
-    let anchor = Vec3d::from(cell.vertices[surface.first_vertex as usize].position);
+fn project_on_plane((normal, anchor): (Vec3d, Vec3d), centre: Vec3d) -> Vec3d {
     let square = normal.dot(normal);
     if square <= 0.0 {
         return centre;
