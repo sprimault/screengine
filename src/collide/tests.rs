@@ -1404,3 +1404,53 @@ fn le_bout_de_l_enfilade_arrete_une_boite_posee_au_sol() {
         "la boîte reste dans l'enfilade : {centre:?}"
     );
 }
+
+/// **Longer un mur ne doit pas buter sur son arête terminale.**
+///
+/// Remonté d'un intégrateur : un mobile ne peut pas longer une paroi. À la
+/// distance de contact que le balayage rend lui-même, le pas suivant, parallèle à
+/// la face, est arrêté net par l'arête qui termine le panneau — avec une normale
+/// perpendiculaire à celle du mur, et la même surface nommée que pour le contact
+/// frontal.
+///
+/// **Le cas tient dans une seule cellule**, et c'est ce qui dit où la cause n'est
+/// pas : le classement des arêtes au travers d'un portail, qui existe depuis la
+/// jointure des sols, n'a rien à voir ici. L'arête du coin saillant `(6, 2)` est
+/// exposée à juste titre — deux murs perpendiculaires s'y rejoignent — et son
+/// prisme est légitime. Ce qui ne l'est pas, c'est qu'une boîte **tangente** à ce
+/// prisme soit tenue pour dedans.
+///
+/// La position de départ vient du balayage lui-même, et non d'un nombre écrit
+/// ici : c'est la pose exacte que l'hôte applique à l'image précédente, donc le
+/// seul départ qui reproduise ce qu'il observe.
+///
+/// **Les deux chemins sont faux ensemble** — une seule cellule, le brut examine
+/// les mêmes surfaces —, donc l'égalité d'oracle reste verte et ne garde rien :
+/// c'est un test du noyau, comme le pas qui s'éloigne d'une face vue de derrière.
+#[test]
+fn longer_un_mur_ne_bute_pas_sur_son_arete_terminale() {
+    let world = u_room();
+    let half = Vec3d::new(0.3, 0.3, 0.9);
+
+    // Le mur `y = 2` du bloc central, abordé de face : la boîte s'arrête à la
+    // distance de contact, qui est la frontière de la boîte dilatée.
+    let approach_from = Vec3d::new(4.0, 0.5, 4.0);
+    let approach_to = Vec3d::new(4.0, 3.0, 4.0);
+    let contact = sweep(&world, 7, half, approach_from, approach_to).expect("cellule connue");
+    assert!(contact.fraction < 1.0, "le mur arrête l'approche");
+    assert_eq!(contact.surface, 17, "c'est le mur du bloc central");
+
+    let posed = approach_from + (approach_to - approach_from) * f64::from(contact.fraction);
+
+    // Le pas suivant longe ce mur et dépasse le coin `(6, 2)`. Au-delà, la
+    // branche droite du U est ouverte jusqu'à `y = 8` : rien n'arrête.
+    let from = posed;
+    let to = Vec3d::new(7.0, posed.y, posed.z);
+    let hit = sweep(&world, 7, half, from, to).expect("cellule connue");
+
+    assert_eq!(
+        hit.fraction, 1.0,
+        "le pas qui longe est libre, mais il est arrêté par {} à {} avec la normale {:?}",
+        hit.surface, hit.fraction, hit.normal
+    );
+}

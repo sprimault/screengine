@@ -1718,6 +1718,69 @@ reculé.** Reculer `t` laisse la boîte pénétrante sur les axes perpendiculair
 mouvement, si bien que le problème revient au balayage suivant, ailleurs : le
 recul est proportionnel à la vitesse, la dilatation ne l'est pas.
 
+**Le bord reçoit la moitié de cette marge, et c'est ce qui rend une paroi
+longeable.** Une face et le prisme de l'arête qui la termine se construisent sur
+la même demi-étendue : dilatés pareil, leurs plans de support sont **confondus**.
+Or un balayage pose le mobile exactement à `support` de la face — c'est la
+définition du contact —, donc tangent au prisme du bout du panneau. Le pas
+suivant, parallèle à la face, y entrait par un plan perpendiculaire et s'arrêtait
+net, avec une normale orthogonale à celle du mur longé et la même surface nommée
+que pour le contact frontal. C'est le régime de **tout mobile qui suit une
+paroi**, à chaque image, et un couloir étroit n'en sort jamais.
+
+Les faces gardent donc la marge pleine, les prismes d'arêtes et les boîtes de
+sommets en reçoivent la moitié. La pose du contact se retrouve à une demi-marge
+**hors** du bord, ce qui absorbe ce que l'hôte perd en reposant son mobile. **La
+couverture n'y perd rien** : le bord arrête une demi-marge plus tard, donc la
+vraie boîte reste à une demi-marge du solide. Ce que `scg_sweep_skin` rend ne
+bouge pas : c'est la marge d'une face.
+
+**Le correctif couvre plus que le cas qui l'a fait trouver**, et c'est gratuit :
+la dilatation ne dépend que de la boîte, jamais de la surface propriétaire. Tout
+élément de bord bâti sur une géométrie qui tombe dans le plan d'une face — la
+base d'un pilier posée sur un sol, une jonction en T — n'atteint donc que la
+demi-marge, en retrait de la dalle de cette face, là où il mordait avant.
+
+#### Jusqu'où la demi-marge tient
+
+**Ce que l'hôte perd en reposant son mobile vient de deux termes, et le dominant
+n'est pas celui qu'on croit.** Le premier soupçon était l'arrondi de la fraction,
+qui revient en `f32` par l'ABI : il suit la composante du pas **le long de la
+normale de contact** — pas sa longueur — et reste négligeable, un pas de dix
+mille unités presque tangent n'y contribuant rien. Le terme qui mord est la
+**quantification de la position** elle-même, `|p|·2⁻²⁴`, qui ne dépend que de
+l'éloignement de l'origine.
+
+Le jeu disponible vaut `half_max · 2⁻¹¹`. La demi-marge tient donc tant que
+
+```text
+half_max > |p| · 2⁻¹³
+```
+
+**La plus petite boîte utilisable croît avec l'éloignement de l'origine**, et
+c'est une limite de la bibliothèque qu'un intégrateur doit connaître, pas un
+défaut de ce calcul. Mesuré : un corps de 0,9 de demi-étendue tient jusqu'à
+sept mille quatre cents unités, une boîte de véhicule jusqu'à dix-huit mille —
+**un véhicule est plus sûr qu'un marcheur, pas moins**, la vitesse n'entrant pas
+dans la borne. Ce qui y entre est la **petitesse** : un projectile de dix
+centimètres est à court dès quatre cent dix unités, et le décor de collision du
+dépôt est posé à cinq cent douze.
+
+**C'est le second critère sur lequel figer la constante de dilatation**, à côté
+de la marche d'escalier et du chambranle : elle doit laisser `half_max · 2⁻¹¹`
+au-dessus de l'`ulp` de la plus grande coordonnée que le décor atteint. Écartée :
+une marge fonction de la coordonnée, qui suivrait pourtant la vraie source — elle
+rendrait le jeu dépendant de la position, et `scg_sweep_skin` n'en rendrait plus
+qu'une borne inférieure, c'est-à-dire un sens publié qui change sans que la
+signature change.
+
+**Écartée, et par la mesure** : rendre stricte la comparaison du plan parallèle au
+mouvement, pour qu'une boîte posée dessus ne soit pas tenue pour dedans. Elle ne
+traite que la tangence **exacte**, que l'arrondi de la fraction manque de toute
+façon, et elle casse le rayon — dont le prisme est dégénéré, tous ses plans
+opposés confondus. La scène d'interrogation y a bougé sur cent trente-deux rayons,
+chacun traversant la surface qu'il touchait pour en nommer une plus lointaine.
+
 **Le dégagement appartient au balayage, jamais à la question « suis-je déjà
 dedans ».** La clause est générale et vaut pour tout module de collision à venir —
 un maillage, une capsule —, pas seulement pour celui-ci : le balayage prend la
@@ -1772,6 +1835,18 @@ solide.
 treillis, et aucun ne tombe à une dilatation d'un mur. Ce qui la garde, ce sont
 les tests du noyau, dont un qui enchaîne deux balayages en repartant du point
 d'arrêt — la seule forme où le défaut apparaisse.
+
+**Elle couvre en revanche le mobile qui longe**, par un départ choisi contre un
+mur du couloir — la bande, encore, et c'est elle qui décide : posé **pile** à la
+distance de contact, le cas reste vert sur le code fautif et ne garde rien, parce
+que l'arrondi fait tomber la boîte du bon côté du bord. Il se pose donc aux trois
+quarts de la marge, entre la demi-marge où le bord s'arrête désormais et la marge
+où il s'arrêtait.
+
+Les tests du noyau le prennent autrement, en deux balayages — un frontal qui pose,
+un parallèle qui longe —, et dans **une seule** cellule : c'est ce qui prouve que
+la cause n'est pas le classement des arêtes au travers d'un portail, qui ne
+s'applique pas là.
 
 **Elle couvre en revanche la distance à l'origine du monde**, et c'est une
 propriété de son **placement** et non de sa forme : le décor de collision est

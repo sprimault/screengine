@@ -303,6 +303,16 @@ impl Interval {
 
         if d0 == d1 {
             // Parallèle au plan : dedans pour toujours, ou dehors pour toujours.
+            //
+            // **Non stricte, et c'est le rayon qui l'exige.** Une étendue nulle
+            // rend le prisme d'une arête dégénéré — un segment sans épaisseur,
+            // dont les plans opposés sont confondus —, si bien qu'un rayon qui
+            // rase une arête est tangent à chacun. La rendre stricte a été
+            // essayée, pour que longer une paroi cesse de buter sur l'arête qui
+            // la termine : la scène d'interrogation a bougé sur cent trente-deux
+            // rayons, chacun **traversant** la surface qu'il touchait pour en
+            // nommer une plus lointaine. Le frôlement d'un balayage se règle sur
+            // l'épaisseur de la boîte, jamais ici.
             return if d0 <= 0.0 { Some(()) } else { None };
         }
         let t = d0 / (d0 - d1);

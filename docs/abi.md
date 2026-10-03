@@ -2047,6 +2047,21 @@ le même lecteur, et son erreur se lit par `scg_last_error(NULL)`.
   dans un coin. C'est ce qui fait qu'un mobile posé flotte un peu plus au-dessus
   d'une pente que d'un plancher, et un hôte qui dimensionne sa sonde sur le sol
   plat la trouvera courte en pente.
+- **C'est la marge d'une face.** Le bord d'un panneau — l'arête qui le termine,
+  le coin où il s'arrête — en arrête **la moitié** plus tard, et c'est ce qui
+  permet à un mobile posé contre une paroi de la longer sans buter sur le bout du
+  panneau qu'il suit. Un hôte n'a rien à en faire : la valeur rendue reste celle
+  qui dimensionne une sonde, et c'est toujours elle qui majore le flottement d'un
+  mobile posé.
+- **Une boîte trop petite pour l'endroit où elle est n'a plus de jeu**, et c'est
+  la seule limite que cette fonction oblige à connaître. Reposer un mobile à la
+  fraction rendue passe par des positions en `float`, dont le pas vaut
+  `|p|·2⁻²⁴` : le jeu survit tant que la **plus grande demi-étendue** reste
+  au-dessus de `|p|·2⁻¹³`. Un corps d'une unité tient à huit mille unités de
+  l'origine, un véhicule davantage — la vitesse n'y entre pas, seule la
+  petitesse. Un projectile de dix centimètres, lui, est à court dès quatre cents
+  unités, et un hôte qui en lance sur une grande carte lui donne une boîte plus
+  large ou rapproche son décor de l'origine.
 - **La valeur ne fait pas partie du contrat, son sens oui.** Elle peut changer
   d'une version à l'autre, comme toute borne dont « ce qu'elle rend quand on
   l'atteint est un contrat ». Un hôte l'appelle plutôt que de la mettre en cache.

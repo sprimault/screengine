@@ -174,6 +174,39 @@ fn chosen() -> Vec<Vec3> {
         chosen.push(Vec3::new(x, 2.5, collision_file::FLOOR_Z + 0.45 + lift));
         chosen.push(Vec3::new(x, 2.5, collision_file::FLOOR_Z + 0.55 + lift));
     }
+    // **Posés au contact d'un mur du couloir**, à la distance exacte que le
+    // balayage rend : `demi-étendue + marge`. C'est la seule pose qui éprouve ce
+    // qu'un mobile fait en permanence — suivre une paroi —, et le treillis ne
+    // peut pas la produire, son pas valant deux unités là où la marge se mesure
+    // en dixièmes de millième.
+    //
+    // Les deux directions qui longent le mur portent le cas : elles mènent la
+    // boîte jusqu'au **bout du panneau**, là où le couloir débouche, et c'est
+    // l'arête qui le termine qui l'arrêtait. Les huit autres directions viennent
+    // avec, et deux d'entre elles entrent dans le mur — ce qui garde au départ sa
+    // valeur de témoin.
+    //
+    // **Aux trois quarts de la marge, et pas à la marge pleine.** Posée pile à la
+    // distance de contact, la boîte tombe du bon côté du bord quoi qu'il arrive et
+    // le cas reste vert sur le code fautif : il ne garderait rien. Ce qui le rend
+    // discriminant, c'est de viser la **bande** — entre la demi-marge, où le bord
+    // s'arrête désormais, et la marge, où il s'arrêtait. C'est là qu'un balayage
+    // précédent laisse le mobile, à l'arrondi de la fraction près.
+    //
+    // **Une seule pose, celle de la petite boîte**, et c'est mesuré : le couloir
+    // n'a qu'une unité de large, si bien qu'une pose au contact pour la grande
+    // place la petite contre le mur d'en face. Les deux y partent dans le solide,
+    // et vingt balayages n'y disent rien que le décor ne dise déjà. La grande joue
+    // tout de même celle-ci et y part solide, ce qui est le témoin que le décor
+    // porte déjà : la petite passe dans le couloir, la grande non.
+    {
+        let half = HALVES[0];
+        chosen.push(Vec3::new(
+            collision_file::ORIGIN_X + 12.0,
+            collision_file::CORRIDOR[0][1] + half + half * 3.0 / 4096.0,
+            collision_file::FLOOR_Z + 2.0,
+        ));
+    }
     // **Un départ par marche de la cage**, au milieu du plat et à une unité
     // au-dessus. Le treillis ne l'atteint pas : il tire ses cotes entre le sol et
     // le plafond des cellules basses, quand la cage monte sur deux étages — et une
