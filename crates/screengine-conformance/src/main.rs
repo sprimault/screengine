@@ -979,7 +979,12 @@ struct View {
 /// suffirait à figer une empreinte et ne prouverait presque rien : une fenêtre trop
 /// étroite ne troue l'image que depuis l'endroit d'où le portail est vu de biais,
 /// et une cellule oubliée ne manque que si on regarde vers elle.
-const ROOM_VIEWS: [([f32; 3], f32); 6] = [
+///
+/// **La première pose est celle que les cinq hôtes rendent**, `--print` ne
+/// donnant que l'empreinte de la vue de rang zéro : une pose s'ajoute donc à la
+/// fin, et en insérer une devant ferait diverger les cinq hôtes sans que le
+/// défaut soit chez eux.
+const ROOM_VIEWS: [([f32; 3], f32); 8] = [
     // Dans la salle en L, face à l'ouverture du couloir : la traversée doit
     // ramener le couloir, puis le losange derrière lui.
     ([2.0, 2.0, 2.0], 0.0),
@@ -1002,6 +1007,25 @@ const ROOM_VIEWS: [([f32; 3], f32); 6] = [
     // ni à 45°. Le portail y a sept sommets au lieu de quatre, ce qui met la
     // réduction de fenêtre à l'épreuve d'une arche plutôt que d'un quadrilatère.
     ([4.0, -12.0, 1.2], 0.0),
+    // **Les deux dernières approchent un plan de portail**, et ce sont les deux
+    // seules : les six premières le regardent toujours de loin, ce qui est ce qui
+    // a laissé passer les deux défauts des 0.8.5 et 0.8.6. Un seizième d'unité
+    // plutôt qu'un nombre rond, parce que c'est une puissance de deux — donc
+    // exacte en binaire — et franchement sous le plan proche de 0,1.
+    //
+    // Dans la salle en L, à un seizième du portail axial `x = 8` et face à lui :
+    // le portail est **tout entier** en deçà du plan proche, donc le découpage le
+    // supprime en entier et la boîte des morceaux restants est vide. Sans la
+    // clause qui rend la fenêtre reçue inchangée, le couloir n'est pas traversé
+    // du tout.
+    ([7.9375, 2.0, 2.0], 0.0),
+    // Dans le couloir, à un seizième du plan du portail **oblique**, qui s'étend
+    // de part et d'autre de l'œil : le bord de `(16, 0)` est devant, celui de
+    // `(12, 4)` est derrière. C'est l'autre moitié du défaut, celle qu'exiger les
+    // deux conditions d'un même sommet ne voyait pas — un bord derrière l'œil a
+    // une profondeur négative. Vu de biais et non par la tranche : la direction de
+    // vue n'est pas celle du portail, sans quoi sa projection serait une ligne.
+    ([13.9375, 2.0, 2.0], 0.0),
 ];
 
 impl View {
@@ -1331,8 +1355,8 @@ impl Scene {
             // Une vue par pose de [`ROOM_VIEWS`], à la résolution des hôtes. Les
             // trois résolutions ne s'y ajoutent pas : ce que cette scène éprouve
             // est la géométrie de la traversée, pas un arrondi propre à une
-            // largeur, et cinq vues sur trois formats feraient quinze images pour
-            // la même question.
+            // largeur, et chaque pose coûterait trois images pour la même
+            // question.
             Self::Rooms => (0..ROOM_VIEWS.len() as u32)
                 .map(|angle| View {
                     width,
