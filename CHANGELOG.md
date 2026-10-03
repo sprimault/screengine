@@ -46,6 +46,16 @@ publié, et explique les conventions du dépôt à qui y contribue.
 
 ## [Non publié]
 
+### Corrigé
+- Un **départ dans le solide** garde sa fraction nulle et la normale de la
+  surface qui pénètre, même quand le mouvement sort de la cellule de départ.
+
+***
+
+### Fixed
+- A **start inside solid geometry** keeps its zero fraction and the normal of
+  the penetrating surface, even when the motion leaves the starting cell.
+
 ## [0.8.3] — 2026-10-02 — Les surfaces obliques
 
 **Rien à reprendre pour une liaison existante.** `SCG_ABI_VERSION` reste à 1, aucune

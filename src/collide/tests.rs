@@ -695,6 +695,93 @@ fn un_balayage_repris_au_point_d_arret_ne_traverse_pas() {
     }
 }
 
+/// Les huit coins du cube, décalés le long de `X`.
+fn cube_shifted_x(dx: f32) -> [[f32; 3]; 8] {
+    let mut points = CUBE;
+    for point in &mut points {
+        point[0] += dx;
+    }
+    points
+}
+
+/// Deux salles cubiques accolées, reliées par un portail apparié.
+///
+/// **La seconde porte une vraie surface au fond**, et c'est ce qui en fait le
+/// décor du cas : il y faut un contact de **face** dans une cellule que seule la
+/// traversée atteint. [`chain`] ne l'offre pas — ses deux bouts sont des portails
+/// non appariés, que le balayage ne regarde pas.
+///
+/// Les deux portails portent les mêmes positions au bit près, les coordonnées
+/// étant des multiples de huit, et des enroulements inverses : ils s'apparient.
+fn linked_rooms() -> World {
+    let x = [1.0, 0.0, 0.0];
+    let y = [0.0, 1.0, 0.0];
+    let z = [0.0, 0.0, 1.0];
+    // Cinq faces pleines par salle, la sixième étant le portail : le `+X` de la
+    // première, le `−X` de la seconde.
+    let near = alloc::vec![
+        surface_in_plane(11, 0, &[0, 3, 2, 1], x, y),
+        surface_in_plane(12, 0, &[4, 5, 6, 7], x, y),
+        surface_in_plane(13, 0, &[0, 1, 5, 4], x, z),
+        surface_in_plane(14, 0, &[3, 7, 6, 2], x, z),
+        surface_in_plane(15, 0, &[0, 4, 7, 3], y, z),
+    ];
+    let far = alloc::vec![
+        surface_in_plane(21, 0, &[0, 3, 2, 1], x, y),
+        surface_in_plane(22, 0, &[4, 5, 6, 7], x, y),
+        surface_in_plane(23, 0, &[0, 1, 5, 4], x, z),
+        surface_in_plane(24, 0, &[3, 7, 6, 2], x, z),
+        surface_in_plane(25, 0, &[1, 2, 6, 5], y, z),
+    ];
+    let mut cells = cell_bytes(7, 0, &CUBE, &near, &[portal_bytes(31, &[1, 2, 6, 5])]);
+    cells.extend_from_slice(&cell_bytes(
+        8,
+        0,
+        &cube_shifted_x(8.0),
+        &far,
+        &[portal_bytes(32, &[0, 4, 7, 3])],
+    ));
+    World::load(&file(&cells, &[], &[], &material(1, "mur"))).expect("carte valide")
+}
+
+/// **Un départ dans le solide n'est pas écrasé par un contact plus loin.**
+///
+/// Le contrat annonce une fraction nulle pour un départ solide, et la normale de
+/// la surface la moins pénétrée. Les deux ne tenaient que tant que le mouvement
+/// restait dans la cellule de départ : la marque posait la fraction du
+/// **résultat** sans toucher aux trois valeurs de départage, si bien qu'un
+/// contact trouvé dans une cellule atteinte par portail passait pour meilleur et
+/// remplaçait normale, point, surface et cellule — en laissant la marque. Un hôte
+/// qui lit la normale pour se dégager recevait la normale d'un mur situé plus
+/// loin, qui ne dégage rien, et la surface nommée n'était pas celle qui le
+/// retient.
+///
+/// Remonté d'un intégrateur, sur le palier d'une cage d'escalier : la boîte posée
+/// à la cote du sol, donc légitimement en départ solide, puis un pas horizontal
+/// assez long pour sortir de la cellule. Le cas n'apparaît qu'à cette condition,
+/// ce qui explique qu'aucune épreuve d'une seule cellule ne l'ait vu.
+#[test]
+fn un_depart_solide_resiste_a_un_contact_plus_loin() {
+    let world = linked_rooms();
+    // Posée pile à la cote du sol : la boîte le traverse, le départ est solide.
+    let half = Vec3d::new(0.3, 0.3, 0.9);
+    let from = Vec3d::new(2.0, 2.0, 0.0);
+    // Au-delà du portail de `x = 8`, jusqu'au mur du fond de la seconde salle.
+    let to = Vec3d::new(20.0, 2.0, 0.0);
+
+    let hit = sweep(&world, 7, half, from, to).expect("cellule connue");
+
+    assert!(hit.start_solid, "le sol de la première salle est traversé");
+    assert_eq!(hit.fraction, 0.0, "le contrat annonce une fraction nulle");
+    assert!(
+        hit.normal.z > 0.9,
+        "la normale est celle du sol qui pénètre, non d'un mur plus loin : {:?}",
+        hit.normal
+    );
+    assert_eq!(hit.surface, 11, "et c'est le sol qui est nommé");
+    assert_eq!(hit.cell, 7, "dans la cellule du départ");
+}
+
 /// Les seize coins d'une cellule en U, extrudée de `z = 0` à `z = 8`.
 ///
 /// Les huit premiers dessinent le contour au sol, en sens antihoraire vu de

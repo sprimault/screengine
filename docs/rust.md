@@ -1725,7 +1725,17 @@ Nommés d'avance, parce que chacun a une réponse et qu'aucune ne se devine :
 
 - **boîte déjà en intersection au départ** : temps nul et statut propre, normale
   de la surface de moindre pénétration le long de sa propre normale intérieure, à
-  égalité l'ordre du fichier. Le moteur ne dégage pas ;
+  égalité l'ordre du fichier. Le moteur ne dégage pas.
+
+  **Le départ solide absorbe les trois critères de départage**, et pas seulement
+  la fraction du résultat : il pose l'instant à zéro et le rang à celui de la
+  face, si bien que plus aucun contact ne le bat et que la troncature ne peut
+  plus reculer en deçà. Marquer le seul résultat laissait les critères à leur
+  initialisation, et un contact trouvé dans une cellule atteinte par portail
+  passait alors pour meilleur. **La conformance ne couvre pas ce cas** — ses
+  départs viennent d'un treillis et ses pas ne sortent pas de leur cellule —, ce
+  sont les tests du noyau qui le gardent, sur deux salles reliées par un portail
+  et un départ posé à la cote du sol ;
 - **déplacement nul**, `from == to` au bit près : cas écrit avant toute division,
   rend le recouvrement de départ et rien d'autre. **Aucun epsilon sur la longueur
   du déplacement** ; le seul test est `d0 == d1` ;
