@@ -22,11 +22,34 @@ fn at(x: f32, y: f32, z: f32) -> Vec3 {
     Vec3::new(collision_file::ORIGIN_X + x, y, z)
 }
 
-/// La carte se charge, et elle porte ses quatre cellules.
+/// La carte se charge, et elle porte ses cinq cellules.
 #[test]
 fn le_decor_se_charge() {
     let world = World::load(&collision_file::bytes()).expect("décor valide");
-    assert_eq!(world.cell_count(), 4);
+    assert_eq!(world.cell_count(), 5);
+}
+
+/// **La cage d'escalier se charge, et elle porte ses vingt-neuf surfaces.**
+///
+/// Le compte est le sujet : douze marches donnent vingt-sept arêtes de profil,
+/// donc vingt-sept faces latérales plus les deux flancs. Une marche perdue ou un
+/// point de profil en trop se verrait ici, et nulle part ailleurs — un décor à une
+/// surface près se charge, se balaie et rend une empreinte sans rien signaler.
+///
+/// Que la cellule soit **close** est vérifié par ailleurs, sur tout le décor :
+/// c'est ce qui dit qu'un profil extrudé dans le plan vertical ferme son volume
+/// aussi bien qu'une empreinte extrudée à l'horizontale.
+#[test]
+fn la_cage_porte_ses_vingt_neuf_surfaces() {
+    let world = World::load(&collision_file::bytes()).expect("décor valide");
+
+    let mut surfaces = 0;
+    for id in 500..600 {
+        if world.surface_material(id).is_some() {
+            surfaces += 1;
+        }
+    }
+    assert_eq!(surfaces, 29, "douze marches, deux flancs");
 }
 
 /// **La rampe se charge, et c'est déjà une information** : son sol et ses flancs
