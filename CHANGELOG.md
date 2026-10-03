@@ -50,11 +50,21 @@ publié, et explique les conventions du dépôt à qui y contribue.
 - Le décor de validation se regarde depuis deux poses de plus, à moins d'un plan
   proche d'un portail. L'empreinte `salles` change en conséquence, le rendu non.
 
+### Corrigé
+- Un mobile posé au contact d'une paroi peut désormais la longer : il butait sur
+  l'arête qui termine le panneau. Les empreintes `collision` et `selection`
+  changent, les contacts de bord arrivant une demi-marge plus tard.
+
 ***
 
 ### Added
 - The validation level is now viewed from two more poses, closer to a portal than
   the near plane. The `salles` fingerprint changes accordingly; rendering does not.
+
+### Fixed
+- A body resting against a wall can now move along it: it used to stop on the edge
+  that ends the panel. The `collision` and `selection` fingerprints change, edge
+  contacts now landing half a margin later.
 
 ## [0.8.6] — 2026-10-03 — Le seuil, pour de bon
 

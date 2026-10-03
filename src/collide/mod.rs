@@ -263,7 +263,7 @@ pub(crate) fn sweep(
     stack[0] = start;
     seen[0] = start;
 
-    let bounds = moving_bounds(grown_half, from, to);
+    let bounds = moving_bounds(grown_half.face, from, to);
     let mut best = Best::new(to);
 
     while stacked > 0 {
@@ -292,7 +292,7 @@ pub(crate) fn sweep(
                 // déplacement entier ferait passer une entité à travers un mur
                 // qu'il n'a pas eu le temps de voir, et le statut ne servirait
                 // qu'à s'en excuser.
-                if let Some(reached) = portal_fraction(&portal.points, grown_half, from, to) {
+                if let Some(reached) = portal_fraction(&portal.points, grown_half.face, from, to) {
                     best.truncate(reached);
                 }
                 best.hit.incomplete = true;
@@ -401,15 +401,63 @@ fn newell(points: &[Vec3d]) -> Vec3d {
     normal
 }
 
-/// La boîte dilatée de [`SKIN`].
+/// Les deux boîtes dilatées d'un balayage.
+///
+/// **Deux et non une, et l'écart entre elles est ce qui permet de longer une
+/// paroi.** Voir [`grown`].
+#[derive(Debug, Clone, Copy)]
+pub(super) struct Grown {
+    /// Celle que les faces reçoivent, dilatée de [`SKIN`].
+    face: Vec3d,
+    /// Celle que les arêtes et les sommets reçoivent, dilatée de la moitié.
+    rim: Vec3d,
+}
+
+/// Les boîtes dilatées de [`SKIN`], et de sa moitié pour le bord.
 ///
 /// Le facteur porte sur la plus grande demi-étendue et non sur chacune : une
 /// boîte plate — un disque, une lame — verrait sinon son épaisseur nulle rester
 /// nulle, et rien ne la séparerait jamais du sol qu'elle touche.
-pub(super) fn grown(half: Vec3d) -> Vec3d {
+///
+/// **Le bord reçoit la moitié, et c'est ce qui rend une paroi longeable.** Une
+/// face et le prisme de l'arête qui la termine se construisent sur la même
+/// demi-étendue : dilatés pareil, leurs plans de support sont **confondus**. Or
+/// un balayage pose le mobile exactement là, à `support` de la face — c'est la
+/// définition du contact —, si bien qu'il repart tangent au prisme du bout du
+/// panneau. Le pas suivant, parallèle à la face, y entre alors par un plan
+/// perpendiculaire et s'arrête net, avec une normale orthogonale à celle du mur
+/// qu'il longe. C'est le régime de tout personnage qui suit une paroi, à chaque
+/// image, et un couloir étroit n'en sort jamais.
+///
+/// En retranchant la moitié de la marge au bord, la pose du contact se retrouve
+/// à une demi-marge **hors** du prisme, ce qui absorbe ce que l'hôte perd en
+/// reposant son mobile. Deux termes s'y ajoutent, et le dominant n'est pas celui
+/// qu'on croit : la **quantification de la position**, `|p|·2⁻²⁴`, qui ne dépend
+/// que de l'éloignement de l'origine, devant l'arrondi de la fraction, qui suit
+/// la composante du pas le long de la normale et reste négligeable.
+///
+/// D'où la borne, mesurée : le jeu tient tant que `half_max > |p| · 2⁻¹³`. **La
+/// plus petite boîte utilisable croît donc avec l'éloignement de l'origine**, et
+/// c'est une limite de la bibliothèque, pas de ce calcul — à 512 unités, une
+/// demi-étendue sous un seizième d'unité n'a plus de jeu garanti.
+///
+/// **Ce que cela ne coûte pas : la couverture.** Le bord arrête une demi-marge
+/// plus tard, donc la **vraie** boîte reste à une demi-marge du solide, jamais
+/// dedans. Rien ne fuit, et la marge d'une face — celle que `scg_sweep_skin`
+/// rend — ne bouge pas.
+///
+/// Écartée : la même marge des deux côtés avec une comparaison stricte sur un
+/// plan parallèle au mouvement. Elle ne traite que la tangence **exacte**, que
+/// l'arrondi de la fraction manque, et la scène d'interrogation l'a refusée —
+/// cent trente-deux rayons y traversaient la surface qu'ils touchaient.
+pub(super) fn grown(half: Vec3d) -> Grown {
     let largest = max(max(half.x, half.y), half.z);
     let margin = largest * SKIN;
-    Vec3d::new(half.x + margin, half.y + margin, half.z + margin)
+    let rim = margin * 0.5;
+    Grown {
+        face: Vec3d::new(half.x + margin, half.y + margin, half.z + margin),
+        rim: Vec3d::new(half.x + rim, half.y + rim, half.z + rim),
+    }
 }
 
 /// Marque le départ dans le solide, et retient la surface la moins pénétrée.
@@ -469,7 +517,7 @@ pub(super) fn start_solid(
 /// que le parcours donne gratuitement en ne remplaçant jamais à égalité stricte.
 fn sweep_cell(
     cell: &Cell,
-    half: Vec3d,
+    half: Grown,
     from: Vec3d,
     to: Vec3d,
     surfaces: Surfaces,
@@ -502,7 +550,9 @@ fn sweep_cell(
         if portal.link.is_some() {
             continue;
         }
-        let Some((touch, plane)) = sweep_portal(portal, half, from, to) else {
+        // La marge pleine : un portail n'a que sa face, jamais de prisme, donc
+        // rien ici ne peut mordre un mobile qui le longe.
+        let Some((touch, plane)) = sweep_portal(portal, half.face, from, to) else {
             continue;
         };
         // **Aucune surface n'est nommée**, et c'est le patron de la troncature :
@@ -615,7 +665,7 @@ fn sweep_portal(
 fn sweep_surface(
     cell: &Cell,
     surface: &Surface,
-    half: Vec3d,
+    half: Grown,
     from: Vec3d,
     to: Vec3d,
 ) -> Option<Touch> {
@@ -637,15 +687,15 @@ fn sweep_surface(
         }
     };
 
-    keep(shape::face(&points, normal, anchor, half, from, to));
+    keep(shape::face(&points, normal, anchor, half.face, from, to));
     for i in 0..points.len() {
         if !surface.edge_is_exposed(i) {
             continue;
         }
         let a = points[i];
         let b = points[(i + 1) % points.len()];
-        keep(shape::edge(a, b, half, from, to));
-        keep(shape::vertex(a, half, from, to));
+        keep(shape::edge(a, b, half.rim, from, to));
+        keep(shape::vertex(a, half.rim, from, to));
     }
     best
 }

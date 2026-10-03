@@ -1934,6 +1934,20 @@ int32_t scg_world_sweep(const struct ScgWorld *world,
 // margin on an axis-aligned floor, √2 on a 45° ramp, up to √3 in a corner — which
 // is why a body floats a little further above a slope than above a flat floor.
 //
+// It is the margin of a **face**. The rim of a panel — the edge that ends it, the
+// corner where it stops — stops half a margin later, which is what lets a body
+// resting against a wall move along it instead of catching on the end of the very
+// panel it follows.
+//
+// **A box too small for where it stands keeps no gap at all**, and that is the one
+// limit this function forces a host to know. Re-placing a body at the returned
+// fraction goes through `float` positions, whose step is `|p| * 2^-24`: the gap
+// survives as long as the **largest** half extent stays above `|p| * 2^-13`. A
+// one-unit body is safe eight thousand units from the origin, a vehicle further —
+// speed does not enter, only smallness does. A ten-centimetre projectile runs out
+// at four hundred units, so a host firing those across a large level gives them a
+// wider box or moves its level closer to the origin.
+//
 // The value is not part of the contract and may change between versions; what it
 // means does not. Call it rather than caching it.
 //
