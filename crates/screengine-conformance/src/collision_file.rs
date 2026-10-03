@@ -10,7 +10,16 @@
 //! d'une boîte, un portail qui ne mène nulle part, une surface qui n'arrête rien.
 //! Les deux points de gel restent ainsi découplés.
 //!
-//! Les neuf cas, et ce que chacun éprouve que les autres n'éprouvent pas :
+//! Les dix cas, et ce que chacun éprouve que les autres n'éprouvent pas :
+//!
+//! - **la distance à l'origine du monde**, et c'est le seul cas qui soit une
+//!   propriété du **placement** du décor plutôt que de sa forme : il est posé à
+//!   [`ORIGIN_X`] et non en zéro. Le signe du volume d'une cellule se calculait
+//!   par une somme dont le résidu croît avec la distance, si bien qu'une cellule
+//!   éloignée retournait toutes ses normales et n'arrêtait plus rien — en zéro,
+//!   ce décor restait vert, et c'est un intégrateur qui l'a trouvé sur
+//!   soixante-quatre unités de côté. Vérifié en rétablissant le défaut : les deux
+//!   empreintes divergent désormais, là où elles ne bougeaient pas ;
 //!
 //! - **les coins rentrants** de la salle en L — cinq angles droits vus de
 //!   l'intérieur : leur arête partagée est éteinte au chargement, et une boîte
@@ -65,13 +74,49 @@ pub const CEILING_Z: f32 = 4.0;
 /// Le bit qui dit qu'une surface n'arrête aucun volume qui la balaie.
 const NON_SOLID: u32 = 0b100;
 
+/// De combien le décor est posé loin de l'origine du monde, sur `X`.
+///
+/// **Un décor à l'origine ne voit pas ce que la distance révèle**, et ce décor
+/// l'a montré deux fois : le signe du volume d'une cellule se calculait par une
+/// somme dont le résidu croît avec la distance, si bien qu'une cellule éloignée
+/// retournait toutes ses normales et n'arrêtait plus rien. Posé en zéro, ce décor
+/// restait vert — c'est l'intégrateur, sur soixante-quatre unités de côté, qui
+/// l'a trouvé. La distance est donc une propriété du décor, pas un détail de
+/// placement.
+///
+/// **Sur `X` seulement.** La rampe calcule la cote de son sol sur sa coordonnée
+/// `Y`, donc un décalage en `Y` ferait monter son sol d'autant. `X` porte la
+/// distance sans toucher la pente, et la somme des normales du décor y a une
+/// composante non nulle — c'est elle que le résidu amplifie.
+///
+/// **Une puissance de deux, entière**, pour deux raisons : la translation est
+/// alors exacte, donc les portails continuent de s'apparier au bit près ; et
+/// l'origine des repères de lightmap, qui est le zéro du monde, reste un nœud de
+/// leur grille — une translation fractionnaire ferait refuser la carte.
+pub const ORIGIN_X: f32 = 512.0;
+
+/// Une empreinte posée à [`ORIGIN_X`].
+///
+/// Les empreintes s'écrivent en coordonnées locales, qui se lisent, et la
+/// translation s'applique ici : elles sont lues par le générateur du décor **et**
+/// par le treillis de départs, et deux décalages à tenir accordés auraient fini
+/// par diverger.
+const fn placed<const N: usize>(mut points: [[f32; 2]; N]) -> [[f32; 2]; N] {
+    let mut i = 0;
+    while i < N {
+        points[i][0] += ORIGIN_X;
+        i += 1;
+    }
+    points
+}
+
 /// L'empreinte de la salle en L.
 ///
 /// Les sommets 2 et 3 sont colinéaires avec 1 et 4 : ils ne dessinent aucun coin
 /// et n'existent que pour porter l'arête du portail. Un polygone a le droit
 /// d'avoir des sommets alignés, et la triangulation par découpe d'oreilles les
 /// traverse sans rien en faire.
-pub const ROOM: [[f32; 2]; 8] = [
+pub const ROOM: [[f32; 2]; 8] = placed([
     [0.0, 0.0],
     [8.0, 0.0],
     [8.0, 2.0],
@@ -80,10 +125,10 @@ pub const ROOM: [[f32; 2]; 8] = [
     [4.0, 4.0],
     [4.0, 8.0],
     [0.0, 8.0],
-];
+]);
 
 /// L'empreinte du couloir étroit, large d'une unité.
-pub const CORRIDOR: [[f32; 2]; 4] = [[8.0, 2.0], [16.0, 2.0], [16.0, 3.0], [8.0, 3.0]];
+pub const CORRIDOR: [[f32; 2]; 4] = placed([[8.0, 2.0], [16.0, 2.0], [16.0, 3.0], [8.0, 3.0]]);
 
 /// L'empreinte de la cellule en U : une base et deux branches.
 ///
@@ -106,7 +151,7 @@ pub const CORRIDOR: [[f32; 2]; 4] = [[8.0, 2.0], [16.0, 2.0], [16.0, 3.0], [8.0,
 ///
 /// Les huit arêtes mesurent 8, 8, 2, 4, 4, 4, 2 et 8 unités : le carré de
 /// chacune est une puissance de deux, ce que le repère de lightmap exige.
-pub const BRANCHES: [[f32; 2]; 8] = [
+pub const BRANCHES: [[f32; 2]; 8] = placed([
     [0.0, 16.0],
     [8.0, 16.0],
     [8.0, 24.0],
@@ -115,7 +160,7 @@ pub const BRANCHES: [[f32; 2]; 8] = [
     [2.0, 20.0],
     [2.0, 24.0],
     [0.0, 24.0],
-];
+]);
 
 /// Le rang de l'arête de la salle qui porte le portail vers le couloir.
 const ROOM_PORTAL: usize = 2;
@@ -135,7 +180,7 @@ const CORRIDOR_PORTAL: usize = 3;
 /// la formule que les deux chemins partagent, l'égalité d'oracle ne le voyait pas ;
 /// seule une empreinte peut le dire, et seulement si un départ tombe dans la bande
 /// fautive, d'où les départs choisis de la scène.
-pub const RAMP: [[f32; 2]; 4] = [[24.0, 0.0], [32.0, 0.0], [32.0, 8.0], [24.0, 8.0]];
+pub const RAMP: [[f32; 2]; 4] = placed([[24.0, 0.0], [32.0, 0.0], [32.0, 8.0], [24.0, 8.0]]);
 
 /// La pente de la rampe : son sol monte d'une unité par unité le long de `Y`.
 ///

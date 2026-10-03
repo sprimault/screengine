@@ -46,6 +46,18 @@ publié, et explique les conventions du dépôt à qui y contribue.
 
 ## [Non publié]
 
+### Modifié
+- Le décor de conformance de la collision est **posé loin de l'origine du
+  monde**, ce qu'aucune de ses scènes n'éprouvait. Ses empreintes `collision` et
+  `selection` changent ; le rendu, lui, ne change pas.
+
+***
+
+### Changed
+- The collision conformance scenery now sits **far from the world origin**, which
+  none of its scenes exercised. Its `collision` and `selection` fingerprints
+  change; rendering does not.
+
 ## [0.8.4] — 2026-10-03 — Ce qui arrête un mobile
 
 **Rien à reprendre pour une liaison existante.** `SCG_ABI_VERSION` reste à 1,

@@ -11,6 +11,15 @@
 
 use super::*;
 
+/// Un point du décor, écrit en coordonnées locales de son empreinte.
+///
+/// Le décor est posé loin de l'origine du monde — voir `collision_file` —, et une
+/// coordonnée écrite en dur tomberait hors de toute cellule. Le test rougirait,
+/// mais sur « le point est dans le couloir » plutôt que sur ce qu'il éprouve.
+fn in_world(x: f32, y: f32, z: f32) -> Vec3 {
+    Vec3::new(collision_file::ORIGIN_X + x, y, z)
+}
+
 /// La taille d'un enregistrement haché, en octets.
 ///
 /// Ici plutôt qu'à côté de l'écriture, qui va champ par champ et n'a pas à la
@@ -84,13 +93,13 @@ fn les_trois_etats_sont_rencontres() {
 #[test]
 fn la_petite_boite_passe_le_couloir_et_la_grande_non() {
     let world = World::load(&collision_file::bytes()).expect("décor valide");
-    let inside = Vec3::new(11.0, 2.5, 1.0);
+    let inside = in_world(11.0, 2.5, 1.0);
     let cell = world.locate(inside);
     assert_eq!(cell, 8, "le point est dans le couloir");
 
     let small = Vec3::new(HALVES[0], HALVES[0], HALVES[0]);
     let large = Vec3::new(HALVES[1], HALVES[1], HALVES[1]);
-    let along = Vec3::new(15.0, 2.5, 1.0);
+    let along = in_world(15.0, 2.5, 1.0);
 
     let small_hit = world
         .sweep(cell, small, inside, along)
@@ -116,18 +125,18 @@ fn la_petite_boite_passe_le_couloir_et_la_grande_non() {
 #[test]
 fn le_plafond_non_solide_laisse_passer_et_le_sol_arrete() {
     let world = World::load(&collision_file::bytes()).expect("décor valide");
-    let inside = Vec3::new(11.0, 2.5, 1.0);
+    let inside = in_world(11.0, 2.5, 1.0);
     let cell = world.locate(inside);
     let half = Vec3::new(0.45, 0.45, 0.45);
 
     let up = world
-        .sweep(cell, half, inside, Vec3::new(11.0, 2.5, 11.0))
+        .sweep(cell, half, inside, in_world(11.0, 2.5, 11.0))
         .expect("cellule connue");
     assert_eq!(up.fraction, 1.0, "le plafond du couloir est non solide");
     assert_eq!(up.surface, 0);
 
     let down = world
-        .sweep(cell, half, inside, Vec3::new(11.0, 2.5, -9.0))
+        .sweep(cell, half, inside, in_world(11.0, 2.5, -9.0))
         .expect("cellule connue");
     assert!(down.fraction < 1.0, "le sol arrête");
     assert_ne!(down.surface, 0);
@@ -141,8 +150,8 @@ fn le_plafond_non_solide_laisse_passer_et_le_sol_arrete() {
 #[test]
 fn le_trajet_qui_franchit_le_portail_suit_la_force_brute() {
     let world = World::load(&collision_file::bytes()).expect("décor valide");
-    let from = Vec3::new(6.0, 2.5, 1.0);
-    let to = Vec3::new(15.0, 2.5, 1.0);
+    let from = in_world(6.0, 2.5, 1.0);
+    let to = in_world(15.0, 2.5, 1.0);
     let half = Vec3::new(0.45, 0.45, 0.45);
     let cell = world.locate(from);
     assert_eq!(cell, 7, "le départ est dans la salle");

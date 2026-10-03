@@ -160,7 +160,9 @@ fn chosen() -> Vec<Vec3> {
     for tenths in [60u32, 65, 70, 72, 75] {
         let y = f32::from(tenths as u16) / 10.0;
         let floor = collision_file::FLOOR_Z + y * collision_file::RAMP_RISE;
-        chosen.push(Vec3::new(28.0, y, floor + 1.0));
+        // L'abscisse suit l'origine du décor : écrite en dur, elle tomberait hors
+        // cellule et le cas de la face oblique se perdrait sans rien signaler.
+        chosen.push(Vec3::new(collision_file::ORIGIN_X + 28.0, y, floor + 1.0));
     }
     // **Posés au sol et face au portail**, et les deux conditions comptent : la
     // bande de dilatation seule ne dit rien si rien n'y franchit de seuil, et
@@ -168,8 +170,9 @@ fn chosen() -> Vec<Vec3> {
     // face. Les deux boîtes de la scène ont des marges différentes, donc les deux
     // cotes servent, et la troisième sort de la bande pour témoin.
     for lift in [0.0002f32, 0.0005, 0.002] {
-        chosen.push(Vec3::new(6.0, 2.5, collision_file::FLOOR_Z + 0.45 + lift));
-        chosen.push(Vec3::new(6.0, 2.5, collision_file::FLOOR_Z + 0.55 + lift));
+        let x = collision_file::ORIGIN_X + 6.0;
+        chosen.push(Vec3::new(x, 2.5, collision_file::FLOOR_Z + 0.45 + lift));
+        chosen.push(Vec3::new(x, 2.5, collision_file::FLOOR_Z + 0.55 + lift));
     }
     chosen
 }
