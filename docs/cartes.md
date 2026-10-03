@@ -273,6 +273,21 @@ atlas qui ne tient pas. Le pas se choisit en conséquence : les décors du dép�
 prennent un luxel par unité de monde, le même partout, ce qui aligne les grilles
 de deux surfaces coplanaires adjacentes.
 
+**La densité de plaquage borne de la même façon l'étendue d'une surface, et il
+faut le dire parce que le refus tombe ailleurs.** Les coordonnées de texture sont
+bornées à 16384 texels en valeur absolue : à 128 texels par unité de monde, une
+surface ne peut donc pas dépasser 128 unités de côté, et 64 à 256 texels par
+unité. Ce n'est pas une limite du moteur mais une conséquence de la densité
+choisie — un mur deux fois plus grand demande un plaquage deux fois plus grossier,
+ou sa coupe en deux surfaces.
+
+Le chargement ne rattrape que le décalage, jamais l'étendue : il ramène le
+**minimum** des coordonnées d'une surface dans `[0, 2048)`, si bien qu'une surface
+trop étendue garde un maximum hors borne. Et le refus ne tombe pas au chargement
+mais **à la soumission**, où il porte sur le décor entier : plus rien n'est dessiné
+cette image, et aucune surface n'est nommée. Un décor qui disparaît d'un coup sans
+message de chargement se cherche donc ici.
+
 ## Les matériaux
 
 | Champ | Type |

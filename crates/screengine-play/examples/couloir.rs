@@ -997,8 +997,8 @@ const WEAPON_DISTANCE: f32 = 0.35;
 /// occupe — et **jamais en pixels**, sans quoi elle changerait de taille avec
 /// la résolution interne, qui est un réglage.
 ///
-/// `0,075` pour `0,35` de distance sous-tend une douzaine de degrés de
-/// demi-angle, soit environ un tiers de la largeur de l'image. Le double,
+/// `0,12` pour `0,35` de distance sous-tend dix-neuf degrés de demi-angle, soit
+/// environ un tiers de la largeur de l'image au champ par défaut. Le double,
 /// essayé d'abord, en mangeait les deux tiers.
 const WEAPON_HALF: (f32, f32) = (0.12, 0.12);
 

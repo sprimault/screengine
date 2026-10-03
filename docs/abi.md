@@ -2296,7 +2296,7 @@ noms ne le sont pas.
 | 5 | ✓ rendu du monde depuis la caméra, suivi de sa cellule, calcul des lightmaps d'une cellule et reprise d'un cache |
 | 6 | ✓ modes d'écriture de pixel, quadrilatères orientés, trames, normale par sommet — voir « Étape 6 » |
 | 7 | ✓ balayage d'une boîte contre les cellules, utilisable sans contexte de rendu — voir « Étape 7 » |
-| 8 | tracé de lignes et de points, interrogation de la scène par le rayon, et la modification d'une carte, qui n'ajoute aucune fonction — voir « Étape 8 » |
+| 8 | ✓ tracé de lignes et de points, interrogation de la scène par le rayon, et la modification d'une carte, qui n'ajoute aucune fonction — voir « Étape 8 » |
 
 ## Ce qu'un auteur de liaison doit savoir
 

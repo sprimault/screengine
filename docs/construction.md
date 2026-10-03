@@ -146,8 +146,8 @@ sa conformance jouée **au tag**, où le paquet l'installe de toute façon.
 Le risque propre à x86 32 bits est la **x87**, dont les registres à 80 bits
 arrondissent deux fois. Rust l'évite en activant SSE2 sur ces cibles —
 `rustc --print cfg --target i686-pc-windows-msvc` le liste —, et les empreintes
-le confirment : les 27 scènes rendent les mêmes que sur toutes les autres
-cibles.
+le confirment : chaque scène de conformance y rend la même empreinte que sur
+toutes les autres cibles.
 
 ## Par cible
 
