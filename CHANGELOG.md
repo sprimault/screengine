@@ -46,6 +46,17 @@ publié, et explique les conventions du dépôt à qui y contribue.
 
 ## [Non publié]
 
+## [0.8.4] — 2026-10-03 — Ce qui arrête un mobile
+
+**Rien à reprendre pour une liaison existante.** `SCG_ABI_VERSION` reste à 1,
+aucune signature ne change, et le format des cartes et des maillages ne bouge
+pas. Une fonction s'ajoute, `scg_sweep_skin`.
+
+**Les résultats de collision changent**, et les empreintes `collision` et
+`selection` sont mises à jour. Un décor inchangé retient désormais un mobile là
+où il passait : un portail sans vis-à-vis arrête comme le mur qu'il est, et une
+cellule éloignée de l'origine du monde arrête de nouveau.
+
 ### Ajouté
 - `scg_sweep_skin` rend **de combien le balayage dilate une boîte**, ce qu'un
   hôte devait jusqu'ici recopier ou mesurer pour dimensionner une sonde. Une
@@ -66,6 +77,15 @@ publié, et explique les conventions du dépôt à qui y contribue.
   passer le pas. Il traversait alors les murs, et plus rien ne l'arrêtait.
 
 ***
+
+**Nothing to revisit in an existing binding.** `SCG_ABI_VERSION` stays at 1, no
+signature changes, and the map and mesh formats do not move. One function is
+added, `scg_sweep_skin`.
+
+**Collision results change**, and the `collision` and `selection` fingerprints
+are updated. Unchanged scenery now holds a body back where it used to pass
+through: a portal with no counterpart stops like the wall it is, and a cell far
+from the world origin stops again.
 
 ### Added
 - `scg_sweep_skin` reports **how much a sweep grows a box**, which a host had to
