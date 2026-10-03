@@ -1824,6 +1824,15 @@ erreur se lit par `scg_last_error(NULL)`, comme celle de `scg_world_locate`.
   solide »** que porte chaque surface de la carte. Un masque de collision — les
   couches que l'hôte croiserait — est une notion de jeu, et il se fait chez lui
   en balayant deux fois ou en ignorant un résultat.
+- **Un portail non apparié arrête, comme le mur qu'il est.** C'est lui qui garde
+  le volume d'une cellule fermé ; passable, il ferait sortir un mobile de la carte
+  sur un décor en cours d'édition, et plus rien ne le retiendrait — hors de toute
+  cellule, le balayage suivant rend un déplacement libre. Il ne nomme aucune
+  surface, n'en étant pas une : `surface_id` reste `0`, `cell_id` est celle du
+  portail, et la normale s'oppose au mouvement. Le filtre ne s'y applique pas,
+  puisqu'il porte sur le drapeau d'une surface. L'hôte qui veut au contraire
+  laisser tomber marque la surface « non solide », ce que ce drapeau existe pour
+  dire.
 
 #### `ScgSweepHit`
 
@@ -1834,11 +1843,25 @@ disposition de `ScgSprite`, et pour la même raison.
 - **Le moteur remplit une structure que l'hôte possède**, ce que le principe
   autorise explicitement depuis `scg_world_light` : ce qu'il interdit est une
   structure *rendue* par valeur ou par pointeur vers sa propre mémoire.
-- **Pas de champ « touché ».** `surface_id` vaut `0` quand rien n'est touché, et
-  `fraction` vaut alors `1`. Ce n'est pas une sentinelle inventée ici : le format
-  réserve déjà `0` à « aucun », et `cell_id` à `0` vaut déjà « aucune cellule »
-  dans l'ABI publiée. Un booléen aurait dit ce qu'un identifiant nul dit déjà, et
-  l'ABI n'a pas de `bool`.
+- **Pas de champ « touché ».** `surface_id` vaut `0` quand aucune surface n'est
+  nommée. Ce n'est pas une sentinelle inventée ici : le format réserve déjà `0` à
+  « aucun », et `cell_id` à `0` vaut déjà « aucune cellule » dans l'ABI publiée.
+  Un booléen aurait dit ce qu'un identifiant nul dit déjà, et l'ABI n'a pas de
+  `bool`.
+
+  **`surface_id` à `0` ne veut pas dire « libre »**, et c'est ce qu'une liaison
+  écrite de mémoire se trompera : trois cas distincts le rendent, que seuls la
+  fraction et le statut départagent.
+
+  | `surface_id` | `fraction` | Statut | Ce qui s'est passé |
+  |---|---|---|---|
+  | `0` | `1` | `SCG_OK` | rien sur le trajet, déplacement entier |
+  | `0` | `< 1` | `SCG_STATUS_INCOMPLETE` | tronqué au bord de la région examinée, rien de touché |
+  | `0` | `< 1` | `SCG_OK` | arrêté par un **portail non apparié** : un mur que la carte ne porte pas comme surface |
+  | `≠ 0` | `≤ 1` | quelconque | la surface nommée arrête, et son matériau se lit |
+
+  Le critère qui tient dans tous les cas est donc `fraction < 1`, jamais
+  `surface_id ≠ 0`.
 - **`point` figure dès la publication**, et c'est la clause des trois décalages
   de `ScgGrade` : trois flottants ne tiendraient jamais dans deux champs
   réservés, et un point de contact n'a pas zéro pour neutre — il aurait donc

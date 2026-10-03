@@ -514,6 +514,69 @@ fn la_fraction_reste_dans_ses_bornes() {
     }
 }
 
+/// **Aucune composante du résultat ne porte un zéro négatif ni un `NaN`.**
+///
+/// `docs/rust.md` annonçait cette clause « tenue par un test qui inspecte les
+/// bits », et aucun test ne le faisait : celui des bornes de la fraction compare
+/// des valeurs, et `-0,0 == 0,0` est vrai. C'est donc une clause qui tenait par
+/// chance, et le premier chemin qui niait un vecteur l'aurait rompue en silence.
+///
+/// Ce qu'elle protège : une empreinte hache des motifs de bits, donc deux
+/// résultats mathématiquement égaux dont l'un porte un zéro négatif rendent deux
+/// empreintes. Une cible qui en produirait là où une autre n'en produit pas ferait
+/// diverger la conformance sans qu'aucun calcul soit faux — le pire cas à
+/// instruire, puisque les deux résultats se lisent identiques.
+///
+/// **La chaîne plutôt que la salle**, et c'est ce qui donne sa portée au test :
+/// ses deux bouts sont des portails non appariés, donc des murs dont la normale
+/// est **retournée** quand le mouvement l'exige. C'est exactement l'opération d'où
+/// un zéro négatif sort.
+#[test]
+fn le_resultat_ne_porte_ni_zero_negatif_ni_nan() {
+    let world = chain(3);
+    let mut rng = Rng::new(0x00D0_0E57_0000_0003);
+
+    for round in 0..512 {
+        let from = Vec3d::new(
+            f64::from(rng.coord(-2, 14)),
+            f64::from(rng.coord(-2, 6)),
+            f64::from(rng.coord(-2, 6)),
+        );
+        let to = Vec3d::new(
+            from.x + f64::from(rng.coord(-12, 12)),
+            from.y + f64::from(rng.coord(-12, 12)),
+            from.z + f64::from(rng.coord(-12, 12)),
+        );
+        let side = f64::from(rng.coord(0, 6)) * 0.25;
+        let half = Vec3d::new(side, side, side);
+
+        for cell in [1, 2, 3] {
+            let Some(hit) = sweep(&world, cell, half, from, to) else {
+                continue;
+            };
+            for (name, value) in [
+                ("fraction", hit.fraction),
+                ("normal.x", hit.normal.x),
+                ("normal.y", hit.normal.y),
+                ("normal.z", hit.normal.z),
+                ("point.x", hit.point.x),
+                ("point.y", hit.point.y),
+                ("point.z", hit.point.z),
+            ] {
+                assert!(
+                    !value.is_nan(),
+                    "tour {round}, cellule {cell} : {name} est NaN, graine 0xD00E570000000003"
+                );
+                assert!(
+                    value != 0.0 || value.to_bits() == 0,
+                    "tour {round}, cellule {cell} : {name} est un zéro négatif, \
+                     graine 0xD00E570000000003"
+                );
+            }
+        }
+    }
+}
+
 /// Une enfilade de `count` cubes de quatre unités, alignés sur `X`.
 ///
 /// **Toutes les coordonnées sont des multiples de quatre**, et c'est ce qui fait
@@ -630,6 +693,34 @@ fn une_chaine_au_dela_de_la_borne_tronque_le_deplacement() {
     assert_ne!(cell, 0, "le point d'arrêt est dans une cellule");
     let again = sweep(&world, cell, half, landed, landed).expect("cellule connue");
     assert!(!again.start_solid, "et il n'est pas dans un mur");
+}
+
+/// **Un portail non apparié arrête le balayage**, comme le ferait un mur.
+///
+/// C'est le mot du format — « un portail non apparié est un mur » — et c'est ce
+/// qui garde la cellule fermée : passable, il ferait tomber un mobile hors du
+/// monde sur une carte en cours d'édition. Aucun contrôle ne l'éprouvait, et
+/// [`chain`] en porte deux, un à chaque bout.
+#[test]
+fn un_portail_non_apparie_arrete_le_balayage() {
+    let world = chain(1);
+    let half = Vec3d::new(0.5, 0.5, 0.5);
+    let from = Vec3d::new(2.0, 2.0, 2.0);
+    // Droit vers le bout de la chaîne, dont le portail n'a pas de voisin.
+    let to = Vec3d::new(10.0, 2.0, 2.0);
+
+    let hit = sweep(&world, 1, half, from, to).expect("cellule connue");
+
+    assert!(
+        hit.fraction < 1.0,
+        "le portail non apparié retient la boîte, fraction {}",
+        hit.fraction
+    );
+    let centre = from + (to - from) * f64::from(hit.fraction);
+    assert!(
+        centre.x + half.x <= 4.0,
+        "et elle reste dans la cellule : {centre:?}"
+    );
 }
 
 /// Une chaîne d'une seule cellule ne rend jamais une fraction négative.

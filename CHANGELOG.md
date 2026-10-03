@@ -49,12 +49,20 @@ publié, et explique les conventions du dépôt à qui y contribue.
 ### Corrigé
 - Un **départ dans le solide** garde sa fraction nulle et la normale de la
   surface qui pénètre, même quand le mouvement sort de la cellule de départ.
+- Le balayage et l'interrogation **s'arrêtent sur un portail non apparié**, qui
+  est un mur. Ils le traversaient, et un mobile sortait de la carte. Aucune
+  surface n'est nommée : `surface_id` reste nul, donc le critère est
+  `fraction < 1`. Les empreintes `collision` et `selection` changent.
 
 ***
 
 ### Fixed
 - A **start inside solid geometry** keeps its zero fraction and the normal of
   the penetrating surface, even when the motion leaves the starting cell.
+- Sweeps and picks now **stop at an unlinked portal**, which is a wall. They went
+  through it, and a moving body left the map. No surface is named: `surface_id`
+  stays zero, so the test is `fraction < 1`. The `collision` and `selection`
+  fingerprints change.
 
 ## [0.8.3] — 2026-10-02 — Les surfaces obliques
 
