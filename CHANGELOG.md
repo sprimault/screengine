@@ -46,6 +46,16 @@ publié, et explique les conventions du dépôt à qui y contribue.
 
 ## [Non publié]
 
+### Ajouté
+- Le décor de validation se regarde depuis deux poses de plus, à moins d'un plan
+  proche d'un portail. L'empreinte `salles` change en conséquence, le rendu non.
+
+***
+
+### Added
+- The validation level is now viewed from two more poses, closer to a portal than
+  the near plane. The `salles` fingerprint changes accordingly; rendering does not.
+
 ## [0.8.6] — 2026-10-03 — Le seuil, pour de bon
 
 **Rien à reprendre pour une liaison existante.** `SCG_ABI_VERSION` reste à 1,
