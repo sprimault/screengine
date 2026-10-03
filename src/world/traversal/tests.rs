@@ -200,6 +200,43 @@ fn un_portail_mene_a_la_cellule_voisine() {
     );
 }
 
+/// **Un portail que le plan proche atteint mène quand même à sa voisine.**
+///
+/// Remonté d'un intégrateur : en marchant dans un labyrinthe, une bande verticale
+/// du champ de vision se vide de tout décor — les sprites y restent dessinés, donc
+/// c'est la traversée qui perd une cellule, pas le remplissage. La condition est
+/// l'approche du **plan d'un portail**, jamais le milieu d'une case, et la
+/// traversée annonce pourtant avoir tout déplié.
+///
+/// Ce que sa mesure ajoute et qui désigne le plan proche : le phénomène suit
+/// `near`. À 0,1 il survient vingt-neuf fois par parcours, à 0,01 neuf fois, à
+/// 0,001 jamais — et descendre plus bas n'est pas une sortie, la profondeur se
+/// rangeant en `near/w` et un mur approché se mettant à vibrer. Le réglage est
+/// donc borné des deux côtés, ce qui en fait un défaut du moteur.
+///
+/// Le cas place l'œil à la distance où le plan du portail tombe **sur** le plan
+/// proche. La voisine doit rester visible : on la voit alors par presque tout
+/// l'écran, et c'est le moment où la perdre se voit le plus.
+#[test]
+fn un_portail_au_plan_proche_mene_quand_meme_a_la_voisine() {
+    let world = World::load(&two_cells()).expect("carte valide");
+
+    // Le portail est en `x = 8`, le plan proche à `0.1` de l'œil : la tangence
+    // est donc en `7.9`. Les deux voisines encadrent le cas, qui ne tient qu'à
+    // quelques millièmes d'unité.
+    for x in [7.85f32, 7.9, 7.95] {
+        let mut out = visits();
+        let truncated = traverse(&world, 0, full(), at(x), &projection(), &mut out);
+
+        assert_eq!(
+            out.len(),
+            2,
+            "x={x} : la voisine manque, et la traversée dit {}",
+            if truncated { "tronqué" } else { "complet" }
+        );
+    }
+}
+
 /// Les visites sortent dans l'ordre des index de cellules.
 ///
 /// C'est l'ordre du fichier, celui qui départage deux surfaces coplanaires : en

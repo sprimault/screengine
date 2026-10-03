@@ -46,6 +46,11 @@ publié, et explique les conventions du dépôt à qui y contribue.
 
 ## [Non publié]
 
+### Corrigé
+- Un **portail approché de moins d'un plan proche** laisse voir la cellule
+  d'en face. Il la perdait, ou n'en montrait qu'une part : une bande du champ se
+  vidait de tout décor à chaque embrasure franchie.
+
 ### Ajouté
 - Le décor de conformance de la collision gagne une **cage d'escalier** : douze
   marches, vingt-neuf surfaces, un plafond qui suit la pente. Elle couvre les
@@ -58,6 +63,11 @@ publié, et explique les conventions du dépôt à qui y contribue.
   `selection` changent ; le rendu, lui, ne change pas.
 
 ***
+
+### Fixed
+- A **portal approached closer than the near plane** now lets the cell beyond it
+  be seen. It was lost, or only partly shown: a band of the view emptied of all
+  scenery at every doorway crossed.
 
 ### Added
 - The collision conformance scenery gains a **stairwell**: twelve steps,
