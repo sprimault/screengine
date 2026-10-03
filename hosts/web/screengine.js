@@ -227,6 +227,7 @@ export const EXPORTS = [
   "scg_world_sweep",
   "scg_world_pick",
   "scg_world_surface_material",
+  "scg_sweep_skin",
   "scg_lighting_create",
   "scg_lighting_destroy",
   "scg_lighting_build",

@@ -68,6 +68,40 @@ pub const SWEEP_CELLS: usize = 64;
 /// intervalle** de valeurs, jamais sur celle-ci.
 const SKIN: f64 = 1.0 / 1024.0;
 
+/// De combien le balayage dilate une boîte de ces demi-étendues.
+///
+/// **Le jeu résiduel qu'un hôte ne peut pas deviner.** Le temps rendu place la
+/// boîte juste avant le contact, jamais dessus, et un hôte qui écrit une sonde
+/// « suis-je posé » a besoin de l'ordre de grandeur de ce jeu pour choisir la
+/// longueur de sa sonde et son seuil. Sans cette fonction, il n'avait que deux
+/// voies : recopier la constante, ou la mesurer.
+///
+/// **Une fonction plutôt que la constante**, parce que ce qui se recopie de
+/// travers n'est pas sa valeur mais sa **clause** : le facteur porte sur la plus
+/// grande demi-étendue et non sur chacune, de sorte qu'une boîte plate — un
+/// disque, une lame — ne garde pas une épaisseur nulle que rien ne séparerait du
+/// sol. Un hôte qui recopierait le nombre sans cette règle se tromperait sur
+/// exactement les boîtes où elle compte.
+///
+/// Ce qu'elle rend est la marge **le long de chaque axe**. Le jeu réel le long
+/// d'une normale vaut cette marge multipliée par la somme des valeurs absolues de
+/// cette normale : une marge sur un sol axial, √2 sur une rampe à 45°, jusqu'à √3
+/// sur un coin — c'est pourquoi un mobile décolle un peu plus d'une pente que
+/// d'un plancher.
+///
+/// Des demi-étendues négatives ou non finies n'ont pas de marge ; la frontière
+/// les refuse avant d'appeler, et le chemin Rust rend alors zéro.
+pub fn sweep_skin(half_extents: Vec3) -> f32 {
+    let half = Vec3d::from(half_extents);
+    let largest = max(max(half.x, half.y), half.z);
+    // `is_nan` d'abord : toute comparaison avec lui est fausse, et un refus écrit
+    // `largest <= 0.0` le laisserait passer jusqu'à la multiplication.
+    if largest.is_nan() || largest <= 0.0 {
+        return 0.0;
+    }
+    (largest * SKIN) as f32
+}
+
 /// Quelles surfaces une interrogation voit.
 ///
 /// **Le balayage et la sélection ne regardent pas le même décor**, et c'est la

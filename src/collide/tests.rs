@@ -636,6 +636,58 @@ fn un_portail_sans_arete_partagee_se_charge_quand_meme() {
     assert!(hit.fraction <= 1.0, "fraction {}", hit.fraction);
 }
 
+/// **La marge annoncée dimensionne vraiment une sonde.**
+///
+/// C'est tout ce qu'un hôte lui demande, et il faut l'énoncer en ces termes
+/// plutôt qu'en égalité : la marge vit en `f64` dans le balayage et sort en `f32`
+/// par la frontière, donc la valeur annoncée est l'arrondi de celle appliquée. Une
+/// égalité stricte tiendrait à un bit et casserait au premier réglage de la
+/// constante — ce que les tests de ce module s'interdisent précisément.
+///
+/// Ce qui est éprouvé : le jeu que le balayage laisse est strictement positif, et
+/// il tient sous **deux fois** la marge annoncée. Une sonde de cette longueur
+/// atteint donc toujours le sol sur lequel le mobile vient d'être posé.
+#[test]
+fn la_marge_annoncee_dimensionne_une_sonde() {
+    let world = room(0);
+    for half in [
+        Vec3d::new(0.5, 0.5, 0.5),
+        Vec3d::new(0.3, 0.3, 0.9),
+        // Plate : le facteur porte sur la plus grande demi-étendue, donc même
+        // une épaisseur nulle reçoit une marge — sans quoi rien ne séparerait
+        // jamais une lame du sol qu'elle touche.
+        Vec3d::new(2.0, 2.0, 0.0),
+    ] {
+        let margin = f64::from(super::sweep_skin(to_f32(half)));
+        assert!(margin > 0.0, "une marge nulle pour {half:?}");
+
+        // Posé sur le sol `z = 0` de la salle, par le balayage lui-même.
+        let from = Vec3d::new(4.0, 4.0, 4.0);
+        let to = Vec3d::new(4.0, 4.0, -4.0);
+        let hit = sweep(&world, 7, half, from, to).expect("cellule connue");
+        let landed = from + (to - from) * f64::from(hit.fraction);
+        let gap = landed.z - half.z;
+
+        assert!(gap > 0.0, "{half:?} : la boîte touche le sol, jeu {gap}");
+        assert!(
+            gap <= 2.0 * margin,
+            "{half:?} : jeu {gap} au-delà de deux marges de {margin}"
+        );
+    }
+}
+
+/// Une boîte sans étendue n'a pas de marge, et un `NaN` non plus.
+///
+/// Le rayon n'est pas dilaté — c'est une clause publiée —, donc sa marge est
+/// nulle ; et `NaN` est écarté nommément, faute de quoi il traverserait la
+/// comparaison de bornes pour ressortir du produit.
+#[test]
+fn une_boite_sans_etendue_n_a_pas_de_marge() {
+    assert_eq!(super::sweep_skin(Vec3::ZERO), 0.0);
+    assert_eq!(super::sweep_skin(Vec3::new(f32::NAN, 0.0, 0.0)), 0.0);
+    assert_eq!(super::sweep_skin(Vec3::new(-1.0, -1.0, -1.0)), 0.0);
+}
+
 /// **Aucune composante du résultat ne porte un zéro négatif ni un `NaN`.**
 ///
 /// `docs/rust.md` annonçait cette clause « tenue par un test qui inspecte les

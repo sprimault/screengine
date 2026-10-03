@@ -1918,6 +1918,31 @@ int32_t scg_world_sweep(const struct ScgWorld *world,
                         const float *to,
                         struct ScgSweepHit *out);
 
+// Writes to `out` how much a sweep grows a box of these half extents.
+//
+// **The residual gap a host cannot guess.** A sweep places the box just short of
+// contact, never on it, and a host writing a "am I standing on ground" probe
+// needs the order of magnitude of that gap to choose its length and threshold.
+//
+// A function rather than a constant, because what gets copied wrong is not the
+// value but the rule: the factor applies to the **largest** half extent, not to
+// each of them, so that a flat box — a disc, a blade — does not keep a zero
+// thickness that nothing would ever separate from the floor.
+//
+// What it writes is the margin **along each axis**. The real gap along a surface
+// normal is that margin times the sum of the absolute values of that normal: one
+// margin on an axis-aligned floor, √2 on a 45° ramp, up to √3 in a corner — which
+// is why a body floats a little further above a slope than above a flat floor.
+//
+// The value is not part of the contract and may change between versions; what it
+// means does not. Call it rather than caching it.
+//
+// # Safety
+//
+// `half_extents` must point to three readable floats, each finite and zero or
+// greater, and `out` must point to a writable `float`.
+int32_t scg_sweep_skin(const float *half_extents, float *out);
+
 // Picks the scene with a ray from `from` to `to`, starting in `from_cell`.
 //
 // **This is the sweep of a zero-extent box**, and one function for both: a ray

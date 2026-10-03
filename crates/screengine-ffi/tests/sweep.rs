@@ -548,3 +548,43 @@ fn l_interrogation_refuse_les_pointeurs_nuls() {
     // SAFETY: handle vivant, détruit une seule fois.
     unsafe { scg_world_destroy(world) };
 }
+
+/// La marge de dilatation se lit par la frontière, et refuse ce que le balayage
+/// refuse.
+///
+/// Elle existe parce que le contrat annonçait la boîte « posée juste avant le
+/// contact » sans rendre ce jeu lisible : un hôte n'avait qu'à recopier la
+/// constante ou la mesurer. Ce test éprouve ce qu'un hôte en attend — une valeur
+/// strictement positive pour une boîte réelle, nulle pour un rayon — et que ses
+/// refus sont ceux du balayage, par le même lecteur de demi-étendues.
+#[test]
+fn la_marge_se_lit_et_refuse_ce_que_le_balayage_refuse() {
+    let mut margin = -1.0f32;
+    let half = [0.3f32, 0.3, 0.9];
+
+    // SAFETY: trois flottants lisibles et une sortie inscriptible.
+    let code = unsafe { scg_sweep_skin(half.as_ptr(), &mut margin) };
+    assert_eq!(code, SCG_OK);
+    assert!(margin > 0.0, "marge {margin}");
+
+    // Le rayon n'est pas dilaté : clause publiée, et la marge le dit.
+    let mut zero = -1.0f32;
+    // SAFETY: idem.
+    let code = unsafe { scg_sweep_skin([0.0f32; 3].as_ptr(), &mut zero) };
+    assert_eq!(code, SCG_OK);
+    assert_eq!(zero, 0.0);
+
+    // SAFETY: la sortie est nulle, ce que l'appel doit refuser.
+    let code = unsafe { scg_sweep_skin(half.as_ptr(), ptr::null_mut()) };
+    assert_eq!(code, SCG_ERR_NULL);
+
+    // SAFETY: les demi-étendues sont nulles, même refus.
+    let code = unsafe { scg_sweep_skin(ptr::null(), &mut margin) };
+    assert_eq!(code, SCG_ERR_NULL);
+
+    // SAFETY: une demi-étendue négative est une faute d'appel, comme pour le
+    // balayage et par le même lecteur.
+    let code = unsafe { scg_sweep_skin([-1.0f32, 0.0, 0.0].as_ptr(), &mut margin) };
+    assert_eq!(code, SCG_ERR_INVALID_ARGUMENT);
+    assert!(!last_error().is_empty(), "le refus dit pourquoi");
+}

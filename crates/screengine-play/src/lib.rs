@@ -51,9 +51,11 @@ pub use screengine;
 // le rater.
 //
 // Le critère d'entrée est le **vocabulaire qu'un hôte écrit**, et non ce que la
-// surface de ce crate oblige à nommer : `Hit`, `Surfaces` et `SWEEP_CELLS` ne
-// figurent dans aucune signature d'ici, et un hôte qui déplace un personnage les
-// écrit tous les trois. Ce que la surface impose en fait partie — `Context` est le
+// surface de ce crate oblige à nommer : `Hit`, `Surfaces`, `SWEEP_CELLS` et
+// `sweep_skin` ne figurent dans aucune signature d'ici, et un hôte qui déplace un
+// personnage les écrit tous les quatre. Le dernier y est entré sur le constat d'un
+// intégrateur, qui consommait ce crate et non le header : une fonction d'ABI seule
+// ne lui aurait rien rendu de lisible. Ce que la surface impose en fait partie — `Context` est le
 // paramètre des rappels de rendu, `Visibility` ce que rend `submit_world_visible`,
 // les deux capacités sont les défauts des budgets que `Play` règle — mais ne
 // l'épuise pas, et l'annoncer comme le critère laissait trois entrées hors de lui.
@@ -65,7 +67,7 @@ pub use screengine;
 pub use screengine::{
     Affine3, Angle, Camera, Color, Context, DepthMode, Filter, Hit, LINE_CAPACITY, Light, Lightmap,
     Lightmaps, Line, Mesh, Point, Quat, SWEEP_CELLS, Sprite, SpriteOrientation, Surfaces,
-    TRIANGLE_CAPACITY, Texture, Triangle, Vec3, VertexUv, VertexUv2, Visibility, World,
+    TRIANGLE_CAPACITY, Texture, Triangle, Vec3, VertexUv, VertexUv2, Visibility, World, sweep_skin,
 };
 pub use texture::{load_png, load_png_masked};
 pub use winit::event::MouseButton;

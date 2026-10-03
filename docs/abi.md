@@ -1767,7 +1767,9 @@ règle se devinait jusqu'à présent sans être énoncée.
 
 ### Étape 7
 
-**Deux fonctions, une structure, une constante et un statut.** Aucune signature
+**Trois fonctions, une structure, une constante et un statut** — la troisième,
+`scg_sweep_skin`, ajoutée après la publication de l'étape sur le constat d'un
+intégrateur, comme `scg_world_light_id` l'avait été à l'étape 4. Aucune signature
 publiée, aucune structure, aucune précondition ne bouge : `SCG_ABI_VERSION` reste
 à **1**, et `version_format` non plus — le bit « non solide » d'une surface est
 défini et accepté par le chargeur depuis l'étape 4, il reçoit ici son premier
@@ -2010,6 +2012,46 @@ mutant, mais le balayage n'y touche pas.
 
 Détruire la carte pendant un balayage reste une précondition, jamais un cas
 d'erreur.
+
+#### `scg_sweep_skin`
+
+```c
+int32_t scg_sweep_skin(const float half_extents[3], float *out);
+```
+
+Ajoutée après la publication de l'étape, sur le constat d'un intégrateur : le
+contrat annonçait que « le temps rendu place la boîte juste avant le contact,
+jamais dessus » sans que la marge soit lisible nulle part. Un hôte qui écrit une
+sonde « suis-je posé » a besoin de son ordre de grandeur pour en choisir la
+longueur et le seuil, et il n'avait que deux voies — recopier la valeur, ou la
+mesurer.
+
+Elle refuse exactement ce que `scg_world_sweep` refuse de ses demi-étendues, par
+le même lecteur, et son erreur se lit par `scg_last_error(NULL)`.
+
+- **Une fonction et non une constante**, alors que `SCG_SWEEP_CELLS` en est une.
+  Ce qui se recopie de travers n'est pas la valeur mais la **clause** : le facteur
+  porte sur la **plus grande** demi-étendue et non sur chacune, de sorte qu'une
+  boîte plate — un disque, une lame — ne garde pas une épaisseur nulle que rien ne
+  séparerait du sol. Un hôte qui recopierait le nombre sans cette règle se
+  tromperait sur exactement les boîtes où elle compte. Et une fonction se résout à
+  l'édition de liens, là où une liaison sans préprocesseur recopie les constantes
+  à la main et en a toujours en retard.
+
+  Écartées pour cette raison : la fraction en constante flottante, qui aurait été
+  la première du header, et son exposant en entier — les deux laissent la clause
+  dehors.
+- **Ce qu'elle rend est la marge le long de chaque axe.** Le jeu réel le long
+  d'une normale vaut cette marge multipliée par la somme des valeurs absolues de
+  cette normale : une marge sur un sol axial, √2 sur une rampe à 45°, jusqu'à √3
+  dans un coin. C'est ce qui fait qu'un mobile posé flotte un peu plus au-dessus
+  d'une pente que d'un plancher, et un hôte qui dimensionne sa sonde sur le sol
+  plat la trouvera courte en pente.
+- **La valeur ne fait pas partie du contrat, son sens oui.** Elle peut changer
+  d'une version à l'autre, comme toute borne dont « ce qu'elle rend quand on
+  l'atteint est un contrat ». Un hôte l'appelle plutôt que de la mettre en cache.
+- **Elle ne prend pas de carte**, la marge n'en dépendant pas, et elle est
+  appelable depuis n'importe quel thread.
 
 #### `scg_world_surface_material`
 
