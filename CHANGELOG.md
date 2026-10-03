@@ -46,6 +46,18 @@ publié, et explique les conventions du dépôt à qui y contribue.
 
 ## [Non publié]
 
+### Corrigé
+- Un portail **dont un bord est passé derrière l'œil** laisse voir la cellule
+  d'en face. La 0.8.5 n'avait corrigé que le cas du portail vu de face : de biais,
+  une bande du champ se vidait encore de tout décor.
+
+***
+
+### Fixed
+- A portal **with one edge behind the eye** now lets the cell beyond it be seen.
+  0.8.5 had only fixed the head-on case: at an angle, a band of the view still
+  emptied of all scenery.
+
 ## [0.8.5] — 2026-10-03 — Le seuil d'une porte
 
 **Rien à reprendre pour une liaison existante.** `SCG_ABI_VERSION` reste à 1,

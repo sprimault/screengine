@@ -203,9 +203,11 @@ pub(crate) fn reduce(
 
     let limits = Bounds::of(window);
     let mut bounds = Bounds::EMPTY;
-    // Un sommet devant l'œil mais en deçà du plan proche : voir la clause en fin
-    // de fonction, c'est elle qui décide du résultat.
-    let mut too_close = false;
+    // **Deux drapeaux sur le portail entier, et non par sommet ni par triangle** :
+    // la clause de fin les croise, et deux triangles de l'éventail peuvent porter
+    // chacun une moitié de la condition sans qu'aucun ne porte les deux.
+    let mut ahead = false;
+    let mut near_side = false;
 
     for i in 1..points.len() - 1 {
         let corners = [points[0], points[i], points[i + 1]];
@@ -229,9 +231,10 @@ pub(crate) fn reduce(
             continue;
         }
 
-        too_close |= homogeneous.iter().any(|vertex| {
-            vertex.w > 0.0 && projection.frustum().distance(*vertex, NEAR_PLANE) < 0.0
-        });
+        for vertex in &homogeneous {
+            ahead |= vertex.w > 0.0;
+            near_side |= projection.frustum().distance(*vertex, NEAR_PLANE) < 0.0;
+        }
 
         let polygon = clip(homogeneous, projection.frustum());
         for t in 0..polygon.triangle_count() {
@@ -257,14 +260,24 @@ pub(crate) fn reduce(
     // jusqu'à l'écran entier au moment de le passer. La réponse sûre est donc la
     // fenêtre reçue, inchangée.
     //
-    // **Le test porte sur `w > 0` autant que sur la distance au plan**, et les
-    // deux comptent : un portail entièrement derrière l'œil a lui aussi des
-    // sommets du mauvais côté du plan proche, et celui-là doit bien continuer de
-    // vider la fenêtre — on l'a passé, on ne le franchit pas.
+    // **Les deux drapeaux se croisent, et aucun ne suffit seul.** `near_side` dit
+    // qu'un sommet est en deçà du plan proche, ce qui est vrai aussi d'un portail
+    // entièrement derrière l'œil — celui-là doit bien continuer de vider la
+    // fenêtre, on l'a passé, on ne le franchit pas. `ahead` dit qu'un sommet est
+    // devant l'œil. Ensemble ils retiennent les trois cas qui comptent : le
+    // portail tout entier entre l'œil et le plan proche, celui que le plan coupe,
+    // et celui dont l'œil est presque dans le plan — un bord devant, l'autre
+    // derrière.
+    //
+    // **Ce dernier est celui qu'une première écriture a manqué**, en exigeant d'un
+    // même sommet qu'il soit devant l'œil *et* en deçà du plan : le bord derrière
+    // l'œil a une profondeur négative, donc la clause ne voyait rien et le
+    // découpage amputait la fenêtre comme avant. Mesuré chez un intégrateur,
+    // inchangé au pixel près sur cinq écarts au plan.
     //
     // La monotonie de la réduction, dont la traversée a besoin pour terminer, est
     // préservée : on rend la fenêtre reçue, jamais plus large.
-    if too_close {
+    if ahead && near_side {
         return window;
     }
 
