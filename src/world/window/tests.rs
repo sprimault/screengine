@@ -82,6 +82,72 @@ fn un_portail_de_face_reduit_la_fenetre_a_son_rectangle() {
     );
 }
 
+/// **Un portail que le plan proche atteint laisse voir, et largement.**
+///
+/// Le cas d'un intégrateur, ramené au seul calcul qui le décide : en marchant, une
+/// bande du champ se vidait de tout décor dès que l'œil approchait du plan d'un
+/// portail, et le phénomène suivait `near` — vingt-neuf épisodes à 0,1, aucun à
+/// 0,001. Descendre n'était pas une sortie, la profondeur se rangeant en `near/w`.
+///
+/// Ce que la géométrie impose : plus l'œil est près du plan d'un portail, **plus
+/// large** est ce qu'on voit à travers, jusqu'à l'écran entier quand on le
+/// franchit. Une fenêtre qui se referme là est donc fausse dans le sens le pire,
+/// celui qui troue l'image.
+///
+/// Les trois distances encadrent la tangence au plan proche, où le polygone
+/// découpé dégénère : c'est à quelques millièmes d'unité que tout se joue.
+#[test]
+fn un_portail_au_plan_proche_laisse_voir_largement() {
+    for distance in [0.15f32, 0.1, 0.05] {
+        let window = reduce(full(), &facing(distance, 2.0), neutral(), &projection());
+
+        assert!(
+            window.width > 0 && window.height > 0,
+            "distance {distance} : la fenêtre s'est refermée sur un portail \
+             qu'on est en train de franchir"
+        );
+        assert_eq!(
+            window.width, WIDTH,
+            "distance {distance} : à cette distance le portail couvre l'écran"
+        );
+    }
+}
+
+/// **Un portail dont un bord seulement passe le plan proche ne réduit rien non
+/// plus**, et c'est le second régime du même défaut.
+///
+/// Celui-là est le plus trompeur des deux : le découpage ne vide pas la fenêtre,
+/// il l'**ampute** du côté qui a été emporté. La traversée garde donc la cellule
+/// d'en face, mais par une fenêtre trop étroite — une bande du champ se vide au
+/// lieu d'un pan entier, et c'est exactement ce qu'un intégrateur décrit en
+/// parlant d'« une bande dont la largeur suit l'orientation de la caméra ».
+///
+/// Ce que ses mesures ont apporté : des épisodes relevés **au-delà** de `near`,
+/// jusqu'à 0,110 pour un plan proche de 0,1. Un portail vu de face ne peut pas les
+/// produire — il est tout entier d'un côté —, mais un portail vu de biais, si : un
+/// de ses bords passe le plan quand son centre ne l'a pas encore atteint.
+///
+/// Ce qui est visible à travers la part trop proche n'est pas rien : elle est en
+/// deçà du plan de projection, donc ce qu'elle cache occupe l'écran sans borne. La
+/// seule réponse sûre est de rendre la fenêtre reçue.
+#[test]
+fn un_portail_de_biais_au_plan_proche_ne_reduit_rien() {
+    // Le bord gauche est à `0.05` de l'œil, donc en deçà du plan proche ; le
+    // droit à trois unités, donc bien au-delà. Un plan, et convexe.
+    let oblique = [
+        Vec3::new(0.05, -2.0, -2.0),
+        Vec3::new(3.0, 2.0, -2.0),
+        Vec3::new(3.0, 2.0, 2.0),
+        Vec3::new(0.05, -2.0, 2.0),
+    ];
+    let window = reduce(full(), &oblique, neutral(), &projection());
+
+    assert_eq!(
+        window.width, WIDTH,
+        "un bord passé le plan proche ampute la fenêtre : {window:?}"
+    );
+}
+
 /// Un portail plus grand que l'image ne réduit rien.
 ///
 /// Le cas compte parce qu'il est celui de la cellule où vit la caméra : ses

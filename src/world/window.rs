@@ -28,7 +28,7 @@
 #![allow(dead_code)]
 
 use crate::math::fixed::SUBPIXEL_SCALE;
-use crate::math::projection::ClipVertex;
+use crate::math::projection::{ClipVertex, NEAR_PLANE};
 use crate::math::{Affine3, Projection, Vec3};
 use crate::raster::{Rect, clip};
 
@@ -203,6 +203,9 @@ pub(crate) fn reduce(
 
     let limits = Bounds::of(window);
     let mut bounds = Bounds::EMPTY;
+    // Un sommet devant l'œil mais en deçà du plan proche : voir la clause en fin
+    // de fonction, c'est elle qui décide du résultat.
+    let mut too_close = false;
 
     for i in 1..points.len() - 1 {
         let corners = [points[0], points[i], points[i + 1]];
@@ -226,6 +229,10 @@ pub(crate) fn reduce(
             continue;
         }
 
+        too_close |= homogeneous.iter().any(|vertex| {
+            vertex.w > 0.0 && projection.frustum().distance(*vertex, NEAR_PLANE) < 0.0
+        });
+
         let polygon = clip(homogeneous, projection.frustum());
         for t in 0..polygon.triangle_count() {
             let vertices = polygon.triangle(t).map(|v| {
@@ -234,6 +241,31 @@ pub(crate) fn reduce(
             });
             accumulate(&vertices, limits, &mut bounds);
         }
+    }
+
+    // **Un portail qu'on est en train de franchir ne réduit rien**, et c'est la
+    // clause que ce calcul n'avait pas. Ce qui est en deçà du plan proche est en
+    // deçà du plan de projection : sa boîte écran n'existe pas, et ce qu'il cache
+    // occupe l'image sans borne. Le découpage, lui, l'emporte — en entier si le
+    // portail est tout près, par un bord s'il est vu de biais —, et la boîte des
+    // morceaux restants est alors **trop étroite**. La cellule d'en face est perdue
+    // ou amputée, ce qui se voit comme une bande verticale vide pendant une image
+    // ou deux, à chaque embrasure traversée.
+    //
+    // La géométrie dit l'inverse de ce que le découpage donne : plus l'œil est
+    // près du plan d'un portail, **plus large** est ce qu'on voit à travers,
+    // jusqu'à l'écran entier au moment de le passer. La réponse sûre est donc la
+    // fenêtre reçue, inchangée.
+    //
+    // **Le test porte sur `w > 0` autant que sur la distance au plan**, et les
+    // deux comptent : un portail entièrement derrière l'œil a lui aussi des
+    // sommets du mauvais côté du plan proche, et celui-là doit bien continuer de
+    // vider la fenêtre — on l'a passé, on ne le franchit pas.
+    //
+    // La monotonie de la réduction, dont la traversée a besoin pour terminer, est
+    // préservée : on rend la fenêtre reçue, jamais plus large.
+    if too_close {
+        return window;
     }
 
     // La dilatation d'un sous-pixel peut pousser un bord juste au-delà de la

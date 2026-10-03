@@ -646,6 +646,23 @@ la création du contexte rend une erreur plutôt que de déborder en silence.
   arêtes vers l'intérieur et peut mordre dans l'image. Le découpage par les plans,
   lui, préserve exactement l'intersection.
 
+  **Un portail dont un sommet est en deçà du plan proche ne réduit rien**, et
+  c'est la seule exception au calcul ci-dessus. Ce qui est en deçà de ce plan est
+  en deçà du plan de projection : sa boîte écran n'existe pas, et ce qu'il cache
+  occupe l'image sans borne. Le découpage l'emporte pourtant — en entier si le
+  portail est tout près, par un bord s'il est vu de biais —, et la boîte des
+  morceaux restants est alors **trop étroite**, ce qui perd ou ampute la cellule
+  d'en face. La géométrie dit l'inverse de ce que le découpage donne : plus l'œil
+  est près du plan d'un portail, **plus large** est ce qu'on voit à travers,
+  jusqu'à l'écran entier au moment de le franchir. La fenêtre reçue est donc
+  rendue inchangée, ce qui préserve la monotonie dont la traversée a besoin.
+
+  Le test porte sur `w > 0` **autant que** sur la distance au plan : un portail
+  entièrement derrière l'œil a lui aussi des sommets du mauvais côté, et celui-là
+  doit continuer de vider la fenêtre. Les deux régimes du défaut sont nés chez un
+  intégrateur, qui les a séparés par la part d'image peinte — presque rien en deçà
+  de `near`, les deux tiers au-delà — là où le dépôt n'en voyait qu'un.
+
   Le passage des sous-pixels au rectangle de pixels **inclut tout pixel que le
   polygone touche**, par `div_euclid` pour que le négatif tombe du bon côté, et
   non « tout pixel dont le centre est dedans ». La dilatation est d'au plus un

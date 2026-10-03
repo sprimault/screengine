@@ -123,6 +123,13 @@ pub struct Frustum {
 /// Le nombre de plans, et donc l'ordre du découpage.
 pub const PLANE_COUNT: usize = 5;
 
+/// Le rang du plan proche parmi eux.
+///
+/// Nommé parce qu'il se lit ailleurs que dans le découpage : la réduction d'une
+/// fenêtre de portail a besoin de savoir qu'un sommet est en deçà de **ce** plan
+/// et d'aucun autre, et un `0` nu y aurait désigné n'importe lequel des cinq.
+pub const NEAR_PLANE: usize = 0;
+
 impl Frustum {
     /// La distance signée du sommet au plan d'indice `plane`, positive à
     /// l'intérieur.
