@@ -12,9 +12,14 @@
 use screengine::{Vec3, World};
 use screengine_conformance::collision_file;
 
-/// Un point du monde, écrit court.
+/// Un point du monde, écrit en coordonnées locales de l'empreinte.
+///
+/// **Le décor est posé loin de l'origine du monde**, ce qui est une propriété de
+/// la scène et non un placement — voir `collision_file`. L'abscisse suit donc
+/// cette origine, et les coordonnées de ce fichier restent celles qu'on lit sur
+/// les empreintes.
 fn at(x: f32, y: f32, z: f32) -> Vec3 {
-    Vec3::new(x, y, z)
+    Vec3::new(collision_file::ORIGIN_X + x, y, z)
 }
 
 /// La carte se charge, et elle porte ses quatre cellules.
@@ -37,7 +42,8 @@ fn le_decor_se_charge() {
 #[test]
 fn une_boite_qui_tombe_sur_la_rampe_est_arretee() {
     let world = World::load(&collision_file::bytes()).expect("décor valide");
-    let half = at(0.45, 0.45, 0.45);
+    // Des demi-étendues, pas un point : `at` y mettrait l'origine du décor.
+    let half = Vec3::new(0.45, 0.45, 0.45);
 
     for pas in 1..8u32 {
         let y = f32::from(pas as u16);
@@ -90,7 +96,8 @@ fn la_cellule_en_u_est_a_l_ecart_et_sans_portail() {
 #[test]
 fn un_depart_derriere_une_face_du_u_ne_rencontre_rien() {
     let world = World::load(&collision_file::bytes()).expect("décor valide");
-    let half = at(0.45, 0.45, 0.45);
+    // Des demi-étendues, pas un point : `at` y mettrait l'origine du décor.
+    let half = Vec3::new(0.45, 0.45, 0.45);
     let from = at(1.0, 21.0, 2.0);
     let to = at(0.75, 21.0, 2.0);
 

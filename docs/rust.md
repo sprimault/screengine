@@ -1746,6 +1746,15 @@ treillis, et aucun ne tombe à une dilatation d'un mur. Ce qui la garde, ce sont
 les tests du noyau, dont un qui enchaîne deux balayages en repartant du point
 d'arrêt — la seule forme où le défaut apparaisse.
 
+**Elle couvre en revanche la distance à l'origine du monde**, et c'est une
+propriété de son **placement** et non de sa forme : le décor de collision est
+posé loin de zéro. Un décor à l'origine ne voit pas ce que la distance révèle, et
+il l'a laissé passer deux fois — le signe du volume d'une cellule, dont le résidu
+croît avec l'éloignement, et un portail dont l'inertie tenait à une normale
+inversée. Les deux ont été trouvés chez un intégrateur, sur un décor de
+soixante-quatre unités de côté. Le placement se vérifie comme le reste : en
+rétablissant le défaut, les deux empreintes du décor doivent **diverger**.
+
 **Elle couvre en revanche la dalle, et par deux mécanismes distincts.** Sa
 cellule en U porte le départ derrière le plan d'une face de sa propre cellule,
 qu'aucun convexe ni aucune salle en L ne peut porter ; et elle est **sans portail
