@@ -174,6 +174,23 @@ fn chosen() -> Vec<Vec3> {
         chosen.push(Vec3::new(x, 2.5, collision_file::FLOOR_Z + 0.45 + lift));
         chosen.push(Vec3::new(x, 2.5, collision_file::FLOOR_Z + 0.55 + lift));
     }
+    // **Un départ par marche de la cage**, au milieu du plat et à une unité
+    // au-dessus. Le treillis ne l'atteint pas : il tire ses cotes entre le sol et
+    // le plafond des cellules basses, quand la cage monte sur deux étages — et une
+    // cellule qu'aucun départ ne touche est une géométrie que l'empreinte ne voit
+    // pas, ce que ce décor a déjà laissé passer une fois.
+    //
+    // Chacun joue les dix directions et les deux boîtes : la descente éprouve le
+    // plat, l'horizontale la contremarche, et les obliques le nez de marche —
+    // l'arête saillante qui garde son prisme là où une arête rentrante le perd.
+    for step in 0..collision_file::STEPS {
+        let along = step as f32;
+        chosen.push(Vec3::new(
+            collision_file::ORIGIN_X + along + 0.5,
+            collision_file::stair_middle(),
+            collision_file::FLOOR_Z + along + 1.0,
+        ));
+    }
     chosen
 }
 

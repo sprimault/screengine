@@ -10,7 +10,15 @@
 //! d'une boîte, un portail qui ne mène nulle part, une surface qui n'arrête rien.
 //! Les deux points de gel restent ainsi découplés.
 //!
-//! Les dix cas, et ce que chacun éprouve que les autres n'éprouvent pas :
+//! Les onze cas, et ce que chacun éprouve que les autres n'éprouvent pas :
+//!
+//! - **la cage d'escalier**, douze marches empilées : **douze concavités** et un
+//!   creux qui court sur deux étages, là où la cellule en U n'en referme qu'une.
+//!   C'est la couverture d'une classe de décors qu'un intégrateur emploiera — un
+//!   immeuble, un garage, des salles reliées par des escaliers — et son plafond
+//!   suit la pente, ce qui lui donne une **normale de contact non axiale** que
+//!   seule la rampe portait. Un départ par marche, puisque le treillis tire ses
+//!   cotes entre le sol et le plafond des cellules basses et ne monterait pas ;
 //!
 //! - **la distance à l'origine du monde**, et c'est le seul cas qui soit une
 //!   propriété du **placement** du décor plutôt que de sa forme : il est posé à
@@ -203,6 +211,7 @@ pub fn bytes() -> Vec<u8> {
     prism(8, 200, &CORRIDOR, &[CORRIDOR_PORTAL], true, &mut cells);
     prism(9, 300, &BRANCHES, &[], false, &mut cells);
     ramp(10, 400, &mut cells);
+    stairwell(11, 500, &mut cells);
 
     let mut materials = Vec::new();
     for (id, name) in [(1u32, "mur"), (2, "sol")] {
@@ -212,6 +221,141 @@ pub fn bytes() -> Vec<u8> {
     }
 
     file(&cells, &materials)
+}
+
+/// Combien de marches la cage d'escalier empile.
+///
+/// **Douze, parce que ce sont douze concavités** : chaque nez de marche en
+/// referme une, et c'est le nombre qui distingue cette cellule de la cellule en U,
+/// qui n'en a qu'une. Douze marches d'une unité montent de douze unités, soit deux
+/// étages d'un décor de cette échelle — le creux court donc sur deux niveaux, ce
+/// qu'aucune autre cellule du décor ne fait.
+pub const STEPS: usize = 12;
+
+/// La hauteur libre au-dessus des marches, en unités de monde.
+const HEADROOM: f32 = 4.0;
+
+/// Où la cage commence, en `Y`, et sa largeur.
+const STAIR_Y: [f32; 2] = [32.0, 36.0];
+
+/// Le milieu de la cage en `Y`, où ses départs se posent.
+///
+/// Lu ici et non recopié par la liste des balayages : les deux dériveraient, et
+/// un départ hors de la cage ne rougirait pas — il rendrait simplement « aucune
+/// cellule », ce qui est une réponse valide.
+pub fn stair_middle() -> f32 {
+    (STAIR_Y[0] + STAIR_Y[1]) * 0.5
+}
+
+/// Le profil de la cage d'escalier, dans le plan `XZ`.
+///
+/// **Un profil vertical extrudé, là où les autres cellules sont des empreintes
+/// horizontales extrudées** : c'est l'inverse de [`prism`], et c'est la seule
+/// façon d'obtenir des marches. Le profil monte en marches de `(0, 0)` à
+/// `(12, 12)`, remonte le long du mur du fond, puis **redescend par un plafond
+/// oblique** parallèle à l'escalier — ce qui donne à la cellule sa surface non
+/// axiale, le cas que la rampe d'un garage réclame.
+///
+/// Vingt-sept points, donc vingt-sept faces latérales plus les deux flancs :
+/// **vingt-neuf surfaces**.
+fn profile() -> Vec<[f32; 2]> {
+    let mut points = Vec::new();
+    points.push([0.0, 0.0]);
+    for step in 0..STEPS {
+        let x = step as f32;
+        points.push([x + 1.0, x]);
+        points.push([x + 1.0, x + 1.0]);
+    }
+    let top = STEPS as f32;
+    points.push([top, top + HEADROOM]);
+    points.push([0.0, HEADROOM]);
+    points
+}
+
+/// La cage d'escalier : le profil en marches, extrudé le long de `Y`.
+///
+/// **Ce qu'elle apporte et qu'aucune autre cellule du décor n'apporte** : douze
+/// concavités empilées, un creux qui court sur deux étages, et vingt-neuf
+/// surfaces. La cellule en U referme une seule concavité, et la rampe n'a qu'une
+/// pente sans marche. Ce n'est la réponse à aucun défaut connu : c'est la
+/// couverture d'une classe de décors — un immeuble, un garage, des salles reliées
+/// par des escaliers — qu'un intégrateur emploiera et que rien n'éprouvait.
+///
+/// **Sans portail et à l'écart**, comme la cellule en U : le chemin de force
+/// brute la voit, la traversée ne l'atteint jamais. C'est la configuration où un
+/// faux contact fait **diverger** les deux chemins au lieu de les tromper
+/// ensemble.
+///
+/// Les repères suivent chaque face : l'axe d'une face latérale est la direction
+/// de son arête ramenée à sa plus grande composante — exacte, donc `(1, 0, 1)`
+/// pour le plafond oblique, de carré 2, ce que le chargement accepte depuis qu'il
+/// n'exige plus de puissance de deux.
+fn stairwell(id: u32, first_id: u32, out: &mut Vec<u8>) {
+    let profile = profile();
+    let n = profile.len();
+    let mut body = Vec::new();
+    words(&[id, 0, (n * 2) as u32, (n + 2) as u32, 0], &mut body);
+
+    // Les points du profil à chaque flanc : `Y` est la direction d'extrusion,
+    // donc ce que la hauteur est à un prisme.
+    for y in STAIR_Y {
+        for point in &profile {
+            floats(&[ORIGIN_X + point[0], y, FLOOR_Z + point[1]], &mut body);
+        }
+    }
+
+    // Les deux flancs, dans le plan `XZ` : le premier parcourt le profil dans
+    // l'ordre, le second à l'envers, de sorte que leurs normales sortent toutes
+    // deux de la cellule — le chargement les retourne ensemble s'il le faut.
+    let near: Vec<u32> = (0..n as u32).collect();
+    let far: Vec<u32> = (0..n as u32).rev().map(|i| i + n as u32).collect();
+    surface(
+        first_id,
+        WALLS,
+        &near,
+        [1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0],
+        &mut body,
+    );
+    surface(
+        first_id + 1,
+        WALLS,
+        &far,
+        [1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0],
+        &mut body,
+    );
+
+    // Une face par arête du profil : plat de marche, contremarche, mur du fond,
+    // plafond oblique, mur de départ.
+    for i in 0..n {
+        let j = (i + 1) % n;
+        let (a, b) = (profile[i], profile[j]);
+        let (dx, dz) = (b[0] - a[0], b[1] - a[1]);
+        // Ramenée à sa plus grande composante : exacte, et elle rend `(1, 0, 1)`
+        // sur le plafond oblique plutôt qu'un axe de douze unités de long.
+        let span = if dx.abs() > dz.abs() {
+            dx.abs()
+        } else {
+            dz.abs()
+        };
+        let along = [dx / span, 0.0, dz / span];
+        // Le plat d'une marche porte le matériau du sol, tout le reste celui des
+        // murs : c'est ce qui donne à la cage deux densités de plaquage, comme le
+        // reste du décor.
+        let material = if dz == 0.0 { FLOOR } else { WALLS };
+        surface(
+            first_id + 2 + i as u32,
+            material,
+            &[i as u32, j as u32, (j + n) as u32, (i + n) as u32],
+            along,
+            [0.0, 1.0, 0.0],
+            &mut body,
+        );
+    }
+
+    words(&[body.len() as u32], out);
+    out.extend_from_slice(&body);
 }
 
 /// La cellule à sol oblique : [`RAMP`] extrudée le long d'une pente.

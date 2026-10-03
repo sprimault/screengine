@@ -46,12 +46,23 @@ publié, et explique les conventions du dépôt à qui y contribue.
 
 ## [Non publié]
 
+### Ajouté
+- Le décor de conformance de la collision gagne une **cage d'escalier** : douze
+  marches, vingt-neuf surfaces, un plafond qui suit la pente. Elle couvre les
+  décors fortement concaves sur plusieurs étages — un immeuble, un garage — que
+  rien n'éprouvait.
+
 ### Modifié
 - Le décor de conformance de la collision est **posé loin de l'origine du
   monde**, ce qu'aucune de ses scènes n'éprouvait. Ses empreintes `collision` et
   `selection` changent ; le rendu, lui, ne change pas.
 
 ***
+
+### Added
+- The collision conformance scenery gains a **stairwell**: twelve steps,
+  twenty-nine surfaces, a ceiling following the slope. It covers the strongly
+  concave multi-storey scenery — a building, a car park — that nothing exercised.
 
 ### Changed
 - The collision conformance scenery now sits **far from the world origin**, which
