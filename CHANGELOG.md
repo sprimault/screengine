@@ -62,6 +62,8 @@ publié, et explique les conventions du dépôt à qui y contribue.
 - Une cellule **loin de l'origine du monde** arrête de nouveau. Le signe de son
   volume pouvait basculer avec sa position, retournant toutes ses normales : la
   cellule ne retenait plus rien et son sol se signalait vers le bas.
+- L'exemple `carte` **se dégage d'un départ dans le solide** au lieu de laisser
+  passer le pas. Il traversait alors les murs, et plus rien ne l'arrêtait.
 
 ***
 
@@ -81,6 +83,9 @@ publié, et explique les conventions du dépôt à qui y contribue.
 - A cell **far from the world origin** stops again. The sign of its volume could
   flip with its position, turning every normal around: the cell held nothing back
   and its floor reported downwards.
+- The `carte` example now **pushes out of a start inside solid geometry** instead
+  of letting the step through. It went through walls, and nothing stopped it after
+  that.
 
 ## [0.8.3] — 2026-10-02 — Les surfaces obliques
 

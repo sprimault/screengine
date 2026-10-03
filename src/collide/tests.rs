@@ -688,6 +688,57 @@ fn une_boite_sans_etendue_n_a_pas_de_marge() {
     assert_eq!(super::sweep_skin(Vec3::new(-1.0, -1.0, -1.0)), 0.0);
 }
 
+/// **Suivre la normale d'un départ solide finit par en sortir.**
+///
+/// Le moteur signale un départ dans le solide et ne dégage pas — il n'existe
+/// aucun vecteur de dégagement défini contre un jeu de surfaces non convexes.
+/// Tout ce qu'il doit à l'hôte, c'est que la normale qu'il rend **mène dehors** :
+/// c'est elle, et elle seule, qui rend la politique écrivable.
+///
+/// Ce qu'il éprouve est la question « suis-je dedans, et par où sortir », posée par
+/// un déplacement nul — donc la normale seule, sans aucun contact plus loin pour
+/// la départager. C'est ce dont un hôte a besoin pour écrire son dégagement, et
+/// ce qui manquait à l'exemple du dépôt : rendre le pas libre sur un départ
+/// solide enfonce davantage, le pas suivant repart solide, et l'engrenage ne se
+/// défait jamais.
+#[test]
+fn suivre_la_normale_d_un_depart_solide_en_sort() {
+    let world = room(0);
+    let half = cube_half();
+    // Dans le mur `x = 8`, assez pour que la boîte le traverse.
+    let mut at = Vec3d::new(8.0, 4.0, 4.0);
+
+    let mut escaped = false;
+    for step in 0..64 {
+        let hit = sweep(&world, 7, half, at, at).expect("cellule connue");
+        if !hit.start_solid {
+            escaped = true;
+            break;
+        }
+        assert_ne!(
+            hit.surface, 0,
+            "pas {step} : un départ solide nomme la surface qui pénètre"
+        );
+        let normal = Vec3d::from(hit.normal);
+        assert!(
+            normal.dot(normal) > 0.0,
+            "pas {step} : une normale nulle ne mène nulle part"
+        );
+        at = at + normal * 0.0625;
+    }
+    assert!(escaped, "le dégagement n'a pas abouti depuis {at:?}");
+
+    // **Et il sort du bon côté**, ce qui est tout le propos : sans cette ligne le
+    // test passe aussi avec une normale retournée, puisqu'on cesse de recouvrir
+    // une surface en s'en éloignant dans un sens comme dans l'autre. Vérifié en
+    // niant la normale rendue, qui le laissait vert.
+    assert_eq!(
+        world.locate(to_f32(at)),
+        7,
+        "le dégagement a quitté la salle au lieu d'y rentrer, en {at:?}"
+    );
+}
+
 /// **Aucune composante du résultat ne porte un zéro négatif ni un `NaN`.**
 ///
 /// `docs/rust.md` annonçait cette clause « tenue par un test qui inspecte les
