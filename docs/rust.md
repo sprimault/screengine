@@ -1272,6 +1272,29 @@ visible de la surface. Le point du contour le plus proche prolonge au contraire
 vers le dehors la valeur que le bord porte déjà, ce que la gouttière fait au bord
 du rectangle.
 
+**Le signe de ce volume est pris sur des points ramenés à un sommet de la
+cellule, et ses portails sont remis dans le sens de ses surfaces.** Les deux
+tiennent une seule propriété, l'invariance par translation, et sans elle le signe
+dépend de l'endroit où la cellule est posée dans le monde : la somme ne s'annule
+d'elle-même que si les normales se compensent exactement, et le format n'impose
+pas l'enroulement d'un portail par rapport aux surfaces de sa propre cellule — il
+ne fixe que l'enroulement inverse entre les deux portails d'une paire. Le résidu
+croît alors avec la distance à l'origine jusqu'à renverser le signe, et la cellule
+retournée n'arrête plus rien du balayage. Constaté chez un intégrateur sur un
+décor de 64 unités de côté, où un tiers des cellules — les plus éloignées —
+étaient muettes.
+
+Le sens d'un portail se **dérive** de l'arête qu'il partage avec une surface, que
+deux faces adjacentes d'une surface fermée parcourent en sens opposé ; la
+comparaison est exacte, au bit près, comme celle qui apparie les portails. Sa
+précondition — un portail partage au moins une arête avec une surface de sa
+cellule — tient par construction d'un décor plein, et un portail qui n'en
+partagerait aucune compte dans son sens écrit plutôt que de faire refuser la
+carte. Écarté : exiger la cohérence dans le format, qui aurait déplacé la charge
+sur chaque générateur pour une relation entre deux familles de faces qu'aucune
+assertion locale n'attrape — et dont le symptôme serait à nouveau une cellule
+muette.
+
 **Le sens de la normale vient du signe du volume de la cellule, jamais d'une face
 prise isolément.** La formule de Newell suit l'enroulement, et le format ne dit
 pas lequel des deux sens est l'intérieur : il fixe la face visible, ce qui n'est

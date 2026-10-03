@@ -1281,18 +1281,82 @@ fn same(a: Vec3, b: Vec3) -> bool {
 ///
 /// L'ordre de sommation est celui du fichier, surfaces puis portails : c'est une
 /// valeur dérivée, donc son ordre d'opérations est contractuel comme les autres.
+///
+/// **Les points sont ramenés sur un sommet de la cellule avant d'être sommés**, et
+/// c'est ce qui rend la somme invariante par translation. Elle ne l'est de
+/// elle-même que si les normales se compensent exactement ; sinon le résidu croît
+/// avec la distance à l'origine et finit par dominer le volume, si bien que le
+/// signe **bascule selon l'endroit où la cellule est posée dans le monde**. Une
+/// cellule retournée n'arrête plus rien du balayage, toutes ses normales étant à
+/// l'envers — mesuré chez un intégrateur sur un décor de 64 unités de côté, où un
+/// tiers des cellules, les plus éloignées, étaient muettes.
+///
+/// Ce rappel seul ne rend pas le signe juste, il le rend **stable** : c'est
+/// l'orientation des portails ci-dessous qui le rend juste, et les deux sont
+/// nécessaires — la première ferme la classe, la seconde le cas.
 fn outward_of(vertices: &[VertexUv], surfaces: &[Surface], portals: &[Portal]) -> bool {
+    let Some(origin) = vertices.first().map(|vertex| vertex.position) else {
+        return false;
+    };
+
     let mut volume = 0.0;
     for surface in surfaces {
-        let anchor = vertices[surface.first_vertex as usize].position;
+        let anchor = vertices[surface.first_vertex as usize].position - origin;
         volume += anchor.dot(surface.normal);
     }
     for portal in portals {
-        if let Some(&anchor) = portal.points.first() {
-            volume += anchor.dot(crate::math::polygon::newell(&portal.points));
+        if let Some(&first) = portal.points.first() {
+            let normal = crate::math::polygon::newell(&portal.points);
+            // Remis dans le sens des surfaces, faute de quoi il compte à l'envers.
+            let normal = if portal_is_reversed(vertices, surfaces, portal) {
+                -normal
+            } else {
+                normal
+            };
+            volume += (first - origin).dot(normal);
         }
     }
     volume > 0.0
+}
+
+/// Ce portail tourne-t-il à l'envers des surfaces de sa cellule ?
+///
+/// **Le format ne le dit pas, et il faut donc le dériver.** Il ne fixe que
+/// l'enroulement inverse **entre les deux portails d'une paire** ; celui d'un
+/// portail par rapport aux surfaces de sa propre cellule reste libre, et un
+/// générateur légitime les écrit à l'envers. Or le volume signé les somme avec
+/// les surfaces : comptés à l'envers, ils en faussent le signe.
+///
+/// La règle vient de la géométrie et de rien d'autre : **sur une surface fermée
+/// orientée, deux faces adjacentes parcourent leur arête commune en sens
+/// opposé.** Un portail qui parcourt la sienne dans le même sens que la surface
+/// voisine est donc retourné. La comparaison est exacte, au bit près, comme celle
+/// qui apparie les portails — un epsilon rendrait la relation non transitive.
+///
+/// **Précondition : un portail partage au moins une arête avec une surface de sa
+/// cellule.** Elle tient par construction d'un décor plein — un portail remplace
+/// un mur et reprend ses sommets, et un polygone simple n'a pas de trou où
+/// faire flotter une ouverture. Quand elle ne tient pas, on rend `false` : le
+/// portail compte dans son sens écrit, ce qui n'est pas pire que ce qui précédait
+/// ce correctif, et le rappel à l'origine garde le signe stable.
+fn portal_is_reversed(vertices: &[VertexUv], surfaces: &[Surface], portal: &Portal) -> bool {
+    let count = portal.points.len();
+    for i in 0..count {
+        let p = portal.points[i];
+        let q = portal.points[(i + 1) % count];
+        for surface in surfaces {
+            for j in 0..surface.corners.len() {
+                let (a, b) = edge_of(vertices, surface, j);
+                if same(a, p) && same(b, q) {
+                    return true;
+                }
+                if same(a, q) && same(b, p) {
+                    return false;
+                }
+            }
+        }
+    }
+    false
 }
 
 /// Les deux coins de la boîte englobante d'un jeu de sommets dérivés.
