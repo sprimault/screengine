@@ -44,7 +44,7 @@ use std::sync::Arc;
 use screengine_play::screengine::Angle;
 use screengine_play::{
     Affine3, Camera, Color, DepthMode, FreeCamera, KeyCode, Lightmaps, Line, Mesh, Output, Play,
-    Point, Surfaces, Texture, Vec3, World, load_png,
+    Point, Surfaces, Texture, Vec3, World, load_png, sweep_skin,
 };
 
 /// La carte du dépôt, celle que les cinq autres hôtes chargent.
@@ -99,6 +99,15 @@ const START: Vec3 = Vec3::new(2.0, 2.0, 2.0);
 /// Le volume descend donc jusqu'au sol, dont il garde un jeu : posé dessus, il
 /// partirait en contact et le balayage le dirait solide.
 const BODY_HALF: Vec3 = Vec3::new(0.3, 0.3, 0.9);
+
+/// En combien de marges se fait un pas de dégagement d'un départ solide.
+///
+/// **Dimensionné sur la marge du moteur plutôt que sur une distance choisie**,
+/// par `sweep_skin` : une valeur en unités de monde serait juste pour ce décor et
+/// fausse au suivant, alors que la marge suit la taille du corps. Assez grand pour
+/// sortir en quelques images, assez petit pour qu'on ne soit pas éjecté — et le
+/// seul réglage de cette politique, le reste étant géométrique.
+const ESCAPE: f32 = 64.0;
 
 /// De combien l'œil est au-dessus du centre de ce volume.
 ///
@@ -155,10 +164,21 @@ fn stopped(scene: &Scene, from: Vec3, to: Vec3) -> Vec3 {
         return to;
     }
     let mut end = match scene.world.sweep(scene.cell, BODY_HALF, from, to) {
-        // Un départ dans le solide ne bloque pas : il rendrait une fraction
-        // nulle, et la caméra resterait collée sans moyen d'en sortir.
-        Some(hit) if !hit.start_solid => from + (to - from) * hit.fraction,
-        _ => to,
+        // **Un départ dans le solide se dégage, il ne se laisse pas passer.** Le
+        // moteur signale et ne corrige pas — c'est sa clause —, donc la politique
+        // est ici, et c'est la seule de cette fonction qui ne soit pas
+        // facultative : rendre le pas libre, ce que cet exemple faisait, enfonce
+        // davantage, si bien que le pas suivant repart solide et que l'engrenage
+        // ne se défait jamais. Un seul départ fautif rendait la collision
+        // inopérante pour toujours.
+        //
+        // On repousse donc le long de la normale rendue, qui est celle de la
+        // surface la moins pénétrée, d'un pas dimensionné sur la marge que le
+        // moteur annonce. Le dégagement est progressif et non instantané : il ne
+        // suppose rien de la profondeur de pénétration, que le moteur ne rend pas.
+        Some(hit) if hit.start_solid => from + hit.normal * (sweep_skin(BODY_HALF) * ESCAPE),
+        Some(hit) => from + (to - from) * hit.fraction,
+        None => to,
     };
 
     for &(x, y, _) in &CRATES {
