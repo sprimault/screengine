@@ -42,9 +42,12 @@ HOSTS ?= c cpp web go
 # le triple Rust n'a pas. ANDROID_NDK_HOME vient de l'environnement ; le NDK est
 # r28 au moins, qui aligne sur des pages de 16 Ko sans option.
 #
-# **Le niveau d'API se déclare ici et nulle part ailleurs.** Le Makefile de
-# l'hôte et le manifeste le lisaient chacun de leur côté ; il est désormais
-# exporté, et l'hôte vérifie que son manifeste porte la même valeur.
+# **Le niveau d'API s'exporte d'ici, et rien ne le lit ailleurs sans contrôle.**
+# Le Makefile de l'hôte en garde un défaut, qui ne sert qu'à un appel direct de
+# ce fichier-là ; les deux ne doivent pas diverger, et c'est le contrôle du
+# manifeste qui refuse de construire si elles le font. Dire qu'il se déclare
+# « nulle part ailleurs » était donc faux : il se déclare deux fois, et c'est la
+# concordance qui est garantie, non l'unicité.
 ANDROID_API ?= 21
 export ANDROID_API
 NDK_BIN      = $(ANDROID_NDK_HOME)/toolchains/llvm/prebuilt/linux-x86_64/bin
@@ -204,7 +207,7 @@ HOST_OUT = $(abspath $(SORTIE))/host-$(host_dir_$*)
 #                         hosts/collision.world et hache leurs résultats. Elle
 #                         atteint les deux points d'entrée du balayage, qu'aucun
 #                         rendu ne touche — et un moteur sert aussi sans tampon,
-#                         ce qu'aucune des onze précédentes ne démontrait
+#                         ce qu'aucune des précédentes ne démontrait
 #   selection             le même décor, interrogé au rayon : le seul chemin de
 #                         scg_world_pick, et le filtre, qui est tout ce qui
 #                         sépare un rayon d'un balayage d'étendue nulle

@@ -70,6 +70,12 @@ Arrêtés. Ils découlent des invariants du projet et ne se rediscutent pas ici.
   donc pas l'image, et le moteur ne change rien pour eux. Un hôte qui a démasqué
   une exception pour traquer un défaut chez lui ne tombe pas dans le moteur, qui
   produit des résultats inexacts à chaque image.
+
+  **Les deux fonctions exemptées de l'enveloppe n'en fixent aucun**, et c'est
+  sans conséquence : `scg_abi_version` rend une constante, `scg_last_error` un
+  pointeur sur un tampon déjà écrit — ni l'une ni l'autre ne calcule en flottant.
+  « Chaque point d'entrée » se lit donc comme « chaque point d'entrée qui
+  calcule », et la liste des deux exceptions est celle des codes de retour.
 - **Toute allocation a lieu dans un appel nommé** : création, chargement d'une
   ressource, calcul de lightmaps. Aucune entre le début et la fin d'une image, ni
   au changement de résolution, qui reste sous le maximum fixé à la création.

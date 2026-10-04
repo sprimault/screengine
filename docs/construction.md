@@ -36,10 +36,13 @@ Sans lui, un clone se construit dans `target/`.
 
 Les versions sont épinglées dans le `Makefile` et nulle part ailleurs.
 `make tools` les installe, avec les cibles `thumbv7em-none-eabihf`,
-`wasm32-unknown-unknown` et les trois cibles Android. `make lint` passe aussi
-clippy sur `wasm32-unknown-unknown` et sur les trois cibles Android, là où un
-`cfg` propre à une plateforme ne serait vérifié par rien d'autre ; la cible sans
-`std`, elle, est couverte par `make nostd`, qui la compile. L'intégration
+`wasm32-unknown-unknown`, `i686-pc-windows-msvc` et les trois cibles Android.
+`make lint` passe aussi clippy sur toutes celles-là **sauf la cible sans `std`**,
+là où un `cfg` propre à une plateforme ne serait vérifié par rien d'autre ; celle
+sans `std` est couverte par `make nostd`, qui la compile. Il entraîne en outre
+deux contrôles qui ne sont pas clippy : la documentation des fonctions de test,
+que `missing_docs` ne voit pas, et la concordance des versions d'outillage
+Android. L'intégration
 continue appelle `make tools`, qui les installe aux versions épinglées ici.
 
 **`make doc-verif` passe rustdoc en `-D warnings`, et aucune autre cible ne
@@ -379,10 +382,15 @@ Dans l'ordre où les causes se rencontrent :
 
 ## Hôtes de démonstration
 
-Les hôtes de `hosts/` viennent par deux : celui qui éprouve la frontière sans
-fenêtre — `make test` le construit et compare son empreinte —, et celui qui
-montre le moteur. Le second ouvre une fenêtre, donc il n'est dans aucun
-contrôle : ni `make test`, ni l'intégration continue ne le construisent.
+Les hôtes de `hosts/` ont deux rôles, et tous ne portent pas les deux : celui qui
+éprouve la frontière sans fenêtre — `make test` le construit et compare son
+empreinte — et celui qui montre le moteur. Le second ouvre une fenêtre, donc il
+n'est dans aucun contrôle : ni `make test`, ni l'intégration continue ne le
+construisent.
+
+**`hosts/go` n'a que le premier**, et c'est cohérent avec ce qu'il existe pour
+éprouver : un langage qui déplace ses objets se vérifie sur le passage de
+pointeurs, pas sur une fenêtre, et son rôle est le serveur — où il n'y en a pas.
 
 - **`make demo-c` et `make demo-cpp`** chargent la carte et le maillage
   versionnés, et s'y déplacent au clavier — flèches ou ZQSD, Échap pour

@@ -160,7 +160,7 @@ fn un_sommet_sur_un_plan_ne_se_duplique_pas() {
 
 /// Le chemin rapide doit rendre exactement ce que rendrait le découpage
 /// complet. C'est l'affirmation qui justifie le raccourci, et elle se teste en
-/// forçant les cinq passes sur des triangles entièrement intérieurs.
+/// forçant les six passes sur des triangles entièrement intérieurs.
 #[test]
 fn le_chemin_rapide_rend_les_memes_bits_que_le_chemin_complet() {
     let p = projection();

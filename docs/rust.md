@@ -37,10 +37,14 @@ premier fichier.
 
 **`benches/` porte la référence de performance**, prise avant que l'étape 3
 touche au remplissage — une régression ne s'attribue pas sans mesure d'avant.
-Deux cas seulement : un quadrilatère texturé plein cadre, qui isole la boucle de
-pixels, et une scène chargée, qui donne le coût réel avec la répartition et la
-recopie. Harnais maison, `#[bench]` n'existant qu'en nightly et le noyau
-n'admettant aucune dépendance.
+Trois cas, et chacun répond à une question que les autres ne posent pas : un
+quadrilatère texturé plein cadre, qui isole la boucle de pixels ; une scène
+chargée, qui donne le coût réel avec la répartition et la recopie ; et la
+**pente** du chargement d'une carte, sur des décors engendrés, parce que le terme
+qui domine à l'échelle du dépôt n'est pas celui qui domine à l'échelle d'un
+niveau — le classement des arêtes est quadratique en surfaces d'une même cellule.
+Harnais maison, `#[bench]` n'existant qu'en nightly et le noyau n'admettant
+aucune dépendance.
 
 **Un fichier par chemin qu'une étape va changer**, et non un fichier qui grossit.
 `carte.rs` mesure le chargement d'une carte, sa soumission par image et **ce que
@@ -343,6 +347,15 @@ Le contrat est dans [`abi.md`](abi.md). Ce qui suit est la manière de l'écrire
 les tailles de tuile et tous les nombres de threads.** C'est ce qui fait de la
 conformance un détecteur de régression multi-plateforme.
 
+**À une condition que seule la frontière C tient : l'environnement flottant.** Ce
+sont ses points d'entrée qui fixent l'arrondi et désactivent DAZ et FTZ, puis
+rendent à l'hôte le sien ; l'API Rust du noyau ne touche jamais ces registres et
+suppose l'environnement par défaut. Un hôte **Rust** qui a armé FTZ dans son
+propre processus rend donc une autre image, et aucun contrôle du dépôt ne le
+verrait — la conformance tourne dans un environnement sain. C'est une limite de
+l'API Rust, pas une faille du déterminisme : ce que l'invariant promet, il le
+promet à environnement fixé.
+
 **La virgule fixe commence à la projection.** Les flottants s'arrêtent à la
 transformation des sommets ; tout ce qui suit est entier. C'est ce qui rend le
 déterminisme accessible plutôt que coûteux : une multiplication entière rend le
@@ -444,10 +457,18 @@ aux fonctions de bord.
      `n̂ = n_vue · rsqrt(n_vue·n_vue)` par la table du noyau ;
   3. par sommet et par lumière — `offset = position − point`, **dans ce sens**,
      le produit scalaire du terme de Lambert en dépendant ; `square =
-     offset·offset` ; rejet si `square ≥ r²` ; rejet sur le signe de `n̂·offset`,
-     avant la racine inverse et pour le même prix ; puis `direction = offset ·
-     rsqrt(square)`, `lambert = n̂·direction`, `falloff = 1 − square·réciproque`,
+     offset·offset` ; `ratio = square · réciproque` et rejet si `ratio ≥ 1` — par
+     la réciproque calculée une fois par lot, le rayon au carré n'étant pas
+     conservé ; rejet sur le signe de `n̂·offset`, avant la racine inverse et pour
+     le même prix ; puis `direction = offset · rsqrt(square)`,
+     `lambert = n̂·direction`, `falloff = 1 − ratio`,
      `weight = falloff · falloff · lambert`, et `total[c] += couleur[c] · weight`.
+
+     **Une normale nulle est une normale absente**, et le terme de Lambert vaut
+     alors un : le lot n'en porte pas, ou elle est dégénérée, et ni l'une ni
+     l'autre ne dit vers où la surface regarde. L'atténuation reste celle de la
+     distance seule — le comportement d'avant la normale par sommet, que les
+     chemins sans normale empruntent tous.
 
   Jamais de `mul_add`, saturation après la somme, comparaisons écrites. Le sens
   d'`offset` était l'inverse tant que seul son carré servait : sans normale, le
@@ -606,7 +627,7 @@ la création du contexte rend une erreur plutôt que de déborder en silence.
 | Index de brouillard | exposant et mantisse de la profondeur, par `leading_zeros`, table de 2048 entrées | indexer linéairement une profondeur 0.32 est inutilisable : tout le monde visible vit sous 2²⁶. La table se remplit **linéairement en distance** — un brouillard linéaire en `near/w`, pourtant gratuit, atteint 56 % à un dixième de sa rampe et cesse d'être un indice de profondeur. L'index se prend comme celui du mipmap, et le reste de quantification se trame par la même table ordonnée, transposée pour ne pas se corréler avec celle des texels |
 | Atténuation d'une lumière dynamique | `(1 − d²/r²)²` en `f32`, **par sommet**, portée par un plan comme les autres attributs | l'atténuation a besoin d'une distance, et il n'existe aucune distance du côté entier du pipeline : la racine inverse du noyau vit avant la projection. Le carré s'annule en `r` **avec une dérivée nulle**, donc sans l'anneau visible que `1 − d²/r²` seule dessine à son bord. Aucune racine n'est appelée |
 | Courbe de sortie | table de **256 entrées de huit bits par canal**, `(x·gain)^(1/gamma)` saturé puis quantifié, remplie au réglage | le pixel ne paie que trois lectures, et rien du calcul qui les a produites — lequel emploie le `f64` et l'`exp2` du noyau, ce que seul un calcul hors image peut se permettre. L'état neutre est la **vacuité de la table**, et non un réglage d'identité : la recopie se monomorphise sur ce choix, si bien qu'une scène sans courbe ne teste rien par pixel. Le gain sature avant le gamma, pour ne pas écrêter deux fois |
-| Fenêtre de portail | rectangle de **pixels entiers**, obtenu par min/max des sommets 28.4 du portail projeté puis arrondi **vers l'extérieur** | elle ne borne que la boucle, jamais les valeurs : l'image est identique avec ou sans elle, exactement comme elle l'est indépendamment des tuiles. C'est ce qui fait qu'une fenêtre n'a besoin d'aucun format nouveau — elle est de la même nature qu'un rectangle de tuile, et les cinq configurations de conformance l'éprouvent déjà |
+| Fenêtre de portail | rectangle de **pixels entiers**, obtenu par min/max des sommets 28.4 du portail projeté puis arrondi **vers l'extérieur** | elle ne borne que la boucle, jamais les valeurs : l'image est identique avec ou sans elle, exactement comme elle l'est indépendamment des tuiles. C'est ce qui fait qu'une fenêtre n'a besoin d'aucun format nouveau — elle est de la même nature qu'un rectangle de tuile, et les six passes de conformance l'éprouvent déjà |
 
 - **Tout s'évalue en coordonnées globales.** Une fonction de bord ou un attribut
   en un pixel se calcule à partir des sommets et de la position du pixel dans
@@ -2165,7 +2186,7 @@ mesure : un compteur, une empreinte, une durée.
   Les passes d'une scène ne diffèrent que par le découpage et doivent rendre la
   même empreinte : c'est tout leur objet. Un filtrage qui rend délibérément une
   autre image a donc besoin de sa propre référence, elle-même vérifiée dans les
-  cinq passes, et sa géométrie se partage au texel près avec la scène qu'elle
+  six passes, et sa géométrie se partage au texel près avec la scène qu'elle
   double — sans quoi une divergence ne serait plus attribuable à l'option.
 - **Avant de figer une référence nouvelle ou de la mettre à jour, regarder
   l'image**, par `make conform-images`. Une empreinte dit qu'une image a changé,

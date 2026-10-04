@@ -1178,7 +1178,7 @@ fn le_tramage_de_v_est_la_transposee_de_celui_de_u() {
 ///
 /// Les deux tailles de tuile de la suite de conformance, 32 et 64, sont des
 /// multiples de quatre : un index pris sur la position locale à la tuile
-/// rendrait exactement la même image dans ses cinq passes, et `make conform`
+/// rendrait exactement la même image dans ses six passes, et `make conform`
 /// resterait vert. Seules des fenêtres commençant à des abscisses **non
 /// multiples de quatre** — 17 et 13 ici, choisies pour cela — font apparaître
 /// le décalage du motif.
