@@ -47,6 +47,8 @@ publié, et explique les conventions du dépôt à qui y contribue.
 ## [Non publié]
 
 ### Corrigé
+- Les démonstrations Android jugent un appel par le signe de son code : elles
+  traitaient un statut positif comme un échec et quittaient la boucle de rendu.
 - `exp2` rend une valeur finie pour les exposants entre 127,5 et 128, que le
   `f32` porte encore. Aucun rendu ne change : la courbe de sortie n'atteint pas
   ce domaine.
@@ -57,6 +59,8 @@ publié, et explique les conventions du dépôt à qui y contribue.
 ***
 
 ### Fixed
+- The Android demonstrations judge a call by the sign of its code: they used to
+  treat a positive status as a failure and leave the render loop.
 - `exp2` returns a finite value for exponents between 127.5 and 128, which `f32`
   still holds. No rendering changes: the output curve never reaches that domain.
 - The `scg_sweep_reach` figures in the header now read as half extents throughout:

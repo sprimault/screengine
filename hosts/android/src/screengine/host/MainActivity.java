@@ -40,7 +40,7 @@ public final class MainActivity extends Activity {
         }
 
         long[] out = {0};
-        if (Screengine.create(new int[] {WIDTH, HEIGHT, WIDTH, HEIGHT, TILE, 0, 0, 0}, out) != Screengine.OK) {
+        if (Screengine.create(new int[] {WIDTH, HEIGHT, WIDTH, HEIGHT, TILE, 0, 0, 0}, out) < 0) {
             showText(Screengine.lastError(0));
             return;
         }
@@ -59,7 +59,7 @@ public final class MainActivity extends Activity {
             (byte) 0xE0, (byte) 0xA0, 0x30, (byte) 0xFF,
             (byte) 0xA0, (byte) 0xE0, 0x30, (byte) 0xFF,
         };
-        if (Screengine.submit(out[0], model, vertices, indices, colors) != Screengine.OK) {
+        if (Screengine.submit(out[0], model, vertices, indices, colors) < 0) {
             showText(Screengine.lastError(out[0]));
             Screengine.destroy(out[0]);
             return;
@@ -72,7 +72,7 @@ public final class MainActivity extends Activity {
         int code = Screengine.frameEndBitmap(out[0], bitmap);
         String message = Screengine.lastError(out[0]);
         Screengine.destroy(out[0]);
-        if (code != Screengine.OK) {
+        if (code < 0) {
             showText(message);
             return;
         }
