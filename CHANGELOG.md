@@ -616,8 +616,8 @@ chose**, et deux empreintes de conformance bougent. Les autres sont inchangées.
   plus vérifié.
 - **L'orientation de la règle top-left a son test.** Les épreuves d'étanchéité
   certifiaient la partition, jamais quel côté d'une arête gagne : règle
-  inversée, les cinq restaient au vert. Un défaut que `CLAUDE.md` désigne comme
-  le premier piège du projet n'était nommé par rien.
+  inversée, les cinq restaient au vert. Le premier piège du projet n'était nommé
+  par rien.
 - **Huit textes que le code démentait**, dont l'ordre d'opérations figé de la
   cuisson : il annonçait une multiplication par 255 qui rendrait tout blanc, et
   c'est d'après ce paragraphe qu'un chemin vectoriel s'écrira. La cible `nostd`
@@ -690,8 +690,8 @@ else**, and two conformance fingerprints move. The others are unchanged.
   measurement. The invariant held — it was no longer verified.
 - **The top-left rule's orientation has its test.** The watertightness checks
   certified the partition, never which side of an edge wins: with the rule
-  inverted, all five stayed green. A defect `CLAUDE.md` calls the project's
-  first pitfall was named by nothing.
+  inverted, all five stayed green. The project's first pitfall was named by
+  nothing.
 - **Eight texts the code contradicted**, including the frozen operation order of
   lightmap baking: it announced a multiplication by 255 that would render
   everything white, and it is from that paragraph that a vector path will be
