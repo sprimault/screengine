@@ -1464,10 +1464,10 @@ fn surface(
     // Vérifié plutôt que conventionnel : une carte qui ne respecterait pas cet
     // alignement ne se verrait qu'à la première capture d'éclairage.
     if !aligned(lightmap, corners) {
-        return Err(Error::InvalidFormat(Malformation::Mapping));
+        return Err(Error::InvalidFormat(Malformation::Mapping { surface: id }));
     }
-    let luxels =
-        luxel_extent(lightmap, corners).ok_or(Error::InvalidFormat(Malformation::Mapping))?;
+    let luxels = luxel_extent(lightmap, corners)
+        .ok_or(Error::InvalidFormat(Malformation::Mapping { surface: id }))?;
 
     let mut cut = [[0u32; 3]; MAX_POLYGON];
     let count =
@@ -1482,7 +1482,7 @@ fn surface(
         .try_reserve(count)
         .map_err(|_| Error::OutOfMemory)?;
 
-    let uvs = fold(corners, texture)?;
+    let uvs = fold(corners, texture, id)?;
     for (corner, (u, v)) in corners.iter().zip(&uvs[..index_count]) {
         vertices.push(VertexUv {
             position: *corner,
@@ -1725,13 +1725,13 @@ fn luxel_extent(mapping: Mapping, corners: &[Vec3]) -> Option<Extent> {
 /// 2048 et le repli se fait par masque, si bien que **l'image est identique au
 /// bit près** — les dérivées, donc le niveau de mipmap et le motif de tramage,
 /// sont invariantes par translation.
-fn fold(corners: &[Vec3], mapping: Mapping) -> Result<[(f32, f32); MAX_POLYGON]> {
+fn fold(corners: &[Vec3], mapping: Mapping, surface: u32) -> Result<[(f32, f32); MAX_POLYGON]> {
     let mut raw = [(0.0f32, 0.0f32); MAX_POLYGON];
     let mut low = (f32::MAX, f32::MAX);
     for (slot, corner) in raw.iter_mut().zip(corners) {
         *slot = mapping.project(*corner);
         if !slot.0.is_finite() || !slot.1.is_finite() {
-            return Err(Error::InvalidFormat(Malformation::Mapping));
+            return Err(Error::InvalidFormat(Malformation::Mapping { surface }));
         }
         // Par comparaison et non par `f32::min`, que le projet interdit : son
         // résultat sur deux zéros de signes opposés n'est pas spécifié, et deux
@@ -1768,7 +1768,7 @@ fn fold(corners: &[Vec3], mapping: Mapping) -> Result<[(f32, f32); MAX_POLYGON]>
     };
     let offset = match (shift(low.0), shift(low.1)) {
         (Some(u), Some(v)) => (u, v),
-        _ => return Err(Error::InvalidFormat(Malformation::Mapping)),
+        _ => return Err(Error::InvalidFormat(Malformation::Mapping { surface })),
     };
 
     for slot in raw.iter_mut().take(corners.len()) {
@@ -1781,7 +1781,7 @@ fn fold(corners: &[Vec3], mapping: Mapping) -> Result<[(f32, f32); MAX_POLYGON]>
         // et c'est tout ce que le repli existe pour éviter.
         let within = |value: f32| (0.0..=MAX_TEXEL_COORD).contains(&value);
         if !within(slot.0) || !within(slot.1) {
-            return Err(Error::InvalidFormat(Malformation::Mapping));
+            return Err(Error::InvalidFormat(Malformation::Mapping { surface }));
         }
     }
     Ok(raw)

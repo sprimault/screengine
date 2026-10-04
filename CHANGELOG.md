@@ -52,6 +52,9 @@ publié, et explique les conventions du dépôt à qui y contribue.
   recopier l'orientation.
 
 ### Modifié
+- `Malformation::Mapping` porte l'identifiant de la surface refusée, et `0` quand
+  la cellule entière est en cause : un appelant Rust qui filtrait cette variante
+  la reprend. L'ABI ne change pas.
 - Les scènes `collision` et `selection` ajoutent un trajet qui épuise
   `SCG_SWEEP_CELLS` : leurs empreintes changent, et un hôte qui garde les siennes
   les reprend. Aucun rendu ne bouge.
@@ -80,6 +83,9 @@ publié, et explique les conventions du dépôt à qui y contribue.
   to copy the orientation out.
 
 ### Changed
+- `Malformation::Mapping` carries the identifier of the refused surface, and `0`
+  when the whole cell is at fault: a Rust caller matching on that variant updates
+  it. The ABI does not change.
 - The `collision` and `selection` scenes add a path that exhausts
   `SCG_SWEEP_CELLS`: their fingerprints change, and a host keeping its own
   updates them. No rendering moves.

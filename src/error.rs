@@ -266,10 +266,24 @@ pub enum Malformation {
     /// d'intersection exprimable comme réduction de fenêtre, et l'erreur se
     /// paierait en trou définitif.
     Polygon,
-    /// Un repère de plaquage inutilisable : des axes de lightmap dont la
-    /// longueur n'est pas une puissance de deux, ou des coordonnées dérivées
-    /// qui ne sont pas finies.
-    Mapping,
+    /// Un repère de plaquage inutilisable : un axe dégénéré, une origine hors
+    /// de sa grille, des axes non orthogonaux ou hors du plan de leur surface,
+    /// une étendue démesurée, ou des coordonnées dérivées qui ne sont pas
+    /// finies.
+    ///
+    /// **Porte l'identifiant de la surface en cause**, et `0` quand aucune ne
+    /// l'est seule : le rangement de l'atlas d'une cellule échoue sur le volume
+    /// de toutes ses surfaces, pas sur l'une d'elles. Zéro vaut « aucun » dans
+    /// le format, donc la sentinelle ne s'invente pas ici.
+    ///
+    /// Sans cet identifiant, un générateur de cartes ne retrouvait la surface
+    /// fautive qu'en réimplémentant le prédicat du chargeur — ce qu'un
+    /// intégrateur a fait, somme de Newell comprise. C'était le bénéfice que le
+    /// refus au chargement revendiquait sans le rendre.
+    Mapping {
+        /// L'identifiant de la surface refusée, ou `0` pour la cellule entière.
+        surface: u32,
+    },
     /// Une lumière statique inutilisable : un rayon nul, négatif ou non fini.
     ///
     /// Un rayon nul n'éclaire rien et ferait diviser par zéro le calcul
@@ -423,7 +437,10 @@ impl Error {
             Self::InvalidFormat(Malformation::Polygon) => {
                 "malformed data file: a polygon is degenerate, too large, or not convex where convexity is required"
             }
-            Self::InvalidFormat(Malformation::Mapping) => {
+            // Le message reste statique, donc muet sur l'identifiant : le noyau
+            // nomme la catégorie, et c'est la frontière — qui a `std` — qui
+            // formate le texte d'un hôte. Un appelant Rust lit la charge utile.
+            Self::InvalidFormat(Malformation::Mapping { .. }) => {
                 "malformed data file: a mapping frame is unusable, or the coordinates it derives are not finite"
             }
             Self::InvalidFormat(Malformation::Light) => {

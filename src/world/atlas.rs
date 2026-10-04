@@ -130,8 +130,9 @@ pub(crate) fn pack(cell: &Cell) -> Result<Atlas> {
         if side > MAX_ATLAS {
             // Refusé ici et non au chargement : c'est le rangement qui décide, et
             // une surface seule peut tenir sous son plafond sans que la cellule
-            // entière y tienne.
-            return Err(Error::InvalidFormat(Malformation::Mapping));
+            // entière y tienne. **Aucune surface n'est donc nommée** — c'est le
+            // volume de toutes qui déborde, et zéro vaut « aucune ».
+            return Err(Error::InvalidFormat(Malformation::Mapping { surface: 0 }));
         }
         if let Some(slots) = try_pack(&sizes, &order, side) {
             return Ok(Atlas { side, slots });
