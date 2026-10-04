@@ -46,6 +46,18 @@ publié, et explique les conventions du dépôt à qui y contribue.
 
 ## [Non publié]
 
+## [0.8.7] — 2026-10-04 — Longer un mur, et savoir jusqu'où
+
+**Deux empreintes de conformance changent**, `collision` et `selection` : les
+contacts de bord arrivent une demi-marge plus tard. Un hôte qui garde ses propres
+empreintes de balayage les reprend.
+
+**Une liaison n'a rien à reprendre, mais quelque chose à savoir.**
+`SCG_ABI_VERSION` reste à 1, aucune signature ne change et le format des cartes et
+des maillages ne bouge pas. Le balayage peut désormais rendre un **quatrième
+statut**, `SCG_STATUS_NO_GAP` : juger par le signe du code suffit à l'ignorer.
+Une liaison qui expose la collision ajoute `scg_sweep_reach` avec lui.
+
 ### Ajouté
 - `scg_sweep_reach` dit jusqu'où une boîte garde son jeu de collision, et le
   balayage rend le statut `SCG_STATUS_NO_GAP` quand elle l'a perdu.
@@ -58,6 +70,16 @@ publié, et explique les conventions du dépôt à qui y contribue.
   changent, les contacts de bord arrivant une demi-marge plus tard.
 
 ***
+
+**Two conformance fingerprints change**, `collision` and `selection`: edge contacts
+now land half a margin later. A host keeping its own sweep fingerprints updates
+them.
+
+**A binding has nothing to revisit, but something to know.** `SCG_ABI_VERSION`
+stays at 1, no signature changes, and the map and mesh formats do not move. A sweep
+may now return a **fourth status**, `SCG_STATUS_NO_GAP`: judging by the sign of the
+code is enough to ignore it. A binding that exposes collision adds
+`scg_sweep_reach` along with it.
 
 ### Added
 - `scg_sweep_reach` reports how far a box keeps its collision gap, and a sweep
