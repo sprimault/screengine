@@ -533,7 +533,16 @@ fn plane_axes(normal: Vec3) -> (usize, usize) {
 ///
 /// Le bornage est écrit, jamais laissé à la saturation de `as` : celle-ci diffère
 /// entre le scalaire et les chemins vectoriels, et elle ne sert jamais de garde.
+///
+/// **`NaN` se teste nommément**, et il manquait : les deux comparaisons sont
+/// fausses avec lui, si bien qu'il atteignait la conversion — dont la saturation
+/// rend bien zéro en Rust, mais qui est précisément la garde que cette fonction
+/// dit ne pas employer. Un luxel noir est la réponse voulue ; ce qui change est
+/// qu'elle est désormais écrite, là où un chemin vectoriel en rendrait une autre.
 fn quantize(value: f32) -> u8 {
+    if value.is_nan() {
+        return 0;
+    }
     let scaled = value + 0.5;
     if scaled <= 0.0 {
         0
