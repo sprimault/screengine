@@ -142,3 +142,50 @@ fn sans_capture_la_souris_ne_tourne_pas_la_camera() {
 
     assert_eq!((camera.yaw, camera.pitch), (0.0, 0.0));
 }
+
+/// Chaque moitié ne fait que la sienne : `look` n'avance pas, `walk` ne tourne
+/// pas.
+///
+/// **C'est la propriété que la coupure promet**, et c'est tout ce qu'elle
+/// promet : un hôte qui a sa propre politique de marche appelle `look` seul, et
+/// il faut qu'aucune position ne bouge sous lui. L'inverse compte autant — une
+/// marche qui orienterait ferait dériver le cap d'un hôte qui tourne lui-même.
+///
+/// Les deux appels ensemble doivent par ailleurs rendre exactement ce que
+/// `update` rend, sans quoi la coupure aurait changé le comportement qu'elle
+/// devait seulement rendre atteignable.
+#[test]
+fn chaque_moitie_ne_fait_que_la_sienne() {
+    let mut input = Input::default();
+    input.motion(10.0, 10.0);
+    input.key(KeyCode::KeyW, true);
+
+    let mut regard = FreeCamera::new(Vec3::ZERO);
+    regard.look(&Tick::for_test(&input, 1.0, true));
+    assert_close(regard.position, Vec3::ZERO, "look a déplacé la caméra");
+    assert!(
+        regard.yaw != 0.0 && regard.pitch != 0.0,
+        "look n'a pas orienté"
+    );
+
+    let mut marche = FreeCamera::new(Vec3::ZERO);
+    marche.walk(&Tick::for_test(&input, 1.0, true));
+    assert_eq!(
+        (marche.yaw, marche.pitch),
+        (0.0, 0.0),
+        "walk a orienté la caméra"
+    );
+    assert!(marche.position.x != 0.0, "walk n'a pas avancé");
+
+    let mut entier = FreeCamera::new(Vec3::ZERO);
+    entier.update(&Tick::for_test(&input, 1.0, true));
+    let mut coupe = FreeCamera::new(Vec3::ZERO);
+    coupe.look(&Tick::for_test(&input, 1.0, true));
+    coupe.walk(&Tick::for_test(&input, 1.0, true));
+    assert_eq!(
+        (entier.yaw, entier.pitch),
+        (coupe.yaw, coupe.pitch),
+        "les deux moitiés n'orientent pas comme update"
+    );
+    assert_close(coupe.position, entier.position, "ni ne déplacent pareil");
+}

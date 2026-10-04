@@ -46,6 +46,11 @@ publié, et explique les conventions du dépôt à qui y contribue.
 
 ## [Non publié]
 
+### Ajouté
+- La caméra libre de l'étage d'accueil s'appelle en deux moitiés, `look` et
+  `walk`, et `spin` rend son cap : un hôte qui a sa propre marche n'a plus à
+  recopier l'orientation.
+
 ### Modifié
 - Les scènes `collision` et `selection` ajoutent un trajet qui épuise
   `SCG_SWEEP_CELLS` : leurs empreintes changent, et un hôte qui garde les siennes
@@ -68,6 +73,11 @@ publié, et explique les conventions du dépôt à qui y contribue.
   `SCG_MAX_LIGHTMAP_SIZE` : il en rendait un de 2048 sans erreur.
 
 ***
+
+### Added
+- The hosting layer's free camera comes in two halves, `look` and `walk`, and
+  `spin` returns its heading: a host with its own walking policy no longer has
+  to copy the orientation out.
 
 ### Changed
 - The `collision` and `selection` scenes add a path that exhausts
