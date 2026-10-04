@@ -1,7 +1,7 @@
 // Copyright 2026 Stéphane Primault <sprimault@users.noreply.github.com>
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
-//! Le décor de collision se charge, et porte les neuf cas qu'il annonce.
+//! Le décor de collision se charge, et porte les cas qu'il annonce.
 //!
 //! **Ce que ces tests attrapent ne se verrait nulle part ailleurs.** Une carte
 //! qui ne se dessine pas n'a pas d'image pour trahir une erreur de géométrie :
@@ -22,11 +22,17 @@ fn at(x: f32, y: f32, z: f32) -> Vec3 {
     Vec3::new(collision_file::ORIGIN_X + x, y, z)
 }
 
-/// La carte se charge, et elle porte ses cinq cellules.
+/// La carte se charge, et elle porte ses cinq cellules plus son enfilade.
+///
+/// Le compte est écrit en deux termes plutôt qu'en un nombre : les cinq cellules
+/// portent chacune un cas nommé, l'enfilade n'en porte qu'un pour toutes, et la
+/// longueur de celle-ci suit une borne du moteur. Un seul nombre aurait fait
+/// croire que les soixante-dix-sept se valent.
 #[test]
 fn le_decor_se_charge() {
     let world = World::load(&collision_file::bytes()).expect("décor valide");
-    assert_eq!(world.cell_count(), 5);
+    let attendu = 5 + collision_file::CHAIN_CELLS;
+    assert_eq!(world.cell_count() as usize, attendu);
 }
 
 /// **La cage d'escalier se charge, et elle porte ses vingt-neuf surfaces.**
