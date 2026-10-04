@@ -46,6 +46,17 @@ publié, et explique les conventions du dépôt à qui y contribue.
 
 ## [Non publié]
 
+### Corrigé
+- Les chiffres de `scg_sweep_reach` dans le header se lisent désormais en
+  demi-étendues des deux côtés : l'exemple du corps annonçait le double de la
+  portée réelle.
+
+***
+
+### Fixed
+- The `scg_sweep_reach` figures in the header now read as half extents throughout:
+  the body example announced twice the real reach.
+
 ## [0.8.7] — 2026-10-04 — Longer un mur, et savoir jusqu'où
 
 **Deux empreintes de conformance changent**, `collision` et `selection` : les

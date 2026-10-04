@@ -1763,8 +1763,8 @@ défaut de ce calcul. Mesuré : un corps de 0,9 de demi-étendue tient jusqu'à
 sept mille quatre cents unités, une boîte de véhicule jusqu'à dix-huit mille —
 **un véhicule est plus sûr qu'un marcheur, pas moins**, la vitesse n'entrant pas
 dans la borne. Ce qui y entre est la **petitesse** : un projectile de dix
-centimètres est à court dès quatre cent dix unités, et le décor de collision du
-dépôt est posé à cinq cent douze.
+centimètres de côté, soit cinq de demi-étendue, est à court dès quatre cent dix
+unités, et le décor de collision du dépôt est posé à cinq cent douze.
 
 **C'est le second critère sur lequel figer la constante de dilatation**, à côté
 de la marche d'escalier et du chambranle : elle doit laisser `half_max · 2⁻¹¹`

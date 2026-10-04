@@ -1768,9 +1768,10 @@ règle se devinait jusqu'à présent sans être énoncée.
 
 ### Étape 7
 
-**Trois fonctions, une structure, une constante et un statut** — la troisième,
-`scg_sweep_skin`, ajoutée après la publication de l'étape sur le constat d'un
-intégrateur, comme `scg_world_light_id` l'avait été à l'étape 4. Aucune signature
+**Quatre fonctions, une structure, une constante et deux statuts** — les deux
+dernières, `scg_sweep_skin` puis `scg_sweep_reach`, ajoutées après la publication
+de l'étape sur le constat d'un intégrateur, comme `scg_world_light_id` l'avait été
+à l'étape 4. Le second statut, `SCG_STATUS_NO_GAP`, est arrivé avec la seconde. Aucune signature
 publiée, aucune structure, aucune précondition ne bouge : `SCG_ABI_VERSION` reste
 à **1**, et `version_format` non plus — le bit « non solide » d'une surface est
 défini et accepté par le chargeur depuis l'étape 4, il reçoit ici son premier
@@ -1797,11 +1798,12 @@ typedef struct ScgSweepHit {
 } ScgSweepHit;
 ```
 
-Constantes : `SCG_STATUS_START_SOLID` (3) et `SCG_SWEEP_CELLS`.
+Constantes : `SCG_STATUS_START_SOLID` (3), `SCG_STATUS_NO_GAP` (4) et
+`SCG_SWEEP_CELLS`.
 
 **Le module s'utilise sans contexte de rendu**, et c'est la raison d'être de
 l'étape : un serveur de jeu charge une carte, balaie, et n'alloue jamais un
-tampon d'image. Aucune de ces deux fonctions ne prend de `ScgContext`, et leur
+tampon d'image. Aucune de ces fonctions ne prend de `ScgContext`, et leur
 erreur se lit par `scg_last_error(NULL)`, comme celle de `scg_world_locate`.
 
 #### Ce que le moteur rend, et ce qu'il ne rend pas
@@ -1911,7 +1913,7 @@ l'étape 5 : chaque cas d'échec tombe dans un code déjà défini, et c'est le 
 que les plages sont bien tracées. Une plage vide ne coûte rien, et un code
 s'ajoute plus tard sans incrémenter `SCG_ABI_VERSION`.
 
-#### Les trois statuts
+#### Les quatre statuts
 
 - **`SCG_STATUS_NO_CELL`** quand `from_cell` vaut `0` : le balayage rend un
   déplacement libre, `fraction` à 1 et `surface_id` à 0. Le moteur n'a rien
@@ -1942,12 +1944,24 @@ s'ajoute plus tard sans incrémenter `SCG_ABI_VERSION`.
   il restera coincé dans un chambranle.
 
   **Un balayage entièrement dans le solide, sans sortie, rend le même statut**, et
-  `fraction` dit le reste. Écrit ici pour qu'aucun quatrième statut ne s'ajoute
-  plus tard sur un cas que celui-ci couvre.
+  `fraction` dit le reste. Écrit ici pour qu'aucun statut ne s'ajoute plus tard sur
+  un cas que celui-ci couvre — celui qui s'est ajouté depuis décrit l'état de la
+  boîte et non son contact, et c'est précisément ce que la clause laissait ouvert.
+- **`SCG_STATUS_NO_GAP`** quand la boîte est trop petite, là où elle se déplace,
+  pour garder un jeu. Le contact rendu reste juste : ce qui se perd est la
+  **repose**, la pose à la fraction rendue passant par des positions en `float`
+  dont le pas finit par couvrir le jeu. Un rayon ne le lève jamais, sa dilatation
+  étant nulle par construction.
+
+  **C'est le dernier des quatre, et il est masqué dans le cas qu'il décrit** : une
+  boîte sans jeu se repose dans le solide, donc le balayage suivant rend
+  `SCG_STATUS_START_SOLID`. C'est pourquoi `scg_sweep_reach` existe — un état ne se
+  publie pas par un canal qui ne transporte qu'un événement à la fois.
 
 Quand deux statuts s'appliquent, l'appel rend **le plus actionnable** et le
 message nomme les deux : la convention est celle des codes de retour, et cet
-ordre fait partie de la sortie d'une scène de conformance.
+ordre fait partie de la sortie d'une scène de conformance. L'ordre est
+`START_SOLID`, `INCOMPLETE`, puis `NO_GAP`.
 
 #### La boîte de sécurité
 
@@ -2089,9 +2103,10 @@ Le jeu tient **strictement en deçà** : à cette coordonnée, il est déjà per
   trop tard pour un hôte qui **engendre** ses cartes, et qui choisit l'étendue de
   son décor avant d'en avoir une à charger.
 - **Une fonction et non le seuil en prose**, pour la raison déjà donnée de la
-  marge : un seuil recopié se trompe sur exactement les cas où il décide. Mesuré :
-  un corps d'une unité atteint huit mille unités, un projectile de dix centimètres
-  quatre cents. Un rayon rend zéro — n'ayant aucun jeu, il n'a aucune distance à
+  marge : un seuil recopié se trompe sur exactement les cas où il décide. Mesuré,
+  et **en demi-étendues**, puisque c'est ce qu'on lui passe : une unité porte à
+  huit mille unités, cinq centimètres — un projectile de dix centimètres de côté —
+  à quatre cents. Un rayon rend zéro — n'ayant aucun jeu, il n'a aucune distance à
   laquelle le perdre.
 - **La valeur ne fait pas partie du contrat, son sens oui**, et elle ne prend pas
   de carte : comme la marge, elle est appelable depuis n'importe quel thread.
@@ -2243,11 +2258,12 @@ rendu, et refuse le lot entier — même clause que les triangles.
   vitre, un volume de déclenchement sont des surfaces qu'un éditeur sélectionne
   et que la collision ignore. Zéro et toute valeur inconnue rendent
   `SCG_ERR_INVALID_ARGUMENT`.
-- **Les trois statuts sont ceux du balayage**, et pour les mêmes raisons :
+- **Elle rend trois des quatre statuts du balayage**, et pour les mêmes raisons :
   `SCG_STATUS_NO_CELL` quand `from_cell` vaut `0`, `SCG_STATUS_INCOMPLETE` quand
   le budget `SCG_SWEEP_CELLS` est épuisé — le rayon est alors tronqué, réponse
   conservatrice —, et `SCG_STATUS_START_SOLID` quand le point de départ est déjà
-  dans le solide.
+  dans le solide. **Jamais `SCG_STATUS_NO_GAP`** : la dilatation d'un rayon est
+  nulle par construction, donc il n'a aucun jeu à perdre.
 - **Ce qu'elle rend reste valide tant que l'hôte le garde**, la structure étant à
   lui. Mais `surface_id` et `cell_id` ne désignent quelque chose **que pour une
   carte qui porte ces identifiants** : ce sont ceux de l'éditeur, stables d'un

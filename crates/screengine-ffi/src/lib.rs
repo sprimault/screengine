@@ -2631,8 +2631,9 @@ pub unsafe extern "C" fn scg_sweep_skin(half_extents: *const f32, out: *mut f32)
 /// body and per frame to learn the same thing.
 ///
 /// **The gap holds strictly below this distance**: at that coordinate it is already
-/// lost. Measured: a one-unit body reaches eight thousand units, a ten-centimetre
-/// projectile four hundred.
+/// lost. Measured, and in half extents, since that is what you pass: one unit
+/// reaches eight thousand units, five centimetres — a ten-centimetre projectile —
+/// four hundred.
 ///
 /// `SCG_STATUS_NO_GAP` reports the same condition per call, but it is the last of
 /// the four statuses: a box in that state lands in the solid and is then reported
@@ -2669,8 +2670,9 @@ pub unsafe extern "C" fn scg_sweep_reach(half_extents: *const f32, out: *mut f32
 ///
 /// **This is the sweep of a zero-extent box**, and one function for both: a ray
 /// is that case, and two paths would have been the same code to validate against
-/// itself. It fills the same `ScgSweepHit`, with the same three statuses and the
-/// same rules — judge the result by the sign of the code.
+/// itself. It fills the same `ScgSweepHit`, with the same rules — judge the result
+/// by the sign of the code. It carries three of the sweep's four statuses, never
+/// `SCG_STATUS_NO_GAP`: a ray is not grown, so it has no gap to lose.
 ///
 /// **The safety margin is relative to the half-extent, so a ray carries none.**
 /// It hits what it crosses, never what it grazes: picking must land on the
