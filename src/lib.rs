@@ -34,6 +34,7 @@ pub use context::{
     TILE_SIZES, TRIANGLE_CAPACITY, Visibility,
 };
 pub use error::{Argument, Error, Malformation, Result};
+pub use format::world::{LightmapFault, lightmap_fault};
 pub use format::{Mesh, World};
 pub use light::MAX_OVERBRIGHT;
 pub use light::dynamic::MAX_LIGHTS;

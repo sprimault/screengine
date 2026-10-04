@@ -64,12 +64,12 @@
 //! ferait deux murs — la traversée ne franchirait rien, et la scène éprouverait
 //! le contraire de ce qu'elle annonce.
 //!
-//! **Toutes les arêtes ont une longueur puissance de deux**, et ce n'est pas un
-//! choix esthétique : le repère de lightmap d'un mur prend l'arête pour axe
-//! horizontal, et le chargement exige que le carré de cet axe soit une puissance
-//! de deux — faute de quoi la reconstruction d'un luxel demanderait une division.
-//! Un décor qui ne se dessine pas en a besoin quand même : le format ne connaît
-//! pas la différence, et une arête de 1,5 unité fait refuser la carte entière.
+//! **Toutes les arêtes ont une longueur puissance de deux**, et c'est désormais
+//! une commodité plutôt qu'une exigence : le chargement a longtemps réclamé que
+//! le carré de l'axe horizontal d'un repère en soit une, ce qui interdisait toute
+//! pente autre que 45°, et la clause est tombée avec les repères obliques. Ce que
+//! le format exige encore d'un repère est dans `docs/cartes.md`, et
+//! `screengine::lightmap_fault` le dit clause par clause.
 
 use crate::map_bytes::{FLOOR, WALLS, flagged, floats, surface, words};
 

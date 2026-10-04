@@ -82,16 +82,22 @@ const SURFACE_NO_LIGHTMAP: u32 = 0b010;
 /// cuisson pour une seule cellule.
 const MAX_LUXELS: f32 = 256.0;
 
-/// L'écart relatif toléré sur l'orthogonalité des axes de lightmap et sur leur
-/// appartenance au plan de la surface.
+/// Le cosinus toléré entre deux directions qui devraient être perpendiculaires :
+/// les deux axes de lightmap entre eux, et chacun avec la normale de sa surface.
 ///
-/// Les deux autres propriétés du repère — carrés puissances de deux, origine sur
-/// la grille — sont exactes ou ne sont pas. Ces deux-ci portent le
-/// résidu de la construction d'un repère oblique sur une surface oblique, et une
-/// tolérance y est admissible là où elle serait interdite sur l'appariement des
-/// portails : celui-ci est une relation, qu'un epsilon rendrait non transitive,
-/// alors que ceci est un prédicat, qui rend les mêmes bits sur toutes les cibles.
-const SQUARE_TOLERANCE: f64 = 1.0 / 1048576.0;
+/// **C'est un cosinus, pas son carré**, et le nom le dit maintenant : la
+/// comparaison l'élève au carré pour éviter une racine, mais la tolérance est
+/// bien celle-ci. Lue comme un carré, elle vaudrait 2⁻¹⁰ — mille fois plus
+/// permissive —, et c'est l'erreur qu'un générateur a faite en reproduisant le
+/// prédicat. Il n'a plus à le reproduire : voir [`lightmap_fault`].
+///
+/// Les deux autres propriétés du repère — un axe non dégénéré, une origine sur
+/// la grille — sont exactes ou ne sont pas. Ces deux-ci portent le résidu de la
+/// construction d'un repère oblique sur une surface oblique, et une tolérance y
+/// est admissible là où elle serait interdite sur l'appariement des portails :
+/// celui-ci est une relation, qu'un epsilon rendrait non transitive, alors que
+/// ceci est un prédicat, qui rend les mêmes bits sur toutes les cibles.
+const COSINE_TOLERANCE: f64 = 1.0 / 1048576.0;
 
 /// Un repère de plaquage : une origine et deux axes dont la longueur porte
 /// l'échelle.
@@ -1562,7 +1568,7 @@ fn whole(value: f64) -> bool {
 /// dit la même chose que « l'angle est droit à ε près » sans quitter les quatre
 /// opérations.
 fn perpendicular(dot: f64, square_a: f64, square_b: f64) -> bool {
-    dot * dot <= SQUARE_TOLERANCE * SQUARE_TOLERANCE * square_a * square_b
+    dot * dot <= COSINE_TOLERANCE * COSINE_TOLERANCE * square_a * square_b
 }
 
 /// Vrai si le repère de lightmap d'une surface est utilisable pour la cuire.
@@ -1597,14 +1603,52 @@ fn perpendicular(dot: f64, square_a: f64, square_b: f64) -> bool {
 /// l'inverse d'une 2×2 quelconque, donc une division. Et ils sont **dans le plan
 /// de la surface**, faute de quoi la grille ne recouvre pas ce qu'elle éclaire.
 /// Ces deux derniers contrôles tolèrent un résidu, pour la raison écrite sur
-/// [`SQUARE_TOLERANCE`].
+/// [`COSINE_TOLERANCE`].
 fn aligned(mapping: Mapping, corners: &[Vec3]) -> bool {
+    lightmap_fault(mapping.origin, mapping.u, mapping.v, corners).is_none()
+}
+
+/// Ce qui rend un repère de lightmap inutilisable, pour qui écrit un décor.
+///
+/// **Une faute nommée et non un booléen** : un générateur qui sait seulement que
+/// sa carte est refusée n'en sait pas plus qu'avant, et c'est quoi corriger qu'il
+/// lui faut. Hors de l'ABI, cette distinction ne coûte rien — publiée en C, elle
+/// aurait figé la décomposition d'un contrôle qui a déjà changé une fois, le jour
+/// où la clause des puissances de deux est tombée.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LightmapFault {
+    /// Un axe de longueur nulle ou non finie : il n'a pas de direction, donc pas
+    /// de réciproque, et la cuisson diviserait par zéro.
+    DegenerateAxis,
+    /// L'origine ne tombe pas sur un nœud de sa propre grille, mesurée depuis le
+    /// zéro du monde : deux grilles de même pas resteraient décalées en phase.
+    OriginOffGrid,
+    /// Les deux axes ne sont pas orthogonaux, ce qui demanderait l'inverse d'une
+    /// 2×2 quelconque, donc une division par luxel.
+    SkewedAxes,
+    /// Un axe sort du plan de la surface, si bien que la grille de luxels ne
+    /// recouvre pas ce qu'elle éclaire.
+    AxisOffPlane,
+}
+
+/// Ce qui ferait refuser ce repère de lightmap, ou `None` s'il passe.
+///
+/// **C'est le prédicat du chargeur lui-même**, et non une seconde écriture : le
+/// chargement appelle cette fonction, si bien que les deux ne peuvent pas
+/// divenger. C'est la raison d'être de son exposition — un générateur de cartes
+/// avait dû la réimplémenter, tolérance et somme de Newell comprises, et sa copie
+/// serait devenue silencieusement fausse le jour où la valeur bouge.
+///
+/// Les quatre clauses se testent dans l'ordre où le chargement les refuse, et la
+/// première rencontrée est celle qui est rendue.
+pub fn lightmap_fault(origin: Vec3, u: Vec3, v: Vec3, corners: &[Vec3]) -> Option<LightmapFault> {
+    let mapping = Mapping { origin, u, v };
     let square_u = mapping.u.dot(mapping.u);
     let square_v = mapping.v.dot(mapping.v);
     // Un axe dégénéré n'a pas de direction à porter, et sa réciproque n'existe
     // pas : c'est tout ce que la longueur doit garantir.
     if !(square_u > 0.0 && square_u.is_finite() && square_v > 0.0 && square_v.is_finite()) {
-        return false;
+        return Some(LightmapFault::DegenerateAxis);
     }
 
     // **Sans diviser par le carré de la longueur**, comme [`Mapping::project`] et
@@ -1616,7 +1660,7 @@ fn aligned(mapping: Mapping, corners: &[Vec3]) -> bool {
     // quotient entier et passait ; sur un axe de carré `4`, une origine
     // exactement sur un nœud était refusée.
     if !whole(dot64(mapping.origin, mapping.u)) || !whole(dot64(mapping.origin, mapping.v)) {
-        return false;
+        return Some(LightmapFault::OriginOffGrid);
     }
 
     if !perpendicular(
@@ -1624,15 +1668,19 @@ fn aligned(mapping: Mapping, corners: &[Vec3]) -> bool {
         f64::from(square_u),
         f64::from(square_v),
     ) {
-        return false;
+        return Some(LightmapFault::SkewedAxes);
     }
 
     // Le plan vient de la normale de Newell, celle-là même dont la convexité se
     // sert : elle n'est pas normalisée, ce dont la forme au carré n'a pas besoin.
     let normal = crate::math::polygon::newell(corners);
     let square_n = dot64(normal, normal);
-    perpendicular(dot64(normal, mapping.u), square_n, f64::from(square_u))
-        && perpendicular(dot64(normal, mapping.v), square_n, f64::from(square_v))
+    if !perpendicular(dot64(normal, mapping.u), square_n, f64::from(square_u))
+        || !perpendicular(dot64(normal, mapping.v), square_n, f64::from(square_v))
+    {
+        return Some(LightmapFault::AxisOffPlane);
+    }
+    None
 }
 
 /// L'entier immédiatement inférieur ou égal, sans passer par la bibliothèque.

@@ -267,6 +267,15 @@ oblique porte le résidu de sa propre construction. Il n'y a donc rien à arrond
 pour satisfaire les deux premières, et rien à craindre des derniers bits sur les
 deux autres.
 
+**Les deux derniers contrôles tolèrent un résidu, et sa valeur se demande plutôt
+que de se recopier.** L'orthogonalité des axes et leur appartenance au plan se
+mesurent sur un cosinus, toléré jusqu'à 2⁻²⁰ ; les deux autres propriétés — un
+axe non dégénéré, l'origine sur sa grille — sont exactes ou ne sont pas.
+`screengine::lightmap_fault` répond pour un repère donné, et nomme celle des
+quatre clauses qui échoue : c'est le prédicat du chargeur lui-même, donc les deux
+ne peuvent pas divenger. Un générateur qui reproduirait la règle serait juste
+aujourd'hui et faux le jour où la tolérance bouge.
+
 Enfin, **l'étendue d'une surface est plafonnée à 256 luxels par côté**, et le
 refus tombe au chargement. Un grand mur à pas de lightmap fin produirait un
 atlas qui ne tient pas. Le pas se choisit en conséquence : les décors du dépôt
