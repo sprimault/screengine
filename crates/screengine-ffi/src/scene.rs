@@ -888,8 +888,8 @@ impl ScgSweepHit {
 
     /// La conversion depuis ce que le noyau rend.
     ///
-    /// Les deux drapeaux du noyau ne traversent pas : ils deviennent le **code de
-    /// retour**, l'ABI n'ayant pas de `bool` et un statut se lisant au signe.
+    /// Les trois drapeaux du noyau ne traversent pas : ils deviennent le **code
+    /// de retour**, l'ABI n'ayant pas de `bool` et un statut se lisant au signe.
     pub(crate) fn from_core(hit: &screengine::Hit) -> Self {
         Self {
             fraction: hit.fraction,

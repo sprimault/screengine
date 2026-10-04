@@ -206,20 +206,29 @@ fn un_depart_hors_cellule_rend_un_deplacement_libre() {
     assert_eq!(hit.cell, 0);
 }
 
-/// Un départ dans le solide masque une région tronquée.
+/// La priorité des statuts est celle du contrat, les trois drapeaux allumés.
 ///
-/// La règle de priorité de l'ABI, celle que l'empreinte fige : des deux drapeaux
-/// du noyau, la frontière garde le plus actionnable. Écrit ici parce que le décor
-/// ne produit pas le cas — il a deux cellules, rien n'y approche la borne —, et
-/// qu'une règle qu'aucune donnée n'éprouve se perd au premier remaniement.
+/// La règle de l'ABI, celle que l'empreinte fige : des trois drapeaux du noyau,
+/// la frontière garde le plus actionnable. Écrit ici parce que le décor ne produit
+/// aucun des cas — rien n'y approche la borne de cellules, et ses boîtes tiennent
+/// sept fois au-dessus du seuil de jeu —, et qu'une règle qu'aucune donnée
+/// n'éprouve se perd au premier remaniement.
+///
+/// Les trois sont allumés d'entrée puis éteints un par un : c'est ce qui éprouve
+/// l'ordre et non seulement chaque statut, là où trois cas séparés passeraient
+/// aussi bien sur une frontière qui les rendrait dans n'importe quel ordre.
 #[test]
-fn le_depart_solide_masque_la_troncature() {
+fn la_priorite_des_statuts_est_celle_du_contrat() {
     let mut hit = free(Vec3::ZERO);
     hit.start_solid = true;
     hit.incomplete = true;
+    hit.no_gap = true;
 
     assert_eq!(publish(Some(hit), Vec3::ZERO).1, STATUS_START_SOLID);
 
     hit.start_solid = false;
     assert_eq!(publish(Some(hit), Vec3::ZERO).1, STATUS_INCOMPLETE);
+
+    hit.incomplete = false;
+    assert_eq!(publish(Some(hit), Vec3::ZERO).1, STATUS_NO_GAP);
 }
