@@ -321,7 +321,7 @@ enum Scene {
     /// forme : les passes d'une scène doivent toutes rendre la même empreinte,
     /// puisqu'elles ne diffèrent que par le découpage. Un filtrage qui rend
     /// délibérément une autre image n'y a donc pas sa place — il lui faut sa
-    /// propre référence, elle-même vérifiée dans les cinq passes.
+    /// propre référence, elle-même vérifiée dans les six passes.
     ///
     /// La géométrie est celle de `texture`, au texel près : c'est ce qui rend
     /// les deux empreintes comparables, et une divergence attribuable au seul
