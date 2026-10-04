@@ -9,7 +9,7 @@
 
 use screengine::{Affine3, Angle, Camera, Quat, Vec3};
 
-use crate::{KeyCode, Tick};
+use crate::{Input, KeyCode, Tick};
 
 /// L'avant du repère de vue une fois porté dans le monde par l'orientation
 /// neutre : le +X.
@@ -74,7 +74,20 @@ impl FreeCamera {
     /// La souris n'oriente que lorsque le curseur est capturé : sans capture,
     /// il bute sur le bord de l'écran et la rotation s'arrêterait au milieu
     /// d'un mouvement, ce qui se lit comme un défaut du moteur.
+    /// **Les deux moitiés se prennent aussi séparément** : un hôte qui a sa
+    /// propre politique de marche appelle [`FreeCamera::look`] seul, et déplace
+    /// comme il l'entend. Sans elles, il n'avait que le choix de recopier
+    /// l'orientation — ce qu'un intégrateur a fait.
     pub fn update(&mut self, tick: &Tick<'_>) {
+        self.look(tick);
+        self.walk(tick);
+    }
+
+    /// Oriente la caméra, sans la déplacer.
+    ///
+    /// La souris, les deux touches de rotation, et le bornage du tangage : tout
+    /// ce qui décide d'où l'on regarde, et rien de ce qui décide d'où l'on est.
+    pub fn look(&mut self, tick: &Tick<'_>) {
         let dt = tick.dt();
         let input = tick.input();
 
@@ -83,23 +96,21 @@ impl FreeCamera {
             self.yaw -= dx * self.sensitivity;
             self.pitch -= dy * self.sensitivity;
         }
-        let held = |key, other| -> f32 {
-            match (input.down(key), input.down(other)) {
-                (true, false) => 1.0,
-                (false, true) => -1.0,
-                _ => 0.0,
-            }
-        };
-        let turn =
-            held(KeyCode::ArrowLeft, KeyCode::ArrowRight) + held(KeyCode::KeyA, KeyCode::KeyD);
+        let turn = held(input, KeyCode::ArrowLeft, KeyCode::ArrowRight)
+            + held(input, KeyCode::KeyA, KeyCode::KeyD);
         self.yaw += turn.clamp(-1.0, 1.0) * self.turn_rate * dt;
 
         // Borné plutôt que replié : passé la verticale, l'image se retourne et
         // on croit à un défaut du moteur. Le roulis, lui, n'existe pas — il
         // n'est jamais accumulé, puisque l'orientation se reconstruit.
         self.pitch = self.pitch.clamp(-MAX_PITCH, MAX_PITCH);
+    }
 
-        let ahead = held(KeyCode::ArrowUp, KeyCode::ArrowDown) + held(KeyCode::KeyW, KeyCode::KeyS);
+    /// Déplace la caméra selon son cap, sans l'orienter.
+    pub fn walk(&mut self, tick: &Tick<'_>) {
+        let input = tick.input();
+        let ahead = held(input, KeyCode::ArrowUp, KeyCode::ArrowDown)
+            + held(input, KeyCode::KeyW, KeyCode::KeyS);
         if ahead != 0.0 {
             // Le déplacement suit le lacet seul, pas le regard : dans un
             // couloir, avancer en regardant le plafond doit avancer, pas
@@ -107,13 +118,17 @@ impl FreeCamera {
             let heading = Affine3::from_rotation_translation(self.spin(), Vec3::ZERO);
             // Les deux touches d'un même axe se compensent, et le pas vaut au
             // plus un même si flèche et `W` sont tenues ensemble.
-            let step = ahead.clamp(-1.0, 1.0) * self.speed * dt;
+            let step = ahead.clamp(-1.0, 1.0) * self.speed * tick.dt();
             self.position = self.position + heading.transform_vector(FORWARD) * step;
         }
     }
 
     /// Le lacet seul, sans le tangage.
-    fn spin(&self) -> Quat {
+    ///
+    /// **Publique pour l'hôte qui déplace lui-même** : c'est le cap, celui que
+    /// [`FreeCamera::walk`] suit, et le seul morceau d'orientation dont une
+    /// politique de marche a besoin.
+    pub fn spin(&self) -> Quat {
         Quat::from_axis_angle(Vec3::new(0.0, 0.0, 1.0), Angle::from_radians(self.yaw))
     }
 
@@ -130,6 +145,18 @@ impl FreeCamera {
             orientation: self.spin().product(tilt),
             ..Camera::DEFAULT
         }
+    }
+}
+
+/// L'axe que deux touches opposées commandent : `1`, `-1`, ou zéro.
+///
+/// Une fonction libre plutôt qu'une closure dans chaque moitié : les deux en ont
+/// besoin, et la recopier était ce que la coupure devait justement éviter.
+fn held(input: &Input, key: KeyCode, other: KeyCode) -> f32 {
+    match (input.down(key), input.down(other)) {
+        (true, false) => 1.0,
+        (false, true) => -1.0,
+        _ => 0.0,
     }
 }
 
