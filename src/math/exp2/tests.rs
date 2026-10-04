@@ -89,7 +89,20 @@ fn log2_reference(x: f64) -> f64 {
 
 /// L'écart entre une valeur rendue et sa référence, en ulp du `f32`.
 fn ulp_error(got: f32, exact: f64) -> f64 {
-    if got.is_infinite() || exact == 0.0 {
+    // **Un infini n'est juste que si la référence déborde aussi le `f32`.**
+    // Absous sans condition, il rendait verte n'importe quelle valeur
+    // représentable remplacée par l'infini — et c'est ainsi qu'un `2^x` fini
+    // rendu `+∞` a traversé ce balayage sans le faire rougir une seule fois.
+    // Un ulp ne se mesure pas sur l'infini, d'où le verdict franc plutôt qu'un
+    // nombre.
+    if got.is_infinite() {
+        return if exact > f64::from(f32::MAX) {
+            0.0
+        } else {
+            f64::INFINITY
+        };
+    }
+    if exact == 0.0 {
         return 0.0;
     }
     let above = f32::from_bits(got.to_bits() + 1);
@@ -215,6 +228,24 @@ fn exp2_tient_sa_borne() {
         worst <= EXP2_TOLERANCE,
         "{worst} ulp, borne {EXP2_TOLERANCE}"
     );
+}
+
+/// `2^x` reste fini partout où le `f32` le porte, dernier demi-intervalle compris.
+///
+/// L'arrondi au plus proche porte `k` à 128 dès que `x` dépasse 127,5, alors que
+/// la borne ne l'arrête qu'à 128 : c'est la seule région où la reconstruction des
+/// bits puisse déborder sans que le domaine le justifie. Nommée à part du
+/// balayage général, qui la couvre aussi — un balayage se rétrécit sans bruit, et
+/// ce cas-ci a déjà survécu une fois, absous par la mesure d'erreur elle-même.
+#[test]
+fn exp2_reste_fini_sous_sa_borne() {
+    for i in 0..=16 {
+        let x = 127.5 + 0.49 * (i as f32) / 16.0;
+        let got = exp2(x);
+        assert!(got.is_finite(), "x = {x} rend {got}");
+    }
+    // Et la borne, elle, déborde pour de bon : `2^128` passe `f32::MAX`.
+    assert!(exp2(128.0).is_infinite());
 }
 
 /// `log2` tient sa borne, et l'erreur ne dépend que de la mantisse.

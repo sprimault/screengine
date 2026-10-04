@@ -105,9 +105,14 @@ fn exp2_raw(x: f64) -> f64 {
         i -= 1;
     }
 
-    // `k` tient dans `[-126, 127]`, les deux bornes ci-dessus s'en chargeant :
-    // la puissance de deux est un `f32` normal, et le produit est exact.
-    sum * f64::from(f32::from_bits(((127 + k) as u32) << 23))
+    // **La puissance de deux se construit en `f64`, pas en `f32`.** L'arrondi au
+    // plus proche ci-dessus porte `k` jusqu'à 128 dès que `x` dépasse 127,5, et
+    // la borne ne l'arrête qu'à 128 : un exposant de `f32` y valait déjà
+    // l'infini, pour un `2^x` qui tient encore — `2^127,9` reste sous `f32::MAX`.
+    // En `f64`, `k` n'approche aucune borne, et une puissance de deux étant
+    // exacte dans les deux formats, les bits rendus ne changent nulle part
+    // ailleurs.
+    sum * f64::from_bits(((1023 + k) as u64) << 52)
 }
 
 /// `log2 x` en `f64`, pour un `x` dont l'appelant a déjà écarté les cas sans

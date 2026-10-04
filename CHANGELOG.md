@@ -47,6 +47,9 @@ publié, et explique les conventions du dépôt à qui y contribue.
 ## [Non publié]
 
 ### Corrigé
+- `exp2` rend une valeur finie pour les exposants entre 127,5 et 128, que le
+  `f32` porte encore. Aucun rendu ne change : la courbe de sortie n'atteint pas
+  ce domaine.
 - Les chiffres de `scg_sweep_reach` dans le header se lisent désormais en
   demi-étendues des deux côtés : l'exemple du corps annonçait le double de la
   portée réelle.
@@ -54,6 +57,8 @@ publié, et explique les conventions du dépôt à qui y contribue.
 ***
 
 ### Fixed
+- `exp2` returns a finite value for exponents between 127.5 and 128, which `f32`
+  still holds. No rendering changes: the output curve never reaches that domain.
 - The `scg_sweep_reach` figures in the header now read as half extents throughout:
   the body example announced twice the real reach.
 
