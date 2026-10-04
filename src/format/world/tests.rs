@@ -330,7 +330,7 @@ fn une_surface_trop_etendue_en_texels_est_refusee() {
     let deborde = avec_axe(MAX_TEXEL_COORD / 2.0);
     assert_eq!(
         World::load(&file(&deborde, &[], &[], &material(1, "mur"))).unwrap_err(),
-        refused(Malformation::Mapping)
+        refused(Malformation::Mapping { surface: 11 })
     );
 }
 
@@ -393,7 +393,7 @@ fn des_coordonnees_irrepliables_sont_refusees() {
         let cell = cell_bytes(7, 0, &SQUARE, &[body], &[]);
         assert_eq!(
             World::load(&file(&cell, &[], &[], &material(1, "mur"))).unwrap_err(),
-            refused(Malformation::Mapping),
+            refused(Malformation::Mapping { surface: 11 }),
             "échelle {scale}"
         );
     }
@@ -584,7 +584,7 @@ fn un_axe_de_lightmap_degenere_est_refuse() {
     let cell = cell_bytes(7, 0, &SQUARE, &[body], &[]);
     assert_eq!(
         World::load(&file(&cell, &[], &[], &material(1, "mur"))).unwrap_err(),
-        refused(Malformation::Mapping)
+        refused(Malformation::Mapping { surface: 11 })
     );
 }
 
@@ -634,7 +634,7 @@ fn une_origine_de_lightmap_hors_grille_est_refusee() {
     let shifted = frame([0.5, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]);
     assert_eq!(
         World::load(&map_with_lightmap(&shifted)).unwrap_err(),
-        refused(Malformation::Mapping)
+        refused(Malformation::Mapping { surface: 11 })
     );
 }
 
@@ -651,7 +651,7 @@ fn une_origine_hors_grille_sur_axe_court_est_refusee() {
     let fine = frame([0.5, 0.0, 0.0], [0.5, 0.0, 0.0], [0.0, 0.5, 0.0]);
     assert_eq!(
         World::load(&map_with_lightmap(&fine)).unwrap_err(),
-        refused(Malformation::Mapping)
+        refused(Malformation::Mapping { surface: 11 })
     );
 }
 
@@ -678,7 +678,7 @@ fn des_axes_de_lightmap_non_orthogonaux_sont_refuses() {
     let collapsed = frame([0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [1.0, 0.0, 0.0]);
     assert_eq!(
         World::load(&map_with_lightmap(&collapsed)).unwrap_err(),
-        refused(Malformation::Mapping)
+        refused(Malformation::Mapping { surface: 11 })
     );
 }
 
@@ -691,7 +691,7 @@ fn un_axe_de_lightmap_hors_du_plan_est_refuse() {
     let normal = frame([0.0, 0.0, 0.0], [0.0, 0.0, 1.0], [0.0, 1.0, 0.0]);
     assert_eq!(
         World::load(&map_with_lightmap(&normal)).unwrap_err(),
-        refused(Malformation::Mapping)
+        refused(Malformation::Mapping { surface: 11 })
     );
 }
 
@@ -711,7 +711,7 @@ fn une_etendue_de_lightmap_demesuree_est_refusee() {
     let fine = frame([0.0, 0.0, 0.0], [512.0, 0.0, 0.0], [0.0, 1.0, 0.0]);
     assert_eq!(
         World::load(&map_with_lightmap(&fine)).unwrap_err(),
-        refused(Malformation::Mapping)
+        refused(Malformation::Mapping { surface: 11 })
     );
 }
 

@@ -164,7 +164,9 @@ fn chaque_malformation_a_son_message() {
         Malformation::Count,
         Malformation::Flags,
         Malformation::Polygon,
-        Malformation::Mapping,
+        // La seule variante à charge utile : l'identifiant n'entre pas dans le
+        // code d'ABI, qui ne distingue pas les malformations entre elles.
+        Malformation::Mapping { surface: 11 },
         Malformation::Light,
         Malformation::Pose,
         Malformation::Portal,
@@ -195,7 +197,7 @@ fn chaque_malformation_a_son_message() {
         Malformation::Count => 12,
         Malformation::Flags => 13,
         Malformation::Polygon => 14,
-        Malformation::Mapping => 15,
+        Malformation::Mapping { .. } => 15,
         Malformation::Light => 16,
         Malformation::Pose => 17,
         Malformation::Portal => 18,
