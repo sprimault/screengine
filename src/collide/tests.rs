@@ -390,11 +390,19 @@ fn la_traversee_et_la_force_brute_rendent_les_memes_bits() {
 /// une découpe d'intervalle, la triangulation contre le polygone —, et c'est ce
 /// qui en fait un contrôle et non une redite. Sans lui, une formule de balayage
 /// fausse rendrait la traversée et la force brute fausses de la même façon.
+///
+/// **Les tours à départ solide sont écartés, donc ils se comptent.** Le `continue`
+/// ci-dessous est muet : si la géométrie ou le tirage changeaient au point que
+/// tous les départs tombent dans le solide, ce test resterait vert sans avoir
+/// vérifié un seul instant. Le témoin exige donc qu'une majorité de tours ait
+/// été réellement examinée, et le seuil est **mesuré** sur cette graine, pas
+/// choisi : elle en retient 128 sur 128 aujourd'hui.
 #[test]
 fn rien_ne_recouvre_avant_l_instant_rendu() {
     let world = room(0);
     let half = cube_half();
     let mut rng = Rng::new(0x0BEC_7000_0000_0003);
+    let mut examines = 0;
 
     for round in 0..128 {
         let from = random_inside(&mut rng);
@@ -403,6 +411,7 @@ fn rien_ne_recouvre_avant_l_instant_rendu() {
         if hit.start_solid {
             continue;
         }
+        examines += 1;
         // Une grille d'instants strictement avant le contact : aucun ne doit
         // recouvrir quoi que ce soit, sans quoi la boîte serait passée à travers.
         for step in 0..8 {
@@ -422,6 +431,12 @@ fn rien_ne_recouvre_avant_l_instant_rendu() {
             }
         }
     }
+
+    assert!(
+        examines >= 64,
+        "seuls {examines} tours sur 128 ont été examinés : les départs solides ont \
+         vidé l'oracle, qui ne vérifiait plus rien"
+    );
 }
 
 /// La boîte du prédicat, légèrement plus petite que celle du balayage.
