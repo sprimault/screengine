@@ -410,7 +410,7 @@ public final class DemoActivity extends Activity implements SurfaceHolder.Callba
     public void run() {
         long[] created = {0};
         if (Screengine.create(new int[] {WIDTH, HEIGHT, WIDTH, HEIGHT, TILE, 0, 0, 0}, created)
-                != Screengine.OK) {
+                < 0) {
             show(Screengine.lastError(0));
             return;
         }
@@ -525,18 +525,22 @@ public final class DemoActivity extends Activity implements SurfaceHolder.Callba
                 0.0f, 0.0f, (float) Math.sin(angle / 2.0f), (float) Math.cos(angle / 2.0f),
                 1.2f, 0.1f,
             };
-            if (Screengine.setCamera(ctx, camera) != Screengine.OK) {
+            if (Screengine.setCamera(ctx, camera) < 0) {
                 failure = Screengine.lastError(ctx);
                 break;
             }
-            if (Screengine.submitWorldVisible(ctx, identity, world, slots, lighting, cell)
-                    != Screengine.OK) {
+            // **Par le signe, jamais par `!= OK`.** La soumission du décor rend un
+            // statut positif quand la traversée atteint sa borne, ou quand la
+            // cellule vaut zéro : les traiter en échec sortait de la boucle de
+            // rendu sur un succès. Le signe vaut pour les appels qui n'en rendent
+            // aucun aujourd'hui, un code pouvant s'ajouter sans que la version
+            // d'ABI bouge.
+            if (Screengine.submitWorldVisible(ctx, identity, world, slots, lighting, cell) < 0) {
                 failure = Screengine.lastError(ctx);
                 break;
             }
             for (float[] placement : CRATES) {
-                if (Screengine.submitMesh(ctx, crateModel(placement), crate, crateSlots)
-                        != Screengine.OK) {
+                if (Screengine.submitMesh(ctx, crateModel(placement), crate, crateSlots) < 0) {
                     failure = Screengine.lastError(ctx);
                     break;
                 }
@@ -564,7 +568,7 @@ public final class DemoActivity extends Activity implements SurfaceHolder.Callba
             };
             if (failure == null
                     && Screengine.submitBlended(ctx, identity, patch, quadFaces, white, blot,
-                            Screengine.BLEND_MODULATE) != Screengine.OK) {
+                            Screengine.BLEND_MODULATE) < 0) {
                 failure = Screengine.lastError(ctx);
             }
 
@@ -575,12 +579,12 @@ public final class DemoActivity extends Activity implements SurfaceHolder.Callba
                 SPRITE_SIDE, 0.0f};
             if (failure == null
                     && Screengine.submitSprites(ctx, identity, quad, spriteTint, creature,
-                            Screengine.SPRITE_AXIAL) != Screengine.OK) {
+                            Screengine.SPRITE_AXIAL) < 0) {
                 failure = Screengine.lastError(ctx);
             }
 
             long before = System.nanoTime();
-            if (failure != null || Screengine.frameBitmap(ctx, bitmap) != Screengine.OK) {
+            if (failure != null || Screengine.frameBitmap(ctx, bitmap) < 0) {
                 failure = failure != null ? failure : Screengine.lastError(ctx);
                 break;
             }
