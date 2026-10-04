@@ -134,13 +134,13 @@ config.max_height = config.height = 360;
 config.tile_size = 64;
 
 ScgContext *ctx;
-if (scg_create(&config, &ctx) != SCG_OK) {
+if (scg_create(&config, &ctx) < 0) {
     fprintf(stderr, "%s\n", scg_last_error(NULL));
     return 1;
 }
 
 ScgMat4 model = {{1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1}};
-ScgVertex vertices[3] = {{4, 1.5f, -1}, {4, 0, 1.5f}, {4, -1.5f, -1}};
+ScgVertex vertices[3] = {{4, 1.5f, -1}, {4, -1.5f, -1}, {4, 0, 1.5f}};
 ScgTriangle triangle = {0, 1, 2, 0xE0, 0xA0, 0x30, 0xFF};
 scg_submit(ctx, &model, vertices, 3, &triangle, 1);
 
@@ -163,7 +163,8 @@ différence entre les plateformes.
 make build     # noyau et bibliothèque partagée
 make run       # ouvre une fenêtre sur le moteur
 make header    # régénère include/screengine.h
-make test      # dont les hôtes C, C++, wasm et Android, si leur outillage est là
+make test      # dont les cinq hôtes — C, C++, wasm, Android, Go —, si leur
+               # outillage est là
 make conform   # rejoue les scènes de référence et compare les empreintes
 make lint
 make nostd     # preuve que le noyau compile sans std
