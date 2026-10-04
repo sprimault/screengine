@@ -515,3 +515,30 @@ fn l_alpha_est_toujours_opaque() {
     let base = (((slot.y + GUTTER) * baked.side + slot.x + GUTTER) * 4) as usize;
     assert_eq!(baked.texels[base + 3], 0xFF);
 }
+
+/// `quantize` borne ses trois cas par écrit, `NaN` compris.
+///
+/// **Sur le `NaN`, ce cas ne peut pas être mis en échec, et il faut le savoir
+/// avant de s'y fier** : la saturation de `as` rend déjà zéro en Rust, si bien
+/// que retirer la garde écrite laisse le cas vert. Il fixe donc la **valeur**
+/// attendue, jamais la présence du test nommé.
+///
+/// Ce que la garde achète est ailleurs, et aucun test du dépôt ne peut
+/// l'atteindre : `cvttps2dq` rend `0x80000000` là où `as` sature, donc un chemin
+/// vectoriel qui reprendrait cette fonction sans elle rendrait un autre luxel.
+/// C'est la clause de `docs/rust.md` — `NaN` se teste nommément — et elle vaut
+/// précisément pour ce qui n'existe pas encore.
+///
+/// Les deux bornes sont prises à l'unité près : un décalage d'un demi dans
+/// l'arrondi déplacerait tous les luxels d'un niveau sans rien faire rougir.
+#[test]
+fn quantize_borne_ses_trois_cas_et_le_nan() {
+    assert_eq!(quantize(f32::NAN), 0, "NaN");
+    assert_eq!(quantize(f32::NEG_INFINITY), 0, "moins l'infini");
+    assert_eq!(quantize(f32::INFINITY), 255, "plus l'infini");
+    assert_eq!(quantize(-1.0), 0, "sous le plancher");
+    assert_eq!(quantize(0.0), 0, "le plancher");
+    assert_eq!(quantize(0.5), 1, "l'arrondi au plus proche");
+    assert_eq!(quantize(254.4), 254, "juste sous le plafond");
+    assert_eq!(quantize(300.0), 255, "au-delà du plafond");
+}

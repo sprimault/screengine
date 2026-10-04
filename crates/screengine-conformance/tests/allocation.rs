@@ -20,8 +20,9 @@ use std::cell::Cell;
 use std::sync::Arc;
 
 use screengine::{
-    Affine3, Angle, BYTES_PER_PIXEL, Color, Config, Context, Filter, Light, Lightmaps, Mesh, Rows,
-    Sprite, SpriteOrientation, Texture, Triangle, Vec3, VertexUv, VertexUv2, World,
+    Affine3, Angle, BYTES_PER_PIXEL, Color, Config, Context, DepthMode, Filter, Light, Lightmaps,
+    Line, Mesh, Point, Rows, Sprite, SpriteOrientation, Texture, Triangle, Vec3, VertexUv,
+    VertexUv2, World,
 };
 
 /// Le décor versionné que les hôtes parcourent, intégré à la compilation.
@@ -756,4 +757,86 @@ fn aucun_balayage_de_force_brute_n_alloue() {
         }
     });
     assert_eq!(seen, 0, "{seen} allocation(s) pendant la force brute");
+}
+
+/// Aucune image qui trace n'alloue, et le redimensionnement n'y change rien.
+///
+/// **Les deux familles de tracé n'étaient sous aucune mesure.** Elles ont leur
+/// propre répartition par tuiles, dont `build_bounds` redimensionne trois
+/// tampons à chaque image : la capacité les couvre par construction — `refs` est
+/// réservée pour `max_lines` fois le plafond de tuiles d'une primitive petite —
+/// mais rien ne le prouvait, et une capacité qui cesserait de suffire ne se
+/// verrait nulle part.
+///
+/// **La résolution baisse au milieu**, ce qu'aucune autre mesure ne fait : les
+/// tampons de répartition sont dimensionnés sur le maximum, et une réservation
+/// faite sur la résolution courante ne se verrait qu'après un changement — là où
+/// un contexte qui ne change jamais de taille reste vert pour toujours.
+///
+/// Les deux modes de profondeur, parce qu'ils ne prennent pas le même chemin
+/// dans la tuile, et trois images par mode, pour que la première ne soit pas la
+/// seule mesurée.
+#[test]
+fn aucune_image_tracee_n_alloue() {
+    let (width, height) = (640, 360);
+    let mut context = Context::new(Config {
+        max_width: width,
+        max_height: height,
+        width,
+        height,
+        tile_size: 64,
+        max_triangles: 0,
+        max_lines: 0,
+    })
+    .expect("configuration valide");
+    let mut pixels = vec![0u8; width as usize * height as usize * BYTES_PER_PIXEL];
+
+    // Une brisure qui traverse l'image en biais : elle touche beaucoup de
+    // tuiles, donc elle remplit la répartition plutôt que de l'effleurer.
+    let lines: Vec<Line> = (0..64)
+        .map(|i| {
+            let t = i as f32;
+            Line {
+                a: Vec3::new(10.0, -4.0 + t * 0.1, -2.0),
+                b: Vec3::new(10.0, 4.0 - t * 0.1, 2.0),
+                color: Color::new(0xFF, 0xFF, 0xFF, 0xFF),
+            }
+        })
+        .collect();
+    let points: Vec<Point> = (0..64)
+        .map(|i| Point {
+            at: Vec3::new(10.0, -2.0 + i as f32 * 0.06, 0.0),
+            color: Color::new(0xFF, 0x00, 0x00, 0xFF),
+        })
+        .collect();
+
+    for depth in [DepthMode::Tested, DepthMode::Always] {
+        let seen = allocations(|| {
+            for _ in 0..3 {
+                context
+                    .submit_lines(Affine3::IDENTITY, &lines, depth)
+                    .expect("brisure soumise");
+                context
+                    .submit_points(Affine3::IDENTITY, &points, depth)
+                    .expect("points soumis");
+                context.frame_end(&mut pixels, width).expect("image rendue");
+            }
+        });
+        assert_eq!(seen, 0, "{seen} allocation(s) en {depth:?}");
+    }
+
+    // Sous le maximum : les tampons de répartition ne se redimensionnent que
+    // vers le bas, et c'est le cas qu'aucune autre mesure ne joue.
+    context
+        .set_resolution(320, 180)
+        .expect("sous le maximum, hors image");
+    let seen = allocations(|| {
+        for _ in 0..3 {
+            context
+                .submit_lines(Affine3::IDENTITY, &lines, DepthMode::Tested)
+                .expect("brisure soumise");
+            context.frame_end(&mut pixels, width).expect("image rendue");
+        }
+    });
+    assert_eq!(seen, 0, "{seen} allocation(s) après redimensionnement");
 }
