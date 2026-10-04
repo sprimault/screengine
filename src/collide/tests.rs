@@ -1454,3 +1454,83 @@ fn longer_un_mur_ne_bute_pas_sur_son_arete_terminale() {
         hit.surface, hit.fraction, hit.normal
     );
 }
+
+/// **Le comportement à la limite, éprouvé par une géométrie faite pour
+/// l'atteindre** — et c'est ici qu'il doit vivre, parce qu'aucun décor réel ne s'en
+/// approche : les scènes de conformance tiennent sept fois au-dessus du seuil, et
+/// l'intégrateur quatre-vingts fois. La borne se franchit donc par la **petitesse**
+/// plutôt que par l'éloignement, les deux étant le même quotient.
+///
+/// Les deux chemins le portent, et l'oracle le dit : une propriété posée sur un
+/// seul d'entre eux les ferait diverger partout où elle s'applique.
+#[test]
+fn une_boite_minuscule_n_a_plus_de_jeu() {
+    let world = room(0);
+    let from = Vec3d::new(4.0, 4.0, 4.0);
+    let to = Vec3d::new(6.0, 4.0, 4.0);
+
+    // Six unités de l'origine laissent un seuil de 7,3 × 10⁻⁴ : la boîte est en
+    // deçà, donc son jeu est noyé dans le pas du `f32` de sa propre position.
+    let tiny = Vec3d::new(0.0001, 0.0001, 0.0001);
+    let hit = sweep(&world, 7, tiny, from, to).expect("cellule connue");
+    assert!(hit.no_gap, "une boîte de 10⁻⁴ à six unités n'a plus de jeu");
+    assert!(
+        sweep_brute(&world, tiny, from, to).no_gap,
+        "et le chemin brut le dit aussi, sans quoi l'oracle divergerait"
+    );
+
+    // La même course avec une boîte ordinaire : le jeu tient largement.
+    let hit = sweep(&world, 7, cube_half(), from, to).expect("cellule connue");
+    assert!(!hit.no_gap, "une boîte d'une demi-unité garde son jeu");
+}
+
+/// Un rayon ne lève jamais le drapeau, et ce n'est pas un seuil qu'il passerait.
+///
+/// Sa dilatation est nulle par construction : il n'a aucun jeu, donc aucun à
+/// perdre. Le signaler ferait du cas normal une anomalie permanente, sur chaque
+/// interrogation d'éditeur.
+#[test]
+fn un_rayon_n_a_pas_de_jeu_a_perdre() {
+    let world = room(0);
+    let from = Vec3d::new(4.0, 4.0, 7.0);
+    let to = Vec3d::new(4.0, 4.0, -1.0);
+
+    let hit =
+        super::sweep(&world, 7, Vec3d::ZERO, from, to, Surfaces::All).expect("cellule connue");
+    assert!(hit.surface != 0, "le rayon touche bien le sol");
+    assert!(!hit.no_gap, "et il ne signale aucun jeu perdu");
+}
+
+/// **La portée annoncée et le drapeau sont la même frontière**, et c'est le seul
+/// test qui le garde.
+///
+/// Les deux expressions sont inverses l'une de l'autre et vivent à dix lignes
+/// d'écart ; rien d'autre n'empêcherait qu'elles cessent de se répondre, et l'écart
+/// serait pour l'hôte le pire possible — la fonction lui dirait sûr ce que le
+/// drapeau lui dit perdu. Exact au bit près : les deux facteurs sont des puissances
+/// de deux, donc la coordonnée rendue est précisément celle où la bascule a lieu.
+#[test]
+fn la_portee_annoncee_borne_le_drapeau() {
+    for extent in [0.05f32, 0.3, 0.9, 1.0, 7.5] {
+        let reach = sweep_reach(Vec3::new(extent, extent, extent));
+        let half = Vec3d::new(f64::from(extent), f64::from(extent), f64::from(extent));
+
+        let at = Vec3d::new(f64::from(reach), 0.0, 0.0);
+        assert!(
+            no_gap(half, at, at),
+            "{extent} : à {reach}, le jeu est déjà perdu — c'est le seuil, pas la dernière valeur sûre"
+        );
+
+        let inside = Vec3d::new(f64::from(reach) * 0.5, 0.0, 0.0);
+        assert!(
+            !no_gap(half, inside, inside),
+            "{extent} : à la moitié de {reach}, le jeu tient"
+        );
+    }
+}
+
+/// Un rayon n'a pas de portée, puisqu'il n'a pas de jeu : zéro, comme sa marge.
+#[test]
+fn un_rayon_n_a_pas_de_portee() {
+    assert_eq!(sweep_reach(Vec3::ZERO), 0.0);
+}

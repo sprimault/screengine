@@ -102,6 +102,79 @@ pub fn sweep_skin(half_extents: Vec3) -> f32 {
     (largest * SKIN) as f32
 }
 
+/// Le pas d'un `f32` relativement à sa valeur : sa mantisse porte vingt-quatre
+/// bits.
+const F32_STEP: f64 = 1.0 / 16_777_216.0;
+
+/// La boîte est-elle trop petite, là où elle se déplace, pour garder un jeu ?
+///
+/// **Le jeu disponible et le pas de la position se comparent, et rien d'autre.**
+/// Le premier vaut une demi-marge, celle que le bord d'un panneau laisse ; le
+/// second est l'écart entre deux `f32` voisins à cette coordonnée. Quand le jeu
+/// n'excède plus le pas, la pose rendue à l'hôte retombe dans le solide et le
+/// balayage suivant part pénétrant — ce que la dilatation existe pour empêcher.
+///
+/// **Dérivé de [`SKIN`], jamais écrit en `2⁻¹³`.** Ce chiffre est le quotient des
+/// deux, et le figer ferait mentir le drapeau le jour où la constante bouge —
+/// or c'est précisément elle qu'un décor plus vaste ferait reconsidérer. Les deux
+/// facteurs étant des puissances de deux, les produits sont exacts.
+///
+/// **La plus grande coordonnée du segment entier**, et non celle d'une extrémité :
+/// la repose tombe n'importe où entre les deux, et le pas suit la coordonnée.
+fn no_gap(half: Vec3d, from: Vec3d, to: Vec3d) -> bool {
+    let largest = max(max(half.x, half.y), half.z);
+    // Même forme que `sweep_skin`, et pour la même raison : `is_nan` d'abord, un
+    // refus écrit `largest <= 0.0` le laisserait passer. Un rayon sort ici — sa
+    // dilatation est nulle par construction, donc il n'a aucun jeu à perdre.
+    if largest.is_nan() || largest <= 0.0 {
+        return false;
+    }
+    let reach = max(
+        max(max(abs(from.x), abs(from.y)), abs(from.z)),
+        max(max(abs(to.x), abs(to.y)), abs(to.z)),
+    );
+    largest * (SKIN * 0.5) <= reach * F32_STEP
+}
+
+/// Jusqu'à quelle distance de l'origine une boîte de ces demi-étendues garde un
+/// jeu.
+///
+/// **La question que le drapeau ne peut pas porter.** Un statut décrit l'appel qui
+/// vient de rendre, et celui du jeu perdu est le moins actionnable des quatre :
+/// classé dernier, il est masqué par le départ solide exactement dans le cas qui
+/// compte, puisqu'une boîte sans jeu se repose dans le solide et que le balayage
+/// suivant rend ce départ. Le garde-fou se tairait dans son propre symptôme. Ce
+/// qu'un hôte a besoin de savoir est donc un **état** et non un événement, et le
+/// canal du code de retour ne transporte que des événements, un à la fois.
+///
+/// **Une valeur, et les demi-étendues en entrée** — non un prédicat sur une pose.
+/// Ce qu'un hôte compare à cette distance est l'étendue de son décor, qui est une
+/// donnée de sa génération : il pose la question une fois, avant même qu'une carte
+/// existe. Un prédicat sur une position l'obligerait à rappeler par mobile et par
+/// image pour apprendre la même chose, et retomberait dans le canal par événement
+/// qu'on vient d'écarter.
+///
+/// Le jeu tient **en deçà** de cette distance, strictement : à cette coordonnée
+/// exactement, il est déjà perdu. C'est le seuil, pas la dernière valeur sûre.
+///
+/// **Dérivée de `SKIN` comme `no_gap`, et par l'expression inverse** : deux
+/// calculs écrits séparément finiraient par ne plus se répondre, et c'est l'hôte
+/// qui en paierait l'écart — la fonction lui dit sûr ce que le drapeau lui dit
+/// perdu.
+///
+/// Un rayon rend zéro, comme il rend zéro de marge : n'ayant aucun jeu, il n'a
+/// aucune portée au-delà de laquelle le perdre.
+pub fn sweep_reach(half_extents: Vec3) -> f32 {
+    let half = Vec3d::from(half_extents);
+    let largest = max(max(half.x, half.y), half.z);
+    // Même forme et même raison que `sweep_skin` : `is_nan` d'abord, un refus
+    // écrit `largest <= 0.0` le laisserait passer jusqu'à la multiplication.
+    if largest.is_nan() || largest <= 0.0 {
+        return 0.0;
+    }
+    (largest * (SKIN * 0.5) / F32_STEP) as f32
+}
+
 /// Quelles surfaces une interrogation voit.
 ///
 /// **Le balayage et la sélection ne regardent pas le même décor**, et c'est la
@@ -152,6 +225,19 @@ pub struct Hit {
     pub start_solid: bool,
     /// La région examinée a-t-elle été tronquée par [`SWEEP_CELLS`] ?
     pub incomplete: bool,
+    /// La boîte est-elle trop petite, là où elle se déplace, pour garder un jeu ?
+    ///
+    /// Le jeu que le balayage laisse vaut une demi-marge, donc
+    /// `half_max · 2⁻¹¹` ; reposer le mobile à la fraction rendue passe par des
+    /// positions en `f32`, dont le pas vaut `|p|·2⁻²⁴`. Quand le premier n'excède
+    /// plus le second, la pose retombe **dans** le solide et le balayage suivant
+    /// part d'un départ pénétrant. Le contact rendu reste juste : c'est la repose
+    /// qui perd son jeu, et c'est pourquoi ceci est un drapeau et non une erreur.
+    ///
+    /// **Un rayon ne le lève jamais.** Sa dilatation est nulle par construction,
+    /// donc il n'a aucun jeu à perdre — le signaler ferait du cas normal une
+    /// anomalie permanente.
+    pub no_gap: bool,
 }
 
 /// Le meilleur contact connu, et ce qu'il faut pour le départager du suivant.
@@ -226,6 +312,7 @@ impl Hit {
             cell: 0,
             start_solid: false,
             incomplete: false,
+            no_gap: false,
         }
     }
 }
@@ -328,6 +415,7 @@ pub(crate) fn sweep(
     // des deux tests le borne aussi — un `NaN` ne satisfait ni l'un ni l'autre
     // et ressortirait tel quel, d'où le cas nommé qui le ramène à zéro.
     best.hit.fraction = in_unit(best.hit.fraction);
+    best.hit.no_gap = no_gap(half, from, to);
     Some(best.hit)
 }
 
@@ -782,6 +870,15 @@ fn to_f32(v: Vec3d) -> Vec3 {
 /// Le plus grand de deux nombres, par comparaison écrite.
 fn max(a: f64, b: f64) -> f64 {
     if a > b { a } else { b }
+}
+
+/// La valeur absolue, écrite plutôt qu'empruntée à la bibliothèque du système.
+///
+/// Une seule pour le module : elle vivait en trois exemplaires identiques, ce qui
+/// est un de trop pour une expression dont chaque copie est une occasion de la
+/// relâcher.
+pub(super) fn abs(value: f64) -> f64 {
+    if value < 0.0 { -value } else { value }
 }
 
 /// Pose une composante d'un vecteur, par son rang.

@@ -87,6 +87,26 @@ pub const SCG_STATUS_NO_CELL: i32 = 2;
 /// status, and `fraction` says the rest.
 pub const SCG_STATUS_START_SOLID: i32 = 3;
 
+/// Success, and the box is too small, where it moves, to keep any gap.
+///
+/// The contact returned is still correct: what is lost is the **re-placing**. A
+/// sweep leaves the box a half margin short of the solid, and putting it back at
+/// the returned fraction goes through `float` positions whose step is `|p| *
+/// 2^-24`. Once that step covers the gap, the body lands inside the solid and the
+/// next sweep starts penetrating — which is why this is a status and not an error.
+///
+/// **A ray never carries it**: its margin is zero by construction, so it has no
+/// gap to lose.
+///
+/// **It is the last of the four, and it is the one to ask about rather than wait
+/// for.** Where two statuses apply the call returns the most actionable, so a box
+/// in this state is reported as [`SCG_STATUS_START_SOLID`] as soon as it has landed
+/// in the solid — this status would then be masked in the very case it describes.
+/// Call `scg_sweep_reach` with your box once, compare it to how far your level
+/// reaches, and widen the box or move the level closer to the origin before any of
+/// this happens.
+pub const SCG_STATUS_NO_GAP: i32 = 4;
+
 /// The greatest number of cells one sweep visits.
 ///
 /// Reaching it returns [`SCG_STATUS_INCOMPLETE`] and **truncates** the move to

@@ -67,7 +67,8 @@ pub use screengine;
 pub use screengine::{
     Affine3, Angle, Camera, Color, Context, DepthMode, Filter, Hit, LINE_CAPACITY, Light, Lightmap,
     Lightmaps, Line, Mesh, Point, Quat, SWEEP_CELLS, Sprite, SpriteOrientation, Surfaces,
-    TRIANGLE_CAPACITY, Texture, Triangle, Vec3, VertexUv, VertexUv2, Visibility, World, sweep_skin,
+    TRIANGLE_CAPACITY, Texture, Triangle, Vec3, VertexUv, VertexUv2, Visibility, World,
+    sweep_reach, sweep_skin,
 };
 pub use texture::{load_png, load_png_masked};
 pub use winit::event::MouseButton;

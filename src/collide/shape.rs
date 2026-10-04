@@ -20,6 +20,8 @@
 
 use crate::math::Vec3d;
 
+use super::abs;
+
 /// Ce qu'un balayage retient d'un contact.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct Touch {
@@ -48,11 +50,6 @@ pub(crate) const RANK_VERTEX: u8 = 2;
 /// son ordre d'opérations est contractuel comme celui des transformations.
 pub(crate) fn support(normal: Vec3d, half: Vec3d) -> f64 {
     (abs(normal.x) * half.x + abs(normal.y) * half.y) + abs(normal.z) * half.z
-}
-
-/// La valeur absolue, écrite plutôt qu'empruntée à la bibliothèque du système.
-fn abs(value: f64) -> f64 {
-    if value < 0.0 { -value } else { value }
 }
 
 /// Le coin de la boîte qui touche la facette d'une face, selon sa normale.

@@ -130,6 +130,11 @@ pub fn digest() -> Result<u64, String> {
 ///
 /// La même règle que pour le balayage, et le même ordre de priorité — il est
 /// contractuel, et il entre dans la référence avec le reste.
+///
+/// **Le statut « sans jeu » n'y figure pas, et c'est une propriété du rayon**, pas
+/// un oubli : sa dilatation est nulle par construction, donc il n'a aucun jeu à
+/// perdre et le noyau ne lève jamais le drapeau ici. L'écrire quand même serait
+/// une branche inatteignable.
 fn publish(hit: Option<Hit>, to: Vec3) -> (Hit, u8) {
     match hit {
         None => (free(to), STATUS_NO_CELL),
@@ -149,6 +154,7 @@ fn free(to: Vec3) -> Hit {
         cell: 0,
         start_solid: false,
         incomplete: false,
+        no_gap: false,
     }
 }
 

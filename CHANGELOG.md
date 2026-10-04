@@ -47,6 +47,8 @@ publié, et explique les conventions du dépôt à qui y contribue.
 ## [Non publié]
 
 ### Ajouté
+- `scg_sweep_reach` dit jusqu'où une boîte garde son jeu de collision, et le
+  balayage rend le statut `SCG_STATUS_NO_GAP` quand elle l'a perdu.
 - Le décor de validation se regarde depuis deux poses de plus, à moins d'un plan
   proche d'un portail. L'empreinte `salles` change en conséquence, le rendu non.
 
@@ -58,6 +60,8 @@ publié, et explique les conventions du dépôt à qui y contribue.
 ***
 
 ### Added
+- `scg_sweep_reach` reports how far a box keeps its collision gap, and a sweep
+  returns the `SCG_STATUS_NO_GAP` status once it has lost it.
 - The validation level is now viewed from two more poses, closer to a portal than
   the near plane. The `salles` fingerprint changes accordingly; rendering does not.
 
