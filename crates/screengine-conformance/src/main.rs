@@ -514,9 +514,11 @@ enum Scene {
     /// qui emprunte ses cinq chemins dans la même image.
     ///
     /// Une par chemin aurait été plus lisible en cas de divergence ; c'est une
-    /// seule, parce que chaque scène de `HOST_SCENES` se paie en **quatre**
-    /// descriptions — une par langage —, et que les scènes séparées existent
-    /// déjà côté Rust pour dire lequel des chemins a bougé.
+    /// seule, parce que chaque scène de `HOST_SCENES` se paie en **cinq**
+    /// descriptions — une par hôte, et `go` est entré avec l'étape 7 —, et que
+    /// les scènes séparées existent déjà côté Rust pour dire lequel des chemins a
+    /// bougé. Le nombre reste écrit ici parce qu'il *est* le prix annoncé ;
+    /// ailleurs, compter les hôtes vieillit mal et la prose dit « chaque hôte ».
     ///
     /// **Ce qu'elle ferme, et ce n'est pas ce qu'on croit d'abord.** Les
     /// `_Static_assert` du header couvrent déjà la disposition de `ScgSprite`
@@ -600,13 +602,13 @@ enum Scene {
 /// contrainte des hôtes qui le décide : les tables trigonométriques du noyau ne
 /// traversent pas l'ABI, si bien qu'un hôte qui recalculerait ces coefficients
 /// avec sa bibliothèque mathématique n'obtiendrait pas les mêmes bits — donc
-/// pas la même empreinte. Écrits, ils se recopient dans les quatre langages
+/// pas la même empreinte. Écrits, ils se recopient dans chaque langage d'hôte
 /// comme les sommets et les teintes des autres scènes.
 ///
 /// Les valeurs sortent de deux rotations de triangle 3-4-5, autour de Z puis de
 /// Y : la matrice est orthonormale exactement, et chaque coefficient a une
-/// écriture décimale courte que les quatre langages convertissent en les mêmes
-/// bits. Par colonnes, comme [`Affine3`].
+/// écriture décimale courte que tous les langages d'hôte convertissent en les
+/// mêmes bits. Par colonnes, comme [`Affine3`].
 const CRATE_MODEL: Affine3 = Affine3 {
     m: [
         0.64, 0.48, 0.6, //

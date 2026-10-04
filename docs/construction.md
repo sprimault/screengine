@@ -109,9 +109,9 @@ l'exécution par `scg_abi_version`.
 
 | Cible | Triple | Artefact | Outillage | Hôtes | Contrôle |
 |---|---|---|---|---|---|
-| Windows x64 | `x86_64-pc-windows-msvc` | `.dll`, `.lib` | MSVC Build Tools | `screengine-play`, `hosts/c`, `hosts/cpp` | CI |
+| Windows x64 | `x86_64-pc-windows-msvc` | `.dll`, `.lib` | MSVC Build Tools | `screengine-play`, `hosts/c`, `hosts/cpp`, `hosts/go` | CI |
 | Windows x86 | `i686-pc-windows-msvc` | `.dll`, `.lib` | MSVC Build Tools | aucun | CI, `make conform-x86` |
-| Linux x64 | `x86_64-unknown-linux-gnu` | `.so`, `.a` | gcc ou clang | `hosts/c`, `hosts/cpp`, conformance | CI |
+| Linux x64 | `x86_64-unknown-linux-gnu` | `.so`, `.a` | gcc ou clang | `hosts/c`, `hosts/cpp`, `hosts/go`, conformance | CI |
 | Linux x86 | `i686-unknown-linux-gnu` | `.so`, `.a` | gcc-multilib | aucun | CI, au tag seulement |
 | Navigateur | `wasm32-unknown-unknown` | `.wasm` | cible rustup, Node | `hosts/web` | CI, `make test-wasm` sous Linux et Windows |
 | Android arm64 | `aarch64-linux-android` | `.so`, `.a` | NDK, `qemu-user` | `hosts/android` | CI, `make test-android` sous Linux, sous `qemu-user` |
@@ -457,10 +457,10 @@ contrôle : ni `make test`, ni l'intégration continue ne le construisent.
   versionné que les cinq hôtes chargent, engendré par la conformance et
   réécrit par **`make mesh`**. Un test de la conformance le compare octet pour
   octet à ce que le générateur écrit, si bien qu'un fichier périmé échoue là,
-  franchement, au lieu de faire diverger quatre empreintes sans dire pourquoi.
-  Il est déclaré binaire dans `.gitattributes`. Aucun hôte ne réécrit sa
-  disposition : leur faire poser ces octets dans quatre langages serait la même
-  liste à quatre endroits.
+  franchement, au lieu de faire diverger les empreintes des hôtes sans dire
+  pourquoi. Il est déclaré binaire dans `.gitattributes`. Aucun hôte ne réécrit
+  sa disposition : leur faire poser ces octets dans chaque langage serait la même
+  liste autant de fois qu'il y a d'hôtes.
 - **`hosts/collision.world` et `hosts/collision.sweeps` suivent ce modèle**, pour
   le balayage. Le premier est un décor ; le second porte la **question** — la
   liste des boîtes et des trajets que chaque hôte rejoue, huit octets de magie,
@@ -472,7 +472,7 @@ contrôle : ni `make test`, ni l'intégration continue ne le construisent.
   chemin, pas à négocier une évolution.
 
   Sans ce fichier, chaque hôte réengendrerait la liste dans son langage, et son
-  empreinte prouverait en plus que quatre programmeurs ont su reporter la même
+  empreinte prouverait en plus que chaque hôte a su reporter la même
   règle géométrique — la moins intéressante des deux propriétés, et celle qui
   ferait échouer le contrôle.
 - **Les images de `crates/screengine-play/assets/` sont produites pour le
@@ -521,7 +521,7 @@ et chaque semaine pour l'audit :
 | Job | Plateforme | Contrôles |
 |---|---|---|
 | vérification | Linux | `fmt`, `lint`, `nostd`, `header-verif`, `msrv`, `deny` |
-| tests | Linux et Windows | `test`, hôtes C, C++ et wasm compris, `conform` ; l'hôte Android sous Linux seulement, émulateur démarré, et retiré sous Windows par `SANS=android` |
+| tests | Linux et Windows | `test`, hôtes C, C++, wasm et Go compris, `conform` ; l'hôte Android sous Linux seulement, émulateur démarré, et retiré sous Windows par `SANS=android` |
 | audit | Linux | `audit`, dans un job à part : un avis publié en amont n'est pas un défaut de la PR en cours |
 
 **`make msrv` construit le noyau et la frontière avec la chaîne que
