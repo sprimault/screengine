@@ -876,3 +876,32 @@ fn la_capacite_de_trace_est_une_limite() {
     // Le lot est refusé **en entier** : rien ne reste de celui qui déborde.
     assert!(context.segments.is_empty());
 }
+
+/// Le brouillard des graines qui en règlent **change** l'image.
+///
+/// **Le témoin que la comparaison entre découpages n'avait pas**, et le
+/// commentaire de [`scene`] nomme déjà la panne qu'il attrape : les profondeurs
+/// du tampon sont en `near/w`, si bien qu'un brouillard réglé sur des distances
+/// ordinaires sature partout et rend l'image inchangée. Son chemin sortirait
+/// alors de la comparaison sans que rien ne le signale — les douze graines
+/// resteraient vertes, en comparant deux découpages d'une scène sans brouillard.
+///
+/// La graine 1 en règle un, puisque `seed % 3 == 1` ; la même scène sans
+/// brouillard doit rendre autre chose.
+#[test]
+fn le_brouillard_d_une_graine_qui_en_regle_change_l_image() {
+    let mut embrume = context(32);
+    scene(&mut embrume, 1);
+    let avec = reference(&mut embrume);
+
+    let mut net = context(32);
+    scene(&mut net, 1);
+    net.clear_fog().expect("hors image");
+    let sans = reference(&mut net);
+
+    assert!(
+        avec != sans,
+        "le brouillard ne change aucun pixel : ses bornes saturent, ou elles \
+         n'atteignent pas les profondeurs de la scène"
+    );
+}

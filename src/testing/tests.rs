@@ -43,3 +43,58 @@ fn la_graine_nulle_ne_bloque_pas() {
     assert_eq!(tirages.len(), 8, "la suite s'est bloquée");
     assert!(!tirages.contains(&0), "un tirage nul");
 }
+
+/// `coord` tient ses bornes, les atteint toutes deux, et se rejoue.
+///
+/// **C'est l'instrument de tous les tirages du noyau, et rien ne le vérifiait.**
+/// La doctrine du projet dit que l'instrument se vérifie avant ce qu'il mesure :
+/// un `coord` qui ne sortirait jamais de son milieu laisserait chaque test
+/// aléatoire vert en n'explorant rien, et sa sortie ne l'en distinguerait pas.
+///
+/// Trois propriétés, et aucune ne remplace les autres. Les bornes **tenues**,
+/// sans quoi un tirage sortirait du domaine que l'appelant croit borné ; les
+/// bornes **atteintes**, sans quoi un intervalle serait silencieusement plus
+/// étroit qu'annoncé — c'est le cas d'un `hi` exclu par erreur ; et la suite
+/// **rejouable**, puisque c'est tout ce qu'une graine fixe promet.
+///
+/// L'intervalle est petit à dessein : sur `[0, 3]`, quelques centaines de
+/// tirages touchent les quatre valeurs si la loi est à peu près uniforme, là où
+/// un grand intervalle ne dirait rien des bords.
+#[test]
+fn coord_tient_ses_bornes_les_atteint_et_se_rejoue() {
+    let mut rng = Rng::new(0xC007_0000_0000_0001);
+    let mut vus = [false; 4];
+    for _ in 0..512 {
+        let value = rng.coord(0, 3);
+        assert!(
+            (0..=3).contains(&value),
+            "coord est sorti de ses bornes : {value}"
+        );
+        vus[value as usize] = true;
+    }
+    assert!(vus.iter().all(|seen| *seen), "coord n'atteint pas {vus:?}");
+
+    // Les bornes négatives passent par la même soustraction, qui déborderait si
+    // elle était écrite sur des entiers signés sans élargissement.
+    let mut rng = Rng::new(7);
+    for _ in 0..256 {
+        let value = rng.coord(-5, -2);
+        assert!(
+            (-5..=-2).contains(&value),
+            "coord négatif est sorti de ses bornes : {value}"
+        );
+    }
+
+    // La même graine rejoue la même suite : un échec qui ne se rejoue pas n'a
+    // pas été trouvé.
+    let suite = |seed| {
+        let mut rng = Rng::new(seed);
+        let mut out = [0i32; 16];
+        for slot in &mut out {
+            *slot = rng.coord(-100, 100);
+        }
+        out
+    };
+    assert_eq!(suite(42), suite(42), "la graine ne rejoue pas sa suite");
+    assert_ne!(suite(42), suite(43), "deux graines rendent la même suite");
+}

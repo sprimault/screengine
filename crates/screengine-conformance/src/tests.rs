@@ -911,3 +911,55 @@ fn le_tunnel_arrete_un_volume_dans_ses_quatre_directions() {
         assert!(!hit.start_solid, "{nom} : le centre du tunnel est dégagé");
     }
 }
+
+/// Le répertoire des références et [`Scene::ALL`] portent les mêmes noms.
+///
+/// **Les deux sens comptent, et aucun n'était tenu.** Une référence orpheline —
+/// celle d'une scène retirée ou renommée — reste en place sans un mot, puisque
+/// `--check` ne regarde que les scènes du tableau ; et une scène absente du
+/// tableau ne se rend jamais, donc son chemin n'est éprouvé par rien alors que sa
+/// référence est là et paraît la garder.
+///
+/// C'est le pendant, pour le répertoire, de ce que `header-verif` fait au header :
+/// le fichier versionné n'est jamais la source de vérité, et quelque chose doit
+/// confronter les deux.
+#[test]
+fn les_references_et_les_scenes_portent_les_memes_noms() {
+    let dir = references();
+    let mut sur_disque: Vec<String> = std::fs::read_dir(&dir)
+        .expect("le répertoire des références existe")
+        .map(|entry| {
+            entry
+                .expect("entrée lisible")
+                .file_name()
+                .to_string_lossy()
+                .into_owned()
+        })
+        .collect();
+    sur_disque.sort();
+
+    let mut au_tableau: Vec<String> = Scene::ALL
+        .iter()
+        .map(|scene| scene.name().to_owned())
+        .collect();
+    au_tableau.sort();
+
+    let orphelines: Vec<&String> = sur_disque
+        .iter()
+        .filter(|name| !au_tableau.contains(name))
+        .collect();
+    assert!(
+        orphelines.is_empty(),
+        "références sans scène : {orphelines:?} — une scène retirée ou renommée \
+         laisse son fichier, que `--check` ne regarde jamais"
+    );
+
+    let sans_reference: Vec<&String> = au_tableau
+        .iter()
+        .filter(|name| !sur_disque.contains(name))
+        .collect();
+    assert!(
+        sans_reference.is_empty(),
+        "scènes sans référence : {sans_reference:?}"
+    );
+}
