@@ -42,6 +42,12 @@ clippy sur `wasm32-unknown-unknown` et sur les trois cibles Android, là où un
 `std`, elle, est couverte par `make nostd`, qui la compile. L'intégration
 continue appelle `make tools`, qui les installe aux versions épinglées ici.
 
+**`make doc-verif` passe rustdoc en `-D warnings`, et aucune autre cible ne
+l'entraîne** : un renvoi vers un élément qu'aucun `pub use` n'expose ne fait
+rougir ni `lint` ni `test`, et c'est ainsi qu'une constante est restée
+inatteignable une version entière. Elle est dans la liste d'avant-publication et
+dans le job de vérification, au même titre que `header-verif`.
+
 **`make print-<VARIABLE>` écrit une valeur et rien d'autre**, et c'est ainsi que
 les workflows lisent ce qui vit dans le `Makefile` plutôt que de le recopier :
 la cible wasm, les trois cibles Android, la liste des scènes que les hôtes
@@ -246,10 +252,10 @@ toutes les autres cibles.
   commun au test et à la page, sans API de Node ni du DOM. `make test-wasm` le
   lance sous Node, sans fenêtre ; `make web` sert la page sur
   `http://127.0.0.1:8080/`, puisque `fetch` ne lit pas un `.wasm` en `file://`.
-  **La page charge `couloir.world` et le parcourt au clavier** : c'est l'hôte de
-  démonstration du web, et le patron des trois autres — un canvas, des
-  événements, une boucle, et aucune bibliothèque de fenêtrage à démêler de ce
-  qu'il montre du moteur.
+  **La page charge `salles.world` et `caisse.mesh`, et les parcourt au
+  clavier** : c'est l'hôte de démonstration du web, et le patron des autres — un
+  canvas, des événements, une boucle, et aucune bibliothèque de fenêtrage à
+  démêler de ce qu'il montre du moteur.
   Écarté : TypeScript, que Node exécute désormais sans compilation mais qu'un
   navigateur ne lit pas — la page exigerait alors un compilateur, donc npm.
   La page a été vue dans un navigateur avant la 0.0.0 ; l'intégration continue
@@ -332,7 +338,9 @@ toutes les autres cibles.
   **Le maillage est poussé sur l'appareil** avec les bibliothèques, et chaque
   palier reçoit son chemin : les trois exécutions du premier le lisent depuis le
   dépôt — elles tournent sur la machine —, les deux du second depuis
-  `/data/local/tmp`. C'est le seul fichier que ces hôtes ouvrent,
+  `/data/local/tmp`. Le maillage voyage avec les quatre autres fichiers de
+  données — le décor, celui de collision, la liste des balayages et celle des
+  rayons —, et ce sont les seuls que ces hôtes ouvrent,
   et c'est ce qui éprouve le chargement d'une ressource à travers le pont JNI.
 
   L'APK n'est pas lancé par le test, mais construit par lui.
@@ -520,7 +528,7 @@ et chaque semaine pour l'audit :
 
 | Job | Plateforme | Contrôles |
 |---|---|---|
-| vérification | Linux | `fmt`, `lint`, `nostd`, `header-verif`, `msrv`, `deny` |
+| vérification | Linux | `fmt`, `lint`, `nostd`, `header-verif`, `doc-verif`, `msrv`, `deny` |
 | tests | Linux et Windows | `test`, hôtes C, C++, wasm et Go compris, `conform` ; l'hôte Android sous Linux seulement, émulateur démarré, et retiré sous Windows par `SANS=android` |
 | audit | Linux | `audit`, dans un job à part : un avis publié en amont n'est pas un défaut de la PR en cours |
 
