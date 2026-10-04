@@ -1605,6 +1605,72 @@ fn sprite(center: Vec3) -> Sprite {
     }
 }
 
+/// `v0` borne le haut de la vignette, et c'est ce que la planche suppose.
+///
+/// **Le cas qu'aucun autre ne pouvait porter.** Les sprites du dépôt — ici comme
+/// dans la conformance — prennent leur texture entière, `v0` à zéro et `v1` au
+/// bord : l'orientation verticale y est symétrique, donc inobservable. Il faut
+/// une **vignette découpée** pour que le sens se voie, et c'est un intégrateur qui
+/// l'a trouvé en découpant une planche de vues.
+///
+/// La texture porte deux moitiés de couleurs franches, et ce sont **deux pixels
+/// de l'image** qui sont lus : celui du haut doit porter la première ligne de la
+/// planche, celui du bas la dernière.
+///
+/// **Une vignette unie ne garde rien, et l'écrire ainsi d'abord l'a montré** :
+/// prendre la moitié haute de la planche, toute rouge, rend la même image
+/// retournée ou non. Ce qu'il faut n'est pas une vignette découpée mais une
+/// vignette **dont le haut diffère du bas** — et deux points lus de part et
+/// d'autre du centre, qui est justement la frontière où rien ne se distingue.
+#[test]
+fn le_rectangle_d_un_sprite_se_lit_dans_le_sens_de_l_image() {
+    // Quatre lignes : les deux premières rouges, les deux dernières bleues.
+    let mut texels = alloc::vec::Vec::new();
+    for ligne in 0..4u32 {
+        let couleur = if ligne < 2 {
+            [0xFF, 0x00, 0x00, 0xFF]
+        } else {
+            [0x00, 0x00, 0xFF, 0xFF]
+        };
+        for _ in 0..4 {
+            texels.extend_from_slice(&couleur);
+        }
+    }
+    let planche = Arc::new(Texture::load(4, 4, &texels).expect("planche valide"));
+
+    let mut plein = sprite(Vec3::new(10.0, 0.0, 0.0));
+    plein.half_width = 8.0;
+    plein.half_height = 8.0;
+    plein.v0 = 0.0;
+    plein.v1 = 4.0;
+
+    let mut ctx = small();
+    ctx.submit_sprites(
+        Affine3::IDENTITY,
+        &[plein],
+        Some(&planche),
+        SpriteOrientation::Facing,
+    )
+    .expect("sprite soumis");
+
+    let pixels = render(&mut ctx);
+    let lu = |ligne: usize| {
+        let i = (ligne * 64 + 32) * BYTES_PER_PIXEL;
+        [pixels[i], pixels[i + 1], pixels[i + 2]]
+    };
+
+    assert_eq!(
+        lu(16),
+        [0xFF, 0x00, 0x00],
+        "le haut de l'image ne porte pas la première ligne de la planche"
+    );
+    assert_eq!(
+        lu(48),
+        [0x00, 0x00, 0xFF],
+        "le bas de l'image ne porte pas la dernière"
+    );
+}
+
 /// **Un sprite consomme exactement deux triangles**, et c'est ce que la
 /// documentation promet à l'hôte qui dimensionne sa capacité.
 #[test]

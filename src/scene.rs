@@ -303,13 +303,18 @@ pub struct Sprite {
     pub half_width: f32,
     /// La demi-hauteur, en unités du monde.
     pub half_height: f32,
-    /// Le coin bas-gauche du rectangle de texture, en texels.
+    /// L'abscisse du bord gauche du rectangle de texture, en texels.
     pub u0: f32,
-    /// L'ordonnée du même coin, en texels.
+    /// L'ordonnée de son bord **supérieur**, en texels.
+    ///
+    /// `v` croît vers le bas, comme dans l'image : `v0` borne le haut de la
+    /// vignette et `v1` son bas. C'est l'inverse de ce qu'on écrit de mémoire, et
+    /// invisible tant que le rectangle couvre la planche entière — une vignette
+    /// découpée s'affiche alors retournée.
     pub v0: f32,
-    /// Le coin haut-droit du rectangle de texture, en texels.
+    /// L'abscisse de son bord droit, en texels.
     pub u1: f32,
-    /// L'ordonnée du même coin, en texels.
+    /// L'ordonnée de son bord inférieur, en texels.
     pub v1: f32,
     /// Le roulis, angle binaire où 2³² vaut un tour.
     ///

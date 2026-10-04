@@ -602,13 +602,18 @@ typedef struct ScgSprite {
   float half_width;
   // Half-height, in world units.
   float half_height;
-  // Texture abscissa of the bottom-left corner, in texels.
+  // Texture abscissa of the left edge of the rectangle, in texels.
   float u0;
-  // Texture ordinate of that corner, in texels.
+  // Ordinate of its **top** edge, in texels.
+  //
+  // `v` grows downwards, as in the image: `v0` bounds the top of the tile and
+  // `v1` its bottom. This is the opposite of what one writes from memory, and
+  // it stays invisible while the rectangle covers the whole sheet — a tile cut
+  // out of a sheet then shows upside down.
   float v0;
-  // Texture abscissa of the top-right corner, in texels.
+  // Abscissa of its right edge, in texels.
   float u1;
-  // Texture ordinate of that corner, in texels.
+  // Ordinate of its bottom edge, in texels.
   float v1;
   // Roll, a binary angle where 2^32 is one turn.
   //
