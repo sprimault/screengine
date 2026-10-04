@@ -281,12 +281,13 @@ unité. Ce n'est pas une limite du moteur mais une conséquence de la densité
 choisie — un mur deux fois plus grand demande un plaquage deux fois plus grossier,
 ou sa coupe en deux surfaces.
 
-Le chargement ne rattrape que le décalage, jamais l'étendue : il ramène le
+Le repli ne rattrape que le décalage, jamais l'étendue : il ramène le
 **minimum** des coordonnées d'une surface dans `[0, 2048)`, si bien qu'une surface
-trop étendue garde un maximum hors borne. Et le refus ne tombe pas au chargement
-mais **à la soumission**, où il porte sur le décor entier : plus rien n'est dessiné
-cette image, et aucune surface n'est nommée. Un décor qui disparaît d'un coup sans
-message de chargement se cherche donc ici.
+trop étendue garde un maximum hors borne. **Celui-là fait refuser la carte au
+chargement**, par `SCG_ERR_INVALID_FORMAT` : une carte dont une seule surface
+dépasse ne se charge pas du tout. Le message ne nomme pas la surface fautive — un
+décor qui refuse de charger sans autre explication se cherche donc ici, en
+commençant par les plus grandes faces.
 
 ## Les matériaux
 

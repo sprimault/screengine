@@ -297,6 +297,43 @@ fn les_coordonnees_lointaines_sont_repliees() {
     );
 }
 
+/// Une surface trop étendue en texels est refusée **au chargement**.
+///
+/// **Le repli ne rattrape que le décalage, jamais l'étendue** : il ramène le
+/// minimum des coordonnées dans la fenêtre, si bien qu'une surface assez grande
+/// garde un maximum hors borne, et c'est celui-là qui fait refuser la carte.
+///
+/// **C'est le lieu du refus que ce cas fixe**, et il n'était tenu par rien :
+/// `docs/cartes.md` annonçait le contraire — un refus à la soumission, portant
+/// sur le décor entier — et envoyait chercher un décor qui disparaît en cours de
+/// partie, là où le symptôme réel est une carte qui ne charge pas. Une prose sans
+/// cas finit par dire l'inverse du code.
+///
+/// Les deux côtés se mesurent : le carré fait quatre unités, donc un axe de 4096
+/// l'étend pile à la borne et passe, et le doubler le fait refuser.
+#[test]
+fn une_surface_trop_etendue_en_texels_est_refusee() {
+    let avec_axe = |length: f32| {
+        let mut bytes = words(&[11, 0, 1, 4]);
+        bytes.extend_from_slice(&words(&[0, 1, 2, 3]));
+        bytes.extend_from_slice(&frame([0.0, 0.0, 0.0], [length, 0.0, 0.0], [0.0, 1.0, 0.0]));
+        // Le repère de lightmap reste unitaire : ce qu'on éprouve ici est le
+        // plaquage de texture, et une étendue de lightmap démesurée a son cas.
+        bytes.extend_from_slice(&unit_frame());
+        cell_bytes(7, 0, &SQUARE, &[bytes], &[])
+    };
+
+    let tient = avec_axe(MAX_TEXEL_COORD / 4.0);
+    World::load(&file(&tient, &[], &[], &material(1, "mur")))
+        .expect("l'étendue atteint la borne sans la franchir");
+
+    let deborde = avec_axe(MAX_TEXEL_COORD / 2.0);
+    assert_eq!(
+        World::load(&file(&deborde, &[], &[], &material(1, "mur"))).unwrap_err(),
+        refused(Malformation::Mapping)
+    );
+}
+
 /// Le repli garde l'écart entre les sommets, qui est ce que le rendu lit.
 ///
 /// Un repli calculé par sommet déchirerait la surface ; c'est le même multiple
