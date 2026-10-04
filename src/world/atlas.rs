@@ -122,16 +122,21 @@ pub(crate) fn pack(cell: &Cell) -> Result<Atlas> {
     }
 
     loop {
-        if let Some(slots) = try_pack(&sizes, &order, side) {
-            return Ok(Atlas { side, slots });
-        }
-        side *= 2;
+        // **Le plafond se vérifie avant d'essayer, jamais après un échec.** Le côté
+        // de départ vient de l'aire : une cellule assez chargée le place d'emblée
+        // au-delà de la borne, et un rangement qui réussit du premier coup rendait
+        // alors un atlas que l'ABI ne permet pas — sans erreur, et pour une carte
+        // que le chargement accepte, lui ne bornant qu'une surface à la fois.
         if side > MAX_ATLAS {
             // Refusé ici et non au chargement : c'est le rangement qui décide, et
             // une surface seule peut tenir sous son plafond sans que la cellule
             // entière y tienne.
             return Err(Error::InvalidFormat(Malformation::Mapping));
         }
+        if let Some(slots) = try_pack(&sizes, &order, side) {
+            return Ok(Atlas { side, slots });
+        }
+        side *= 2;
     }
 }
 

@@ -19,8 +19,10 @@ use crate::format::world::tests::{cell_bytes, file, frame, material, words};
 /// demandées.
 ///
 /// Les surfaces sont des carrés du plan `z = 0`, dimensionnés par leur repère :
-/// un axe de longueur `1 / n` donne `n` luxels sur une unité de monde. Les carrés
-/// des longueurs restent des puissances de deux, ce que le chargement exige.
+/// **un axe de longueur `n` donne `n` luxels par unité de monde**, la coordonnée
+/// étant le produit scalaire brut — c'est la longueur de l'axe qui porte
+/// l'échelle, et `luxel_extent` ne divise pas par son carré. Une longueur
+/// inférieure à un donne donc l'étendue minimale, un seul luxel.
 fn cell_with(steps: &[(f32, f32)]) -> World {
     let points = [
         [0.0f32, 0.0, 0.0],
@@ -162,6 +164,38 @@ fn une_cellule_sans_surface_se_range() {
     let world = World::load(&file(&cell, &[], &[], &material(1, "mur"))).expect("carte valide");
     let atlas = pack(&world.cells()[0]).expect("rangement possible");
     assert!(atlas.slots.is_empty());
+}
+
+/// Le plafond de l'atlas refuse la cellule qui le dépasse, et pas une avant.
+///
+/// [`MAX_ATLAS`] est publié par l'ABI, donc **ce qu'il rend quand on l'atteint est
+/// un contrat** — et rien ne l'atteignait. Ce qui y mène est le **nombre de
+/// surfaces d'une cellule** et non l'étendue de l'une d'elles : le chargement en
+/// refuse une au-delà de 256 luxels par côté, et la gouttière porte son rectangle
+/// à 512, si bien que quatre remplissent exactement un atlas de 1024 et que la
+/// cinquième n'y tient plus.
+///
+/// Les deux côtés se mesurent, et c'est ce qui rend la borne opposable : un refus
+/// seul passerait aussi sur un plafond trop bas.
+#[test]
+fn le_plafond_de_l_atlas_refuse_la_cellule_qui_le_depasse() {
+    // 256 luxels sur le carré unité : l'étendue la plus large que le chargement
+    // accepte d'une surface, qu'il refuse au-delà.
+    let pas = 256.0;
+
+    let tient = cell_with(&[(pas, pas); 4]);
+    let atlas = pack(&tient.cells()[0]).expect("quatre surfaces tiennent dans le plafond");
+    assert_eq!(
+        atlas.side, MAX_ATLAS,
+        "la borne est atteinte et non franchie"
+    );
+
+    let deborde = cell_with(&[(pas, pas); 5]);
+    assert_eq!(
+        pack(&deborde.cells()[0]),
+        Err(Error::InvalidFormat(Malformation::Mapping)),
+        "une cellule au-delà du plafond a été rangée quand même"
+    );
 }
 
 /// Un côté se monte à la puissance de deux supérieure, jamais en dessous.
