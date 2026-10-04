@@ -369,12 +369,13 @@ pub fn digest() -> Result<u64, String> {
 /// Ce que la frontière publie d'un balayage : un résultat, et un statut.
 ///
 /// **Une empreinte ne peut hacher que cela**, et c'est ce que l'écriture du
-/// premier hôte a montré. Le noyau porte deux drapeaux indépendants,
-/// `start_solid` et `incomplete` ; l'ABI n'en publie qu'un code de retour, et
-/// garde le plus actionnable quand les deux s'appliquent — un départ dans le
-/// solide demande à l'hôte de se dégager, une région tronquée ne lui laisse aucun
-/// levier, la borne n'étant pas réglable. Hacher les deux drapeaux revenait à
-/// valider le noyau contre lui-même, sur un état qu'aucun hôte ne peut observer.
+/// premier hôte a montré. Le noyau porte trois drapeaux indépendants —
+/// `start_solid`, `incomplete` et `no_gap` ; l'ABI n'en publie qu'un code de
+/// retour, et garde le plus actionnable quand plusieurs s'appliquent — un départ
+/// dans le solide demande à l'hôte de se dégager, une région tronquée ne lui
+/// laisse aucun levier, la borne n'étant pas réglable, et un jeu perdu décrit un
+/// état plutôt que ce contact-ci. Hacher les drapeaux revenait à valider le noyau
+/// contre lui-même, sur un état qu'aucun hôte ne peut observer.
 ///
 /// **La règle de priorité entre donc dans la référence.** Le jour où elle serait
 /// remise en cause, l'empreinte bougerait sans que la géométrie ni le rendu aient
@@ -459,6 +460,15 @@ fn same(a: &Hit, b: &Hit) -> bool {
         && a.cell == b.cell
         && a.start_solid == b.start_solid
         && a.incomplete == b.incomplete
+        // **Celui-ci ne peut pas rougir aujourd'hui, et il est là pour demain.**
+        // Les deux chemins posent `no_gap` par le même appel à une fonction pure
+        // de leurs arguments, donc l'égalité est acquise par construction — comme
+        // elle le serait de `grown` ou d'`in_unit` si l'oracle les comparait.
+        // Ce qu'il garde est le jour où ce calcul entrerait dans le parcours :
+        // une propriété posée sur un seul des deux chemins les fait diverger
+        // partout où elle s'applique, et l'oracle accuserait la traversée d'un
+        // écart qui vient de lui.
+        && a.no_gap == b.no_gap
 }
 
 #[cfg(test)]
