@@ -1296,6 +1296,38 @@ fn les_lumieres_se_bornent_et_se_valident() {
     assert!(ctx.lights().is_empty(), "un refus a posé des lumières");
 }
 
+/// Le plafond accepte son compte exact, et c'est l'autre moitié de la borne.
+///
+/// Le voisin ci-dessus éprouve le refus à neuf, et **il resterait vert sur un
+/// plafond rabaissé d'une unité** : rien dans le dépôt ne règle plus de trois
+/// lumières — ni les scènes de conformance, ni les exemples, ni la frontière —,
+/// si bien qu'un plafond à sept ne se verrait nulle part. C'est ce que
+/// `docs/abi.md` demande des cinq bornes publiées : la limite se teste, et des
+/// deux côtés.
+///
+/// Les positions sont distinctes pour que la liste retenue dise aussi que rien
+/// n'a été tronqué en chemin — un plafond qui garderait les sept premières
+/// passerait un test qui ne compte que la longueur.
+#[test]
+fn le_plafond_de_lumieres_accepte_son_compte_exact() {
+    let mut ctx = small();
+    let pleine: alloc::vec::Vec<Light> = (0..MAX_LIGHTS)
+        .map(|rang| torch(2.0 + rang as f32, 2.0))
+        .collect();
+
+    ctx.set_lights(&pleine).expect("le compte exact tient");
+
+    let posees = ctx.lights();
+    assert_eq!(posees.len(), MAX_LIGHTS);
+    for (rang, light) in posees.iter().enumerate() {
+        assert_eq!(
+            light.position.x,
+            2.0 + rang as f32,
+            "la lumière de rang {rang} n'est pas celle qui a été passée"
+        );
+    }
+}
+
 /// Les lumières suivent la caméra : la même scène vue d'ailleurs s'éclaire
 /// autrement, puisque la distance se mesure en espace de vue.
 ///
