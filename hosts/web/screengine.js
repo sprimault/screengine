@@ -68,6 +68,15 @@ export const SCG_STATUS_NO_CELL = 2;
  */
 export const SCG_STATUS_START_SOLID = 3;
 
+/**
+ * Succès, et la boîte est trop petite, là où elle se déplace, pour garder un jeu.
+ *
+ * Le contact rendu reste juste : ce qui se perd est la repose. Le statut arrive
+ * donc tard, et il est masqué par `SCG_STATUS_START_SOLID` dès que la boîte a
+ * atterri dans le solide — `scg_sweep_reach` est la question à poser avant.
+ */
+export const SCG_STATUS_NO_GAP = 4;
+
 /** Nombre de cellules qu'un balayage visite au plus. */
 export const SCG_SWEEP_CELLS = 64;
 
@@ -228,6 +237,7 @@ export const EXPORTS = [
   "scg_world_pick",
   "scg_world_surface_material",
   "scg_sweep_skin",
+  "scg_sweep_reach",
   "scg_lighting_create",
   "scg_lighting_destroy",
   "scg_lighting_build",

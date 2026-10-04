@@ -26,6 +26,7 @@
 use crate::format::world::{Cell, Surface};
 use crate::math::Vec3d;
 
+use super::abs;
 use super::shape::support;
 
 /// La pénétration d'une boîte dans une surface, le long de la normale du plan.
@@ -174,11 +175,6 @@ fn length_of(square: f64) -> f64 {
         guess = (guess + square / guess) * 0.5;
     }
     guess
-}
-
-/// La valeur absolue, écrite plutôt qu'empruntée à la bibliothèque du système.
-fn abs(value: f64) -> f64 {
-    if value < 0.0 { -value } else { value }
 }
 
 /// Pose une composante d'un vecteur, par son rang.

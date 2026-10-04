@@ -29,7 +29,8 @@ en 0.5.0 et qui font d'un test « différent de zéro » un refus de succès.
 
 Une liaison qui juge un appel par « différent de `0` » se trompe donc : le
 critère est « négatif ». Le troisième statut est arrivé avec le balayage en
-0.7.0, et un statut inconnu se traite toujours comme `SCG_OK`.
+0.7.0, le quatrième après la 0.8.6, et un statut inconnu se traite toujours comme
+`SCG_OK`.
 
 ## Principes
 
@@ -206,7 +207,7 @@ l'approche.
 
 | Plage | Domaine | Codes proposés |
 |---|---|---|
-| `1` et au-delà | statuts (étapes 5 et 7) | `1` `SCG_STATUS_INCOMPLETE`, `2` `SCG_STATUS_NO_CELL`, `3` `SCG_STATUS_START_SOLID` |
+| `1` et au-delà | statuts (étapes 5 et 7) | `1` `SCG_STATUS_INCOMPLETE`, `2` `SCG_STATUS_NO_CELL`, `3` `SCG_STATUS_START_SOLID`, `4` `SCG_STATUS_NO_GAP` |
 | `0` | succès | `SCG_OK` |
 | `-1` à `-99` | généraux | `-1` `SCG_ERR_NULL`, `-2` `SCG_ERR_INVALID_ARGUMENT`, `-3` `SCG_ERR_OUT_OF_MEMORY`, `-4` `SCG_ERR_INVALID_STATE`, `-5` `SCG_ERR_PANIC`, `-6` `SCG_ERR_FAULTED` |
 | `-100` à `-199` | données (étape 4) | `-100` `SCG_ERR_UNKNOWN_RESOURCE`, `-101` `SCG_ERR_INVALID_FORMAT`, `-102` `SCG_ERR_UNSUPPORTED_FORMAT_VERSION` |
@@ -2053,20 +2054,47 @@ le même lecteur, et son erreur se lit par `scg_last_error(NULL)`.
   panneau qu'il suit. Un hôte n'a rien à en faire : la valeur rendue reste celle
   qui dimensionne une sonde, et c'est toujours elle qui majore le flottement d'un
   mobile posé.
-- **Une boîte trop petite pour l'endroit où elle est n'a plus de jeu**, et c'est
-  la seule limite que cette fonction oblige à connaître. Reposer un mobile à la
-  fraction rendue passe par des positions en `float`, dont le pas vaut
-  `|p|·2⁻²⁴` : le jeu survit tant que la **plus grande demi-étendue** reste
-  au-dessus de `|p|·2⁻¹³`. Un corps d'une unité tient à huit mille unités de
-  l'origine, un véhicule davantage — la vitesse n'y entre pas, seule la
-  petitesse. Un projectile de dix centimètres, lui, est à court dès quatre cents
-  unités, et un hôte qui en lance sur une grande carte lui donne une boîte plus
-  large ou rapproche son décor de l'origine.
+- **Une boîte trop petite pour l'endroit où elle est n'a plus de jeu.** Reposer un
+  mobile à la fraction rendue passe par des positions en `float`, dont le pas
+  croît avec la coordonnée, et quand ce pas couvre le jeu la pose retombe dans le
+  solide. La vitesse n'y entre pas, seule la petitesse : un véhicule est plus sûr
+  qu'un marcheur. **La question se pose à `scg_sweep_reach`**, et le seuil ne se
+  recopie pas — voir ci-dessous.
 - **La valeur ne fait pas partie du contrat, son sens oui.** Elle peut changer
   d'une version à l'autre, comme toute borne dont « ce qu'elle rend quand on
   l'atteint est un contrat ». Un hôte l'appelle plutôt que de la mettre en cache.
 - **Elle ne prend pas de carte**, la marge n'en dépendant pas, et elle est
   appelable depuis n'importe quel thread.
+
+#### `scg_sweep_reach`
+
+Jusqu'à quelle distance de l'origine une boîte de ces demi-étendues garde un jeu.
+Le jeu tient **strictement en deçà** : à cette coordonnée, il est déjà perdu.
+
+- **Un état, pas un événement, et c'est ce qui lui donne sa forme.** Le drapeau
+  correspondant existe aussi — `SCG_STATUS_NO_GAP`, quatrième statut du balayage —,
+  mais il est le moins actionnable des quatre : une boîte sans jeu se repose dans le
+  solide, donc le balayage suivant rend `SCG_STATUS_START_SOLID`, qui le masque.
+  **Le statut se tait dans le cas qu'il décrit**, et un canal qui ne transporte
+  qu'un événement à la fois ne peut pas publier un état. Celui-ci se demande.
+- **Les demi-étendues en entrée, une distance en sortie** — et non un prédicat sur
+  une pose. Ce qu'un hôte compare à cette distance est l'étendue de son décor,
+  qu'il connaît en le produisant : il pose la question une fois, avant même
+  qu'une carte existe. Un prédicat `(boîte, position)` l'obligerait à rappeler par
+  mobile et par image pour apprendre la même chose, donc à retomber dans le canal
+  par événement que la ligne au-dessus écarte.
+
+  Écartée pour cela : la question posée à la **carte** — la plus petite
+  demi-étendue utilisable sur ce décor. Elle n'a rien à mesurer, mais elle arrive
+  trop tard pour un hôte qui **engendre** ses cartes, et qui choisit l'étendue de
+  son décor avant d'en avoir une à charger.
+- **Une fonction et non le seuil en prose**, pour la raison déjà donnée de la
+  marge : un seuil recopié se trompe sur exactement les cas où il décide. Mesuré :
+  un corps d'une unité atteint huit mille unités, un projectile de dix centimètres
+  quatre cents. Un rayon rend zéro — n'ayant aucun jeu, il n'a aucune distance à
+  laquelle le perdre.
+- **La valeur ne fait pas partie du contrat, son sens oui**, et elle ne prend pas
+  de carte : comme la marge, elle est appelable depuis n'importe quel thread.
 
 #### `scg_world_surface_material`
 

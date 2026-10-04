@@ -1774,6 +1774,25 @@ rendrait le jeu dépendant de la position, et `scg_sweep_skin` n'en rendrait plu
 qu'une borne inférieure, c'est-à-dire un sens publié qui change sans que la
 signature change.
 
+**Et la limite se dit, plutôt que de se découvrir.** Le balayage pose `no_gap` sur
+son résultat, que la frontière rend en quatrième statut ; `sweep_reach` répond, pour
+une boîte, jusqu'où elle garde ce jeu. Les deux parce qu'aucun ne suffit : un
+statut décrit l'appel qui vient de rendre, et celui-ci est le moins actionnable
+des quatre — une boîte sans jeu se repose dans le solide, donc le balayage suivant
+rend le départ solide, qui le masque. **Le garde-fou se tairait dans son propre
+symptôme**, et c'est pourquoi la question se pose aussi hors balayage.
+
+Les deux expressions sont inverses l'une de l'autre et **dérivent de `SKIN`**,
+jamais du quotient `2⁻¹³` écrit en dur : figé, il mentirait le jour où la
+constante bouge — or c'est précisément elle qu'un décor plus vaste ferait
+reconsidérer. Un test du noyau tient cette correspondance, parce que rien d'autre
+ne l'empêcherait de se défaire, et que l'écart serait le pire possible pour un
+hôte : la fonction lui dirait sûr ce que le drapeau lui dit perdu.
+
+**Un rayon ne lève jamais le drapeau et n'a pas de portée.** Sa dilatation est
+nulle par construction, donc il n'a aucun jeu à perdre : le signaler ferait du cas
+normal une anomalie permanente, sur chaque interrogation d'éditeur.
+
 **Écartée, et par la mesure** : rendre stricte la comparaison du plan parallèle au
 mouvement, pour qu'une boîte posée dessus ne soit pas tenue pour dedans. Elle ne
 traite que la tangence **exacte**, que l'arrondi de la fraction manque de toute

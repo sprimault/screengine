@@ -43,6 +43,8 @@ pub const STATUS_INCOMPLETE: u8 = 1;
 pub const STATUS_NO_CELL: u8 = 2;
 /// La boîte partait dans le solide.
 pub const STATUS_START_SOLID: u8 = 3;
+/// La boîte est trop petite, là où elle se déplace, pour garder un jeu.
+pub const STATUS_NO_GAP: u8 = 4;
 
 /// Le pas du treillis de départs, en unités de monde.
 const STEP: f32 = 2.0;
@@ -388,6 +390,12 @@ fn publish(hit: Option<Hit>, to: Vec3) -> (Hit, u8) {
         None => (free(to), STATUS_NO_CELL),
         Some(hit) if hit.start_solid => (hit, STATUS_START_SOLID),
         Some(hit) if hit.incomplete => (hit, STATUS_INCOMPLETE),
+        // En dernier, et c'est l'ordre de la frontière : les deux précédents
+        // disent que **ce** déplacement est faux ou bloqué, celui-ci que la
+        // **repose** perdra son jeu. Aucun départ de cette scène ne le lève — les
+        // boîtes y sont sept fois au-dessus du seuil —, et c'est pourquoi il
+        // n'entre dans aucune empreinte.
+        Some(hit) if hit.no_gap => (hit, STATUS_NO_GAP),
         Some(hit) => (hit, STATUS_OK),
     }
 }
@@ -402,6 +410,7 @@ fn free(to: Vec3) -> Hit {
         cell: 0,
         start_solid: false,
         incomplete: false,
+        no_gap: false,
     }
 }
 
@@ -481,6 +490,7 @@ pub fn report() -> Result<String, String> {
             STATUS_START_SOLID => "depart-solide",
             STATUS_INCOMPLETE => "tronque",
             STATUS_NO_CELL => "hors-cellule",
+            STATUS_NO_GAP => "sans-jeu",
             _ => "-",
         };
         text.push_str(&format!(

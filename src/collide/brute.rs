@@ -39,7 +39,7 @@
 use crate::format::World;
 use crate::math::Vec3d;
 
-use super::{Best, Hit, Surfaces, grown, in_unit, start_solid, sweep_cell};
+use super::{Best, Hit, Surfaces, grown, in_unit, no_gap, start_solid, sweep_cell};
 
 /// Balaie une boîte contre **toutes** les surfaces solides de la carte.
 ///
@@ -71,5 +71,10 @@ pub(crate) fn sweep_brute(
     // sortie posée sur un seul d'entre eux les fait diverger là où elle
     // s'applique, ce qui la transforme en source d'écart au lieu d'une garantie.
     best.hit.fraction = in_unit(best.hit.fraction);
+    // **Le même drapeau de jeu que la traversée**, pour la raison qui vaut déjà
+    // pour les deux lignes au-dessus : une propriété posée sur un seul des deux
+    // chemins les fait diverger partout où elle s'applique, et l'oracle accuserait
+    // alors la traversée d'un écart qui vient de lui.
+    best.hit.no_gap = no_gap(half, from, to);
     best.hit
 }

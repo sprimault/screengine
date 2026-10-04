@@ -52,7 +52,8 @@ pub use status::{
     SCG_ERR_NULL, SCG_ERR_OUT_OF_MEMORY, SCG_ERR_PANIC, SCG_ERR_POISONED, SCG_ERR_UNKNOWN_RESOURCE,
     SCG_ERR_UNSUPPORTED_FORMAT_VERSION, SCG_LIGHTMAP_ABSENT, SCG_LIGHTMAP_READY,
     SCG_LIGHTMAP_STALE, SCG_MAX_LIGHTMAP_SIZE, SCG_OK, SCG_STATUS_INCOMPLETE, SCG_STATUS_NO_CELL,
-    SCG_STATUS_START_SOLID, SCG_SWEEP_CELLS, SCG_TRAVERSAL_CELLS, SCG_TRAVERSAL_DEPTH,
+    SCG_STATUS_NO_GAP, SCG_STATUS_START_SOLID, SCG_SWEEP_CELLS, SCG_TRAVERSAL_CELLS,
+    SCG_TRAVERSAL_DEPTH,
 };
 pub use texture::ScgTexture;
 pub use world::{ScgLighting, ScgWorld};
@@ -2482,7 +2483,10 @@ pub unsafe extern "C" fn scg_world_light_id(
 /// of the code: `SCG_STATUS_NO_CELL` when `from_cell` is `0`, which means
 /// "nowhere" and reports a free move; `SCG_STATUS_INCOMPLETE` when the sweep hit
 /// `SCG_SWEEP_CELLS`, which **truncates** the move rather than reporting it free;
-/// and `SCG_STATUS_START_SOLID` when the box was already inside solid geometry.
+/// `SCG_STATUS_START_SOLID` when the box was already inside solid geometry; and
+/// `SCG_STATUS_NO_GAP` when the box is too small, where it moves, to keep any gap.
+/// That last one is reported only while nothing more pressing applies — ask
+/// `scg_sweep_reach` at load time rather than waiting for it.
 ///
 /// `half_extents` of zero sweeps a ray. The box never rotates: give one that
 /// encloses every orientation your character takes.
@@ -2540,13 +2544,21 @@ pub unsafe extern "C" fn scg_world_sweep(
         // rien n'y a été écrit avant ce point.
         unsafe { out.write(ScgSweepHit::from_core(&hit)) };
 
-        // **Le plus actionnable des deux quand les deux s'appliquent** : un
-        // départ dans le solide demande à l'hôte de se dégager, là où une région
-        // tronquée ne lui laisse aucun levier — la borne n'étant pas réglable.
+        // **Le plus actionnable quand plusieurs s'appliquent** : un départ dans le
+        // solide demande à l'hôte de se dégager, là où une région tronquée ne lui
+        // laisse aucun levier — la borne n'étant pas réglable.
+        //
+        // Le jeu perdu vient en dernier, et il est **masqué dans le cas qu'il
+        // décrit** : une boîte sans jeu se repose dans le solide, donc le balayage
+        // suivant rend le départ solide. Ce n'est pas un défaut de cet ordre, c'est
+        // ce qui rend `scg_sweep_reach` nécessaire — un état ne se publie pas par
+        // un canal qui ne transporte qu'un événement à la fois.
         Ok(if hit.start_solid {
             status::SCG_STATUS_START_SOLID
         } else if hit.incomplete {
             status::SCG_STATUS_INCOMPLETE
+        } else if hit.no_gap {
+            status::SCG_STATUS_NO_GAP
         } else {
             status::SCG_OK
         })
@@ -2574,14 +2586,12 @@ pub unsafe extern "C" fn scg_world_sweep(
 /// resting against a wall move along it instead of catching on the end of the very
 /// panel it follows.
 ///
-/// **A box too small for where it stands keeps no gap at all**, and that is the one
-/// limit this function forces a host to know. Re-placing a body at the returned
-/// fraction goes through `float` positions, whose step is `|p| * 2^-24`: the gap
-/// survives as long as the **largest** half extent stays above `|p| * 2^-13`. A
-/// one-unit body is safe eight thousand units from the origin, a vehicle further —
-/// speed does not enter, only smallness does. A ten-centimetre projectile runs out
-/// at four hundred units, so a host firing those across a large level gives them a
-/// wider box or moves its level closer to the origin.
+/// **A box too small for where it stands keeps no gap at all.** Re-placing a body
+/// at the returned fraction goes through `float` positions, whose step grows with
+/// the coordinate, and once that step covers the gap the body lands inside the
+/// solid. Speed does not enter, only smallness does — a vehicle is safer than a
+/// walker. Ask `scg_sweep_reach` how far your box may go rather than reproducing
+/// the threshold: a copied threshold is wrong on exactly the cases it decides.
 ///
 /// The value is not part of the contract and may change between versions; what it
 /// means does not. Call it rather than caching it.
@@ -2602,6 +2612,55 @@ pub unsafe extern "C" fn scg_sweep_skin(half_extents: *const f32, out: *mut f32)
         let half = unsafe { read_extents(half_extents) }?;
         // SAFETY: précondition — `out` vise un `float` inscriptible.
         unsafe { out.write(screengine::sweep_skin(half)) };
+        Ok(())
+    })
+}
+
+/// Writes to `out` how far from the origin a box of these half extents keeps a gap.
+///
+/// **Ask this once, at load time, and compare it to how far your level reaches.**
+/// A sweep leaves the box a half margin short of the solid; putting it back at the
+/// returned fraction goes through `float` positions, whose step is `|p| * 2^-24`.
+/// Past this distance that step covers the gap, the body lands inside the solid,
+/// and the next sweep starts penetrating. Widening the box or moving the level
+/// closer to the origin is the fix, and both are decisions a host makes early.
+///
+/// **A value, not a predicate on a position.** What a host compares this to is the
+/// extent of its level, which it knows from generating it — so the question is
+/// asked once, before a map even exists. A predicate would have to be called per
+/// body and per frame to learn the same thing.
+///
+/// **The gap holds strictly below this distance**: at that coordinate it is already
+/// lost. Measured: a one-unit body reaches eight thousand units, a ten-centimetre
+/// projectile four hundred.
+///
+/// `SCG_STATUS_NO_GAP` reports the same condition per call, but it is the last of
+/// the four statuses: a box in that state lands in the solid and is then reported
+/// as `SCG_STATUS_START_SOLID`, which masks it. This function is the one that
+/// answers in time.
+///
+/// A ray — zero half extents — writes zero: carrying no gap, it has no distance at
+/// which to lose one.
+///
+/// The value is not part of the contract and may change between versions; what it
+/// means does not. Call it rather than caching it.
+///
+/// # Safety
+///
+/// `half_extents` must point to three readable floats, each finite and zero or
+/// greater, and `out` must point to a writable `float`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn scg_sweep_reach(half_extents: *const f32, out: *mut f32) -> i32 {
+    entry::without_context(|| {
+        if out.is_null() {
+            return Err(AbiError::NULL);
+        }
+        // SAFETY: précondition de la fonction — trois flottants lisibles, et
+        // chacun doit être fini et positif ou nul. Le même lecteur que le
+        // balayage et que la marge, pour que les trois refusent les mêmes entrées.
+        let half = unsafe { read_extents(half_extents) }?;
+        // SAFETY: précondition — `out` vise un `float` inscriptible.
+        unsafe { out.write(screengine::sweep_reach(half)) };
         Ok(())
     })
 }
@@ -2678,7 +2737,9 @@ pub unsafe extern "C" fn scg_world_pick(
         // rien n'y a été écrit avant ce point.
         unsafe { out.write(ScgSweepHit::from_core(&hit)) };
 
-        // Le même ordre de priorité que le balayage, et il est contractuel.
+        // Le même ordre de priorité que le balayage, et il est contractuel. Le
+        // jeu perdu n'y figure pas, et c'est une propriété du rayon : sa
+        // dilatation est nulle, donc le noyau ne lève jamais ce drapeau ici.
         Ok(if hit.start_solid {
             status::SCG_STATUS_START_SOLID
         } else if hit.incomplete {

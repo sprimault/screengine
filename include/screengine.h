@@ -190,6 +190,26 @@
 // status, and `fraction` says the rest.
 #define SCG_STATUS_START_SOLID 3
 
+// Success, and the box is too small, where it moves, to keep any gap.
+//
+// The contact returned is still correct: what is lost is the **re-placing**. A
+// sweep leaves the box a half margin short of the solid, and putting it back at
+// the returned fraction goes through `float` positions whose step is `|p| *
+// 2^-24`. Once that step covers the gap, the body lands inside the solid and the
+// next sweep starts penetrating — which is why this is a status and not an error.
+//
+// **A ray never carries it**: its margin is zero by construction, so it has no
+// gap to lose.
+//
+// **It is the last of the four, and it is the one to ask about rather than wait
+// for.** Where two statuses apply the call returns the most actionable, so a box
+// in this state is reported as [`SCG_STATUS_START_SOLID`] as soon as it has landed
+// in the solid — this status would then be masked in the very case it describes.
+// Call `scg_sweep_reach` with your box once, compare it to how far your level
+// reaches, and widen the box or move the level closer to the origin before any of
+// this happens.
+#define SCG_STATUS_NO_GAP 4
+
 // The greatest number of cells one sweep visits.
 //
 // Reaching it returns [`SCG_STATUS_INCOMPLETE`] and **truncates** the move to
@@ -1897,7 +1917,10 @@ int32_t scg_world_light_id(const struct ScgWorld *world, uint32_t index, uint32_
 // of the code: `SCG_STATUS_NO_CELL` when `from_cell` is `0`, which means
 // "nowhere" and reports a free move; `SCG_STATUS_INCOMPLETE` when the sweep hit
 // `SCG_SWEEP_CELLS`, which **truncates** the move rather than reporting it free;
-// and `SCG_STATUS_START_SOLID` when the box was already inside solid geometry.
+// `SCG_STATUS_START_SOLID` when the box was already inside solid geometry; and
+// `SCG_STATUS_NO_GAP` when the box is too small, where it moves, to keep any gap.
+// That last one is reported only while nothing more pressing applies — ask
+// `scg_sweep_reach` at load time rather than waiting for it.
 //
 // `half_extents` of zero sweeps a ray. The box never rotates: give one that
 // encloses every orientation your character takes.
@@ -1939,14 +1962,12 @@ int32_t scg_world_sweep(const struct ScgWorld *world,
 // resting against a wall move along it instead of catching on the end of the very
 // panel it follows.
 //
-// **A box too small for where it stands keeps no gap at all**, and that is the one
-// limit this function forces a host to know. Re-placing a body at the returned
-// fraction goes through `float` positions, whose step is `|p| * 2^-24`: the gap
-// survives as long as the **largest** half extent stays above `|p| * 2^-13`. A
-// one-unit body is safe eight thousand units from the origin, a vehicle further —
-// speed does not enter, only smallness does. A ten-centimetre projectile runs out
-// at four hundred units, so a host firing those across a large level gives them a
-// wider box or moves its level closer to the origin.
+// **A box too small for where it stands keeps no gap at all.** Re-placing a body
+// at the returned fraction goes through `float` positions, whose step grows with
+// the coordinate, and once that step covers the gap the body lands inside the
+// solid. Speed does not enter, only smallness does — a vehicle is safer than a
+// walker. Ask `scg_sweep_reach` how far your box may go rather than reproducing
+// the threshold: a copied threshold is wrong on exactly the cases it decides.
 //
 // The value is not part of the contract and may change between versions; what it
 // means does not. Call it rather than caching it.
@@ -1956,6 +1977,41 @@ int32_t scg_world_sweep(const struct ScgWorld *world,
 // `half_extents` must point to three readable floats, each finite and zero or
 // greater, and `out` must point to a writable `float`.
 int32_t scg_sweep_skin(const float *half_extents, float *out);
+
+// Writes to `out` how far from the origin a box of these half extents keeps a gap.
+//
+// **Ask this once, at load time, and compare it to how far your level reaches.**
+// A sweep leaves the box a half margin short of the solid; putting it back at the
+// returned fraction goes through `float` positions, whose step is `|p| * 2^-24`.
+// Past this distance that step covers the gap, the body lands inside the solid,
+// and the next sweep starts penetrating. Widening the box or moving the level
+// closer to the origin is the fix, and both are decisions a host makes early.
+//
+// **A value, not a predicate on a position.** What a host compares this to is the
+// extent of its level, which it knows from generating it — so the question is
+// asked once, before a map even exists. A predicate would have to be called per
+// body and per frame to learn the same thing.
+//
+// **The gap holds strictly below this distance**: at that coordinate it is already
+// lost. Measured: a one-unit body reaches eight thousand units, a ten-centimetre
+// projectile four hundred.
+//
+// `SCG_STATUS_NO_GAP` reports the same condition per call, but it is the last of
+// the four statuses: a box in that state lands in the solid and is then reported
+// as `SCG_STATUS_START_SOLID`, which masks it. This function is the one that
+// answers in time.
+//
+// A ray — zero half extents — writes zero: carrying no gap, it has no distance at
+// which to lose one.
+//
+// The value is not part of the contract and may change between versions; what it
+// means does not. Call it rather than caching it.
+//
+// # Safety
+//
+// `half_extents` must point to three readable floats, each finite and zero or
+// greater, and `out` must point to a writable `float`.
+int32_t scg_sweep_reach(const float *half_extents, float *out);
 
 // Picks the scene with a ray from `from` to `to`, starting in `from_cell`.
 //

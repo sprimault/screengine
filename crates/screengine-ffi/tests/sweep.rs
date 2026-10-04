@@ -588,3 +588,73 @@ fn la_marge_se_lit_et_refuse_ce_que_le_balayage_refuse() {
     assert_eq!(code, SCG_ERR_INVALID_ARGUMENT);
     assert!(!last_error().is_empty(), "le refus dit pourquoi");
 }
+
+/// La portée se lit par la frontière, et le statut du balayage lui répond.
+///
+/// **C'est le chemin qu'un hôte suit vraiment** : il demande une fois jusqu'où sa
+/// boîte garde un jeu, compare à ce que son décor atteint, et n'a plus à attendre
+/// le statut. Ce test éprouve les deux bouts — la valeur, puis le balayage d'une
+/// boîte au-delà de sa portée — pour qu'ils ne puissent pas se contredire chez
+/// quelqu'un d'autre.
+#[test]
+fn la_portee_se_lit_et_le_statut_lui_repond() {
+    let mut reach = -1.0f32;
+    let half = [0.3f32, 0.3, 0.9];
+
+    // SAFETY: trois flottants lisibles et une sortie inscriptible.
+    let code = unsafe { scg_sweep_reach(half.as_ptr(), &mut reach) };
+    assert_eq!(code, SCG_OK);
+    assert!(reach > 0.0, "portée {reach}");
+
+    // Le rayon n'a pas de jeu, donc pas de portée : même clause que la marge.
+    let mut zero = -1.0f32;
+    // SAFETY: idem.
+    let code = unsafe { scg_sweep_reach([0.0f32; 3].as_ptr(), &mut zero) };
+    assert_eq!(code, SCG_OK);
+    assert_eq!(zero, 0.0);
+
+    // SAFETY: la sortie est nulle, ce que l'appel doit refuser.
+    let code = unsafe { scg_sweep_reach(half.as_ptr(), ptr::null_mut()) };
+    assert_eq!(code, SCG_ERR_NULL);
+
+    // SAFETY: les demi-étendues sont nulles, même refus.
+    let code = unsafe { scg_sweep_reach(ptr::null(), &mut reach) };
+    assert_eq!(code, SCG_ERR_NULL);
+
+    // SAFETY: une demi-étendue négative est une faute d'appel, par le même
+    // lecteur que la marge et le balayage.
+    let code = unsafe { scg_sweep_reach([-1.0f32, 0.0, 0.0].as_ptr(), &mut reach) };
+    assert_eq!(code, SCG_ERR_INVALID_ARGUMENT);
+
+    // Une boîte minuscule dans ce décor : sa portée tombe sous les quatre unités
+    // que le sol atteint, donc son jeu est perdu et le balayage le dit.
+    let tiny = [1.0e-5f32; 3];
+    let mut tiny_reach = -1.0f32;
+    // SAFETY: trois flottants lisibles et une sortie inscriptible.
+    let code = unsafe { scg_sweep_reach(tiny.as_ptr(), &mut tiny_reach) };
+    assert_eq!(code, SCG_OK);
+    assert!(
+        tiny_reach < 4.0,
+        "portée {tiny_reach} sous l'étendue du décor"
+    );
+
+    let world = load();
+    let mut hit = dirty_hit();
+    let from = [2.0f32, 2.0, 1.0];
+    let to = [2.0f32, 2.0, -1.0];
+    // SAFETY: handle vivant, pointeurs locaux, sortie inscriptible.
+    let code = unsafe {
+        scg_world_sweep(
+            world,
+            7,
+            tiny.as_ptr(),
+            from.as_ptr(),
+            to.as_ptr(),
+            &mut hit,
+        )
+    };
+    assert_eq!(code, SCG_STATUS_NO_GAP);
+
+    // SAFETY: handle vivant, détruit une seule fois.
+    unsafe { scg_world_destroy(world) };
+}
