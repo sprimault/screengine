@@ -59,6 +59,8 @@ publié, et explique les conventions du dépôt à qui y contribue.
 - Les chiffres de `scg_sweep_reach` dans le header se lisent désormais en
   demi-étendues des deux côtés : l'exemple du corps annonçait le double de la
   portée réelle.
+- Le calcul des lightmaps refuse une cellule dont l'atlas dépasserait
+  `SCG_MAX_LIGHTMAP_SIZE` : il en rendait un de 2048 sans erreur.
 
 ***
 
@@ -73,6 +75,8 @@ publié, et explique les conventions du dépôt à qui y contribue.
   still holds. No rendering changes: the output curve never reaches that domain.
 - The `scg_sweep_reach` figures in the header now read as half extents throughout:
   the body example announced twice the real reach.
+- Lightmap baking refuses a cell whose atlas would exceed
+  `SCG_MAX_LIGHTMAP_SIZE`: it used to return a 2048 one with no error.
 
 ## [0.8.7] — 2026-10-04 — Longer un mur, et savoir jusqu'où
 
