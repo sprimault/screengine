@@ -294,7 +294,7 @@ const MAGIC: &[u8; 8] = b"SCGSWEEP";
 /// La liste des balayages, telle que les hôtes la lisent.
 ///
 /// **Ils lisent une liste, ils ne reportent pas la règle.** Quatre treillis
-/// écrits dans quatre langages prouveraient que quatre programmeurs ont su
+/// écrits dans chaque langage prouveraient qu'autant de programmeurs ont su
 /// reporter la même géométrie, ce qui n'est pas ce qu'une empreinte d'hôte existe
 /// pour établir. Un cinquième hôte n'a ainsi que sa boucle d'appel à écrire.
 ///

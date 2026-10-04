@@ -476,7 +476,7 @@ conform-images:
 # header` : le fichier versionné n'est jamais la source de vérité, et c'est un
 # test de la conformance — donc `make test` — qui le compare octet pour octet à
 # ce que ce mode écrit. Un fichier périmé échoue là, franchement, plutôt que de
-# faire diverger quatre empreintes sans dire pourquoi.
+# faire diverger les empreintes des hôtes sans dire pourquoi.
 mesh:
 	cargo run -p screengine-conformance --release -- --mesh hosts/caisse.mesh
 	cargo run -p screengine-conformance --release -- --world hosts/couloir.world
