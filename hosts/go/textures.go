@@ -31,6 +31,8 @@ var floorVertices = [4]C.ScgVertexUv{
 	{x: 2.0, y: 24.0, z: -1.2, u: 2.0 * 8.0, v: 24.0 * 8.0},
 }
 
+// floorTriangles porte le sol, blanc : sa texture et sa lightmap portent seules
+// la teinte, et une couleur de triangle les multiplierait.
 var floorTriangles = [2]C.ScgTriangle{
 	{i0: 0, i1: 1, i2: 2, r: 0xFF, g: 0xFF, b: 0xFF, a: 0xFF},
 	{i0: 0, i1: 2, i2: 3, r: 0xFF, g: 0xFF, b: 0xFF, a: 0xFF},
@@ -64,6 +66,8 @@ var litWall = [4]C.ScgVertexUv2{
 	{x: 40.0, y: 16.0, z: -1.2, u: 0.0, v: 0.0, u2: 0.5, v2: 15.5},
 }
 
+// wallTriangles porte le mur, dont la couleur tient lieu de texel : il n'a pas
+// de texture, et c'est le cas qu'un lot éclairé doit savoir rendre.
 var wallTriangles = [2]C.ScgTriangle{
 	{i0: 0, i1: 1, i2: 2, r: 0xC0, g: 0xB0, b: 0x90, a: 0xFF},
 	{i0: 0, i1: 2, i2: 3, r: 0xC0, g: 0xB0, b: 0x90, a: 0xFF},

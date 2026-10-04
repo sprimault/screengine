@@ -48,14 +48,19 @@ impl AbiError {
         message: "reserved fields must be zero",
     };
 
-    /// L'emplacement de texture demandé n'existe pas dans la ressource.
+    /// L'emplacement demandé n'existe pas dans la ressource.
     ///
     /// Une faute dans l'appel et non dans le contenu : le fichier est bon, c'est
     /// l'indice qui sort de ce que la ressource déclare. Un code de la plage des
     /// données enverrait l'hôte chercher un mauvais fichier.
-    pub(crate) const TEXTURE_SLOT: Self = Self {
+    ///
+    /// **Le message ne nomme pas la texture**, et c'est corrigé : le même
+    /// protocole de lecture sert les emplacements de texture d'un maillage et les
+    /// matériaux d'une carte, si bien qu'un hôte qui lisait un nom de matériau
+    /// recevait un texte parlant d'une texture qu'il n'avait pas demandée.
+    pub(crate) const SLOT_RANGE: Self = Self {
         code: SCG_ERR_INVALID_ARGUMENT,
-        message: "texture slot beyond those the resource declares",
+        message: "slot beyond those the resource declares",
     };
 
     /// Un index au-delà de ce que la carte porte.
@@ -85,6 +90,17 @@ impl AbiError {
     pub(crate) const NAME_CAPACITY: Self = Self {
         code: SCG_ERR_INVALID_ARGUMENT,
         message: "name buffer too short: measure the name first with a null buffer and zero capacity",
+    };
+
+    /// Le tampon d'un bloc d'octets ne peut pas le porter.
+    ///
+    /// Même protocole que pour un nom, et un message à part : les octets d'une
+    /// entité ne sont pas une chaîne — le moteur les copie sans en lire un, et
+    /// ils ne portent pas de terminateur. Un hôte à qui l'on parlait de « nom »
+    /// cherchait un défaut d'encodage là où il manquait de la place.
+    pub(crate) const BYTES_CAPACITY: Self = Self {
+        code: SCG_ERR_INVALID_ARGUMENT,
+        message: "byte buffer too short: measure the block first with a null buffer and zero capacity",
     };
 
     /// Le tampon du cache ne peut pas porter le bloc.

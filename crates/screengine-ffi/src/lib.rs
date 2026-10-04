@@ -1704,7 +1704,7 @@ unsafe fn write_name(
     cap: usize,
     out_len: *mut usize,
 ) -> Result<(), AbiError> {
-    let name = name.ok_or(AbiError::TEXTURE_SLOT)?;
+    let name = name.ok_or(AbiError::SLOT_RANGE)?;
     if !buf.is_null() {
         if cap < name.len() + 1 {
             return Err(AbiError::NAME_CAPACITY);
@@ -2598,8 +2598,11 @@ pub unsafe extern "C" fn scg_world_sweep(
 ///
 /// # Safety
 ///
-/// `half_extents` must point to three readable floats, each finite and zero or
-/// greater, and `out` must point to a writable `float`.
+/// `half_extents` must point to three readable floats and `out` to a writable
+/// `float`. Their **values** are not a precondition: a half extent that is
+/// negative or not finite is checked and refused with
+/// `SCG_ERR_INVALID_ARGUMENT`, where breaking the preconditions above is
+/// undefined behaviour — a binding must not confuse the two.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn scg_sweep_skin(half_extents: *const f32, out: *mut f32) -> i32 {
     entry::without_context(|| {
@@ -2648,8 +2651,9 @@ pub unsafe extern "C" fn scg_sweep_skin(half_extents: *const f32, out: *mut f32)
 ///
 /// # Safety
 ///
-/// `half_extents` must point to three readable floats, each finite and zero or
-/// greater, and `out` must point to a writable `float`.
+/// `half_extents` must point to three readable floats and `out` to a writable
+/// `float`. Their **values** are checked, not assumed: see `scg_sweep_skin`,
+/// which refuses the same domain with the same code.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn scg_sweep_reach(half_extents: *const f32, out: *mut f32) -> i32 {
     entry::without_context(|| {
@@ -2934,7 +2938,7 @@ pub unsafe extern "C" fn scg_world_entity_data(
 
         if !buf.is_null() {
             if cap < data.len() {
-                return Err(AbiError::NAME_CAPACITY);
+                return Err(AbiError::BYTES_CAPACITY);
             }
             // SAFETY: précondition de la fonction — `buf` couvre `cap` octets
             // inscriptibles, et `cap` vient d'être vérifié au moins aussi grand

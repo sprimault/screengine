@@ -55,6 +55,14 @@ publié, et explique les conventions du dépôt à qui y contribue.
   recopier l'orientation.
 
 ### Modifié
+- Le header dit que le domaine des demi-étendues de `scg_sweep_skin` et
+  `scg_sweep_reach` est **vérifié** : le violer rend `SCG_ERR_INVALID_ARGUMENT`,
+  là où sa section « Safety » le donnait pour une précondition — donc pour un
+  comportement indéfini.
+- `ScgSprite.v0` borne le bord **supérieur** de la vignette, et le header le dit :
+  une liaison qui lisait « coin bas-gauche » découpait ses planches à l'envers.
+- Deux messages d'erreur ne nomment plus une texture ni un nom là où l'appel
+  porte sur un matériau ou sur des octets opaques.
 - `Malformation::Mapping` porte l'identifiant de la surface refusée, et `0` quand
   la cellule entière est en cause : un appelant Rust qui filtrait cette variante
   la reprend. L'ABI ne change pas.
@@ -89,6 +97,14 @@ publié, et explique les conventions du dépôt à qui y contribue.
   to copy the orientation out.
 
 ### Changed
+- The header states that the half-extent domain of `scg_sweep_skin` and
+  `scg_sweep_reach` is **checked**: breaking it returns
+  `SCG_ERR_INVALID_ARGUMENT`, where its "Safety" section gave it as a
+  precondition — hence as undefined behaviour.
+- `ScgSprite.v0` bounds the **top** edge of the tile, and the header says so: a
+  binding reading "bottom-left corner" cut its sheets upside down.
+- Two error messages no longer name a texture or a name where the call is about a
+  material or opaque bytes.
 - `Malformation::Mapping` carries the identifier of the refused surface, and `0`
   when the whole cell is at fault: a Rust caller matching on that variant updates
   it. The ABI does not change.

@@ -1979,8 +1979,11 @@ int32_t scg_world_sweep(const struct ScgWorld *world,
 //
 // # Safety
 //
-// `half_extents` must point to three readable floats, each finite and zero or
-// greater, and `out` must point to a writable `float`.
+// `half_extents` must point to three readable floats and `out` to a writable
+// `float`. Their **values** are not a precondition: a half extent that is
+// negative or not finite is checked and refused with
+// `SCG_ERR_INVALID_ARGUMENT`, where breaking the preconditions above is
+// undefined behaviour — a binding must not confuse the two.
 int32_t scg_sweep_skin(const float *half_extents, float *out);
 
 // Writes to `out` how far from the origin a box of these half extents keeps a gap.
@@ -2015,8 +2018,9 @@ int32_t scg_sweep_skin(const float *half_extents, float *out);
 //
 // # Safety
 //
-// `half_extents` must point to three readable floats, each finite and zero or
-// greater, and `out` must point to a writable `float`.
+// `half_extents` must point to three readable floats and `out` to a writable
+// `float`. Their **values** are checked, not assumed: see `scg_sweep_skin`,
+// which refuses the same domain with the same code.
 int32_t scg_sweep_reach(const float *half_extents, float *out);
 
 // Picks the scene with a ray from `from` to `to`, starting in `from_cell`.

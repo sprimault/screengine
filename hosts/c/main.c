@@ -199,6 +199,7 @@ static const ScgVertexUv FLOOR_VERTICES[4] = {
     {  2.0f,  24.0f, -1.2f,   2.0f * 8.0f,  24.0f * 8.0f },
 };
 
+/* Les deux triangles du sol, blancs : la lightmap porte seule sa teinte. */
 static const ScgTriangle FLOOR_TRIANGLES[2] = {
     { 0, 1, 2, 0xFF, 0xFF, 0xFF, 0xFF },
     { 0, 2, 3, 0xFF, 0xFF, 0xFF, 0xFF },
@@ -229,6 +230,7 @@ static const ScgVertexUv2 LIT_WALL[4] = {
     { 40.0f,  16.0f, -1.2f, 0.0f, 0.0f,  0.5f, 15.5f },
 };
 
+/* Ceux du mur, dont la couleur tient lieu de texel : il n'en porte pas. */
 static const ScgTriangle WALL_TRIANGLES[2] = {
     { 0, 1, 2, 0xC0, 0xB0, 0x90, 0xFF },
     { 0, 2, 3, 0xC0, 0xB0, 0x90, 0xFF },
@@ -278,6 +280,7 @@ static void make_checker_sized(uint8_t *pixels, uint32_t side, uint32_t cell)
     }
 }
 
+/* Le damier du sol, à la densité que la carte déclare pour ses murs. */
 static void make_checker(uint8_t *pixels)
 {
     make_checker_sized(pixels, FLOOR_SIDE, FLOOR_CELL);
@@ -1504,6 +1507,8 @@ static const ScgVertex TRACE_WALL[4] = {
     { 6.0f, 4.0f, 3.0f },
 };
 
+/* Le mur sombre de la scène de tracé : il n'est là que pour occulter, et sa
+   teinte est celle du fond pour que seules les lignes se lisent. */
 static const ScgTriangle TRACE_FACES[2] = {
     { 0, 1, 2, 0x30, 0x38, 0x48, 0xFF },
     { 0, 2, 3, 0x30, 0x38, 0x48, 0xFF },

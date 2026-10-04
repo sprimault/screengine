@@ -721,6 +721,10 @@ static void lighting_destroy(JNIEnv *env, jclass cls, jlong lighting)
     scg_lighting_destroy((ScgLighting *)(intptr_t)lighting);
 }
 
+/* scg_submit_textured : les sommets arrivent en tableaux Java plats, que Java ne
+   peut pas écrire sous forme de structures. Le pont les recopie en ScgVertexUv,
+   la seule conversion que cette couche fait — et la raison pour laquelle elle est
+   en C plutôt qu'en Rust. */
 static jint submit_textured(JNIEnv *env, jclass cls, jlong ctx, jfloatArray model,
                             jfloatArray vertices, jintArray indices, jbyteArray colors,
                             jlong texture)
