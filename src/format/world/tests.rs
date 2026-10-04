@@ -1706,3 +1706,82 @@ fn toute_pente_est_acceptee_et_l_origine_decide() {
     }
     assert_eq!(lignes.len(), 5, "les cinq pentes ont été éprouvées");
 }
+
+/// La faute nommée est celle que le chargeur refuse, pour les quatre clauses.
+///
+/// **C'est l'accord des deux qui compte, et il tient par construction** : le
+/// chargement appelle `lightmap_fault`, donc une divergence est impossible tant
+/// que ce test voit les deux dire la même chose sur chaque clause. Il garde le
+/// jour où quelqu'un réécrirait l'un des deux côtés « pour simplifier » — ce qui
+/// est exactement ce que le projet a vu arriver à un générateur, qui avait
+/// reproduit le prédicat au lieu de l'appeler.
+///
+/// Chaque repère ne viole qu'une clause, et l'ordre des quatre est celui du
+/// refus : un repère qui en violerait deux ne dirait rien de l'ordre.
+#[test]
+fn chaque_clause_du_repere_se_nomme_et_fait_refuser() {
+    let carre = [
+        Vec3::new(0.0, 0.0, 0.0),
+        Vec3::new(4.0, 0.0, 0.0),
+        Vec3::new(4.0, 4.0, 0.0),
+        Vec3::new(0.0, 4.0, 0.0),
+    ];
+    let cas = [
+        (
+            LightmapFault::DegenerateAxis,
+            frame([0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 1.0, 0.0]),
+            (Vec3::ZERO, Vec3::ZERO, Vec3::new(0.0, 1.0, 0.0)),
+        ),
+        (
+            LightmapFault::OriginOffGrid,
+            frame([0.5, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]),
+            (
+                Vec3::new(0.5, 0.0, 0.0),
+                Vec3::new(1.0, 0.0, 0.0),
+                Vec3::new(0.0, 1.0, 0.0),
+            ),
+        ),
+        (
+            LightmapFault::SkewedAxes,
+            frame([0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [1.0, 1.0, 0.0]),
+            (
+                Vec3::ZERO,
+                Vec3::new(1.0, 0.0, 0.0),
+                Vec3::new(1.0, 1.0, 0.0),
+            ),
+        ),
+        (
+            LightmapFault::AxisOffPlane,
+            frame([0.0, 0.0, 0.0], [0.0, 0.0, 1.0], [0.0, 1.0, 0.0]),
+            (
+                Vec3::ZERO,
+                Vec3::new(0.0, 0.0, 1.0),
+                Vec3::new(0.0, 1.0, 0.0),
+            ),
+        ),
+    ];
+
+    for (attendue, bytes, (origin, u, v)) in cas {
+        assert_eq!(
+            lightmap_fault(origin, u, v, &carre),
+            Some(attendue),
+            "la faute nommée n'est pas {attendue:?}"
+        );
+        assert_eq!(
+            World::load(&map_with_lightmap(&bytes)).unwrap_err(),
+            refused(Malformation::Mapping { surface: 11 }),
+            "{attendue:?} ne fait pas refuser la carte"
+        );
+    }
+
+    // Le témoin : un repère sain ne porte aucune faute, et sa carte se charge.
+    assert_eq!(
+        lightmap_fault(
+            Vec3::ZERO,
+            Vec3::new(1.0, 0.0, 0.0),
+            Vec3::new(0.0, 1.0, 0.0),
+            &carre
+        ),
+        None
+    );
+}

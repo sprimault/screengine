@@ -47,6 +47,9 @@ publié, et explique les conventions du dépôt à qui y contribue.
 ## [Non publié]
 
 ### Ajouté
+- `lightmap_fault` dit ce qui ferait refuser un repère de lightmap, et laquelle
+  des quatre clauses échoue : c'est le prédicat du chargeur, qu'un générateur
+  n'a plus à reproduire.
 - La caméra libre de l'étage d'accueil s'appelle en deux moitiés, `look` et
   `walk`, et `spin` rend son cap : un hôte qui a sa propre marche n'a plus à
   recopier l'orientation.
@@ -78,6 +81,9 @@ publié, et explique les conventions du dépôt à qui y contribue.
 ***
 
 ### Added
+- `lightmap_fault` reports what would get a lightmap frame refused, and which of
+  the four clauses fails: it is the loader's own predicate, which a generator no
+  longer has to reproduce.
 - The hosting layer's free camera comes in two halves, `look` and `walk`, and
   `spin` returns its heading: a host with its own walking policy no longer has
   to copy the orientation out.
