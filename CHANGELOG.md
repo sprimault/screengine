@@ -46,6 +46,22 @@ publié, et explique les conventions du dépôt à qui y contribue.
 
 ## [Non publié]
 
+## [0.8.8] — 2026-10-05 — Éprouver ce qui était seulement écrit
+
+**Deux empreintes de conformance changent**, `collision` et `selection` : leurs
+scènes ajoutent un trajet qui épuise `SCG_SWEEP_CELLS`. Aucun rendu ne bouge.
+
+**Une liaison a quelque chose à reprendre.** `SCG_ABI_VERSION` reste à 1, aucune
+signature ne change et le format des cartes et des maillages ne bouge pas, mais
+deux clauses du header disaient faux. `ScgSprite.v0` borne le bord **supérieur**
+de la vignette : qui avait suivi « coin bas-gauche » découpe ses planches à
+l'envers. Et le domaine des demi-étendues de `scg_sweep_skin` et
+`scg_sweep_reach` est **vérifié**, rendant `SCG_ERR_INVALID_ARGUMENT` là où la
+prose annonçait un comportement indéfini.
+
+**Un appelant Rust reprend un `match`** : `Malformation::Mapping` porte
+l'identifiant de la surface refusée. L'ABI n'en voit rien.
+
 ### Ajouté
 - `lightmap_fault` dit ce qui ferait refuser un repère de lightmap, et laquelle
   des quatre clauses échoue : c'est le prédicat du chargeur, qu'un générateur
@@ -87,6 +103,19 @@ publié, et explique les conventions du dépôt à qui y contribue.
   `SCG_MAX_LIGHTMAP_SIZE` : il en rendait un de 2048 sans erreur.
 
 ***
+
+**Two conformance fingerprints change**, `collision` and `selection`: their scenes
+add a path that exhausts `SCG_SWEEP_CELLS`. No rendering moves.
+
+**A binding has something to revisit.** `SCG_ABI_VERSION` stays at 1, no signature
+changes and the map and mesh formats do not move, but two header clauses were
+wrong. `ScgSprite.v0` bounds the **top** edge of the tile: whoever followed
+"bottom-left corner" cuts their sheets upside down. And the half-extent domain of
+`scg_sweep_skin` and `scg_sweep_reach` is **checked**, returning
+`SCG_ERR_INVALID_ARGUMENT` where the prose announced undefined behaviour.
+
+**A Rust caller revisits a `match`**: `Malformation::Mapping` carries the
+identifier of the refused surface. The ABI sees none of it.
 
 ### Added
 - `lightmap_fault` reports what would get a lightmap frame refused, and which of
