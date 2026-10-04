@@ -2051,6 +2051,18 @@ impl Context {
         Ok(())
     }
 
+    /// Pose un triangle déjà porté en espace de vue.
+    ///
+    /// **Le point de passage unique entre la soumission et le découpage** : toutes
+    /// les familles — unie, texturée, éclairée, modulée, quadrilatère orienté,
+    /// trame interpolée — y arrivent avec leurs trois sommets en espace de vue, et
+    /// c'est ici que la projection, le clipping par les cinq plans et le passage en
+    /// sous-pixels ont lieu. Une famille qui s'en écarterait aurait son propre
+    /// arrondi, donc sa propre règle d'arête.
+    ///
+    /// `texture` et `lit` sont des index dans la table du contexte, non des
+    /// handles : la sentinelle d'absence et le bit de mode voyagent dedans, voir
+    /// `docs/rust.md`.
     fn submit_view(
         &mut self,
         view: [ClipSource; 3],

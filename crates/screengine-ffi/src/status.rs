@@ -150,7 +150,7 @@ pub const SCG_TRAVERSAL_CELLS: u32 = 4096;
 /// error then names the map rather than one cell of it.
 pub const SCG_MAX_LIGHTMAP_SIZE: u32 = 1024;
 
-// **Les deux valeurs sont écrites en littéral, et concordent par assertion.**
+// **Ces valeurs sont écrites en littéral, et concordent par assertion.**
 // `cbindgen` analyse la source syntaxiquement et n'interroge jamais `rustc` : une
 // constante définie depuis un chemin du noyau n'entre pas dans le header, elle y
 // disparaît en silence. Les recopier les y fait entrer ; l'assertion refuse la
@@ -159,6 +159,10 @@ pub const SCG_MAX_LIGHTMAP_SIZE: u32 = 1024;
 const _: () = assert!(SCG_TRAVERSAL_DEPTH as usize == screengine::TRAVERSAL_DEPTH);
 const _: () = assert!(SCG_TRAVERSAL_CELLS as usize == screengine::TRAVERSAL_CELLS);
 const _: () = assert!(SCG_MAX_LIGHTMAP_SIZE == screengine::MAX_LIGHTMAP_SIZE);
+// Celle-ci manquait, seule des quatre bornes publiées : le noyau pouvait changer
+// sa valeur sans que rien ne refuse la compilation, et le header aurait publié
+// l'ancienne.
+const _: () = assert!(SCG_SWEEP_CELLS as usize == screengine::SWEEP_CELLS);
 
 /// The block is not a data file this library can read.
 ///

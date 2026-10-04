@@ -50,6 +50,8 @@ var traceWall = [4]C.ScgVertex{
 	{x: 6.0, y: 4.0, z: 3.0},
 }
 
+// traceFaces est le mur sombre de la scène de tracé : il n'est là que pour
+// occulter, et sa teinte est celle du fond pour que seules les lignes se lisent.
 var traceFaces = [2]C.ScgTriangle{
 	{i0: 0, i1: 1, i2: 2, r: 0x30, g: 0x38, b: 0x48, a: 0xFF},
 	{i0: 0, i1: 2, i2: 3, r: 0x30, g: 0x38, b: 0x48, a: 0xFF},

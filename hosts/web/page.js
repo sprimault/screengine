@@ -336,10 +336,20 @@ async function main() {
     return;
   }
   const lighting = engine.readU32(out);
-  e.scg_world_cell_count(world, out);
+  // **Le code se juge, même sur une interrogation qui ne peut guère échouer.**
+  // Un refus ne touche pas le paramètre de sortie : `out` garderait la valeur de
+  // l'appel précédent, et la page poursuivrait sur un compte qui n'est pas le
+  // sien — une erreur devenue nombre plausible, que rien ne distinguerait.
+  if (e.scg_world_cell_count(world, out) < 0) {
+    status(`compte de cellules refusé : ${engine.lastError(0)}`);
+    return;
+  }
   const cells = engine.readU32(out);
   for (let i = 0; i < cells; i++) {
-    e.scg_world_cell_id(world, i, out);
+    if (e.scg_world_cell_id(world, i, out) < 0) {
+      status(`identifiant de cellule refusé : ${engine.lastError(0)}`);
+      return;
+    }
     if (e.scg_lighting_build(lighting, engine.readU32(out)) < 0) {
       status(`cuisson refusée : ${engine.lastError(0)}`);
       return;
@@ -348,16 +358,27 @@ async function main() {
 
   // Une texture par matériau, dans l'ordre que la carte déclare : l'hôte lit
   // les noms, charge ce qu'il veut, et passe les handles dans cet ordre.
-  e.scg_world_material_count(world, out);
+  if (e.scg_world_material_count(world, out) < 0) {
+    status(`compte de matériaux refusé : ${engine.lastError(0)}`);
+    return;
+  }
   const materials = engine.readU32(out);
   const slots = engine.alloc(materials * 4);
   const textures = [];
   for (let i = 0; i < materials; i++) {
     const len = engine.alloc(4);
-    e.scg_world_material_name(world, i, 0, 0, len);
+    // L'appel de mesure est le seul chemin vers la longueur : refusé, il n'écrit
+    // pas `len`, et la page allouerait sur la taille du nom précédent.
+    if (e.scg_world_material_name(world, i, 0, 0, len) < 0) {
+      status(`longueur du matériau ${i} refusée : ${engine.lastError(0)}`);
+      return;
+    }
     const size = engine.readU32(len);
     const name = engine.alloc(size + 1);
-    e.scg_world_material_name(world, i, name, size + 1, len);
+    if (e.scg_world_material_name(world, i, name, size + 1, len) < 0) {
+      status(`nom du matériau ${i} refusé : ${engine.lastError(0)}`);
+      return;
+    }
     const text = new TextDecoder().decode(engine.bytes().subarray(name, name + size));
     engine.free(name, size + 1);
     engine.free(len, 4);
@@ -409,7 +430,12 @@ async function main() {
   const from = engine.alloc(12);
   const to = engine.alloc(12);
   engine.writePoint(to, START);
-  e.scg_world_locate(world, to, out);
+  // Le code d'abord, la valeur ensuite : un refus laisse `out` intact, et la
+  // page prendrait l'identifiant du dernier matériau pour une cellule.
+  if (e.scg_world_locate(world, to, out) < 0) {
+    status(`localisation refusée : ${engine.lastError(0)}`);
+    return;
+  }
   let cell = engine.readU32(out);
   if (cell === 0) {
     status("la caméra ne part d'aucune cellule");
