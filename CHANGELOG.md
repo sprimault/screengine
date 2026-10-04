@@ -47,6 +47,8 @@ publié, et explique les conventions du dépôt à qui y contribue.
 ## [Non publié]
 
 ### Corrigé
+- La traversée tronque son image à `SCG_TRAVERSAL_CELLS` et non à la capacité que
+  l'allocateur a rendue : au-delà de la borne, l'image dépendait de la cible.
 - L'exemple C du `README` soumet sa face avant et juge l'appel par le signe : son
   triangle était à l'envers, donc éliminé, et le tampon restait noir.
 - Les démonstrations Android jugent un appel par le signe de son code : elles
@@ -61,6 +63,8 @@ publié, et explique les conventions du dépôt à qui y contribue.
 ***
 
 ### Fixed
+- Traversal truncates its frame at `SCG_TRAVERSAL_CELLS`, not at whatever capacity
+  the allocator returned: past the bound, the frame depended on the target.
 - The `README`'s C example submits its front face and judges the call by the sign:
   its triangle was reversed, hence culled, and the buffer stayed black.
 - The Android demonstrations judge a call by the sign of its code: they used to

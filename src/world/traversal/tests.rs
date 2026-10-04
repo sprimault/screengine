@@ -68,6 +68,99 @@ fn section(from: f32, to: f32) -> [[f32; 3]; 8] {
     points
 }
 
+/// Les huit sommets d'une case de grille, en `[x0, x0+8] × [y0, y0+8]`.
+///
+/// Même disposition que [`section`] — bout proche puis bout lointain, et dans
+/// chacun l'ordre `(y, z)` qui met le sol sur [`FLOOR`] —, à ceci près que les
+/// deux côtés en `y` sont des paramètres : c'est ce qui permet à une case d'avoir
+/// quatre voisines au lieu de deux.
+fn tile_points(x0: f32, y0: f32) -> [[f32; 3]; 8] {
+    let (x1, y1) = (x0 + 8.0, y0 + 8.0);
+    let mut points = [[0.0f32; 3]; 8];
+    for (i, x) in [x0, x1].iter().enumerate() {
+        for (j, (y, z)) in [(y0, -2.0), (y1, -2.0), (y1, 2.0), (y0, 2.0)]
+            .iter()
+            .enumerate()
+        {
+            points[i * 4 + j] = [*x, *y, *z];
+        }
+    }
+    points
+}
+
+/// Deux tronçons séparés par un mur percé de `openings` ouvertures.
+///
+/// Chaque ouverture est un portail à elle seule, donc chacune porte la cellule
+/// d'en face **par une fenêtre différente** : c'est ce que la documentation de
+/// [`MAX_VISITS`] décrit, et le seul mécanisme qui multiplie les visites sans
+/// multiplier les cellules — une grille, elle, n'en donne qu'une par cellule, ses
+/// chemins de biais se vidant.
+///
+/// Les ouvertures sont alignées en `y`, chacune d'un seizième d'unité, et les deux
+/// cellules décrivent chaque plan avec les mêmes coordonnées.
+fn pierced(openings: u32) -> Vec<u8> {
+    let span = 4.0 / openings as f32;
+    let mut points = Vec::new();
+    // Les huit sommets du pavé, comme ailleurs, puis quatre par ouverture.
+    for point in tile_points(0.0, -2.0) {
+        points.push(point);
+    }
+    for index in 0..openings {
+        let y0 = -2.0 + index as f32 * span;
+        let y1 = y0 + span * 0.5;
+        for (y, z) in [(y0, -1.0), (y1, -1.0), (y1, 1.0), (y0, 1.0)] {
+            points.push([8.0, y, z]);
+        }
+    }
+
+    // Chaque portail porte son propre identifiant, les deux côtés d'une ouverture
+    // compris : le format refuse un identifiant dupliqué, et c'est l'appariement
+    // par sommets partagés qui les joint, jamais leur numéro.
+    let near_portals: Vec<_> = (0..openings)
+        .map(|index| {
+            let base = 8 + index * 4;
+            portal_bytes(100 + index, &[base, base + 1, base + 2, base + 3])
+        })
+        .collect();
+    let far_portals: Vec<_> = (0..openings)
+        .map(|index| {
+            let base = 8 + index * 4;
+            portal_bytes(
+                100 + openings + index,
+                &[base, base + 1, base + 2, base + 3],
+            )
+        })
+        .collect();
+
+    let mut far = Vec::new();
+    for point in tile_points(8.0, -2.0) {
+        far.push(point);
+    }
+    for index in 0..openings {
+        let y0 = -2.0 + index as f32 * span;
+        let y1 = y0 + span * 0.5;
+        for (y, z) in [(y0, -1.0), (y1, -1.0), (y1, 1.0), (y0, 1.0)] {
+            far.push([8.0, y, z]);
+        }
+    }
+
+    let mut cells = cell_bytes(
+        7,
+        0,
+        &points,
+        &[surface_bytes(11, 0, 1, &FLOOR)],
+        &near_portals,
+    );
+    cells.extend_from_slice(&cell_bytes(
+        8,
+        0,
+        &far,
+        &[surface_bytes(12, 0, 1, &FLOOR)],
+        &far_portals,
+    ));
+    file(&cells, &[], &[], &material(1, "mur"))
+}
+
 /// Une carte d'un seul tronçon, sans portail.
 fn one_cell() -> Vec<u8> {
     let cell = cell_bytes(
@@ -127,9 +220,15 @@ fn ring() -> Vec<u8> {
     file(&cells, &[], &[], &material(1, "mur"))
 }
 
-/// Une liste de visites de la capacité que le contexte lui donne.
+/// Une liste de visites réservée **comme le contexte la réserve**.
+///
+/// Par [`crate::buffer::reserved`] et non par `Vec::with_capacity`, pour que ce
+/// qu'éprouvent ces cas soit la condition du contexte et non une autre. Mesuré :
+/// les deux rendent exactement [`MAX_VISITS`] sur ce poste, si bien qu'une borne
+/// lue sur la capacité y passerait inaperçue — c'est pourquoi le cas qui la garde
+/// réserve, lui, volontairement plus large.
 fn visits() -> Vec<Visit> {
-    Vec::with_capacity(MAX_VISITS)
+    crate::buffer::reserved(MAX_VISITS).expect("la réservation des visites tient")
 }
 
 /// Une enfilade droite de `count` tronçons, chacun joint au suivant.
@@ -316,18 +415,38 @@ fn une_fenetre_vide_au_depart_ne_visite_rien() {
     assert!(out.is_empty());
 }
 
-/// Une liste de visites saturée tronque, et le dit.
+/// La traversée tronque à [`MAX_VISITS`], et pas une visite plus tôt.
 ///
-/// La capacité est celle de la liste et non `MAX_VISITS` : c'est ce qui permet
-/// d'éprouver la clause sans construire une carte de quatre mille cellules.
+/// **Le décor atteint la borne pour de vrai**, là où ce cas l'éprouvait jusqu'ici
+/// sur une liste de capacité un : la borne se lisant alors sur la capacité, le test
+/// mesurait un artefact, et c'est ce qui a laissé la troncature dépendre de
+/// l'allocateur. Le compte des visites vaut une pour la cellule de départ plus une
+/// par ouverture — chaque ouverture porte la cellule d'en face par une fenêtre à
+/// elle —, donc un mur assez percé y mène sans carte de quatre mille cellules.
+/// Une grille n'y menait pas : ses chemins de biais se vident, et elle ne donne
+/// qu'une visite par cellule.
+///
+/// **Les deux côtés de la borne se mesurent, et c'est ce qui la rend opposable** :
+/// à la borne exacte la traversée est complète, une visite au-delà elle tronque.
+/// Un cas qui ne verrait que la troncature passerait aussi sur une borne trop
+/// basse.
 #[test]
-fn une_liste_saturee_tronque() {
-    let world = World::load(&two_cells()).expect("carte valide");
-    let mut out = Vec::with_capacity(1);
-    let truncated = traverse(&world, 0, full(), at(2.0), &projection(), &mut out);
+fn la_traversee_tronque_a_sa_borne_et_pas_avant() {
+    let exact = u32::try_from(MAX_VISITS).expect("la borne tient dans un u32") - 1;
 
-    assert!(truncated, "la seconde cellule n'a pas pu entrer");
-    assert_eq!(out.len(), 1);
+    let world = World::load(&pierced(exact)).expect("carte valide");
+    let mut out = visits();
+    assert!(
+        !traverse(&world, 0, full(), at(2.0), &projection(), &mut out),
+        "{MAX_VISITS} visites entrent sans troncature, la borne étant atteinte et non franchie"
+    );
+
+    let world = World::load(&pierced(exact + 1)).expect("carte valide");
+    let mut out = visits();
+    assert!(
+        traverse(&world, 0, full(), at(2.0), &projection(), &mut out),
+        "la visite au-delà de la borne tronque l'image"
+    );
 }
 
 /// Deux fenêtres pour une même cellule se fusionnent en leur enveloppe.
@@ -386,6 +505,43 @@ fn l_enveloppe_ignore_un_rectangle_vide() {
     };
     assert_eq!(cover(Rect::EMPTY, some), some);
     assert_eq!(cover(some, Rect::EMPTY), some);
+}
+
+/// La troncature tombe à [`MAX_VISITS`], quelle que soit la capacité réservée.
+///
+/// **La liste est réservée par `try_reserve_exact`, qui ne promet pas la capacité
+/// demandée mais au moins elle** : l'allocateur a le droit d'en rendre davantage.
+/// Une borne lue sur `capacity()` ferait donc dépendre la troncature — donc le
+/// drapeau d'image incomplète, donc l'image — de l'allocateur de la cible, et deux
+/// plateformes rendraient deux images de la même scène.
+///
+/// La capacité est ici volontairement plus large que la borne, ce qu'aucun décor
+/// du dépôt ne produit : c'est la seule façon d'éprouver la propriété sans
+/// dépendre de ce que l'allocateur a bien voulu donner le jour du test.
+#[test]
+fn la_borne_de_visites_ne_suit_pas_la_capacite() {
+    let window = Rect {
+        x: 0,
+        y: 0,
+        width: WIDTH,
+        height: HEIGHT,
+    };
+    let mut visits = Vec::with_capacity(MAX_VISITS + 8);
+
+    for rank in 0..MAX_VISITS {
+        assert!(
+            push_visit(&mut visits, 0, window),
+            "la visite {rank} entre, la liste n'étant pas pleine"
+        );
+    }
+
+    assert!(
+        !push_visit(&mut visits, 0, window),
+        "la borne est MAX_VISITS, jamais la capacité — la liste en porte {} pour une capacité de {}",
+        visits.len(),
+        visits.capacity()
+    );
+    assert_eq!(visits.len(), MAX_VISITS);
 }
 
 /// Une carte dont les portails ne s'apparient pas ne sort jamais de sa cellule.

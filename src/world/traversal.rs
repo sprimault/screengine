@@ -177,8 +177,17 @@ pub(crate) fn traverse(
 }
 
 /// Enregistre une visite, ou dit que la liste est pleine.
+///
+/// **La borne est [`MAX_VISITS`], jamais `visits.capacity()`.** La liste est
+/// réservée par `try_reserve_exact`, dont le contrat ne promet pas la capacité
+/// demandée mais **au moins** elle : l'allocateur peut en donner davantage. Lue
+/// sur la capacité, la troncature — donc le drapeau d'image incomplète, donc
+/// l'image soumise — aurait dépendu de ce que l'allocateur a bien voulu rendre,
+/// et deux cibles auraient rendu deux images de la même scène. C'est l'invariant
+/// du déterminisme, et c'est le seul endroit du noyau où une borne se lisait
+/// ainsi.
 fn push_visit(visits: &mut alloc::vec::Vec<Visit>, cell: u32, window: Rect) -> bool {
-    if visits.len() == visits.capacity() {
+    if visits.len() == MAX_VISITS {
         return false;
     }
     visits.push(Visit {
