@@ -138,6 +138,27 @@ pub const ROOM: [[f32; 2]; 8] = placed([
 /// L'empreinte du couloir étroit, large d'une unité.
 pub const CORRIDOR: [[f32; 2]; 4] = placed([[8.0, 2.0], [16.0, 2.0], [16.0, 3.0], [8.0, 3.0]]);
 
+/// Combien de cubes l'enfilade empile, une de plus que le budget du balayage.
+///
+/// **Le budget se compte en cellules visitées**, et la région examinée est
+/// l'ensemble de celles que le volume balayé touche : une enfilade dégagée les
+/// touche toutes, donc elle sature dès qu'il y en a plus que la borne. Huit de
+/// marge, comme le cas du noyau, pour que la saturation ne tienne pas au nombre
+/// exact de cellules qu'un arrondi de la région fait entrer.
+pub const CHAIN_CELLS: usize = screengine::SWEEP_CELLS + 8;
+
+/// Le côté d'un cube de l'enfilade, en unités de monde.
+const CHAIN_SIDE: f32 = 4.0;
+
+/// La bande en `Y` que l'enfilade occupe.
+///
+/// **En `Y` négatif, à l'écart de tout le reste**, et c'est la condition qui rend
+/// l'ajout gratuit : les cinq cellules d'avant vivent en `Y` positif, si bien
+/// qu'aucun de leurs balayages ne rencontre l'enfilade et qu'aucune de leurs
+/// réponses ne bouge. Les deux empreintes de référence ne se déplacent donc que
+/// par les cas ajoutés en queue.
+const CHAIN_Y: [f32; 2] = [-8.0, -4.0];
+
 /// L'empreinte de la cellule en U : une base et deux branches.
 ///
 /// **Ce qu'un L ne peut pas porter.** Le volume dilaté d'une face est une dalle
@@ -212,6 +233,7 @@ pub fn bytes() -> Vec<u8> {
     prism(9, 300, &BRANCHES, &[], false, &mut cells);
     ramp(10, 400, &mut cells);
     stairwell(11, 500, &mut cells);
+    chain(20, 1000, &mut cells);
 
     let mut materials = Vec::new();
     for (id, name) in [(1u32, "mur"), (2, "sol")] {
@@ -441,6 +463,69 @@ fn ramp(id: u32, first_id: u32, out: &mut Vec<u8>) {
 ///
 /// `portals` désigne les arêtes qui sont des ouvertures plutôt que des murs, et
 /// `open_ceiling` pose le drapeau « non solide » sur le plafond.
+/// Une enfilade de [`CHAIN_CELLS`] cubes appariés, alignés sur `X`.
+///
+/// **Ce que l'enfilade éprouve que les cinq autres cellules ne peuvent pas** : la
+/// saturation du budget du balayage, donc `SCG_STATUS_INCOMPLETE` **vu par un
+/// hôte**. Le statut entre dans l'empreinte depuis la 0.8.7, mais aucun décor
+/// versionné ne l'atteignait, si bien qu'aucun des cinq hôtes ne l'avait jamais
+/// reçu — et un hôte qui jugerait un code positif comme un échec ne l'aurait
+/// appris nulle part.
+///
+/// **Les cotes sont des multiples du côté**, et c'est ce qui fait tenir le cas :
+/// deux cubes voisins écrivent alors leur portail commun avec les **mêmes bits**,
+/// donc il s'apparie. L'appariement étant exact et sans tolérance, un bit de
+/// travers en ferait un mur — la région examinée s'arrêterait à la première
+/// cellule et le balayage rendrait un contact au lieu d'un budget épuisé.
+///
+/// Les deux faces perpendiculaires à `X` sont des portails ; aux deux bouts ils
+/// restent non appariés, donc solides, ce qui garde l'enfilade fermée.
+fn chain(id: u32, first_id: u32, out: &mut Vec<u8>) {
+    for index in 0..CHAIN_CELLS {
+        let x0 = ORIGIN_X + index as f32 * CHAIN_SIDE;
+        let x1 = x0 + CHAIN_SIDE;
+        // Sens antihoraire, comme toutes les empreintes du décor : les arêtes 1 et
+        // 3 sont celles perpendiculaires à `X`, donc les deux portails.
+        let footprint = [
+            [x0, CHAIN_Y[0]],
+            [x1, CHAIN_Y[0]],
+            [x1, CHAIN_Y[1]],
+            [x0, CHAIN_Y[1]],
+        ];
+        prism(
+            id + index as u32,
+            first_id + index as u32 * 10,
+            &footprint,
+            &[1, 3],
+            false,
+            out,
+        );
+    }
+}
+
+/// Le centre du premier cube de l'enfilade, d'où le trajet qui sature part.
+///
+/// Exposé plutôt que recopié : les scènes de balayage et d'interrogation en ont
+/// toutes deux besoin, et deux écritures d'une même cote auraient fini par
+/// diverger — c'est la raison déjà écrite pour la translation des empreintes.
+pub fn chain_entry() -> [f32; 3] {
+    [
+        ORIGIN_X + CHAIN_SIDE / 2.0,
+        (CHAIN_Y[0] + CHAIN_Y[1]) / 2.0,
+        FLOOR_Z + CHAIN_SIDE / 2.0,
+    ]
+}
+
+/// Le centre du dernier cube, où le trajet voudrait arriver et n'arrive pas.
+pub fn chain_exit() -> [f32; 3] {
+    let entry = chain_entry();
+    [
+        entry[0] + (CHAIN_CELLS - 1) as f32 * CHAIN_SIDE,
+        entry[1],
+        entry[2],
+    ]
+}
+
 fn prism(
     id: u32,
     first_id: u32,

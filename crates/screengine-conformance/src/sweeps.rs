@@ -130,7 +130,31 @@ pub fn all() -> Vec<Sweep> {
             }
         }
     }
+    sweeps.push(saturating());
     sweeps
+}
+
+/// Le trajet qui épuise le budget de cellules du balayage.
+///
+/// **En queue de la liste, et c'est ce qui rend l'ajout lisible** : les cas du
+/// treillis gardent leur rang, donc leurs octets, et la référence ne se déplace
+/// que de l'enregistrement ajouté.
+///
+/// Il traverse l'enfilade de bout en bout, là où la portée du treillis vaut dix
+/// unités — trop court pour toucher plus de quelques cellules. Ce que l'empreinte
+/// retient de lui est le **statut**, `SCG_STATUS_INCOMPLETE`, qu'aucun décor
+/// versionné n'atteignait et qu'aucun hôte n'avait donc jamais reçu.
+fn saturating() -> Sweep {
+    let entry = collision_file::chain_entry();
+    let exit = collision_file::chain_exit();
+    Sweep {
+        // La boîte tient largement dans un cube de l'enfilade : ce qui sature est
+        // le nombre de cellules que le trajet touche, jamais la taille de la
+        // boîte.
+        half: Vec3::new(0.5, 0.5, 0.5),
+        from: Vec3::new(entry[0], entry[1], entry[2]),
+        to: Vec3::new(exit[0], exit[1], exit[2]),
+    }
 }
 
 /// Les départs du treillis, partagés avec la scène d'interrogation.
@@ -331,10 +355,12 @@ fn bounds(footprint: &[[f32; 2]]) -> ([f32; 2], [f32; 2]) {
 /// Joue tous les balayages et rend leur empreinte.
 ///
 /// **Chaque balayage est joué deux fois**, par la traversée et par le chemin de
-/// force brute, et leurs résultats doivent être identiques au bit près. C'est le
-/// théorème de l'étape, l'analogue de l'égalité entre la traversée de rendu et
-/// son chemin brut : il n'attrape pas une fenêtre trop large, et c'est normal —
-/// une traversée trop large ne change pas le résultat.
+/// force brute, et ce qu'ils se doivent est dans [`agree`] : l'égalité au bit
+/// près tant que la traversée a tout examiné, le conservatisme de sa fraction
+/// quand elle annonce avoir tronqué. C'est le théorème de l'étape, l'analogue de
+/// l'égalité entre la traversée de rendu et son chemin brut : il n'attrape pas
+/// une fenêtre trop large, et c'est normal — une traversée trop large ne change
+/// pas le résultat.
 pub fn digest() -> Result<u64, String> {
     let world = World::load(&collision_file::bytes())
         .map_err(|error| format!("collision : le décor est refusé : {error:?}"))?;
@@ -350,10 +376,10 @@ pub fn digest() -> Result<u64, String> {
         let slow = world.sweep_brute(sweep.half, sweep.from, sweep.to);
 
         if let Some(fast) = &fast
-            && !same(fast, &slow)
+            && let Err(cause) = agree(fast, &slow)
         {
             return Err(format!(
-                "collision : balayage {index}, la traversée et la force brute divergent\n  \
+                "collision : balayage {index}, {cause}\n  \
                  traversée {fast:?}\n  brute     {slow:?}"
             ));
         }
@@ -431,6 +457,42 @@ fn absorb(hit: &Hit, status: u8, bytes: &mut Vec<u8>) {
     bytes.extend_from_slice(&hit.surface.to_le_bytes());
     bytes.extend_from_slice(&hit.cell.to_le_bytes());
     bytes.push(status);
+}
+
+/// Ce que les deux chemins se doivent, selon que la traversée a tout examiné.
+///
+/// **L'égalité au bit près n'est exigible que d'un résultat complet.** La
+/// traversée s'arrête à `SCG_SWEEP_CELLS` cellules, la force brute n'a pas de
+/// borne : sur un trajet qui sature, les deux divergent nécessairement, et la
+/// première annonce elle-même qu'elle n'a pas tout regardé.
+///
+/// **Ce qu'un résultat tronqué doit prouver est sa cohérence interne**, et non
+/// une comparaison avec un chemin qui n'a pas la même borne. Son statut et sa
+/// fraction doivent dire la même chose : une fraction de `1` annoncerait une
+/// limite tout en rendant un déplacement libre, et un hôte qui lit le statut
+/// comme un avertissement ferait traverser le mur que le moteur n'a pas eu le
+/// temps de regarder.
+///
+/// **Écartée, et c'est l'erreur qu'il fallait éviter ici : l'inégalité des deux
+/// fractions.** Elle se lit comme un conservatisme vérifié et ne vérifie rien —
+/// un trajet qui sature est dégagé par construction, donc la force brute y rend
+/// toujours `1`, et toute fraction lui est inférieure. Un contrôle qui ne peut
+/// pas rougir est pire qu'un contrôle absent : il se lit comme une garantie.
+fn agree(fast: &Hit, slow: &Hit) -> Result<(), &'static str> {
+    if !fast.incomplete {
+        return if same(fast, slow) {
+            Ok(())
+        } else {
+            Err("la traversée et la force brute divergent")
+        };
+    }
+    // Comparaison écrite, sur une valeur dont la finitude est acquise : une
+    // fraction ne sort jamais de `[0, 1]`.
+    if fast.fraction < 1.0 {
+        Ok(())
+    } else {
+        Err("la traversée annonce une troncature et rend le déplacement entier")
+    }
 }
 
 /// Deux résultats portent-ils exactement les mêmes bits ?

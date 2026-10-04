@@ -74,8 +74,33 @@ pub fn all() -> Vec<Pick> {
                 });
             }
         }
+        picks.push(saturating(filter));
     }
     picks
+}
+
+/// Le rayon qui épuise le budget de cellules, partagé avec le balayage.
+///
+/// **La sélection a le même budget et le même statut**, et c'est tout ce que ce
+/// cas ajoute : un rayon n'a aucun jeu à perdre, donc il ne peut pas rendre
+/// `SCG_STATUS_NO_GAP`, et son troisième statut possible est celui-ci.
+///
+/// **En queue de chaque moitié et non de la liste**, donc une fois par filtre :
+/// la liste se coupe en deux moitiés qui posent les mêmes rayons, et c'est elle
+/// qui rend son rapport lisible sans tri. Un cas ajouté à la seule queue l'aurait
+/// rendue impaire et aurait désapparié les deux moitiés — ce que [`tests`]
+/// refuse, et qui vaut mieux qu'un rapport qu'on ne peut plus lire en regard.
+/// L'enfilade n'ayant aucune surface non solide, les deux filtres y voient la
+/// même chose : la seconde moitié ne coûte donc qu'un enregistrement, pour que la
+/// structure reste vraie.
+fn saturating(filter: u32) -> Pick {
+    let entry = collision_file::chain_entry();
+    let exit = collision_file::chain_exit();
+    Pick {
+        from: Vec3::new(entry[0], entry[1], entry[2]),
+        to: Vec3::new(exit[0], exit[1], exit[2]),
+        filter,
+    }
 }
 
 /// Le filtre du noyau qu'une constante d'ABI désigne.
@@ -112,10 +137,10 @@ pub fn digest() -> Result<u64, String> {
         let slow = world.pick_brute(pick.from, pick.to, filter);
 
         if let Some(fast) = &fast
-            && !same(fast, &slow)
+            && let Err(cause) = agree(fast, &slow)
         {
             return Err(format!(
-                "selection : rayon {index}, la traversée et la force brute divergent\n  \
+                "selection : rayon {index}, {cause}\n  \
                  traversée {fast:?}\n  brute     {slow:?}"
             ));
         }
@@ -175,6 +200,28 @@ fn absorb(hit: &Hit, status: u8, filter: u32, bytes: &mut Vec<u8>) {
     bytes.extend_from_slice(&hit.cell.to_le_bytes());
     bytes.push(status);
     bytes.extend_from_slice(&filter.to_le_bytes());
+}
+
+/// Ce que les deux chemins se doivent, selon que la traversée a tout examiné.
+///
+/// Même relation que pour le balayage, et pour la même raison : la sélection
+/// partage son budget de cellules, donc elle tronque aux mêmes endroits, alors
+/// que la force brute n'a pas de borne. Le détail est dans
+/// [`crate::sweeps::agree`] — ici comme là, un résultat tronqué promet le
+/// conservatisme de sa fraction et rien de plus.
+fn agree(fast: &Hit, slow: &Hit) -> Result<(), &'static str> {
+    if !fast.incomplete {
+        return if same(fast, slow) {
+            Ok(())
+        } else {
+            Err("la traversée et la force brute divergent")
+        };
+    }
+    if fast.fraction < 1.0 {
+        Ok(())
+    } else {
+        Err("la traversée annonce une troncature et rend le rayon entier")
+    }
 }
 
 /// Deux résultats portent-ils exactement les mêmes bits ?

@@ -46,6 +46,11 @@ publié, et explique les conventions du dépôt à qui y contribue.
 
 ## [Non publié]
 
+### Modifié
+- Les scènes `collision` et `selection` ajoutent un trajet qui épuise
+  `SCG_SWEEP_CELLS` : leurs empreintes changent, et un hôte qui garde les siennes
+  les reprend. Aucun rendu ne bouge.
+
 ### Corrigé
 - La traversée tronque son image à `SCG_TRAVERSAL_CELLS` et non à la capacité que
   l'allocateur a rendue : au-delà de la borne, l'image dépendait de la cible.
@@ -63,6 +68,11 @@ publié, et explique les conventions du dépôt à qui y contribue.
   `SCG_MAX_LIGHTMAP_SIZE` : il en rendait un de 2048 sans erreur.
 
 ***
+
+### Changed
+- The `collision` and `selection` scenes add a path that exhausts
+  `SCG_SWEEP_CELLS`: their fingerprints change, and a host keeping its own
+  updates them. No rendering moves.
 
 ### Fixed
 - Traversal truncates its frame at `SCG_TRAVERSAL_CELLS`, not at whatever capacity
