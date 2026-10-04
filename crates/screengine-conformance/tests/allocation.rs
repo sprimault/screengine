@@ -636,9 +636,9 @@ fn aucune_image_de_l_etape_6_n_alloue() {
 ///
 /// **C'est l'invariant le plus exposé de l'étape 5.** La traversée remplit une
 /// liste de visites à chaque image, la soumission lit l'atlas de la cellule, et
-/// `.claude/critical-rules.md` nomme lui-même l'atlas agrandi comme le défaut
-/// type. La cuisson, elle, alloue et le dit : elle est hors mesure, comme tout
-/// appel nommé.
+/// `docs/rust.md` nomme lui-même l'atlas agrandi au premier affichage comme le
+/// défaut type — section « Allocation ». La cuisson, elle, alloue et le dit :
+/// elle est hors mesure, comme tout appel nommé.
 ///
 /// Les cinq images ne partent pas de la même cellule : une seule ne remplirait
 /// la liste des visites qu'une fois, et une liste qui grandirait au deuxième
