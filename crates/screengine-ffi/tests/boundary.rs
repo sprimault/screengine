@@ -1406,6 +1406,56 @@ fn refuse_de_changer_le_sur_eclairement_pendant_une_image() {
     unsafe { scg_destroy(ctx) };
 }
 
+/// `scg_set_lights` accepte le plafond exact, et refuse une lumière de plus.
+///
+/// **Deux contrôles de plafond vivent à deux étages**, et c'est ce qui donne son
+/// objet à ce cas : la frontière refuse sur la taille de son propre tableau,
+/// avant tout appel au noyau, qui refuse ensuite sur le sien. Un étage rabaissé
+/// d'une unité ne serait donc vu par rien — la frontière n'a jamais passé plus
+/// d'une lumière, et aucune scène n'en règle plus de trois.
+///
+/// Le compte vient de `screengine::MAX_LIGHTS` plutôt que d'un littéral : le
+/// header ne publie pas cette borne, de sorte qu'une valeur recopiée ici
+/// cesserait de dire la même chose que le moteur sans que rien ne le signale.
+#[test]
+fn les_lumieres_s_arretent_au_plafond_du_moteur() {
+    let ctx = create(&sane());
+    let lumiere = |x: f32| ScgLight {
+        x,
+        y: 0.0,
+        z: 0.0,
+        radius: 32.0,
+        r: 0xFF,
+        g: 0xFF,
+        b: 0xFF,
+        // Réservé, nul obligatoire : une lumière ajoute, elle ne mélange pas.
+        _reserved: 0,
+    };
+    let lot = |count: usize| -> Vec<ScgLight> {
+        (0..count).map(|rang| lumiere(2.0 + rang as f32)).collect()
+    };
+
+    let pleine = lot(screengine::MAX_LIGHTS);
+    assert_eq!(
+        // SAFETY: contexte vivant, le tableau couvre le compte annoncé.
+        unsafe { scg_set_lights(ctx, pleine.as_ptr(), pleine.len() as u32) },
+        SCG_OK,
+        "le plafond exact est refusé : {}",
+        last_error(ctx)
+    );
+
+    let trop = lot(screengine::MAX_LIGHTS + 1);
+    assert_eq!(
+        // SAFETY: même précondition, sur un lot d'une lumière de plus.
+        unsafe { scg_set_lights(ctx, trop.as_ptr(), trop.len() as u32) },
+        SCG_ERR_INVALID_ARGUMENT,
+        "une lumière au-delà du plafond a été acceptée"
+    );
+
+    // SAFETY: le handle est vivant et détruit une seule fois.
+    unsafe { scg_destroy(ctx) };
+}
+
 /// `scg_submit_shaded` traverse la frontière, et la normale y décide.
 ///
 /// **Le seul point d'entrée que personne n'appelait** : aucun hôte, aucune
