@@ -80,6 +80,13 @@ const SURFACE_NO_LIGHTMAP: u32 = 0b010;
 /// un atlas qui ne tient pas, et le vérifier au chargement le fait découvrir à
 /// l'ouverture de la carte, une fois, au lieu de le faire remonter d'un appel de
 /// cuisson pour une seule cellule.
+///
+/// **Elle reste privée, et c'est [`lightmap_fault`] qui la rend lisible** par sa
+/// variante [`LightmapFault::ExtentTooLarge`]. La publier seule inviterait à
+/// reproduire la mesure de l'étendue, qui ne divise pas par le carré de la
+/// longueur de l'axe — une copie qui divise est neutre sur un axe unitaire et
+/// fausse partout ailleurs, ce qui est exactement le défaut qu'un générateur a
+/// commis sur la tolérance d'orthogonalité.
 const MAX_LUXELS: f32 = 256.0;
 
 /// Le cosinus toléré entre deux directions qui devraient être perpendiculaires :
@@ -1629,6 +1636,16 @@ pub enum LightmapFault {
     /// Un axe sort du plan de la surface, si bien que la grille de luxels ne
     /// recouvre pas ce qu'elle éclaire.
     AxisOffPlane,
+    /// La surface couvre plus de 256 luxels sur un côté, et son atlas ne
+    /// tiendrait pas.
+    ///
+    /// Seule des cinq à dépendre des coins autant que du repère : les quatre
+    /// autres jugent le repère seul. C'est aussi la seule dont un générateur
+    /// pouvait se tromper **sans reproduire une tolérance** — l'étendue se mesure
+    /// par le produit scalaire, sans diviser par le carré de la longueur, et une
+    /// copie qui divise est neutre sur un axe unitaire et fausse partout
+    /// ailleurs.
+    ExtentTooLarge,
 }
 
 /// Ce qui ferait refuser ce repère de lightmap, ou `None` s'il passe.
@@ -1639,8 +1656,12 @@ pub enum LightmapFault {
 /// avait dû la réimplémenter, tolérance et somme de Newell comprises, et sa copie
 /// serait devenue silencieusement fausse le jour où la valeur bouge.
 ///
-/// Les quatre clauses se testent dans l'ordre où le chargement les refuse, et la
+/// Les cinq clauses se testent dans l'ordre où le chargement les refuse, et la
 /// première rencontrée est celle qui est rendue.
+///
+/// **Les coins sont supposés finis**, comme le chargement les garantit en les
+/// vérifiant à la lecture. Hors de ce domaine, une faute est bien rendue — aucune
+/// entrée ne passe pour saine — mais laquelle n'est pas spécifié.
 pub fn lightmap_fault(origin: Vec3, u: Vec3, v: Vec3, corners: &[Vec3]) -> Option<LightmapFault> {
     let mapping = Mapping { origin, u, v };
     let square_u = mapping.u.dot(mapping.u);
@@ -1679,6 +1700,20 @@ pub fn lightmap_fault(origin: Vec3, u: Vec3, v: Vec3, corners: &[Vec3]) -> Optio
         || !perpendicular(dot64(normal, mapping.v), square_n, f64::from(square_v))
     {
         return Some(LightmapFault::AxisOffPlane);
+    }
+
+    // **L'étendue se demande à [`luxel_extent`], elle ne se recalcule pas ici.**
+    // C'est la même raison qui fait exister cette fonction : le chargement
+    // appelle le même code, donc les deux ne peuvent pas diverger. Un second
+    // calcul écrit « pour n'avoir pas à rendre un `Option` » serait exactement la
+    // copie que le générateur vient de cesser d'entretenir.
+    //
+    // Elle vient en cinquième parce que le chargement la vérifie en cinquième, et
+    // l'ordre est ce que la documentation de cette fonction promet. Elle est de
+    // plus la seule à avoir besoin d'un repère déjà valide : sur un axe dégénéré,
+    // l'étendue n'a pas de sens.
+    if luxel_extent(mapping, corners).is_none() {
+        return Some(LightmapFault::ExtentTooLarge);
     }
     None
 }

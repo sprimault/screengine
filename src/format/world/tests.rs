@@ -1707,7 +1707,7 @@ fn toute_pente_est_acceptee_et_l_origine_decide() {
     assert_eq!(lignes.len(), 5, "les cinq pentes ont été éprouvées");
 }
 
-/// La faute nommée est celle que le chargeur refuse, pour les quatre clauses.
+/// La faute nommée est celle que le chargeur refuse, pour les cinq clauses.
 ///
 /// **C'est l'accord des deux qui compte, et il tient par construction** : le
 /// chargement appelle `lightmap_fault`, donc une divergence est impossible tant
@@ -1716,7 +1716,7 @@ fn toute_pente_est_acceptee_et_l_origine_decide() {
 /// est exactement ce que le projet a vu arriver à un générateur, qui avait
 /// reproduit le prédicat au lieu de l'appeler.
 ///
-/// Chaque repère ne viole qu'une clause, et l'ordre des quatre est celui du
+/// Chaque repère ne viole qu'une clause, et l'ordre des cinq est celui du
 /// refus : un repère qui en violerait deux ne dirait rien de l'ordre.
 #[test]
 fn chaque_clause_du_repere_se_nomme_et_fait_refuser() {
@@ -1759,6 +1759,19 @@ fn chaque_clause_du_repere_se_nomme_et_fait_refuser() {
                 Vec3::new(0.0, 1.0, 0.0),
             ),
         ),
+        // Quatre unités de côté par soixante-cinq luxels l'unité : deux cent
+        // soixante luxels, donc quatre de trop. L'axe reste axial, unitaire en
+        // direction et orthogonal à l'autre, si bien qu'aucune des quatre
+        // clauses précédentes ne se déclenche.
+        (
+            LightmapFault::ExtentTooLarge,
+            frame([0.0, 0.0, 0.0], [65.0, 0.0, 0.0], [0.0, 1.0, 0.0]),
+            (
+                Vec3::ZERO,
+                Vec3::new(65.0, 0.0, 0.0),
+                Vec3::new(0.0, 1.0, 0.0),
+            ),
+        ),
     ];
 
     for (attendue, bytes, (origin, u, v)) in cas {
@@ -1783,5 +1796,26 @@ fn chaque_clause_du_repere_se_nomme_et_fait_refuser() {
             &carre
         ),
         None
+    );
+
+    // **Le témoin de la borne, et il est la moitié qui compte** : à soixante-quatre
+    // luxels l'unité, le même carré en couvre deux cent cinquante-six pile, qui
+    // passent. Sans lui, un contrôle qui refuserait toute étendue — ou qui
+    // comparerait au mauvais sens — rendrait le cas ci-dessus vert sans rien
+    // garantir.
+    let juste = frame([0.0, 0.0, 0.0], [64.0, 0.0, 0.0], [0.0, 1.0, 0.0]);
+    assert_eq!(
+        lightmap_fault(
+            Vec3::ZERO,
+            Vec3::new(64.0, 0.0, 0.0),
+            Vec3::new(0.0, 1.0, 0.0),
+            &carre
+        ),
+        None,
+        "deux cent cinquante-six luxels pile sont admis"
+    );
+    assert!(
+        World::load(&map_with_lightmap(&juste)).is_ok(),
+        "la carte à l'étendue maximale doit se charger"
     );
 }

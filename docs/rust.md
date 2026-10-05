@@ -1131,7 +1131,7 @@ reconstruire le repère par moindres carrés à chaque opération, et deux édit
 le reconstruiraient différemment : le repère est la source, les coordonnées la
 dérivée.
 
-**Le repère de lightmap se vérifie au chargement sur trois points**, et chacun
+**Le repère de lightmap se vérifie au chargement sur quatre points**, et chacun
 répond à un besoin distinct — c'est pourquoi aucun ne remplace un autre :
 
 - **la longueur au carré de chaque axe est finie et non nulle**, et rien de plus :
@@ -1180,6 +1180,14 @@ l'ouverture de la carte, une fois, plutôt qu'au calcul, trois appels plus tard 
 pour une seule cellule. Les extrema se prennent par comparaisons écrites : le
 résultat de `f32::min` sur `min(-0,0, 0,0)` n'est pas spécifié, et deux cibles
 refuseraient des cartes différentes.
+
+**C'est la cinquième clause que `lightmap_fault` nomme**, après les quatre du
+repère et dans l'ordre où le chargement les refuse. Elle est la seule à dépendre
+des coins autant que du repère, et la seule dont un générateur pouvait se tromper
+sans reproduire une tolérance : l'étendue se mesure par le produit scalaire, sans
+diviser par le carré de la longueur de l'axe. La fonction appelle le calcul du
+chargeur plutôt que de le refaire, faute de quoi les deux divergeraient — ce que
+son existence même sert à empêcher.
 
 L'unité de lightmap est la surface ; l'atlas par cellule est un cache assemblé
 au calcul, jamais dans le fichier, où il figerait une disposition que le premier
