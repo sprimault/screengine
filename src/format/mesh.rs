@@ -18,7 +18,7 @@ use alloc::vec::Vec;
 
 use super::{Cursor, decode};
 use crate::buffer::{owned, reserved};
-use crate::error::{Error, Malformation, Result};
+use crate::error::{Element, Error, Malformation, Result};
 use crate::math::Vec3;
 use crate::scene::{Color, Triangle, VertexUv};
 
@@ -314,8 +314,13 @@ fn triangles(section: &[u8], vertex_count: usize) -> Result<Vec<Triangle>> {
     while cursor.remaining() != 0 {
         let indices = [cursor.u32()?, cursor.u32()?, cursor.u32()?];
         let color = Color::new(cursor.u8()?, cursor.u8()?, cursor.u8()?, cursor.u8()?);
-        if indices.iter().any(|index| *index as usize >= vertex_count) {
-            return Err(Error::InvalidFormat(Malformation::Index));
+        if let Some(index) = indices
+            .iter()
+            .find(|index| **index as usize >= vertex_count)
+        {
+            return Err(Error::InvalidFormat(Malformation::Index {
+                element: Element::Vertex(*index),
+            }));
         }
         triangles.push(Triangle { indices, color });
     }
@@ -361,28 +366,42 @@ fn groups(section: &[u8], triangle_count: usize, texture_count: usize) -> Result
             texture_slot: cursor.u32()?,
         };
         if group.id == 0 {
-            return Err(Error::InvalidFormat(Malformation::Identifier));
+            return Err(Error::InvalidFormat(Malformation::Identifier {
+                element: Element::Group(group.id),
+            }));
         }
         // Aucun emplacement pour « sans texture » : un groupe nomme toujours le
         // sien, et c'est l'hôte qui passe un handle nul à la soumission s'il ne
         // veut rien plaquer dessus. Un maillage qui porte des triangles déclare
         // donc au moins un nom.
         if group.texture_slot as usize >= texture_count {
-            return Err(Error::InvalidFormat(Malformation::Index));
+            return Err(Error::InvalidFormat(Malformation::Index {
+                element: Element::Slot(group.texture_slot),
+            }));
         }
         if group.first_triangle as usize != next {
-            return Err(Error::InvalidFormat(Malformation::GroupBounds));
+            return Err(Error::InvalidFormat(Malformation::GroupBounds {
+                element: Element::Group(group.id),
+            }));
         }
         next = next
             .checked_add(group.triangle_count as usize)
-            .ok_or(Error::InvalidFormat(Malformation::GroupBounds))?;
+            .ok_or(Error::InvalidFormat(Malformation::GroupBounds {
+                element: Element::Group(group.id),
+            }))?;
         if next > triangle_count {
-            return Err(Error::InvalidFormat(Malformation::GroupBounds));
+            return Err(Error::InvalidFormat(Malformation::GroupBounds {
+                element: Element::Group(group.id),
+            }));
         }
         groups.push(group);
     }
+    // Le total ne nomme aucun groupe : ce qui manque est la fin du pavage, et
+    // elle n'appartient à personne.
     if next != triangle_count {
-        return Err(Error::InvalidFormat(Malformation::GroupBounds));
+        return Err(Error::InvalidFormat(Malformation::GroupBounds {
+            element: Element::None,
+        }));
     }
     unique_ids(&groups)?;
     Ok(groups)
@@ -399,8 +418,10 @@ fn unique_ids(groups: &[Group]) -> Result<()> {
     let mut ids = reserved(groups.len())?;
     ids.extend(groups.iter().map(|group| group.id));
     ids.sort_unstable();
-    if ids.windows(2).any(|pair| pair[0] == pair[1]) {
-        return Err(Error::InvalidFormat(Malformation::Identifier));
+    if let Some(pair) = ids.windows(2).find(|pair| pair[0] == pair[1]) {
+        return Err(Error::InvalidFormat(Malformation::Identifier {
+            element: Element::Group(pair[0]),
+        }));
     }
     Ok(())
 }

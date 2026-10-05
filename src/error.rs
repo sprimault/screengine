@@ -179,11 +179,63 @@ pub enum Argument {
     Grade,
 }
 
+/// Ce qu'un refus de contenu désigne, quand il désigne quelque chose.
+///
+/// **Un type unique plutôt qu'un champ nommé par variante**, parce que la même
+/// variante sert plusieurs familles : un identifiant nul est refusé sur une
+/// cellule, une surface, un portail, une lumière, une entité, un matériau et un
+/// groupe de maillage, et un champ `surface` n'aurait rien à dire des six autres.
+///
+/// L'identifiant porté est **celui de l'éditeur**, stable d'un chargement à
+/// l'autre, partout où l'élément en a un ; c'est un **rang** là où le format n'en
+/// attribue pas — un groupe de surface, un emplacement de texture, un sommet —,
+/// et la variante le dit. Un générateur retrouve ainsi ce qu'il a écrit sans
+/// réimplémenter le prédicat du chargeur.
+///
+/// Rien de tout cela ne traverse l'ABI C : le message y reste un littéral, et
+/// `docs/abi.md` interdit à une liaison de parler le texte. C'est l'appelant
+/// **Rust** qui lit la charge utile.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Element {
+    /// Le refus porte sur le conteneur, et rien d'identifiable ne le porte.
+    ///
+    /// C'est le cas du rangement d'un atlas, qui échoue sur le volume de toutes
+    /// les surfaces d'une cellule et non sur l'une d'elles. Une variante plutôt
+    /// qu'un `Option<Element>` : l'absence est un cas du domaine, pas une valeur
+    /// manquante, et l'imbrication se lirait mal au point de filtrage.
+    None,
+    /// La cellule de cet identifiant.
+    Cell(u32),
+    /// La surface de cet identifiant.
+    Surface(u32),
+    /// Le portail de cet identifiant.
+    Portal(u32),
+    /// La lumière statique de cet identifiant.
+    Light(u32),
+    /// L'entité de cet identifiant.
+    Entity(u32),
+    /// Le matériau de cet identifiant.
+    Material(u32),
+    /// Le groupe de surface de cet identifiant, dans un maillage.
+    Group(u32),
+    /// L'emplacement de texture de ce **rang**.
+    ///
+    /// Un rang, parce que le format n'attribue pas d'identifiant aux
+    /// emplacements : ils se désignent par leur place dans la section des noms,
+    /// qui est aussi l'ordre où l'hôte passe ses handles à la soumission.
+    Slot(u32),
+    /// Le sommet de ce **rang**, pour la même raison que [`Element::Slot`].
+    Vertex(u32),
+}
+
 /// Ce qui a fait refuser un bloc par [`Error::InvalidFormat`].
 ///
 /// Un seul code d'ABI pour tout le contenu d'un fichier, parce qu'un hôte n'a
 /// qu'une chose à en faire ; la variante ne se lit que dans le message, et
 /// c'est ce qui reste à l'auteur d'un exportateur pour trouver son défaut.
+///
+/// **Celles qui désignent un élément le nomment**, par [`Element`] : la règle est
+/// dans `docs/rust.md`, avec la raison de chaque variante qui reste muette.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Malformation {
     /// Une lecture au-delà de la fin du bloc, de la table de sections ou d'une
@@ -233,7 +285,10 @@ pub enum Malformation {
     /// l'hôte n'est pas validé et doit l'être ; une ressource chargée porte
     /// l'invariant dans son type, et le revérifier par image coûterait un
     /// parcours complet sans faire rougir aucun test.
-    Index,
+    Index {
+        /// Ce dans quoi l'indice fautif pointait.
+        element: Element,
+    },
     /// Un identifiant nul, que l'éditeur réserve à « aucun », ou deux fois le
     /// même dans sa famille.
     ///
@@ -241,14 +296,25 @@ pub enum Malformation {
     /// vérifie, il ne se suppose pas : une recherche dichotomique sur une table
     /// non triée ne plante pas, elle rend la mauvaise surface — un défaut
     /// « image fausse, aucune erreur ».
-    Identifier,
+    Identifier {
+        /// La famille où l'identifiant est refusé, et sa valeur.
+        ///
+        /// Sur un doublon, cette valeur est l'identifiant partagé, et c'est elle
+        /// qui mène aux deux porteurs. Sur un identifiant nul, elle vaut zéro —
+        /// ce qui est l'information même, le format réservant zéro à « aucun » ;
+        /// la famille suffit alors à savoir quelle table relire.
+        element: Element,
+    },
     /// Les groupes de surface ne pavent pas les triangles : un trou, un
     /// recouvrement, ou un total qui n'est pas leur nombre.
     ///
     /// Une soumission vaut pour un groupe. Un groupe dispersé imposerait de
     /// rassembler ses triangles à chaque image, donc un tampon, donc une
     /// allocation par image.
-    GroupBounds,
+    GroupBounds {
+        /// Le groupe où le pavage se rompt, par son rang.
+        element: Element,
+    },
     /// Un compte qui ne recoupe pas la longueur qui le borne, ou un total qui
     /// déborde ce qu'un entier peut porter.
     Count,
@@ -256,7 +322,10 @@ pub enum Malformation {
     ///
     /// Nuls obligatoires, même règle que les champs réservés de l'ABI : c'est
     /// ce qui permettra d'en employer un sans casser les cartes déjà écrites.
-    Flags,
+    Flags {
+        /// L'élément qui porte le bit non défini.
+        element: Element,
+    },
     /// Un polygone que le chargement ne peut pas prendre : moins de trois
     /// sommets, plus que le plafond, plat, qui se recoupe — ou, pour un
     /// portail, qui n'est pas convexe.
@@ -265,41 +334,66 @@ pub enum Malformation {
     /// portail décide de ce qu'on voit : une projection concave n'a pas
     /// d'intersection exprimable comme réduction de fenêtre, et l'erreur se
     /// paierait en trou définitif.
-    Polygon,
+    ///
+    /// La charge utile dit **laquelle des deux familles** : une surface ou un
+    /// portail, qui n'ont ni la même exigence — la convexité ne vaut que pour le
+    /// second — ni le même espace d'identifiants.
+    Polygon {
+        /// La surface ou le portail refusé.
+        element: Element,
+    },
     /// Un repère de plaquage inutilisable : un axe dégénéré, une origine hors
     /// de sa grille, des axes non orthogonaux ou hors du plan de leur surface,
     /// une étendue démesurée, ou des coordonnées dérivées qui ne sont pas
     /// finies.
     ///
-    /// **Porte l'identifiant de la surface en cause**, et `0` quand aucune ne
-    /// l'est seule : le rangement de l'atlas d'une cellule échoue sur le volume
-    /// de toutes ses surfaces, pas sur l'une d'elles. Zéro vaut « aucun » dans
-    /// le format, donc la sentinelle ne s'invente pas ici.
+    /// **Nomme la surface en cause**, et [`Element::None`] quand aucune ne l'est
+    /// seule : le rangement de l'atlas d'une cellule échoue sur le volume de
+    /// toutes ses surfaces, pas sur l'une d'elles.
     ///
     /// Sans cet identifiant, un générateur de cartes ne retrouvait la surface
     /// fautive qu'en réimplémentant le prédicat du chargeur — ce qu'un
     /// intégrateur a fait, somme de Newell comprise. C'était le bénéfice que le
     /// refus au chargement revendiquait sans le rendre.
+    ///
+    /// La charge utile était un `surface: u32` jusqu'à ce que les huit autres
+    /// variantes reçoivent la leur : un entier nu n'aurait rien dit de la famille
+    /// là où `Identifier` en sert sept.
     Mapping {
-        /// L'identifiant de la surface refusée, ou `0` pour la cellule entière.
-        surface: u32,
+        /// La surface refusée, ou [`Element::None`] pour la cellule entière.
+        element: Element,
     },
     /// Une lumière statique inutilisable : un rayon nul, négatif ou non fini.
     ///
     /// Un rayon nul n'éclaire rien et ferait diviser par zéro le calcul
     /// d'atténuation.
-    Light,
+    Light {
+        /// La lumière refusée.
+        element: Element,
+    },
     /// Une orientation qui n'a pas de direction à porter.
     ///
     /// Un quaternion nul se normaliserait en l'identité sans rien signaler, et
     /// une entité posée de travers se retrouverait droite.
-    Pose,
+    Pose {
+        /// L'entité dont l'orientation est refusée.
+        element: Element,
+    },
     /// Trois portails partagent les mêmes sommets.
     ///
     /// Deux s'apparient ; à trois, il n'y a pas de réponse à « lequel des
     /// deux ». Un portail seul, lui, est un mur et non une erreur : une carte
     /// en cours d'édition en a toujours.
-    Portal,
+    ///
+    /// La charge utile nomme **le troisième rencontré**, celui dont la clé était
+    /// déjà prise deux fois. Nommer les trois demanderait un tableau dans une
+    /// énumération que tout le reste garde `Copy`, et le premier suffit à
+    /// retrouver la clé commune — c'est elle qui situe le défaut, pas le rang de
+    /// l'exemplaire.
+    Portal {
+        /// Le portail dont la clé était déjà partagée par deux autres.
+        element: Element,
+    },
 }
 
 impl Error {
@@ -419,37 +513,40 @@ impl Error {
             Self::InvalidFormat(Malformation::NonUtf8) => {
                 "malformed data file: a name is not valid UTF-8"
             }
-            Self::InvalidFormat(Malformation::Index) => {
+            // **Les neuf variantes qui portent un élément l'ignorent ici**, et
+            // c'est la clause qui les gouverne toutes : le message est un
+            // littéral, parce que `scg_last_error` le rend à travers la frontière
+            // et que le noyau n'alloue pas. Le noyau nomme donc la catégorie, la
+            // frontière formaterait le texte d'un hôte si le besoin s'en
+            // présentait, et c'est l'appelant Rust qui lit la charge utile.
+            Self::InvalidFormat(Malformation::Index { .. }) => {
                 "malformed data file: an index is beyond what it points into"
             }
-            Self::InvalidFormat(Malformation::Identifier) => {
+            Self::InvalidFormat(Malformation::Identifier { .. }) => {
                 "malformed data file: an identifier is zero, or used twice in its family"
             }
-            Self::InvalidFormat(Malformation::GroupBounds) => {
+            Self::InvalidFormat(Malformation::GroupBounds { .. }) => {
                 "malformed data file: surface groups must pave the triangles in order, with no gap and no overlap"
             }
             Self::InvalidFormat(Malformation::Count) => {
                 "malformed data file: a count does not match the length that bounds it"
             }
-            Self::InvalidFormat(Malformation::Flags) => {
+            Self::InvalidFormat(Malformation::Flags { .. }) => {
                 "malformed data file: undefined flag bits must be zero"
             }
-            Self::InvalidFormat(Malformation::Polygon) => {
+            Self::InvalidFormat(Malformation::Polygon { .. }) => {
                 "malformed data file: a polygon is degenerate, too large, or not convex where convexity is required"
             }
-            // Le message reste statique, donc muet sur l'identifiant : le noyau
-            // nomme la catégorie, et c'est la frontière — qui a `std` — qui
-            // formate le texte d'un hôte. Un appelant Rust lit la charge utile.
             Self::InvalidFormat(Malformation::Mapping { .. }) => {
                 "malformed data file: a mapping frame is unusable, or the coordinates it derives are not finite"
             }
-            Self::InvalidFormat(Malformation::Light) => {
+            Self::InvalidFormat(Malformation::Light { .. }) => {
                 "malformed data file: a static light has a radius that is not finite and positive"
             }
-            Self::InvalidFormat(Malformation::Pose) => {
+            Self::InvalidFormat(Malformation::Pose { .. }) => {
                 "malformed data file: an orientation is a zero quaternion, which carries no direction"
             }
-            Self::InvalidFormat(Malformation::Portal) => {
+            Self::InvalidFormat(Malformation::Portal { .. }) => {
                 "malformed data file: three portals share the same vertices"
             }
             Self::UnsupportedFormatVersion => {
