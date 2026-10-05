@@ -272,13 +272,18 @@ que de se recopier.** L'orthogonalité des axes et leur appartenance au plan se
 mesurent sur un cosinus, toléré jusqu'à 2⁻²⁰ ; les deux autres propriétés — un
 axe non dégénéré, l'origine sur sa grille — sont exactes ou ne sont pas.
 `screengine::lightmap_fault` répond pour un repère donné, et nomme celle des
-quatre clauses qui échoue : c'est le prédicat du chargeur lui-même, donc les deux
-ne peuvent pas divenger. Un générateur qui reproduirait la règle serait juste
+cinq clauses qui échoue : c'est le prédicat du chargeur lui-même, donc les deux
+ne peuvent pas diverger. Un générateur qui reproduirait la règle serait juste
 aujourd'hui et faux le jour où la tolérance bouge.
 
 Enfin, **l'étendue d'une surface est plafonnée à 256 luxels par côté**, et le
 refus tombe au chargement. Un grand mur à pas de lightmap fin produirait un
-atlas qui ne tient pas. Le pas se choisit en conséquence : les décors du dépôt
+atlas qui ne tient pas. **C'est la cinquième clause de `lightmap_fault`**, et la
+seule qui dépende des coins autant que du repère : la valeur ne se recopie donc
+pas plus que la tolérance, et pour la même raison — l'étendue se mesure par le
+produit scalaire, sans diviser par le carré de la longueur de l'axe, si bien
+qu'une copie qui divise est neutre sur un axe unitaire et fausse partout
+ailleurs. Le pas se choisit en conséquence : les décors du dépôt
 prennent un luxel par unité de monde, le même partout, ce qui aligne les grilles
 de deux surfaces coplanaires adjacentes.
 

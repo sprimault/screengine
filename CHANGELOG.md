@@ -46,6 +46,18 @@ publié, et explique les conventions du dépôt à qui y contribue.
 
 ## [Non publié]
 
+### Ajouté
+
+- `lightmap_fault` nomme une cinquième faute, `ExtentTooLarge` : une surface qui
+  dépasse 256 luxels par côté. Un générateur n'a plus à recopier ce plafond.
+
+***
+
+### Added
+
+- `lightmap_fault` names a fifth fault, `ExtentTooLarge`: a surface spanning more
+  than 256 luxels on a side. Map generators no longer copy that limit.
+
 ## [0.8.8] — 2026-10-05 — Éprouver ce qui était seulement écrit
 
 **Deux empreintes de conformance changent**, `collision` et `selection` : leurs
