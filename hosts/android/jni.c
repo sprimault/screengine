@@ -609,6 +609,36 @@ static jint world_sweep(JNIEnv *env, jclass cls, jlong world, jint from_cell, jf
     return (jint)code;
 }
 
+/* scg_sweep_skin et scg_sweep_reach : la marge et la portée d'une boîte.
+ *
+ * **Les deux seuls points d'entrée du balayage qui ne prennent pas de carte**, et
+ * les deux derniers qu'aucun hôte n'empruntait : les tests de frontière les
+ * couvrent côté Rust, l'hôte web déclarait leurs symboles, et rien ne prouvait
+ * qu'ils rendent la bonne valeur à travers le pont.
+ *
+ * Un seul pont pour les deux, choisi par un drapeau : leurs signatures sont
+ * identiques, et deux méthodes natives à enregistrer pour la même forme
+ * doubleraient la surface où une signature fausse fait échouer le chargement. */
+static jint sweep_margin(JNIEnv *env, jclass cls, jfloatArray half, jboolean reach,
+                         jfloatArray out)
+{
+    (void)cls;
+    if (half == NULL || out == NULL || (*env)->GetArrayLength(env, half) != 3
+        || (*env)->GetArrayLength(env, out) != 1) {
+        return SCG_ERR_INVALID_ARGUMENT;
+    }
+    float extents[3];
+    (*env)->GetFloatArrayRegion(env, half, 0, 3, extents);
+
+    float value = 0.0f;
+    int32_t code = reach ? scg_sweep_reach(extents, &value) : scg_sweep_skin(extents, &value);
+    if (code < 0) {
+        return code;
+    }
+    (*env)->SetFloatArrayRegion(env, out, 0, 1, &value);
+    return (jint)code;
+}
+
 /* scg_world_pick : le balayage d'une boîte d'étendue nulle, avec son filtre.
  *
  * Même résultat et mêmes trente-six octets que `worldSweep` : c'est la même
@@ -1294,6 +1324,7 @@ static jint set_lights(JNIEnv *env, jclass cls, jlong ctx, jfloatArray poses,
 /* Les méthodes `native` de la classe, avec leur signature JNI. */
 static const JNINativeMethod METHODS[] = {
     {"abiVersion", "()I", (void *)abi_version},
+    {"sweepMargin", "([FZ[F)I", (void *)sweep_margin},
     {"create", "([I[J)I", (void *)create},
     {"destroy", "(J)V", (void *)destroy},
     {"submit", "(J[F[F[I[B)I", (void *)submit},

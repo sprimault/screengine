@@ -473,8 +473,15 @@ func renderSweeps(worldPath, sweepsPath string) (uint64, bool) {
 	hit := alloc(44)
 	defer release(hit)
 	hitView := view(hit, 44)
+	// La sortie de `scg_sweep_skin` et de `scg_sweep_reach` passe par un bloc de
+	// `calloc` comme tout le reste : le langage déplace ses objets, et s'en
+	// remettre à la clause de cgo pour une écriture de tampon serait tenir
+	// l'invariant du moteur pour une garantie du langage.
+	margin := alloc(4)
+	defer release(margin)
+	marginView := view(margin, 4)
 
-	digest := make([]byte, 0, count*37)
+	digest := make([]byte, 0, count*45)
 	for i := 0; i < count; i++ {
 		record := list[12+i*sweepRecord:]
 		floats := unsafe.Slice((*C.float)(vectors), 9)
@@ -513,6 +520,15 @@ func renderSweeps(worldPath, sweepsPath string) (uint64, bool) {
 			check(C.scg_world_surface_material(world, C.uint32_t(surface), &material) == C.SCG_OK,
 				"la surface touchée nomme son matériau")
 		}
+
+		// **Le seul endroit où ces deux-ci traversent l'ABI.** Elles ne
+		// dépendent ni du décor ni du trajet, d'où leur place dans cette
+		// boucle, qui tient déjà les demi-étendues.
+		out := (*C.float)(margin)
+		check(C.scg_sweep_skin(half, out) == C.SCG_OK, "la marge de la boîte se demande")
+		digest = append(digest, marginView[:4]...)
+		check(C.scg_sweep_reach(half, out) == C.SCG_OK, "la portée de la boîte se demande")
+		digest = append(digest, marginView[:4]...)
 	}
 
 	return hashBytes(digest), true

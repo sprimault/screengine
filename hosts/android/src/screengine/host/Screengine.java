@@ -505,6 +505,27 @@ public final class Screengine {
             long world, int fromCell, float[] half, float[] from, float[] to, byte[] out);
 
     /**
+     * {@code scg_sweep_skin} et {@code scg_sweep_reach}, choisis par un drapeau.
+     *
+     * <p>Les deux seuls points d'entrée du balayage qui ne prennent pas de
+     * carte : la marge dont le moteur dilate une boîte, et la distance de
+     * l'origine jusqu'à laquelle cette boîte garde un jeu. Leurs signatures
+     * étant identiques, un seul pont les porte — deux méthodes natives pour la
+     * même forme doubleraient la surface où une signature fausse fait échouer le
+     * chargement de la bibliothèque, et non le premier appel.
+     *
+     * <p><b>Ni l'une ni l'autre valeur ne fait partie du contrat</b>, seul leur
+     * sens : elles peuvent changer d'une version à l'autre, et un hôte les
+     * demande plutôt que de les mettre en cache.
+     *
+     * @param half les trois demi-étendues de la boîte
+     * @param reach {@code false} pour la marge, {@code true} pour la portée
+     * @param out un flottant, la valeur demandée
+     * @return {@code 0}, ou un code négatif si les demi-étendues sont refusées
+     */
+    static native int sweepMargin(float[] half, boolean reach, float[] out);
+
+    /**
      * {@code scg_world_pick}.
      *
      * <p>Le balayage d'une boîte d'étendue nulle, et le filtre est tout ce qui
