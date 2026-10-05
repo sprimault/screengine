@@ -559,15 +559,31 @@ fn main() -> Result<(), screengine_play::Error> {
                     Some(&scene.lightmaps),
                     |rank| scene.materials.get(rank as usize),
                 );
-                for &(x, y, angle) in &CRATES {
-                    let model = crate_model(x, y, angle);
-                    // Les deux emplacements portent la même texture. Les hôtes de
-                    // conformance laissent le second vide, et la caisse y prend le
-                    // bleu que son fichier donne au dessus : c'est ainsi qu'ils
-                    // montrent un lot sans texture. Un exemple qu'on regarde n'a pas
-                    // à porter cette démonstration.
-                    let _ = context
-                        .submit_mesh(model, &scene.crate_mesh, |_| Some(&scene.crate_texture));
+                // **Les caisses suivent le décor, et c'est à l'hôte de le faire.**
+                // Ce sont des maillages posés : la traversée ne les connaît pas,
+                // donc `submit_world_visible` qui ne dessine rien ne les retient
+                // pas pour autant. Sans ce test, elles flottent dans le vide dès
+                // que la caméra sort du décor — une cellule nulle rend un fond,
+                // et cinq caisses restaient dessus.
+                //
+                // **Le filtre s'arrête là, et la raison vaut d'être lue.** Un
+                // rayon de l'œil vers chaque caisse ferait mieux en apparence, et
+                // pire à l'usage : une caisse à demi visible, dont le centre seul
+                // est masqué, disparaîtrait d'un coup. Le filtre juste demanderait
+                // de savoir quelles cellules la traversée a retenues, ce que l'ABI
+                // ne rend pas — un intégrateur qui en a besoin range ses objets
+                // par cellule et suit la sienne.
+                if scene.cell != 0 {
+                    for &(x, y, angle) in &CRATES {
+                        let model = crate_model(x, y, angle);
+                        // Les deux emplacements portent la même texture. Les hôtes de
+                        // conformance laissent le second vide, et la caisse y prend le
+                        // bleu que son fichier donne au dessus : c'est ainsi qu'ils
+                        // montrent un lot sans texture. Un exemple qu'on regarde n'a pas
+                        // à porter cette démonstration.
+                        let _ = context
+                            .submit_mesh(model, &scene.crate_mesh, |_| Some(&scene.crate_texture));
+                    }
                 }
                 if scene.guides {
                     overlay(scene, context);

@@ -51,6 +51,11 @@ publié, et explique les conventions du dépôt à qui y contribue.
 - `lightmap_fault` nomme une cinquième faute, `ExtentTooLarge` : une surface qui
   dépasse 256 luxels par côté. Un générateur n'a plus à recopier ce plafond.
 
+### Corrigé
+
+- L'exemple `carte` ne laisse plus ses caisses flotter quand la caméra sort du
+  décor : un maillage posé suit la cellule de la caméra, que l'hôte tient.
+
 ### Modifié
 
 - **API Rust, à reprendre** : les neuf variantes de `Malformation` qui désignent
@@ -67,6 +72,11 @@ publié, et explique les conventions du dépôt à qui y contribue.
 
 - `lightmap_fault` names a fifth fault, `ExtentTooLarge`: a surface spanning more
   than 256 luxels on a side. Map generators no longer copy that limit.
+
+### Fixed
+
+- The `carte` example no longer leaves its crates floating once the camera
+  leaves the map: a placed mesh follows the camera cell, which the host holds.
 
 ### Changed
 
