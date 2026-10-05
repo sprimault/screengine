@@ -46,6 +46,8 @@ publié, et explique les conventions du dépôt à qui y contribue.
 
 ## [Non publié]
 
+## [0.8.9] — 2026-10-05 — Ce qu'un générateur n'a plus à recopier
+
 ### Ajouté
 
 - `lightmap_fault` nomme une cinquième faute, `ExtentTooLarge` : une surface qui
