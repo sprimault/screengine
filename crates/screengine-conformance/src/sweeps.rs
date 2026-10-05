@@ -23,7 +23,7 @@
 //! **On ne hache que ce que la frontière publie**, et c'est la clause qui
 //! commande toutes les autres : voir [`publish`].
 
-use screengine::{Hit, Vec3, World};
+use screengine::{Hit, Vec3, World, sweep_reach, sweep_skin};
 use screengine_conformance::collision_file;
 
 use crate::hash;
@@ -388,6 +388,7 @@ pub fn digest() -> Result<u64, String> {
         // un cas que la carte produit, pas un trou dans la liste.
         let (published, status) = publish(fast, sweep.to);
         absorb(&published, status, &mut bytes);
+        absorb_margins(sweep.half, &mut bytes);
     }
     Ok(hash::of(&bytes))
 }
@@ -446,6 +447,29 @@ fn free(to: Vec3) -> Hit {
 ///
 /// Tout par `to_bits`, sans une seule opération flottante : ce qui est haché est
 /// ce que le moteur a écrit, et non ce qu'un formatage en aurait fait.
+/// La marge et la portée de la boîte de ce balayage, dans l'empreinte.
+///
+/// **C'est le seul endroit du dépôt où `sweep_skin` et `sweep_reach` traversent
+/// l'ABI.** Les tests de frontière les couvrent côté Rust, et l'hôte web
+/// déclarait leurs symboles dans sa liste d'exports — donc `make test-wasm`
+/// prouvait qu'ils existent, et rien ne prouvait qu'ils rendent la bonne valeur
+/// à travers la frontière. Deux points d'entrée publiés qu'aucun hôte
+/// n'empruntait, et ce sont les deux plus jeunes de l'ABI.
+///
+/// **Elles sont ici plutôt que dans une scène à elles**, parce qu'une scène
+/// n'entre dans `HOST_SCENES` que pour un chemin d'ABI que les autres
+/// n'empruntent pas — et celui-ci se greffe sur une boucle qui tient déjà les
+/// demi-étendues qu'il lui faut. Une scène de plus aurait coûté cinq
+/// descriptions pour rejouer la même liste.
+///
+/// Ni l'une ni l'autre ne dépend du décor ni du trajet : à demi-étendues égales
+/// elles rendent les mêmes bits, et la répétition dans la liste est sans effet
+/// sur ce que l'empreinte prouve.
+fn absorb_margins(half: Vec3, bytes: &mut Vec<u8>) {
+    bytes.extend_from_slice(&sweep_skin(half).to_bits().to_le_bytes());
+    bytes.extend_from_slice(&sweep_reach(half).to_bits().to_le_bytes());
+}
+
 fn absorb(hit: &Hit, status: u8, bytes: &mut Vec<u8>) {
     bytes.extend_from_slice(&hit.fraction.to_bits().to_le_bytes());
     for value in [hit.normal.x, hit.normal.y, hit.normal.z] {
@@ -546,7 +570,8 @@ pub fn report() -> Result<String, String> {
         .map_err(|error| format!("collision : le décor est refusé : {error:?}"))?;
 
     let mut text = String::from(
-        "# balayage : depart -> arrivee | boite | fraction | normale | surface | cellule | etat\n",
+        "# balayage : depart -> arrivee | boite | fraction | normale | surface | cellule | etat \
+         | marge | portee\n",
     );
     for (index, sweep) in all().into_iter().enumerate() {
         let cell = world.locate(sweep.from);
@@ -567,7 +592,7 @@ pub fn report() -> Result<String, String> {
         };
         text.push_str(&format!(
             "{index:4} : ({:.2}, {:.2}, {:.2}) -> ({:.2}, {:.2}, {:.2}) | {:.2} | {:.4} | \
-             ({:.3}, {:.3}, {:.3}) | {} | {} | {state}\n",
+             ({:.3}, {:.3}, {:.3}) | {} | {} | {state} | {:.6} | {:.1}\n",
             sweep.from.x,
             sweep.from.y,
             sweep.from.z,
@@ -580,7 +605,9 @@ pub fn report() -> Result<String, String> {
             hit.normal.y,
             hit.normal.z,
             hit.surface,
-            hit.cell
+            hit.cell,
+            sweep_skin(sweep.half),
+            sweep_reach(sweep.half)
         ));
     }
     Ok(text)

@@ -1213,6 +1213,18 @@ public final class Test {
                 check(Screengine.worldSurfaceMaterial(world, surface) >= 0,
                         "la surface touchée nomme son matériau");
             }
+
+            // **Le seul endroit où ces deux-ci traversent le pont.** Elles ne
+            // dépendent ni du décor ni du trajet, d'où leur place dans cette
+            // boucle, qui tient déjà les demi-étendues. L'ordre est celui des
+            // autres hôtes : la marge, puis la portée.
+            float[] margin = new float[1];
+            check(Screengine.sweepMargin(half, false, margin) == 0,
+                    "la marge de la boîte se demande");
+            hash = absorbFloat(hash, margin[0]);
+            check(Screengine.sweepMargin(half, true, margin) == 0,
+                    "la portée de la boîte se demande");
+            hash = absorbFloat(hash, margin[0]);
         }
 
         Screengine.worldDestroy(world);
@@ -1221,6 +1233,28 @@ public final class Test {
 
     /** La taille d'un enregistrement de la liste de balayages : neuf flottants. */
     private static final int SWEEP_RECORD = 36;
+
+    /**
+     * Absorbe les quatre octets d'un flottant, poids faible en tête.
+     *
+     * <p>Par {@code floatToRawIntBits} et non {@code floatToIntBits} : le second
+     * replie tout {@code NaN} sur une charge utile canonique, et deux cibles
+     * hacheraient alors la même chose là où l'empreinte doit voir les bits que
+     * le moteur a réellement écrits. Aucune de ces valeurs n'est un {@code NaN}
+     * aujourd'hui, et c'est exactement pourquoi la distinction se fixe ici
+     * plutôt qu'au premier qui en produirait un.
+     *
+     * @param hash l'empreinte en cours
+     * @param value le flottant à absorber
+     * @return l'empreinte étendue
+     */
+    private static long absorbFloat(long hash, float value) {
+        int bits = Float.floatToRawIntBits(value);
+        for (int shift = 0; shift < 32; shift += 8) {
+            hash = (hash ^ ((bits >>> shift) & 0xFF)) * 0x100000001b3L;
+        }
+        return hash;
+    }
 
     /**
      * Rejoue les rayons du fichier versionné et hache leurs résultats.

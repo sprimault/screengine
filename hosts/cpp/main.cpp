@@ -983,6 +983,16 @@ uint64_t render_sweeps(bool &ok, const char *world_path, const char *sweeps_path
             check(scg_world_surface_material(world, hit.surface_id, &material) == SCG_OK,
                   "la surface touchee nomme son materiau");
         }
+
+        // **Le seul endroit où ces deux-ci traversent l'ABI.** Elles ne
+        // dépendent ni du décor ni du trajet, d'où leur place dans cette
+        // boucle, qui tient déjà les demi-étendues.
+        float skin = 0.0f;
+        float reach = 0.0f;
+        check(scg_sweep_skin(half, &skin) == SCG_OK, "la marge de la boite se demande");
+        check(scg_sweep_reach(half, &reach) == SCG_OK, "la portee de la boite se demande");
+        hash = absorb_float(hash, skin);
+        hash = absorb_float(hash, reach);
     }
 
     ok = true;

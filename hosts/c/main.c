@@ -1740,6 +1740,18 @@ static uint64_t render_sweeps(int *ok, const char *world_path, const char *sweep
                 check(scg_world_surface_material(world, hit.surface_id, &material) == SCG_OK,
                       "la surface touchee nomme son materiau");
             }
+
+            /* **Le seul endroit où ces deux-ci traversent l'ABI.** Les tests de
+             * frontière les couvrent côté Rust, et l'hôte web déclarait leurs
+             * symboles : on savait qu'ils existent, pas qu'ils rendent la bonne
+             * valeur. Ils ne dépendent ni du décor ni du trajet, d'où leur place
+             * dans cette boucle, qui tient déjà les demi-étendues. */
+            float skin = 0.0f;
+            float reach = 0.0f;
+            check(scg_sweep_skin(half, &skin) == SCG_OK, "la marge de la boite se demande");
+            check(scg_sweep_reach(half, &reach) == SCG_OK, "la portee de la boite se demande");
+            hash = absorb_float(hash, skin);
+            hash = absorb_float(hash, reach);
         }
         *ok = 1;
     }

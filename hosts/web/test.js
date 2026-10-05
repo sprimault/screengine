@@ -1710,7 +1710,7 @@ function renderSweeps(engine, worldBytes, list) {
   // sollicité huit cents fois dirait surtout le coût de l'allocateur.
   const vectors = engine.alloc(9 * 4);
   const hit = engine.alloc(scg.SWEEP_HIT_SIZE);
-  const digest = new Uint8Array(count * 37);
+  const digest = new Uint8Array(count * 45);
   let written = 0;
 
   for (let i = 0; i < count; i++) {
@@ -1751,6 +1751,20 @@ function renderSweeps(engine, worldBytes, list) {
         "la surface touchée nomme son matériau",
       );
     }
+
+    // **Le seul endroit où ces deux-ci traversent l'ABI.** Cet hôte déclarait
+    // leurs symboles dans sa liste d'exports — donc on savait qu'ils existent,
+    // pas qu'ils rendent la bonne valeur. Elles ne dépendent ni du décor ni du
+    // trajet, d'où leur place dans cette boucle, qui tient déjà les
+    // demi-étendues.
+    //
+    // La vue se recrée après chaque appel : aucun de ces deux-là n'alloue, mais
+    // la clause vaut pour tous et une exception écrite ici se recopierait.
+    check(e.scg_sweep_skin(half, out) === scg.SCG_OK, "la marge de la boîte se demande");
+    digest.set(engine.bytes().subarray(out, out + 4), written);
+    check(e.scg_sweep_reach(half, out) === scg.SCG_OK, "la portée de la boîte se demande");
+    digest.set(engine.bytes().subarray(out, out + 4), written + 4);
+    written += 8;
   }
 
   engine.free(vectors, 9 * 4);

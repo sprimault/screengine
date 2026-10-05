@@ -57,6 +57,9 @@ publié, et explique les conventions du dépôt à qui y contribue.
   un élément le nomment par `Element` — cellule, surface, portail, lumière,
   entité, matériau, groupe, emplacement, sommet. `Mapping { surface: u32 }`
   devient `Mapping { element: Element }`. L'ABI C ne change pas.
+- **Empreinte déplacée** : la scène `collision` hache désormais la marge et la
+  portée de chaque boîte, que les cinq hôtes demandent par `scg_sweep_skin` et
+  `scg_sweep_reach`. Rien du balayage ne change.
 
 ***
 
@@ -71,6 +74,9 @@ publié, et explique les conventions du dépôt à qui y contribue.
   element now name it through `Element` — cell, surface, portal, light, entity,
   material, group, slot, vertex. `Mapping { surface: u32 }` becomes
   `Mapping { element: Element }`. The C ABI is unchanged.
+- **Digest moved**: the `collision` scene now hashes each box's skin and reach,
+  which all five hosts request through `scg_sweep_skin` and `scg_sweep_reach`.
+  Nothing about the sweep itself changes.
 
 ## [0.8.8] — 2026-10-05 — Éprouver ce qui était seulement écrit
 
