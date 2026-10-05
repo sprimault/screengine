@@ -40,3 +40,12 @@ winit = { version = "0.30.13", default-features = false, features = [
 
 [lints]
 workspace = true
+
+# `test = true` fait exécuter le module de test de l'exemple, que Cargo se
+# contenterait de compiler. Il est ici et non sur les deux autres exemples parce
+# que `hello` est celui que les deux `README` recopient mot pour mot : ce qu'il
+# rend est ce qu'un lecteur verra à son premier essai, et il a rendu une fenêtre
+# noire pendant toute une livraison sans que rien ne le dise.
+[[example]]
+name = "hello"
+test = true

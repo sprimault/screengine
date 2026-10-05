@@ -45,3 +45,61 @@ fn main() -> Result<(), screengine_play::Error> {
         },
     )
 }
+
+/// Ce que la fenêtre montrerait, vérifié sans fenêtre.
+///
+/// **Le test vit dans l'exemple, et c'est tout son intérêt.** Il lit `VERTICES`
+/// et `TRIANGLES` — les constantes mêmes que `main` soumet et que les deux
+/// `README` recopient —, là où un test rangé ailleurs aurait éprouvé sa propre
+/// copie. C'est exactement l'écart qui a laissé cet exemple rendre une fenêtre
+/// noire pendant toute une livraison : le sens de parcours faisait de sa face un
+/// dos, éliminé, et aucun contrôle ne regardait l'image.
+///
+/// `test = true` sur l'entrée `[[example]]` du `Cargo.toml` est ce qui fait
+/// exécuter ce module : Cargo compile les exemples par défaut, il n'en lance pas
+/// les tests.
+#[cfg(test)]
+mod tests {
+    use super::{TRIANGLES, VERTICES};
+    use screengine::{Affine3, Config, Context};
+
+    /// Le cadrage du contrôle, assez petit pour tenir en une tuile.
+    fn config() -> Config {
+        Config {
+            max_width: 64,
+            max_height: 64,
+            width: 64,
+            height: 64,
+            tile_size: 64,
+            max_triangles: 0,
+            max_lines: 0,
+        }
+    }
+
+    /// La scène de l'exemple peint, et pas seulement sans erreur.
+    ///
+    /// **Le critère est le pixel, jamais le code de retour.** Une soumission
+    /// acceptée puis éliminée au test de face rend `Ok` et une image vide : c'est
+    /// ce qui s'est produit, et c'est pourquoi ce test compte ce qui a été écrit
+    /// plutôt que de vérifier qu'aucun appel n'a échoué.
+    #[test]
+    fn la_scene_de_l_exemple_peint() {
+        let mut context = Context::new(config()).expect("cadrage valide");
+        context
+            .submit(Affine3::IDENTITY, &VERTICES, &TRIANGLES)
+            .expect("le triangle de l'exemple est accepté");
+
+        let mut pixels = vec![0u8; 64 * 64 * 4];
+        context
+            .frame_end(&mut pixels, 64)
+            .expect("l'image se clôt dans le tampon");
+
+        // Le fond laisse le rouge nul, comme le contrôle de couverture de la
+        // conformance s'en sert : un pixel qui en porte vient du triangle.
+        let peints = pixels.chunks_exact(4).filter(|pixel| pixel[0] != 0).count();
+        assert!(
+            peints > 64,
+            "l'exemple ne peint que {peints} pixel(s) : la fenêtre serait noire"
+        );
+    }
+}
