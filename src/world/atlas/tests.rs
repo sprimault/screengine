@@ -193,9 +193,10 @@ fn le_plafond_de_l_atlas_refuse_la_cellule_qui_le_depasse() {
     let deborde = cell_with(&[(pas, pas); 5]);
     assert_eq!(
         pack(&deborde.cells()[0]),
-        // Aucune surface n'est nommée : c'est le volume de toutes qui déborde,
-        // et zéro vaut « aucune ».
-        Err(Error::InvalidFormat(Malformation::Mapping { surface: 0 })),
+        // Aucune surface n'est nommée : c'est le volume de toutes qui déborde.
+        Err(Error::InvalidFormat(Malformation::Mapping {
+            element: Element::None
+        })),
         "une cellule au-delà du plafond a été rangée quand même"
     );
 }

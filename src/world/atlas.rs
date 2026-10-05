@@ -30,7 +30,7 @@
 use alloc::vec::Vec;
 
 use crate::buffer::reserved;
-use crate::error::{Error, Malformation, Result};
+use crate::error::{Element, Error, Malformation, Result};
 use crate::format::world::Cell;
 
 /// La gouttière autour de chaque surface, en luxels.
@@ -131,8 +131,10 @@ pub(crate) fn pack(cell: &Cell) -> Result<Atlas> {
             // Refusé ici et non au chargement : c'est le rangement qui décide, et
             // une surface seule peut tenir sous son plafond sans que la cellule
             // entière y tienne. **Aucune surface n'est donc nommée** — c'est le
-            // volume de toutes qui déborde, et zéro vaut « aucune ».
-            return Err(Error::InvalidFormat(Malformation::Mapping { surface: 0 }));
+            // volume de toutes qui déborde.
+            return Err(Error::InvalidFormat(Malformation::Mapping {
+                element: Element::None,
+            }));
         }
         if let Some(slots) = try_pack(&sizes, &order, side) {
             return Ok(Atlas { side, slots });

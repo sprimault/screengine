@@ -330,7 +330,9 @@ fn une_surface_trop_etendue_en_texels_est_refusee() {
     let deborde = avec_axe(MAX_TEXEL_COORD / 2.0);
     assert_eq!(
         World::load(&file(&deborde, &[], &[], &material(1, "mur"))).unwrap_err(),
-        refused(Malformation::Mapping { surface: 11 })
+        refused(Malformation::Mapping {
+            element: Element::Surface(11)
+        })
     );
 }
 
@@ -393,7 +395,9 @@ fn des_coordonnees_irrepliables_sont_refusees() {
         let cell = cell_bytes(7, 0, &SQUARE, &[body], &[]);
         assert_eq!(
             World::load(&file(&cell, &[], &[], &material(1, "mur"))).unwrap_err(),
-            refused(Malformation::Mapping { surface: 11 }),
+            refused(Malformation::Mapping {
+                element: Element::Surface(11)
+            }),
             "échelle {scale}"
         );
     }
@@ -493,7 +497,11 @@ fn deux_portails_de_la_meme_cellule_sont_refuses() {
     );
     assert_eq!(
         World::load(&file(&cell, &[], &[], &material(1, "mur"))).unwrap_err(),
-        refused(Malformation::Portal)
+        // Le premier des deux dans l'ordre du fichier : c'est lui que
+        // l'appariement tenait quand le second est arrivé.
+        refused(Malformation::Portal {
+            element: Element::Portal(21)
+        })
     );
 }
 
@@ -528,7 +536,11 @@ fn trois_portails_sur_la_meme_cle_sont_refuses() {
     }
     assert_eq!(
         World::load(&file(&cells, &[], &[], &material(1, "mur"))).unwrap_err(),
-        refused(Malformation::Portal)
+        // Le **troisième**, et c'est ce qui distingue ce cas du précédent : les
+        // deux premiers s'apparieraient sans lui.
+        refused(Malformation::Portal {
+            element: Element::Portal(23)
+        })
     );
 }
 
@@ -554,7 +566,11 @@ fn un_portail_concave_est_refuse() {
     );
     assert_eq!(
         World::load(&file(&cell, &[], &[], &material(1, "mur"))).unwrap_err(),
-        refused(Malformation::Polygon)
+        // Le **portail** et non la surface : les deux portent les mêmes sommets
+        // creusés, et c'est la convexité, exigée du seul portail, qui refuse.
+        refused(Malformation::Polygon {
+            element: Element::Portal(21)
+        })
     );
 
     // La même géométrie en surface seule est acceptée.
@@ -584,7 +600,9 @@ fn un_axe_de_lightmap_degenere_est_refuse() {
     let cell = cell_bytes(7, 0, &SQUARE, &[body], &[]);
     assert_eq!(
         World::load(&file(&cell, &[], &[], &material(1, "mur"))).unwrap_err(),
-        refused(Malformation::Mapping { surface: 11 })
+        refused(Malformation::Mapping {
+            element: Element::Surface(11)
+        })
     );
 }
 
@@ -634,7 +652,9 @@ fn une_origine_de_lightmap_hors_grille_est_refusee() {
     let shifted = frame([0.5, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]);
     assert_eq!(
         World::load(&map_with_lightmap(&shifted)).unwrap_err(),
-        refused(Malformation::Mapping { surface: 11 })
+        refused(Malformation::Mapping {
+            element: Element::Surface(11)
+        })
     );
 }
 
@@ -651,7 +671,9 @@ fn une_origine_hors_grille_sur_axe_court_est_refusee() {
     let fine = frame([0.5, 0.0, 0.0], [0.5, 0.0, 0.0], [0.0, 0.5, 0.0]);
     assert_eq!(
         World::load(&map_with_lightmap(&fine)).unwrap_err(),
-        refused(Malformation::Mapping { surface: 11 })
+        refused(Malformation::Mapping {
+            element: Element::Surface(11)
+        })
     );
 }
 
@@ -678,7 +700,9 @@ fn des_axes_de_lightmap_non_orthogonaux_sont_refuses() {
     let collapsed = frame([0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [1.0, 0.0, 0.0]);
     assert_eq!(
         World::load(&map_with_lightmap(&collapsed)).unwrap_err(),
-        refused(Malformation::Mapping { surface: 11 })
+        refused(Malformation::Mapping {
+            element: Element::Surface(11)
+        })
     );
 }
 
@@ -691,7 +715,9 @@ fn un_axe_de_lightmap_hors_du_plan_est_refuse() {
     let normal = frame([0.0, 0.0, 0.0], [0.0, 0.0, 1.0], [0.0, 1.0, 0.0]);
     assert_eq!(
         World::load(&map_with_lightmap(&normal)).unwrap_err(),
-        refused(Malformation::Mapping { surface: 11 })
+        refused(Malformation::Mapping {
+            element: Element::Surface(11)
+        })
     );
 }
 
@@ -711,34 +737,50 @@ fn une_etendue_de_lightmap_demesuree_est_refusee() {
     let fine = frame([0.0, 0.0, 0.0], [512.0, 0.0, 0.0], [0.0, 1.0, 0.0]);
     assert_eq!(
         World::load(&map_with_lightmap(&fine)).unwrap_err(),
-        refused(Malformation::Mapping { surface: 11 })
+        refused(Malformation::Mapping {
+            element: Element::Surface(11)
+        })
     );
 }
 
-/// Un identifiant nul est refusé dans chacune des trois familles.
+/// Un identifiant nul est refusé dans chacune des quatre familles.
+///
+/// **Et la famille se lit dans le refus**, ce qui est la moitié utile du cas :
+/// un identifiant nul vaut zéro partout, donc seule la famille dit quelle table
+/// relire. Le matériau est éprouvé à part, plus bas, sa table n'étant pas dans
+/// l'enregistrement d'une cellule.
 #[test]
 fn un_identifiant_nul_est_refuse() {
     let cases = [
-        cell_bytes(
-            0,
-            0,
-            &SQUARE,
-            &[surface_bytes(11, 0, 1, &[0, 1, 2, 3])],
-            &[],
+        (
+            cell_bytes(
+                0,
+                0,
+                &SQUARE,
+                &[surface_bytes(11, 0, 1, &[0, 1, 2, 3])],
+                &[],
+            ),
+            Element::Cell(0),
         ),
-        cell_bytes(7, 0, &SQUARE, &[surface_bytes(0, 0, 1, &[0, 1, 2, 3])], &[]),
-        cell_bytes(
-            7,
-            0,
-            &SQUARE,
-            &[surface_bytes(11, 0, 1, &[0, 1, 2, 3])],
-            &[portal_bytes(0, &[0, 1, 2, 3])],
+        (
+            cell_bytes(7, 0, &SQUARE, &[surface_bytes(0, 0, 1, &[0, 1, 2, 3])], &[]),
+            Element::Surface(0),
+        ),
+        (
+            cell_bytes(
+                7,
+                0,
+                &SQUARE,
+                &[surface_bytes(11, 0, 1, &[0, 1, 2, 3])],
+                &[portal_bytes(0, &[0, 1, 2, 3])],
+            ),
+            Element::Portal(0),
         ),
     ];
-    for (i, cell) in cases.iter().enumerate() {
+    for (i, (cell, element)) in cases.iter().enumerate() {
         assert_eq!(
             World::load(&file(cell, &[], &[], &material(1, "mur"))).unwrap_err(),
-            refused(Malformation::Identifier),
+            refused(Malformation::Identifier { element: *element }),
             "famille {i}"
         );
     }
@@ -752,7 +794,9 @@ fn un_identifiant_nul_est_refuse() {
     );
     assert_eq!(
         World::load(&file(&cell, &[], &[], &material(0, "mur"))).unwrap_err(),
-        refused(Malformation::Identifier),
+        refused(Malformation::Identifier {
+            element: Element::Material(0)
+        }),
         "matériau"
     );
 }
@@ -784,7 +828,9 @@ fn deux_cellules_du_meme_identifiant_sont_refusees() {
     cells.extend_from_slice(&two);
     assert_eq!(
         World::load(&file(&cells, &[], &[], &material(1, "mur"))).unwrap_err(),
-        refused(Malformation::Identifier)
+        refused(Malformation::Identifier {
+            element: Element::Cell(7)
+        })
     );
 }
 
@@ -813,7 +859,9 @@ fn les_identifiants_de_surface_sont_uniques_dans_la_carte() {
     cells.extend_from_slice(&two);
     assert_eq!(
         World::load(&file(&cells, &[], &[], &material(1, "mur"))).unwrap_err(),
-        refused(Malformation::Identifier)
+        refused(Malformation::Identifier {
+            element: Element::Surface(11)
+        })
     );
 }
 
@@ -829,7 +877,9 @@ fn un_drapeau_non_defini_est_refuse() {
     );
     assert_eq!(
         World::load(&file(&cell, &[], &[], &material(1, "mur"))).unwrap_err(),
-        refused(Malformation::Flags),
+        refused(Malformation::Flags {
+            element: Element::Cell(7)
+        }),
         "la cellule n'a aucun bit défini"
     );
 
@@ -842,7 +892,9 @@ fn un_drapeau_non_defini_est_refuse() {
     );
     assert_eq!(
         World::load(&file(&cell, &[], &[], &material(1, "mur"))).unwrap_err(),
-        refused(Malformation::Flags),
+        refused(Malformation::Flags {
+            element: Element::Surface(11)
+        }),
         "la surface en a trois"
     );
 
@@ -869,7 +921,11 @@ fn un_materiau_inconnu_est_refuse() {
     );
     assert_eq!(
         World::load(&file(&cell, &[], &[], &material(1, "mur"))).unwrap_err(),
-        refused(Malformation::Index)
+        // Le matériau introuvable, et non la surface qui le réclame : c'est la
+        // table des matériaux qu'il faut compléter.
+        refused(Malformation::Index {
+            element: Element::Material(9)
+        })
     );
 }
 
@@ -885,7 +941,9 @@ fn un_indice_de_sommet_hors_borne_est_refuse() {
     );
     assert_eq!(
         World::load(&file(&cell, &[], &[], &material(1, "mur"))).unwrap_err(),
-        refused(Malformation::Index)
+        refused(Malformation::Index {
+            element: Element::Vertex(4)
+        })
     );
 }
 
@@ -897,7 +955,9 @@ fn une_surface_trop_grande_est_refusee() {
     let cell = cell_bytes(7, 0, &points, &[surface_bytes(11, 0, 1, &indices)], &[]);
     assert_eq!(
         World::load(&file(&cell, &[], &[], &material(1, "mur"))).unwrap_err(),
-        refused(Malformation::Polygon)
+        refused(Malformation::Polygon {
+            element: Element::Surface(11)
+        })
     );
 }
 
@@ -1233,7 +1293,9 @@ fn une_orientation_nulle_est_refusee() {
     );
     assert_eq!(
         World::load(&bytes).unwrap_err(),
-        refused(Malformation::Pose)
+        refused(Malformation::Pose {
+            element: Element::Entity(31)
+        })
     );
 }
 
@@ -1252,7 +1314,12 @@ fn une_entite_sans_cellule_est_refusee() {
         );
         assert_eq!(
             World::load(&bytes).unwrap_err(),
-            refused(Malformation::Index),
+            // La **cellule** absente et non l'entité qui la désigne : c'est elle
+            // qui manque, et les deux valeurs éprouvées sont zéro — que le
+            // format réserve à « aucune » — et un identifiant qui n'existe pas.
+            refused(Malformation::Index {
+                element: Element::Cell(cell)
+            }),
             "cellule {cell}"
         );
     }
@@ -1270,7 +1337,9 @@ fn un_rayon_de_lumiere_invalide_est_refuse() {
         );
         assert_eq!(
             World::load(&bytes).unwrap_err(),
-            refused(Malformation::Light),
+            refused(Malformation::Light {
+                element: Element::Light(41)
+            }),
             "rayon {radius}"
         );
     }
@@ -1297,7 +1366,9 @@ fn l_octet_reserve_d_une_lumiere_est_nul() {
     let bytes = file(&one_cell(), &[], &light, &material(1, "mur"));
     assert_eq!(
         World::load(&bytes).unwrap_err(),
-        refused(Malformation::Flags)
+        refused(Malformation::Flags {
+            element: Element::Light(41)
+        })
     );
 }
 
@@ -1309,7 +1380,9 @@ fn les_identifiants_de_lumiere_et_d_entite_sont_uniques() {
     let bytes = file(&one_cell(), &[], &lights, &material(1, "mur"));
     assert_eq!(
         World::load(&bytes).unwrap_err(),
-        refused(Malformation::Identifier),
+        refused(Malformation::Identifier {
+            element: Element::Light(41)
+        }),
         "deux lumières"
     );
 
@@ -1325,7 +1398,9 @@ fn les_identifiants_de_lumiere_et_d_entite_sont_uniques() {
     let bytes = file(&one_cell(), &entities, &[], &material(1, "mur"));
     assert_eq!(
         World::load(&bytes).unwrap_err(),
-        refused(Malformation::Identifier),
+        refused(Malformation::Identifier {
+            element: Element::Entity(31)
+        }),
         "deux entités"
     );
 }
@@ -1782,7 +1857,9 @@ fn chaque_clause_du_repere_se_nomme_et_fait_refuser() {
         );
         assert_eq!(
             World::load(&map_with_lightmap(&bytes)).unwrap_err(),
-            refused(Malformation::Mapping { surface: 11 }),
+            refused(Malformation::Mapping {
+                element: Element::Surface(11)
+            }),
             "{attendue:?} ne fait pas refuser la carte"
         );
     }

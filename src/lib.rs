@@ -33,7 +33,7 @@ pub use context::{
     BYTES_PER_PIXEL, Config, Context, Frame, LINE_CAPACITY, MAX_RESOLUTION, Output, Rows,
     TILE_SIZES, TRIANGLE_CAPACITY, Visibility,
 };
-pub use error::{Argument, Error, Malformation, Result};
+pub use error::{Argument, Element, Error, Malformation, Result};
 pub use format::world::{LightmapFault, lightmap_fault};
 pub use format::{Mesh, World};
 pub use light::MAX_OVERBRIGHT;

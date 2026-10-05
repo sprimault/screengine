@@ -6,7 +6,7 @@
 //! Un code publié ne change jamais de sens : ces tests figent la plage et
 //! l'unicité, pas les valeurs elles-mêmes, qui sont dans le header.
 
-use screengine::{Argument, Malformation};
+use screengine::{Argument, Element, Malformation};
 
 use super::*;
 
@@ -158,18 +158,39 @@ fn chaque_malformation_a_son_message() {
         Malformation::SectionBounds,
         Malformation::NonFinite,
         Malformation::NonUtf8,
-        Malformation::Index,
-        Malformation::Identifier,
-        Malformation::GroupBounds,
+        // **Les neuf variantes à charge utile la portent ici aussi**, et c'est
+        // tout ce que ce test en dit : l'élément n'entre pas dans le code d'ABI,
+        // qui ne distingue pas les malformations entre elles, ni dans le message,
+        // qui reste un littéral. L'élément choisi est donc quelconque — ce qui se
+        // vérifie est qu'une variante ne se confond pas avec une autre.
+        Malformation::Index {
+            element: Element::Vertex(3),
+        },
+        Malformation::Identifier {
+            element: Element::Cell(7),
+        },
+        Malformation::GroupBounds {
+            element: Element::Group(1),
+        },
         Malformation::Count,
-        Malformation::Flags,
-        Malformation::Polygon,
-        // La seule variante à charge utile : l'identifiant n'entre pas dans le
-        // code d'ABI, qui ne distingue pas les malformations entre elles.
-        Malformation::Mapping { surface: 11 },
-        Malformation::Light,
-        Malformation::Pose,
-        Malformation::Portal,
+        Malformation::Flags {
+            element: Element::Surface(11),
+        },
+        Malformation::Polygon {
+            element: Element::Portal(21),
+        },
+        Malformation::Mapping {
+            element: Element::Surface(11),
+        },
+        Malformation::Light {
+            element: Element::Light(5),
+        },
+        Malformation::Pose {
+            element: Element::Entity(9),
+        },
+        Malformation::Portal {
+            element: Element::Portal(23),
+        },
     ];
     for (i, a) in malformations.iter().enumerate() {
         let error = Error::InvalidFormat(*a);
@@ -191,16 +212,16 @@ fn chaque_malformation_a_son_message() {
         Malformation::SectionBounds => 6,
         Malformation::NonFinite => 7,
         Malformation::NonUtf8 => 8,
-        Malformation::Index => 9,
-        Malformation::Identifier => 10,
-        Malformation::GroupBounds => 11,
+        Malformation::Index { .. } => 9,
+        Malformation::Identifier { .. } => 10,
+        Malformation::GroupBounds { .. } => 11,
         Malformation::Count => 12,
-        Malformation::Flags => 13,
-        Malformation::Polygon => 14,
+        Malformation::Flags { .. } => 13,
+        Malformation::Polygon { .. } => 14,
         Malformation::Mapping { .. } => 15,
-        Malformation::Light => 16,
-        Malformation::Pose => 17,
-        Malformation::Portal => 18,
+        Malformation::Light { .. } => 16,
+        Malformation::Pose { .. } => 17,
+        Malformation::Portal { .. } => 18,
     };
     for (i, a) in malformations.iter().enumerate() {
         assert_eq!(rank(*a), i, "{a:?} n'est pas à sa place");

@@ -231,6 +231,34 @@ l'hôte gardant sa fenêtre, sa boucle et ses entrées.
   `screengine-play`. Une variante nomme une catégorie, celle d'un code d'ABI ;
   ce qui la précise — l'argument refusé — est porté par la variante, et ne se
   lit que dans le message.
+- **Un refus de contenu qui désigne un élément le nomme**, par `Element` : la
+  cellule, la surface, le portail, la lumière, l'entité, le matériau ou le groupe
+  en cause, avec son identifiant d'éditeur — ou son rang là où le format n'en
+  attribue pas, pour un emplacement de texture et pour un sommet.
+
+  **La règle est là parce que son absence s'est payée deux fois.** Un générateur
+  avait réimplémenté le prédicat du repère de lightmap pour retrouver la surface
+  qu'une carte faisait refuser, somme de Newell comprise, et sa copie serait
+  devenue fausse au premier changement de tolérance ; puis le plafond d'étendue a
+  posé la même question. Un refus qui ne nomme rien renvoie l'appelant à
+  réécrire le chargeur.
+
+  Ce que la charge utile **ne fait pas** : elle n'entre ni dans le message, qui
+  reste un littéral — `scg_last_error` le rend à travers la frontière et le noyau
+  n'alloue pas —, ni dans le code d'ABI, qui ne distingue pas les malformations
+  entre elles. Elle sert l'appelant **Rust**, qui lit la variante.
+
+  **Quatre variantes restent muettes, et chacune a sa raison** : `Truncated`,
+  `Signature`, `Kind`, `Length`, `Section*`, `NonFinite`, `NonUtf8` et `Count`
+  décrivent le **conteneur** — il n'y a pas d'élément à nommer avant d'avoir pu
+  lire la table des sections. `Element::None` n'est donc pas leur cas : il est
+  celui d'un refus qui **porterait** un élément si l'un d'eux était seul en
+  cause, et où c'est le volume de plusieurs qui déborde — le rangement d'un
+  atlas de cellule, la fin d'un pavage de groupes.
+
+  Aucun contrôle ne tient cette règle : il n'existe pas de test pour « toute
+  variante qui désigne un objet le nomme ». C'est une clause de relecture, et
+  c'est pourquoi elle est écrite ici plutôt que supposée.
 - **Aucun `unwrap` ni `expect` sur un chemin atteignable**, noyau compris. Un
   invariant se tient par le type ; ce qui ne se tient pas par le type remonte en
   erreur.

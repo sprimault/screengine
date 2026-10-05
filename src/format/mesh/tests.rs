@@ -104,7 +104,9 @@ fn un_indice_de_sommet_hors_borne_est_refuse() {
         let bytes = file(&group(1, 0, 1, 0), &name("t"), &triangles, &vertices);
         assert_eq!(
             Mesh::load(&bytes).unwrap_err(),
-            refused(Malformation::Index),
+            refused(Malformation::Index {
+                element: Element::Vertex(1)
+            }),
             "indices {indices:?} pour un seul sommet"
         );
     }
@@ -123,7 +125,9 @@ fn un_emplacement_de_texture_hors_borne_est_refuse() {
         let bytes = file(&group(1, 0, 1, slot), &names, &triangles, &vertices);
         assert_eq!(
             Mesh::load(&bytes).unwrap_err(),
-            refused(Malformation::Index),
+            refused(Malformation::Index {
+                element: Element::Slot(slot)
+            }),
             "emplacement {slot} pour {} nom(s)",
             names.len()
         );
@@ -142,7 +146,9 @@ fn un_identifiant_de_groupe_nul_est_refuse() {
     );
     assert_eq!(
         Mesh::load(&bytes).unwrap_err(),
-        refused(Malformation::Identifier)
+        refused(Malformation::Identifier {
+            element: Element::Group(0)
+        })
     );
 }
 
@@ -163,7 +169,9 @@ fn deux_groupes_du_meme_identifiant_sont_refuses() {
     let bytes = file(&groups, &name("t"), &triangles, &vertices);
     assert_eq!(
         Mesh::load(&bytes).unwrap_err(),
-        refused(Malformation::Identifier)
+        refused(Malformation::Identifier {
+            element: Element::Group(4)
+        })
     );
 }
 
@@ -183,20 +191,29 @@ fn des_groupes_qui_ne_pavent_pas_sont_refuses() {
     let mut overlap = group(1, 0, 2, 0);
     overlap.extend_from_slice(&group(2, 1, 1, 0));
 
-    let cases: [(&str, Vec<u8>); 4] = [
-        ("un trou entre deux groupes", hole),
-        ("un recouvrement", overlap),
+    // **L'élément attendu fait partie du cas**, et il distingue les trois
+    // premiers du dernier : un pavage rompu nomme le groupe où il se rompt, et
+    // c'est le **second** quand le trou ou le recouvrement se lit à son arrivée.
+    // Le reste final, lui, n'appartient à personne.
+    let cases: [(&str, Vec<u8>, Element); 4] = [
+        ("un trou entre deux groupes", hole, Element::Group(2)),
+        ("un recouvrement", overlap, Element::Group(2)),
         (
             "un groupe qui dépasse le dernier triangle",
             group(1, 0, 3, 0),
+            Element::Group(1),
         ),
-        ("un reste que personne ne porte", group(1, 0, 1, 0)),
+        (
+            "un reste que personne ne porte",
+            group(1, 0, 1, 0),
+            Element::None,
+        ),
     ];
-    for (what, groups) in cases {
+    for (what, groups, element) in cases {
         let bytes = file(&groups, &name("t"), &triangles, &vertices);
         assert_eq!(
             Mesh::load(&bytes).unwrap_err(),
-            refused(Malformation::GroupBounds),
+            refused(Malformation::GroupBounds { element }),
             "{what}"
         );
     }
@@ -215,7 +232,9 @@ fn un_compte_de_triangles_demesure_est_refuse() {
     let bytes = file(&group(1, 0, u32::MAX, 0), &name("t"), &triangles, &vertices);
     assert_eq!(
         Mesh::load(&bytes).unwrap_err(),
-        refused(Malformation::GroupBounds)
+        refused(Malformation::GroupBounds {
+            element: Element::Group(1)
+        })
     );
 }
 

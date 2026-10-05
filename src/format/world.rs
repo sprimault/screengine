@@ -20,7 +20,7 @@ use super::ears::{MAX_POLYGON, triangulate};
 use super::{Cursor, decode};
 use crate::buffer::{owned, reserved};
 use crate::collide::{Hit, Surfaces};
-use crate::error::{Error, Malformation, Result};
+use crate::error::{Element, Error, Malformation, Result};
 use crate::math::{MAX_TEXEL_COORD, Quat, Vec3};
 use crate::scene::{Color, Light, VertexUv};
 use crate::texture::MAX_TEXTURE_SIZE;
@@ -822,20 +822,26 @@ fn lights(section: &[u8]) -> Result<Vec<StaticLight>> {
         let reserved = cursor.u8()?;
 
         if id == 0 {
-            return Err(Error::InvalidFormat(Malformation::Identifier));
+            return Err(Error::InvalidFormat(Malformation::Identifier {
+                element: Element::Light(id),
+            }));
         }
         // L'alpha d'une lumière est réservé et nul, comme dans la structure que
         // l'hôte passe au moteur : c'est ce qui permettra de l'employer sans
         // casser les cartes déjà écrites.
         if reserved != 0 {
-            return Err(Error::InvalidFormat(Malformation::Flags));
+            return Err(Error::InvalidFormat(Malformation::Flags {
+                element: Element::Light(id),
+            }));
         }
         // Un rayon nul n'éclaire rien et ferait diviser par zéro le jour où
         // l'étape 5 calcule une atténuation. La comparaison est franche et non
         // niée : le curseur a déjà refusé les non-finis, donc aucun `NaN` ne
         // passe ici.
         if radius <= 0.0 {
-            return Err(Error::InvalidFormat(Malformation::Light));
+            return Err(Error::InvalidFormat(Malformation::Light {
+                element: Element::Light(id),
+            }));
         }
 
         ids.push(id);
@@ -848,7 +854,7 @@ fn lights(section: &[u8]) -> Result<Vec<StaticLight>> {
             },
         });
     }
-    unique(&ids)?;
+    unique(&ids, Element::Light)?;
     Ok(lights)
 }
 
@@ -868,7 +874,7 @@ fn entities(section: &[u8], cells: &[u32]) -> Result<Vec<Entity>> {
         ids.push(entity.id);
         entities.push(entity);
     }
-    unique(&ids)?;
+    unique(&ids, Element::Entity)?;
     Ok(entities)
 }
 
@@ -878,13 +884,20 @@ fn entity(record: &[u8], cells: &[u32]) -> Result<Entity> {
     let id = cursor.u32()?;
     let cell = cursor.u32()?;
     if id == 0 {
-        return Err(Error::InvalidFormat(Malformation::Identifier));
+        return Err(Error::InvalidFormat(Malformation::Identifier {
+            element: Element::Entity(id),
+        }));
     }
     // Par identifiant et jamais par index : sans cela, l'annulation et la
     // sauvegarde partielle de l'éditeur deviennent impraticables dès la
     // première suppression au milieu.
+    //
+    // Nomme la **cellule** absente et non l'entité : c'est elle qui manque, et
+    // c'est elle que l'éditeur doit retrouver ou recréer.
     if !cells.contains(&cell) {
-        return Err(Error::InvalidFormat(Malformation::Index));
+        return Err(Error::InvalidFormat(Malformation::Index {
+            element: Element::Cell(cell),
+        }));
     }
 
     let class_len = cursor.u16()? as usize;
@@ -900,7 +913,9 @@ fn entity(record: &[u8], cells: &[u32]) -> Result<Entity> {
     // l'identité en silence : une entité posée de travers se retrouverait droite
     // sans que rien ne le signale.
     if orientation.dot(orientation) == 0.0 {
-        return Err(Error::InvalidFormat(Malformation::Pose));
+        return Err(Error::InvalidFormat(Malformation::Pose {
+            element: Element::Entity(id),
+        }));
     }
 
     let data_len = cursor.u32()? as usize;
@@ -939,7 +954,9 @@ fn materials(section: &[u8]) -> Result<(Vec<u32>, Vec<String>)> {
     while cursor.remaining() != 0 {
         let id = cursor.u32()?;
         if id == 0 {
-            return Err(Error::InvalidFormat(Malformation::Identifier));
+            return Err(Error::InvalidFormat(Malformation::Identifier {
+                element: Element::Material(id),
+            }));
         }
         let len = cursor.u16()? as usize;
         let bytes = cursor.take(len)?;
@@ -948,7 +965,7 @@ fn materials(section: &[u8]) -> Result<(Vec<u32>, Vec<String>)> {
         ids.push(id);
         names.push(owned(name)?);
     }
-    unique(&ids)?;
+    unique(&ids, Element::Material)?;
     Ok((ids, names))
 }
 
@@ -974,7 +991,7 @@ fn cells(section: &[u8], materials: &[u32]) -> Result<Vec<Cell>> {
         ids.push(cell.id);
         cells.push(cell);
     }
-    unique(&ids)?;
+    unique(&ids, Element::Cell)?;
 
     let mut portal_ids = Vec::new();
     for cell in &cells {
@@ -983,7 +1000,7 @@ fn cells(section: &[u8], materials: &[u32]) -> Result<Vec<Cell>> {
             portal_ids.push(portal.id);
         }
     }
-    unique(&portal_ids)?;
+    unique(&portal_ids, Element::Portal)?;
 
     let mut surface_ids = Vec::new();
     for cell in &cells {
@@ -992,7 +1009,7 @@ fn cells(section: &[u8], materials: &[u32]) -> Result<Vec<Cell>> {
             surface_ids.push(surface.id);
         }
     }
-    unique(&surface_ids)?;
+    unique(&surface_ids, Element::Surface)?;
 
     Ok(cells)
 }
@@ -1007,12 +1024,16 @@ fn cell(record: &[u8], materials: &[u32]) -> Result<Cell> {
     let portal_count = cursor.u32()? as usize;
 
     if id == 0 {
-        return Err(Error::InvalidFormat(Malformation::Identifier));
+        return Err(Error::InvalidFormat(Malformation::Identifier {
+            element: Element::Cell(id),
+        }));
     }
     // Aucun bit de drapeau de cellule n'est défini : tous nuls, ce qui permettra
     // d'en employer un sans casser les cartes déjà écrites.
     if flags != 0 {
-        return Err(Error::InvalidFormat(Malformation::Flags));
+        return Err(Error::InvalidFormat(Malformation::Flags {
+            element: Element::Cell(id),
+        }));
     }
 
     let mut points = reserved(bounded(vertex_count, VERTEX_LEN, cursor.remaining())?)?;
@@ -1438,21 +1459,33 @@ fn surface(
     let index_count = cursor.u32()? as usize;
 
     if id == 0 {
-        return Err(Error::InvalidFormat(Malformation::Identifier));
+        return Err(Error::InvalidFormat(Malformation::Identifier {
+            element: Element::Surface(id),
+        }));
     }
     if flags & !SURFACE_FLAGS != 0 {
-        return Err(Error::InvalidFormat(Malformation::Flags));
+        return Err(Error::InvalidFormat(Malformation::Flags {
+            element: Element::Surface(id),
+        }));
     }
     // L'identifiant se résout en rang ici, une fois : c'est ce que la
     // soumission lira, et une recherche par surface et par image serait
     // invisible — elle ne ferait rougir aucun test et ne changerait aucune
     // empreinte.
+    //
+    // Nomme le **matériau** introuvable et non la surface qui le réclame : c'est
+    // la table des matériaux qu'il faut compléter, et l'identifiant manquant est
+    // celui qu'on y cherche.
     let material = materials
         .iter()
         .position(|known| *known == material)
-        .ok_or(Error::InvalidFormat(Malformation::Index))? as u32;
+        .ok_or(Error::InvalidFormat(Malformation::Index {
+            element: Element::Material(material),
+        }))? as u32;
     if index_count > MAX_POLYGON {
-        return Err(Error::InvalidFormat(Malformation::Polygon));
+        return Err(Error::InvalidFormat(Malformation::Polygon {
+            element: Element::Surface(id),
+        }));
     }
     bounded(index_count, 4, cursor.remaining())?;
 
@@ -1465,7 +1498,9 @@ fn surface(
         let index = cursor.u32()? as usize;
         *corner = *points
             .get(index)
-            .ok_or(Error::InvalidFormat(Malformation::Index))?;
+            .ok_or(Error::InvalidFormat(Malformation::Index {
+                element: Element::Vertex(index as u32),
+            }))?;
         indices.push(index as u32);
     }
     let corners = &corners[..index_count];
@@ -1477,14 +1512,20 @@ fn surface(
     // Vérifié plutôt que conventionnel : une carte qui ne respecterait pas cet
     // alignement ne se verrait qu'à la première capture d'éclairage.
     if !aligned(lightmap, corners) {
-        return Err(Error::InvalidFormat(Malformation::Mapping { surface: id }));
+        return Err(Error::InvalidFormat(Malformation::Mapping {
+            element: Element::Surface(id),
+        }));
     }
-    let luxels = luxel_extent(lightmap, corners)
-        .ok_or(Error::InvalidFormat(Malformation::Mapping { surface: id }))?;
+    let luxels =
+        luxel_extent(lightmap, corners).ok_or(Error::InvalidFormat(Malformation::Mapping {
+            element: Element::Surface(id),
+        }))?;
 
     let mut cut = [[0u32; 3]; MAX_POLYGON];
     let count =
-        triangulate(corners, &mut cut).ok_or(Error::InvalidFormat(Malformation::Polygon))?;
+        triangulate(corners, &mut cut).ok_or(Error::InvalidFormat(Malformation::Polygon {
+            element: Element::Surface(id),
+        }))?;
 
     let first_vertex = vertices.len() as u32;
     let first_triangle = triangles.len() as u32;
@@ -1814,7 +1855,9 @@ fn fold(corners: &[Vec3], mapping: Mapping, surface: u32) -> Result<[(f32, f32);
     for (slot, corner) in raw.iter_mut().zip(corners) {
         *slot = mapping.project(*corner);
         if !slot.0.is_finite() || !slot.1.is_finite() {
-            return Err(Error::InvalidFormat(Malformation::Mapping { surface }));
+            return Err(Error::InvalidFormat(Malformation::Mapping {
+                element: Element::Surface(surface),
+            }));
         }
         // Par comparaison et non par `f32::min`, que le projet interdit : son
         // résultat sur deux zéros de signes opposés n'est pas spécifié, et deux
@@ -1851,7 +1894,11 @@ fn fold(corners: &[Vec3], mapping: Mapping, surface: u32) -> Result<[(f32, f32);
     };
     let offset = match (shift(low.0), shift(low.1)) {
         (Some(u), Some(v)) => (u, v),
-        _ => return Err(Error::InvalidFormat(Malformation::Mapping { surface })),
+        _ => {
+            return Err(Error::InvalidFormat(Malformation::Mapping {
+                element: Element::Surface(surface),
+            }));
+        }
     };
 
     for slot in raw.iter_mut().take(corners.len()) {
@@ -1864,7 +1911,9 @@ fn fold(corners: &[Vec3], mapping: Mapping, surface: u32) -> Result<[(f32, f32);
         // et c'est tout ce que le repli existe pour éviter.
         let within = |value: f32| (0.0..=MAX_TEXEL_COORD).contains(&value);
         if !within(slot.0) || !within(slot.1) {
-            return Err(Error::InvalidFormat(Malformation::Mapping { surface }));
+            return Err(Error::InvalidFormat(Malformation::Mapping {
+                element: Element::Surface(surface),
+            }));
         }
     }
     Ok(raw)
@@ -1876,10 +1925,14 @@ fn portal(cursor: &mut Cursor<'_>, points: &[Vec3]) -> Result<Portal> {
     let index_count = cursor.u32()? as usize;
 
     if id == 0 {
-        return Err(Error::InvalidFormat(Malformation::Identifier));
+        return Err(Error::InvalidFormat(Malformation::Identifier {
+            element: Element::Portal(id),
+        }));
     }
     if !(3..=MAX_POLYGON).contains(&index_count) {
-        return Err(Error::InvalidFormat(Malformation::Polygon));
+        return Err(Error::InvalidFormat(Malformation::Polygon {
+            element: Element::Portal(id),
+        }));
     }
     bounded(index_count, 4, cursor.remaining())?;
 
@@ -1889,7 +1942,9 @@ fn portal(cursor: &mut Cursor<'_>, points: &[Vec3]) -> Result<Portal> {
         corners.push(
             *points
                 .get(index)
-                .ok_or(Error::InvalidFormat(Malformation::Index))?,
+                .ok_or(Error::InvalidFormat(Malformation::Index {
+                    element: Element::Vertex(index as u32),
+                }))?,
         );
     }
     // **La convexité est exigée là où elle ne l'est pas pour la cellule**, parce
@@ -1898,7 +1953,9 @@ fn portal(cursor: &mut Cursor<'_>, points: &[Vec3]) -> Result<Portal> {
     // portail, et une projection concave n'a pas d'intersection exprimable
     // comme réduction de fenêtre. L'erreur se paierait en trou définitif.
     if !convex(&corners) {
-        return Err(Error::InvalidFormat(Malformation::Polygon));
+        return Err(Error::InvalidFormat(Malformation::Polygon {
+            element: Element::Portal(id),
+        }));
     }
 
     Ok(Portal {
@@ -1985,14 +2042,24 @@ fn link_portals(cells: &mut [Cell]) -> Result<()> {
                 // ramènerait sur la cellule courante, et la traversée tournerait
                 // sur place au lieu d'avancer.
                 if first.0 == second.0 {
-                    return Err(Error::InvalidFormat(Malformation::Portal));
+                    return Err(Error::InvalidFormat(Malformation::Portal {
+                        element: Element::Portal(
+                            cells[first.0 as usize].portals[first.1 as usize].id,
+                        ),
+                    }));
                 }
                 cells[first.0 as usize].portals[first.1 as usize].link = Some(second);
                 cells[second.0 as usize].portals[second.1 as usize].link = Some(first);
             }
             // Trois portails sur la même clé n'ont pas de réponse à « lequel des
-            // deux ».
-            _ => return Err(Error::InvalidFormat(Malformation::Portal)),
+            // deux ». Le troisième est nommé : les deux premiers s'apparieraient
+            // légitimement sans lui, donc c'est son arrivée qui fait le défaut.
+            _ => {
+                let third = (keys[i + 2].1, keys[i + 2].2);
+                return Err(Error::InvalidFormat(Malformation::Portal {
+                    element: Element::Portal(cells[third.0 as usize].portals[third.1 as usize].id),
+                }));
+            }
         }
         i = j;
     }
@@ -2020,12 +2087,20 @@ fn bits(point: Vec3) -> [u32; 3] {
 ///
 /// Par tri puis passe adjacente. Le tableau trié ne se garde pas : la
 /// correspondance par identifiant arrive avec les appels qui l'interrogent.
-fn unique(ids: &[u32]) -> Result<()> {
+///
+/// **`of` dit la famille**, que les identifiants seuls ne portent pas : les six
+/// appelants passent le constructeur d'[`Element`] qui leur correspond, et c'est
+/// ce qui permet au refus de nommer la table à relire. Un paramètre plutôt que
+/// six copies de la boucle, et une fonction plutôt qu'une valeur, pour que
+/// l'identifiant fautif entre dedans.
+fn unique(ids: &[u32], of: fn(u32) -> Element) -> Result<()> {
     let mut sorted = reserved(ids.len())?;
     sorted.extend_from_slice(ids);
     sorted.sort_unstable();
-    if sorted.windows(2).any(|pair| pair[0] == pair[1]) {
-        return Err(Error::InvalidFormat(Malformation::Identifier));
+    if let Some(pair) = sorted.windows(2).find(|pair| pair[0] == pair[1]) {
+        return Err(Error::InvalidFormat(Malformation::Identifier {
+            element: of(pair[0]),
+        }));
     }
     Ok(())
 }

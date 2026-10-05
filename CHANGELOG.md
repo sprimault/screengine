@@ -51,12 +51,26 @@ publié, et explique les conventions du dépôt à qui y contribue.
 - `lightmap_fault` nomme une cinquième faute, `ExtentTooLarge` : une surface qui
   dépasse 256 luxels par côté. Un générateur n'a plus à recopier ce plafond.
 
+### Modifié
+
+- **API Rust, à reprendre** : les neuf variantes de `Malformation` qui désignent
+  un élément le nomment par `Element` — cellule, surface, portail, lumière,
+  entité, matériau, groupe, emplacement, sommet. `Mapping { surface: u32 }`
+  devient `Mapping { element: Element }`. L'ABI C ne change pas.
+
 ***
 
 ### Added
 
 - `lightmap_fault` names a fifth fault, `ExtentTooLarge`: a surface spanning more
   than 256 luxels on a side. Map generators no longer copy that limit.
+
+### Changed
+
+- **Rust API, action needed**: the nine `Malformation` variants that point at an
+  element now name it through `Element` — cell, surface, portal, light, entity,
+  material, group, slot, vertex. `Mapping { surface: u32 }` becomes
+  `Mapping { element: Element }`. The C ABI is unchanged.
 
 ## [0.8.8] — 2026-10-05 — Éprouver ce qui était seulement écrit
 
