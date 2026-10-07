@@ -790,11 +790,11 @@ fn la_traversee_ne_troue_pas_le_decor_de_validation() {
         lightmaps.build(&world, id).expect("cuisson");
     }
 
-    for (index, (position, yaw)) in ROOM_VIEWS.iter().enumerate() {
+    for (index, (position, yaw, roll)) in ROOM_VIEWS.iter().enumerate() {
         let position = Vec3::new(position[0], position[1], position[2]);
         let camera = Camera {
             position,
-            orientation: Quat::from_axis_angle(Vec3::new(0.0, 0.0, 1.0), Angle::from_radians(*yaw)),
+            orientation: room_view_orientation(*yaw, *roll),
             ..Camera::DEFAULT
         };
         let cell = world.locate(position);

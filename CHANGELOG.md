@@ -51,6 +51,8 @@ publié, et explique les conventions du dépôt à qui y contribue.
 - **Empreinte déplacée** : la scène `collision` balaie désormais une boîte
   d'étendue nulle, dont la marge et la portée valent zéro. Rien du balayage ne
   change.
+- **Empreinte déplacée** : la scène `salles` rend deux vues de plus, à 45° et 15°
+  de roulis. Rien du rendu ne change.
 
 ***
 
@@ -58,6 +60,8 @@ publié, et explique les conventions du dépôt à qui y contribue.
 
 - **Digest moved**: the `collision` scene now sweeps a zero-extent box, whose
   skin and reach are both zero. Nothing about the sweep itself changes.
+- **Digest moved**: the `salles` scene renders two more views, rolled 45° and
+  15°. Nothing about rendering changes.
 
 ## [0.8.9] — 2026-10-05 — Ce que rien ne vérifiait
 
