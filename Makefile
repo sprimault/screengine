@@ -71,7 +71,7 @@ android_build = for cible in $(CIBLES_ANDROID); do \
 
 .PHONY: build lib lib-wasm lib-android run example web test native-libs fmt fmt-fix lint lint-doc-tests \
         lint-android-versions nostd test-arm msrv bench \
-        conform conform-x86 conform-update conform-images mesh header header-verif audit deny doc doc-verif hosts host-c host-cpp host-web host-go \
+        conform conform-arm conform-x86 conform-update conform-images mesh header header-verif audit deny doc doc-verif hosts host-c host-cpp host-web host-go \
         host-android demo-c demo-cpp clean tools
 
 build:
@@ -419,7 +419,8 @@ lint-doc-tests:
 nostd:
 	cargo build -p screengine --target $(CIBLE_NOSTD)
 
-# Les tests du noyau sur ARM, exécutés sous qemu-user.
+# Les cibles ARM, exécutées sous qemu-user : les tests du noyau et la
+# conformance.
 #
 # **Ils n'y avaient jamais tourné, seulement compilé.** `make lint` passe clippy
 # sur les cibles Android et `make nostd` prouve le bare-metal, mais ni l'un ni
@@ -448,12 +449,39 @@ nostd:
 # qemu, que le poste Windows n'a pas. Elle se passe par `make arm-evo`.
 CIBLES_ARM = aarch64-linux-android armv7-linux-androideabi
 
+# L'environnement d'une exécution sous qemu : le linker du NDK, le runner de
+# chaque ABI, et la liaison statique sans laquelle rien ne démarre.
+ARM_ENV = $(ANDROID_ENV) \
+          CARGO_TARGET_AARCH64_LINUX_ANDROID_RUNNER="qemu-aarch64 -L $(NDK_SYSROOT)" \
+          CARGO_TARGET_ARMV7_LINUX_ANDROIDEABI_RUNNER="qemu-arm -L $(NDK_SYSROOT)" \
+          RUSTFLAGS="-C target-feature=+crt-static"
+
+# Ce que chaque cible ARM exécute pour une ABI, `$$cible` portant celle en cours.
+#
+# **La conformance en dit plus que les tests du noyau** : vingt-neuf scènes et
+# toutes les passes, contre les **mêmes** empreintes versionnées, là où les
+# hôtes n'en comparent que quatorze par le seul chemin que leur machine résout.
+# Des références propres à ARM ne diraient que « ARM est reproductible avec
+# lui-même », ce qui n'est pas la question — c'est le raisonnement de
+# `conform-x86`, appliqué à une architecture au lieu d'une largeur de pointeur.
+#
+# **Et c'est l'endroit où une passe NEON tournera.** Sans elle, la variante
+# n'aurait que ses cas unitaires et l'empreinte d'un hôte : la passe existerait
+# en sautant partout, qui est le défaut que la conformance annonce depuis
+# qu'elle nomme les passes qu'elle ne joue pas.
+arm_run_test    = cargo test -p screengine --target $$cible
+arm_run_conform = cargo run -p screengine-conformance --release --target $$cible -- --check
+
 # **Le saut est une erreur en intégration continue**, comme pour les hôtes et
 # pour la même raison : un contrôle qui ne tourne pas sans que personne le voie
 # est pire que pas de contrôle. Le job Linux installe le NDK et qemu pour
 # l'hôte Android, donc rien n'y manque et un saut y désignerait une régression
 # de l'outillage.
-test-arm:
+#
+# Une recette pour les deux, parce que la détection recopiée finirait par
+# diverger — un qemu oublié d'un côté y ferait sauter en silence la cible qui en
+# dépend, ce qui est exactement ce que le saut-erreur cherche à empêcher.
+$(addsuffix -arm,test conform): %-arm:
 	@reason=""; \
 	if [ -z "$(ANDROID_NDK_HOME)" ] || [ ! -d "$(NDK_BIN)" ]; then \
 	  reason="NDK introuvable, ANDROID_NDK_HOME non defini ou incomplet"; \
@@ -461,17 +489,13 @@ test-arm:
 	  reason="qemu-aarch64 ou qemu-arm introuvable"; \
 	fi; \
 	if [ -n "$$reason" ] && [ -n "$$CI" ]; then \
-	  echo "test-arm impossible en integration continue : $$reason"; exit 1; \
+	  echo "$@ impossible en integration continue : $$reason"; exit 1; \
 	elif [ -n "$$reason" ]; then \
-	  echo "test-arm saute : $$reason"; \
+	  echo "$@ saute : $$reason"; \
 	else \
 	  for cible in $(CIBLES_ARM); do \
-	    echo "test-arm : $$cible"; \
-	    $(ANDROID_ENV) \
-	      CARGO_TARGET_AARCH64_LINUX_ANDROID_RUNNER="qemu-aarch64 -L $(NDK_SYSROOT)" \
-	      CARGO_TARGET_ARMV7_LINUX_ANDROIDEABI_RUNNER="qemu-arm -L $(NDK_SYSROOT)" \
-	      RUSTFLAGS="-C target-feature=+crt-static" \
-	      cargo test -p screengine --target $$cible || exit 1; \
+	    echo "$@ : $$cible"; \
+	    $(ARM_ENV) $(arm_run_$*) || exit 1; \
 	  done; \
 	fi
 

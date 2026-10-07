@@ -59,6 +59,13 @@ publié, et explique les conventions du dépôt à qui y contribue.
 - **Empreinte déplacée** : la scène `salles` rend deux vues de plus, à 45° et 15°
   de roulis. Rien du rendu ne change.
 
+### Interne
+
+- **Le noyau s'éprouve désormais sur ARM** : ses tests et les vingt-neuf scènes
+  de conformance tournent sur `aarch64` et `armv7` sous émulation, à chaque
+  pull request, contre les mêmes empreintes qu'ailleurs. Rien n'y était exécuté
+  jusqu'ici, seulement compilé.
+
 ***
 
 ### Added
@@ -72,6 +79,13 @@ publié, et explique les conventions du dépôt à qui y contribue.
   skin and reach are both zero. Nothing about the sweep itself changes.
 - **Digest moved**: the `salles` scene renders two more views, rolled 45° and
   15°. Nothing about rendering changes.
+
+### Internal
+
+- **The core is now exercised on ARM**: its tests and the twenty-nine
+  conformance scenes run on `aarch64` and `armv7` under emulation, on every pull
+  request, against the same fingerprints as everywhere else. Nothing ran there
+  before, only compiled.
 
 ## [0.8.9] — 2026-10-05 — Ce que rien ne vérifiait
 

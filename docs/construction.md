@@ -123,8 +123,8 @@ l'exécution par `scg_abi_version`.
 | Linux x64 | `x86_64-unknown-linux-gnu` | `.so`, `.a` | gcc ou clang | `hosts/c`, `hosts/cpp`, `hosts/go`, conformance | CI |
 | Linux x86 | `i686-unknown-linux-gnu` | `.so`, `.a` | gcc-multilib | aucun | CI, au tag seulement |
 | Navigateur | `wasm32-unknown-unknown` | `.wasm` | cible rustup, Node | `hosts/web` | CI, `make test-wasm` sous Linux et Windows |
-| Android arm64 | `aarch64-linux-android` | `.so`, `.a` | NDK, `qemu-user` | `hosts/android` | CI, `make test-android` sous Linux, sous `qemu-user` ; `make test-arm` pour les tests du noyau |
-| Android armv7 | `armv7-linux-androideabi` | `.so`, `.a` | NDK, `qemu-user` | `hosts/android` | CI, `make test-android` sous Linux, sous `qemu-user` ; `make test-arm` pour les tests du noyau |
+| Android arm64 | `aarch64-linux-android` | `.so`, `.a` | NDK, `qemu-user` | `hosts/android` | CI, `make test-android` sous Linux, sous `qemu-user` ; `make test-arm` et `make conform-arm` pour le noyau |
+| Android armv7 | `armv7-linux-androideabi` | `.so`, `.a` | NDK, `qemu-user` | `hosts/android` | CI, `make test-android` sous Linux, sous `qemu-user` ; `make test-arm` et `make conform-arm` pour le noyau |
 | Android x64 | `x86_64-linux-android` | `.so`, `.a` | NDK, SDK, émulateur | `hosts/android` | CI, `make test-android` sous Linux, sur émulateur par JNI |
 | Sans `std` | `thumbv7em-none-eabihf` | `.rlib` du noyau seul | cible rustup | aucun | `make nostd`, CI |
 | iOS, macOS | — | — | — | — | hors périmètre v1 |
@@ -344,6 +344,17 @@ toutes les autres cibles.
   continue, ce saut est une erreur** : le job qui l'appelle installe tout ce
   qu'elle demande, donc un saut n'y signale pas un poste démuni mais une étape
   d'installation cassée, et un vert l'aurait caché.
+- **`make conform-arm` rejoue la conformance sur les mêmes deux ABI**, contre
+  les **mêmes** empreintes versionnées, pour la raison qui donne sa forme à
+  `make conform-x86` : des références propres à ARM ne diraient que « ARM est
+  reproductible avec lui-même ». C'est le seul endroit où les vingt-neuf scènes
+  se comparent hors de x86 — les hôtes n'en portent que quatorze, et par le seul
+  chemin de remplissage que leur machine résout.
+
+  Elle partage avec `make test-arm` sa détection d'outillage et son
+  environnement d'exécution, dans une recette unique : deux copies de cette
+  détection finiraient par diverger, et un `qemu` oublié d'un côté y ferait
+  sauter en silence la cible qui en dépend.
 - **Le test a deux paliers**, et `make test-android` exige que leurs cinq
   empreintes soient identiques. **La cible entière demande un appareil ou un
   émulateur joignable par `adb`** : le premier palier s'en passe, mais il ne se
@@ -557,7 +568,7 @@ et chaque semaine pour l'audit :
 | Job | Plateforme | Contrôles |
 |---|---|---|
 | vérification | Linux | `fmt`, `lint`, `nostd`, `header-verif`, `doc-verif`, `msrv`, `deny` |
-| tests | Linux et Windows | `test`, hôtes C, C++, wasm et Go compris, `conform` ; sous Linux seulement, l'hôte Android émulateur démarré et `test-arm` sous `qemu-user` ; l'hôte Android retiré sous Windows par `SANS=android` |
+| tests | Linux et Windows | `test`, hôtes C, C++, wasm et Go compris, `conform` ; sous Linux seulement, l'hôte Android émulateur démarré puis `test-arm` et `conform-arm` sous `qemu-user` ; l'hôte Android retiré sous Windows par `SANS=android` |
 | audit | Linux | `audit`, dans un job à part : un avis publié en amont n'est pas un défaut de la PR en cours |
 
 **`make msrv` construit le noyau et la frontière avec la chaîne que
@@ -577,8 +588,9 @@ peut rendre vert un contrôle qui ne vérifie plus rien. C'est pour cela que
 **Les empreintes de référence sont versionnées**, et chaque plateforme les compare
 aux mêmes fichiers : Windows et Linux se comparent ainsi entre eux sans étape
 dédiée. Une conformance qui ne tournerait que sur une plateforme ne comparerait
-rien. wasm et Android n'exécutent pas la conformance en intégration continue ;
-leurs empreintes se comparent par leurs hôtes.
+rien. wasm n'exécute pas la conformance en intégration continue, et ses
+empreintes se comparent par son hôte ; les deux ABI ARM d'Android la jouent sous
+`qemu-user`, l'ABI x86_64 restant couverte par son hôte sur émulateur.
 
 ## Publication
 
