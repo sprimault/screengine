@@ -123,8 +123,8 @@ l'exécution par `scg_abi_version`.
 | Linux x64 | `x86_64-unknown-linux-gnu` | `.so`, `.a` | gcc ou clang | `hosts/c`, `hosts/cpp`, `hosts/go`, conformance | CI |
 | Linux x86 | `i686-unknown-linux-gnu` | `.so`, `.a` | gcc-multilib | aucun | CI, au tag seulement |
 | Navigateur | `wasm32-unknown-unknown` | `.wasm` | cible rustup, Node | `hosts/web` | CI, `make test-wasm` sous Linux et Windows |
-| Android arm64 | `aarch64-linux-android` | `.so`, `.a` | NDK, `qemu-user` | `hosts/android` | CI, `make test-android` sous Linux, sous `qemu-user` |
-| Android armv7 | `armv7-linux-androideabi` | `.so`, `.a` | NDK, `qemu-user` | `hosts/android` | CI, `make test-android` sous Linux, sous `qemu-user` |
+| Android arm64 | `aarch64-linux-android` | `.so`, `.a` | NDK, `qemu-user` | `hosts/android` | CI, `make test-android` sous Linux, sous `qemu-user` ; `make test-arm` pour les tests du noyau |
+| Android armv7 | `armv7-linux-androideabi` | `.so`, `.a` | NDK, `qemu-user` | `hosts/android` | CI, `make test-android` sous Linux, sous `qemu-user` ; `make test-arm` pour les tests du noyau |
 | Android x64 | `x86_64-linux-android` | `.so`, `.a` | NDK, SDK, émulateur | `hosts/android` | CI, `make test-android` sous Linux, sur émulateur par JNI |
 | Sans `std` | `thumbv7em-none-eabihf` | `.rlib` du noyau seul | cible rustup | aucun | `make nostd`, CI |
 | iOS, macOS | — | — | — | — | hors périmètre v1 |
@@ -324,6 +324,23 @@ toutes les autres cibles.
   du SDK, pilotés par le `Makefile` de l'hôte. Kotlin exigerait son compilateur,
   et Gradle un cache de dépendances, pour un hôte de quelques centaines de
   lignes.
+- **`make test-arm` exécute les tests du noyau sur les deux ABI ARM**, sous
+  `qemu-user` et sans appareil. Ils n'y avaient jamais tourné, seulement
+  compilé : `make lint` y passe clippy et `make nostd` prouve le bare-metal, mais
+  ni l'un ni l'autre n'exécute quoi que ce soit, et seul l'hôte C y rendait une
+  empreinte. La virgule fixe, les tables, le balayage et la cuisson n'avaient
+  donc jamais rendu un verdict sur une autre architecture.
+
+  **Les binaires de test se lient en statique**, par
+  `-C target-feature=+crt-static`, et sans cela rien ne démarre : un binaire
+  Android dynamique réclame `/system/bin/linker64`, qui n'existe que sur un
+  appareil, et `qemu` s'arrête sur un interpréteur introuvable. C'est la raison
+  pour laquelle l'hôte C du premier palier est lui aussi lié en statique.
+
+  **Et `qemu-arm` réclame que le filtre d'appels système soit levé** : il appelle
+  `personality` pour émuler un espace 32 bits, ce que le réglage par défaut d'un
+  conteneur refuse. L'image d'Android fournit le reste — NDK, cibles rustup,
+  `qemu` —, et la cible saute en le disant quand l'un manque.
 - **Le test a deux paliers**, et `make test-android` exige que leurs cinq
   empreintes soient identiques. **La cible entière demande un appareil ou un
   émulateur joignable par `adb`** : le premier palier s'en passe, mais il ne se

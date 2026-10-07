@@ -70,7 +70,7 @@ android_build = for cible in $(CIBLES_ANDROID); do \
 -include makefile.local
 
 .PHONY: build lib lib-wasm lib-android run example web test native-libs fmt fmt-fix lint lint-doc-tests \
-        lint-android-versions nostd msrv bench \
+        lint-android-versions nostd test-arm msrv bench \
         conform conform-x86 conform-update conform-images mesh header header-verif audit deny doc doc-verif hosts host-c host-cpp host-web host-go \
         host-android demo-c demo-cpp clean tools
 
@@ -418,6 +418,56 @@ lint-doc-tests:
 # prouve, comme le dit la définition de CIBLE_NOSTD.
 nostd:
 	cargo build -p screengine --target $(CIBLE_NOSTD)
+
+# Les tests du noyau sur ARM, exécutés sous qemu-user.
+#
+# **Ils n'y avaient jamais tourné, seulement compilé.** `make lint` passe clippy
+# sur les cibles Android et `make nostd` prouve le bare-metal, mais ni l'un ni
+# l'autre n'exécute quoi que ce soit : la virgule fixe, le balayage, la cuisson
+# et les tables du noyau n'avaient jamais rendu un seul résultat sur une machine
+# à boutisme et à registres différents. Seul l'hôte C y passait, par son
+# empreinte.
+#
+# **Ce que le runner ajoute tient en une variable**, le reste étant déjà là : le
+# NDK fournit l'éditeur de liens, rustup les cibles, et l'image d'Android qemu.
+# `cargo test` construit alors pour ARM et lance chaque binaire de test sous
+# l'émulateur, sans appareil.
+#
+# **Liés en statique, et sans cela rien ne démarre.** Un binaire Android
+# dynamique réclame `/system/bin/linker64`, qui n'existe que sur un appareil :
+# qemu s'arrête avant la première ligne, sur un interpréteur introuvable. C'est
+# la raison pour laquelle l'hôte C du premier palier est lui aussi lié en
+# statique, et `docs/construction.md` le dit déjà.
+#
+# **aarch64 et armv7, parce qu'ils ne disent pas la même chose** : le second est
+# 32 bits — il révèle une hypothèse sur la largeur de `usize` que la cible sans
+# `std` est seule à éprouver aujourd'hui — et son unité flottante traite les
+# sous-normaux là où le SIMD avancé les force à zéro.
+#
+# Hors de la liste fixe pour la raison d'`android-evo` : elle réclame le NDK et
+# qemu, que le poste Windows n'a pas. Elle se passe par `make arm-evo`.
+CIBLES_ARM = aarch64-linux-android armv7-linux-androideabi
+
+test-arm:
+	@if [ -z "$(ANDROID_NDK_HOME)" ] || [ ! -d "$(NDK_BIN)" ]; then \
+	  echo "test-arm saute : NDK introuvable, ANDROID_NDK_HOME non defini ou incomplet"; \
+	elif ! command -v qemu-aarch64 >/dev/null 2>&1 || ! command -v qemu-arm >/dev/null 2>&1; then \
+	  echo "test-arm saute : qemu-aarch64 ou qemu-arm introuvable"; \
+	else \
+	  for cible in $(CIBLES_ARM); do \
+	    echo "test-arm : $$cible"; \
+	    $(ANDROID_ENV) \
+	      CARGO_TARGET_AARCH64_LINUX_ANDROID_RUNNER="qemu-aarch64 -L $(NDK_SYSROOT)" \
+	      CARGO_TARGET_ARMV7_LINUX_ANDROIDEABI_RUNNER="qemu-arm -L $(NDK_SYSROOT)" \
+	      RUSTFLAGS="-C target-feature=+crt-static" \
+	      cargo test -p screengine --target $$cible || exit 1; \
+	  done; \
+	fi
+
+# Le sysroot du NDK, que qemu doit connaître pour trouver l'éditeur de liens
+# dynamique et la libc de la cible : sans lui, chaque binaire de test s'arrête
+# avant sa première ligne, sur un interpréteur introuvable.
+NDK_SYSROOT = $(ANDROID_NDK_HOME)/toolchains/llvm/prebuilt/linux-x86_64/sysroot
 
 # La référence de performance, prise avant que l'étape 3 touche au remplissage.
 #
