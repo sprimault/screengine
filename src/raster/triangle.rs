@@ -14,7 +14,7 @@ use crate::math::fixed::{PIXEL_CENTER, SUBPIXEL_SCALE, UV_BITS};
 use crate::math::projection::ProjectedVertex;
 
 use super::plane::{GRADIENT_BITS, Plane};
-use super::{Rect, Target};
+use super::{Rect, SimdPath, Span, Target};
 use crate::texture::{ALPHA_THRESHOLD, Filter, MAX_TEXTURE_SIZE, Texture};
 
 /// Une texture et la façon de la lire.
@@ -621,6 +621,7 @@ pub fn fill<T: Target>(
     triangle: &Prepared,
     sampling: Option<Sampling<'_>>,
     lit: Option<Lit<'_>>,
+    simd: SimdPath,
 ) {
     let color = triangle.color;
 
@@ -677,7 +678,7 @@ pub fn fill<T: Target>(
             // texturé : ses coordonnées de lightmap sont interpolées de la même
             // façon, et rien ne justifierait une seconde boucle pour cela.
             if sampling.is_none() && lit.is_none() {
-                let mut depth = plane.at(ex(lo), ey);
+                let depth = plane.at(ex(lo), ey);
                 // Le chemin rapide a sa propre boucle, et la modulation doit
                 // donc y être traitée aussi : une tache unie passe par ici, et
                 // c'est même le cas le plus courant — une ombre au sol n'a pas
@@ -685,20 +686,24 @@ pub fn fill<T: Target>(
                 // tache étant simplement peinte comme une surface ordinaire.
                 let modulated = triangle.modulated();
                 let bias = if modulated { slope_bias(plane) } else { 0 };
-                for x in lo..=hi {
-                    // En un pixel couvert, la valeur tient dans [0, 2³²) : les
-                    // sommets sont bornés par `to_depth` avec une marge qui
-                    // couvre l'arrondi des gradients.
-                    let z = (depth >> GRADIENT_BITS) as u32;
-                    if modulated {
-                        if target.test_modulated(x, y, z.saturating_add(bias)) {
-                            target.modulate(x, y, color);
-                        }
-                    } else if target.test(x, y, z) {
-                        target.write(x, y, z, color);
-                    }
-                    depth = depth.wrapping_add(depth_x);
-                }
+                // **Proposé d'un bloc, et non pixel par pixel**, parce que
+                // c'est le seul chemin qui se décrive sans lire une image :
+                // couleur constante, profondeur affine. Un puits qui range sa
+                // couleur et sa profondeur en tableaux contigus y gagne de
+                // traiter plusieurs pixels par instruction ; celui qui compte
+                // les propositions garde l'implémentation par défaut de
+                // `Target::span`, et continue donc de toutes les voir.
+                target.span(Span {
+                    y,
+                    x0: lo,
+                    x1: hi,
+                    depth,
+                    depth_x,
+                    color,
+                    modulated,
+                    bias,
+                    simd,
+                });
             } else {
                 let mut x = lo;
                 while x <= hi {

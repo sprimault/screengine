@@ -15,6 +15,8 @@ mod plane;
 pub mod simd;
 mod triangle;
 
+use plane::GRADIENT_BITS;
+
 pub use bins::{Bins, Grid};
 pub use clip::{MAX_CLIP_TRIANGLES, clip};
 pub use line::{Segment, clip_segment, cover};
@@ -43,22 +45,12 @@ pub fn fill<T: Target>(
     lit: Option<Lit<'_>>,
     simd: SimdPath,
 ) {
-    match simd.resolve() {
-        // **Toutes délèguent encore au scalaire**, et ce n'est pas un trou :
-        // c'est le témoin du socle. Tant qu'aucune variante n'est écrite, ce
-        // `match` prouve que la sélection atteint bien chaque branche et que la
-        // conformance compare des chemins qui existent — sans que la justesse
-        // dépende d'un code vectoriel qu'on n'a pas encore. Chaque lot suivant
-        // remplace une branche et doit rendre la même empreinte qu'elle rend ici.
-        SimdPath::Auto
-        | SimdPath::Scalar
-        | SimdPath::Sse2
-        | SimdPath::Avx2
-        | SimdPath::Neon
-        | SimdPath::Simd128 => {
-            triangle::fill(target, window, triangle, sampling, lit);
-        }
-    }
+    // **Le chemin ne se résout pas ici, il descend jusqu'au span.** Ce qui se
+    // vectorise est le remplissage d'une ligne unie, que le puits traite d'un
+    // bloc parce que lui seul tient ses tampons ; la mise en place du triangle et
+    // le parcours des lignes restent communs, et les dupliquer par chemin serait
+    // recopier le rasteriseur pour en vectoriser la seule boucle intérieure.
+    triangle::fill(target, window, triangle, sampling, lit, simd.resolve());
 }
 
 /// Un rectangle de l'image, en pixels.
@@ -129,7 +121,96 @@ impl Rect {
 ///
 /// La généricité est résolue à la compilation : il n'y a pas d'appel indirect
 /// dans la boucle de remplissage.
+/// Remplit une ligne unie pixel par pixel : la référence du chemin par span.
+///
+/// **Une fonction libre et non le corps du défaut**, parce qu'un puits qui
+/// surcharge [`Target::span`] doit pouvoir y revenir — Rust ne donne pas accès à
+/// l'implémentation par défaut depuis une surcharge, et la recopier ferait
+/// exactement ce que ce projet refuse : deux textes qui disent la même chose et
+/// finissent par diverger. C'est ici qu'est écrit ce que toute variante doit
+/// rendre, au bit près.
+pub fn span_scalar<T: Target + ?Sized>(target: &mut T, span: Span) {
+    let mut depth = span.depth;
+    for x in span.x0..=span.x1 {
+        // En un pixel couvert, la valeur tient dans [0, 2³²) : les sommets sont
+        // bornés par `to_depth` avec une marge qui couvre l'arrondi des
+        // gradients.
+        let z = (depth >> GRADIENT_BITS) as u32;
+        if span.modulated {
+            if target.test_modulated(x, span.y, z.saturating_add(span.bias)) {
+                target.modulate(x, span.y, span.color);
+            }
+        } else if target.test(x, span.y, z) {
+            target.write(x, span.y, z, span.color);
+        }
+        depth = depth.wrapping_add(span.depth_x);
+    }
+}
+
+/// Une ligne de pixels d'une surface **unie**, telle que le remplissage la
+/// propose d'un bloc.
+///
+/// **Le seul chemin de remplissage qui se décrive sans lire une image** : la
+/// couleur y est constante et la profondeur affine, si bien que tout le travail
+/// tient dans ces champs. Les chemins texturés ou éclairés échantillonnent, donc
+/// ils continuent de passer pixel par pixel.
+#[derive(Debug, Clone, Copy)]
+pub struct Span {
+    /// L'ordonnée de la ligne, en coordonnées de l'image.
+    pub y: i32,
+    /// La première abscisse couverte, incluse.
+    pub x0: i32,
+    /// La dernière abscisse couverte, incluse.
+    pub x1: i32,
+    /// La profondeur au centre de `x0`, avant son décalage de gradient.
+    pub depth: i64,
+    /// Ce que la profondeur gagne d'un pixel au suivant.
+    pub depth_x: i64,
+    /// La couleur à écrire, constante sur toute la ligne.
+    pub color: u32,
+    /// La surface est-elle modulée ?
+    ///
+    /// Elle multiplie alors le tampon au lieu de l'écraser, et son test de
+    /// profondeur est non strict et décalé de [`Span::bias`].
+    pub modulated: bool,
+    /// La tolérance de pente ajoutée à la profondeur d'une surface modulée.
+    ///
+    /// Nulle quand la surface ne l'est pas, et l'implémentation n'a pas à le
+    /// vérifier : c'est le remplissage qui la pose.
+    pub bias: u32,
+    /// Le chemin de remplissage que le contexte a retenu.
+    ///
+    /// **Porté par le span et non lu du contexte**, parce que c'est le puits qui
+    /// tient ses propres tampons et qui seul peut les traiter d'un bloc : il lui
+    /// faut donc savoir par quel jeu d'instructions, et il n'a aucun autre moyen
+    /// de l'apprendre.
+    pub simd: SimdPath,
+}
+
 pub trait Target {
+    /// Remplit une ligne entière d'une surface unie.
+    ///
+    /// **L'implémentation par défaut boucle sur [`Target::test`] et
+    /// [`Target::write`]**, et c'est elle qui garde l'étanchéité vérifiable :
+    /// les puits de comptage la conservent, donc ils voient toujours chaque
+    /// proposition, y compris celles qu'une profondeur rejette. Un puits qui
+    /// l'emporterait perdrait exactement ce que ce point de passage existe pour
+    /// donner.
+    ///
+    /// **Ce que l'implémenter achète**, et c'est la seule raison de cette
+    /// méthode : un puits qui range sa couleur et sa profondeur en tableaux
+    /// contigus peut traiter plusieurs pixels par instruction. Un span est
+    /// contigu par construction — les deux tableaux sont indexés
+    /// `ligne × largeur + colonne`.
+    ///
+    /// **Ce que l'implémenter coûte** : le chemin rapide n'est plus éprouvé par
+    /// les tests unitaires du rasteriseur, qui gardent le défaut. Sa justesse
+    /// tient alors tout entière à l'égalité d'empreinte avec le chemin scalaire,
+    /// que la conformance exige scène par scène.
+    fn span(&mut self, span: Span) {
+        span_scalar(self, span);
+    }
+
     /// Propose un pixel couvert, en coordonnées entières de l'image, avec sa
     /// profondeur en 0.32 : rend vrai s'il passe le test de profondeur.
     ///

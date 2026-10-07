@@ -19,6 +19,27 @@ use crate::light::MAX_OVERBRIGHT;
 use crate::math::fixed::DEPTH_MARGIN;
 use crate::testing::Rng;
 
+/// Le remplissage par le chemin **scalaire**, qui est ce que ces cas éprouvent.
+///
+/// **Enveloppé une fois plutôt que nommé à chaque appel**, et ce n'est pas qu'une
+/// commodité : tout ce fichier décrit la référence — règle top-left, étanchéité
+/// des arêtes partagées, bornes des attributs —, et une variante qui
+/// s'y glisserait validerait sa propre sortie au lieu de la comparer. Le chemin
+/// est donc écrit ici, une fois, et aucun cas ne peut en changer par distraction.
+///
+/// Ce qu'une variante doit à ce chemin se vérifie ailleurs : par ses propres
+/// cas, qui la comparent à `span_scalar`, et par la conformance, qui rejoue
+/// chaque scène par les deux et exige la même empreinte.
+fn fill<T: Target>(
+    target: &mut T,
+    window: Rect,
+    triangle: &Prepared,
+    sampling: Option<Sampling<'_>>,
+    lit: Option<Lit<'_>>,
+) {
+    super::fill(target, window, triangle, sampling, lit, SimdPath::Scalar);
+}
+
 /// Le filtrage par défaut, qui est celui que ces tests éprouvent.
 fn dithered(texture: &Texture) -> Option<Sampling<'_>> {
     Some(Sampling {

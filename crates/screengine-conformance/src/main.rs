@@ -75,11 +75,22 @@ enum Pass {
     /// Chaque variante à venir ajoute la sienne : une passe par chemin, écrite
     /// plutôt que déduite, et qui se saute quand la machine ne le porte pas.
     Scalar,
+    /// Tuiles de 64, le chemin de remplissage **forcé à SSE2**.
+    ///
+    /// **Sans elle, la variante SSE2 ne serait jouée par aucune scène**, et ce
+    /// n'est pas une précaution : mesuré en cassant son décalage, qui laissait
+    /// toutes les empreintes conformes. `Auto` prend le jeu le plus large de la
+    /// machine, donc AVX2 sur un poste courant ; AVX2 n'ayant pas encore de
+    /// variante, il retombe sur le scalaire, et SSE2 n'était jamais emprunté.
+    ///
+    /// C'est la forme que prendra chaque variante : une passe qui la force, et
+    /// qui se saute là où la machine ne la porte pas.
+    Sse2,
 }
 
 impl Pass {
     /// Toutes les passes, dans l'ordre où la suite les rejoue.
-    const ALL: [Self; 7] = [
+    const ALL: [Self; 8] = [
         Self::Tiles32,
         Self::Tiles64,
         Self::Whole,
@@ -87,6 +98,7 @@ impl Pass {
         Self::Threads,
         Self::Resized,
         Self::Scalar,
+        Self::Sse2,
     ];
 
     /// Le chemin de remplissage que cette passe force.
@@ -98,6 +110,7 @@ impl Pass {
     fn simd(self) -> SimdPath {
         match self {
             Self::Scalar => SimdPath::Scalar,
+            Self::Sse2 => SimdPath::Sse2,
             _ => SimdPath::Auto,
         }
     }
@@ -124,13 +137,14 @@ impl Pass {
             Self::Threads => "threads",
             Self::Resized => "redimensionné",
             Self::Scalar => "chemin scalaire",
+            Self::Sse2 => "chemin SSE2",
         }
     }
 
     /// Le côté de tuile du contexte.
     fn tile_size(self) -> u32 {
         match self {
-            Self::Tiles64 | Self::Whole | Self::Resized | Self::Scalar => 64,
+            Self::Tiles64 | Self::Whole | Self::Resized | Self::Scalar | Self::Sse2 => 64,
             Self::Tiles32 | Self::Shuffled | Self::Threads => 32,
         }
     }
@@ -184,7 +198,7 @@ impl Pass {
             // La passe du chemin scalaire rend comme `Tiles64` : ce qu'elle
             // change est le chemin, posé à l'ouverture du contexte, et non le
             // découpage.
-            Self::Tiles32 | Self::Tiles64 | Self::Resized | Self::Scalar => {
+            Self::Tiles32 | Self::Tiles64 | Self::Resized | Self::Scalar | Self::Sse2 => {
                 frame.end(&mut Rows::new(pixels, width))
             }
             Self::Whole => {
