@@ -48,6 +48,8 @@
 pub mod avx2;
 #[cfg(target_arch = "aarch64")]
 pub mod neon;
+#[cfg(target_feature = "simd128")]
+pub mod simd128;
 #[cfg(all(
     target_feature = "sse2",
     any(target_arch = "x86", target_arch = "x86_64")
@@ -194,6 +196,14 @@ pub fn fill_flat_row(path: SimdPath, row: FlatRow<'_>) -> bool {
         #[cfg(target_arch = "aarch64")]
         SimdPath::Neon => {
             neon::fill_flat_row(row);
+            true
+        }
+        // `simd128` se demande au compilateur, donc `target_feature` le dit —
+        // et un module compilé sans lui n'a pas cette branche, exactement comme
+        // une machine sans le jeu n'aurait pas chargé celui qui l'a.
+        #[cfg(target_feature = "simd128")]
+        SimdPath::Simd128 => {
+            simd128::fill_flat_row(row);
             true
         }
         // Tout le reste retombe sur la référence : les variantes qui n'existent

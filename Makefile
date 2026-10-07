@@ -12,6 +12,27 @@ CIBLE_NOSTD ?= thumbv7em-none-eabihf
 # La cible du navigateur : exports C bruts, sans wasm-bindgen.
 CIBLE_WASM ?= wasm32-unknown-unknown
 
+# **`simd128` s'active sur les deux cibles wasm**, et c'est un choix de
+# compatibilité du module publié : les instructions sont dans le binaire, donc
+# un navigateur qui ne porte pas ce jeu ne **charge** plus le module du tout —
+# la validation échoue avant la première instruction, et `scg_set_simd` n'offre
+# aucun repli. Le plancher que cela fixe est dans `docs/construction.md`.
+#
+# **Par cible plutôt que par `RUSTFLAGS`**, qui est global : il s'appliquerait à
+# la cible du poste, où `simd128` n'existe pas, et il est écrasé sans bruit par
+# toute recette qui le définit pour autre chose. Ces variables-ci suivent la
+# cible, donc `lint` et `msrv` les reçoivent dans leur boucle sans avoir à
+# distinguer wasm des quatre autres.
+#
+# Le nom de chaque variable porte le triple en clair, majuscules et
+# soulignés : Cargo ne sait pas les dériver d'une variable du `Makefile`, et
+# changer `CIBLE_WASM` ou `CIBLE_WASI` sans toucher ici désactiverait le jeu en
+# silence. Les tests de la variante rougiraient, eux, puisqu'ils ne se
+# compilent qu'avec.
+WASM_FEATURES = -C target-feature=+simd128
+export CARGO_TARGET_WASM32_UNKNOWN_UNKNOWN_RUSTFLAGS = $(WASM_FEATURES)
+export CARGO_TARGET_WASM32_WASIP1_RUSTFLAGS = $(WASM_FEATURES) $(WASI_FLAGS)
+
 # La cible wasm sur laquelle le noyau s'exécute, et qui n'est pas celle qu'on
 # publie.
 #
@@ -594,8 +615,7 @@ $(addsuffix -wasi,test conform): %-wasi:
 	  echo "$@ saute : $$reason"; \
 	else \
 	  echo "$@ : $(CIBLE_WASI)"; \
-	  CARGO_TARGET_WASM32_WASIP1_RUNNER="$(WASI_RUNNER)" RUSTFLAGS="$(WASI_FLAGS)" \
-	    $(wasi_run_$*); \
+	  CARGO_TARGET_WASM32_WASIP1_RUNNER="$(WASI_RUNNER)" $(wasi_run_$*); \
 	fi
 
 # La référence de performance, prise avant que l'étape 3 touche au remplissage.

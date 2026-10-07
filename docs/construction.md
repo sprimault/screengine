@@ -232,6 +232,18 @@ toutes les autres cibles.
 - **Pas de `wasm-bindgen`.** Il fabriquerait une seconde frontière, propre à
   JavaScript, à côté de l'ABI C : deux contrats à maintenir, et un hôte web qui
   n'éprouverait plus celui que les autres utilisent.
+- **Le module est compilé avec `simd128`, et cela fixe un plancher.** Les
+  instructions vectorielles sont dans le binaire, donc un navigateur qui ne
+  porte pas ce jeu **ne charge pas le module** : sa validation échoue avant la
+  première instruction, et aucun réglage — `scg_set_simd` compris — ne peut y
+  rattraper quoi que ce soit. Le plancher est **Chrome 91, Firefox 89 et
+  Safari 16.4**, le dernier arrivé datant de mars 2023.
+
+  Écarté : publier deux modules, avec et sans, et les départager par une
+  détection côté JavaScript. C'est la forme juste si un navigateur plus ancien
+  devient un besoin, mais elle double un artefact de la matrice et des archives
+  pour une population à qui un moteur logiciel ne rendrait de toute façon pas
+  une image fluide.
 - **`scg_buffer_alloc` est obligatoire**, et toute vue sur la mémoire se recrée
   après chaque appel : voir [`abi.md`](abi.md), « Ce qu'un auteur de liaison doit
   savoir ».
