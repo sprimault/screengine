@@ -53,6 +53,10 @@ publié, et explique les conventions du dépôt à qui y contribue.
 
 ### Modifié
 
+- **Le module wasm exige `simd128`, et ne se charge pas sans lui.** Les
+  instructions sont dans le binaire : un navigateur qui ne porte pas ce jeu
+  échoue à instancier le module, avant tout appel, et aucun réglage n'y change
+  rien. Plancher : Chrome 91, Firefox 89, Safari 16.4.
 - **Empreinte déplacée** : la scène `collision` balaie désormais une boîte
   d'étendue nulle, dont la marge et la portée valent zéro. Rien du balayage ne
   change.
@@ -65,9 +69,9 @@ publié, et explique les conventions du dépôt à qui y contribue.
   de conformance tournent sur `aarch64` et `armv7` sous émulation, à chaque
   pull request, contre les mêmes empreintes qu'ailleurs. Rien n'y était exécuté
   jusqu'ici, seulement compilé.
-- **Le remplissage d'une surface unie est vectorisé sur les deux
-  architectures** : SSE2 et AVX2 sur x86, NEON sur `aarch64`. L'image ne change
-  pas, et la conformance le vérifie chemin par chemin.
+- **Le remplissage d'une surface unie est vectorisé sur les trois
+  architectures** : SSE2 et AVX2 sur x86, NEON sur `aarch64`, `simd128` sur
+  wasm. L'image ne change pas, et la conformance le vérifie chemin par chemin.
 - **Le noyau s'éprouve aussi sur une cible wasm**, par WASI sous Node : ses
   tests et les vingt-neuf scènes de conformance y rendent les mêmes empreintes
   qu'ailleurs. Le rendu est désormais vérifié identique sur trois familles
@@ -82,6 +86,10 @@ publié, et explique les conventions du dépôt à qui y contribue.
 
 ### Changed
 
+- **The wasm module requires `simd128`, and will not load without it.** The
+  instructions are in the binary: a browser without that feature fails to
+  instantiate the module, before any call, and no setting can work around it.
+  Floor: Chrome 91, Firefox 89, Safari 16.4.
 - **Digest moved**: the `collision` scene now sweeps a zero-extent box, whose
   skin and reach are both zero. Nothing about the sweep itself changes.
 - **Digest moved**: the `salles` scene renders two more views, rolled 45° and
@@ -93,9 +101,9 @@ publié, et explique les conventions du dépôt à qui y contribue.
   conformance scenes run on `aarch64` and `armv7` under emulation, on every pull
   request, against the same fingerprints as everywhere else. Nothing ran there
   before, only compiled.
-- **Filling a flat surface is vectorised on both architectures**: SSE2 and AVX2
-  on x86, NEON on `aarch64`. The image does not change, and the conformance
-  checks it path by path.
+- **Filling a flat surface is vectorised on all three architectures**: SSE2 and
+  AVX2 on x86, NEON on `aarch64`, `simd128` on wasm. The image does not change,
+  and the conformance checks it path by path.
 - **The core is also exercised on a wasm target**, through WASI under Node: its
   tests and the twenty-nine conformance scenes produce the same fingerprints as
   everywhere else. Rendering is now verified identical across three

@@ -2370,6 +2370,14 @@ Une liaison qui ne l'appelle jamais obtient le comportement d'avant : zéro vaut
 défaut pour un réglage de contexte, et `SCG_SIMD_AUTO` prend le jeu
 d'instructions le plus large de la machine.
 
+**`SCG_SIMD_SIMD128` ne se refuse pas de la même façon que les autres.** Les
+quatre premiers chemins se décident à l'exécution, et un hôte peut toujours
+revenir au scalaire. Celui-ci est dans le binaire : le module wasm publié est
+compilé avec `simd128`, donc un navigateur qui ne porte pas ce jeu échoue à
+**instancier le module**, avant tout appel et sans qu'aucun réglage y change
+quoi que ce soit. Une liaison JavaScript n'a donc pas de repli à écrire — elle a
+un plancher à annoncer, que `docs/construction.md` chiffre.
+
 #### Pourquoi un hôte doit pouvoir forcer un chemin
 
 - **Pour comparer.** Sans levier, chaque chemin ne s'éprouve que là où il tourne,

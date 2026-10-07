@@ -105,6 +105,14 @@ enum Pass {
     /// émulation, et se saute partout ailleurs en le disant. C'est pour qu'elle
     /// ait un endroit où tourner que cette cible existe.
     Neon,
+    /// Tuiles de 64, le chemin de remplissage **forcé à `simd128`**.
+    ///
+    /// **Elle ne se joue que par `make conform-wasi`**, et son indisponibilité
+    /// ne se décide pas comme celle des autres : `simd128` n'existe que si le
+    /// module a été compilé avec, donc cette passe se saute sur toute cible qui
+    /// n'est pas wasm, et jamais parce que la machine manquerait de quelque
+    /// chose.
+    Simd128,
 }
 
 impl Pass {
@@ -125,7 +133,7 @@ impl Pass {
     /// lignes et donc par le reste de boucle. Le nom du chemin fautif
     /// n'apparaissait nulle part. Avec le scalaire en tête, c'est lui qui est
     /// nommé.
-    const ALL: [Self; 10] = [
+    const ALL: [Self; 11] = [
         Self::Scalar,
         Self::Tiles32,
         Self::Tiles64,
@@ -136,6 +144,7 @@ impl Pass {
         Self::Sse2,
         Self::Avx2,
         Self::Neon,
+        Self::Simd128,
     ];
 
     /// Le chemin de remplissage que cette passe force.
@@ -150,6 +159,7 @@ impl Pass {
             Self::Sse2 => SimdPath::Sse2,
             Self::Avx2 => SimdPath::Avx2,
             Self::Neon => SimdPath::Neon,
+            Self::Simd128 => SimdPath::Simd128,
             _ => SimdPath::Auto,
         }
     }
@@ -202,7 +212,9 @@ impl Pass {
             // Les passes de chemin empruntent le libellé de celui qu'elles
             // forcent : deux listes de noms finiraient par diverger, et c'est
             // dans un message de divergence qu'un nom faux coûte le plus.
-            Self::Scalar | Self::Sse2 | Self::Avx2 | Self::Neon => simd_label(self.simd()),
+            Self::Scalar | Self::Sse2 | Self::Avx2 | Self::Neon | Self::Simd128 => {
+                simd_label(self.simd())
+            }
         }
     }
 
@@ -215,7 +227,8 @@ impl Pass {
             | Self::Scalar
             | Self::Sse2
             | Self::Avx2
-            | Self::Neon => 64,
+            | Self::Neon
+            | Self::Simd128 => 64,
             Self::Tiles32 | Self::Shuffled | Self::Threads => 32,
         }
     }
@@ -275,7 +288,8 @@ impl Pass {
             | Self::Scalar
             | Self::Sse2
             | Self::Avx2
-            | Self::Neon => frame.end(&mut Rows::new(pixels, width)),
+            | Self::Neon
+            | Self::Simd128 => frame.end(&mut Rows::new(pixels, width)),
             Self::Whole => {
                 let mut color = vec![0u32; width as usize * height as usize];
                 let mut depth = color.clone();
