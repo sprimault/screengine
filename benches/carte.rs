@@ -65,9 +65,11 @@
 //! proportionnalité — l'appariement compare les portails entre eux.
 //!
 //! **Point de comparaison hors machine** : la même scène, avec trois caisses en
-//! plus, tourne en 2,0 à 2,2 ms par image sur un téléphone arm64 de 2025. Le
-//! rapport entre les deux est ce qu'il faut garder à l'esprit en lisant tout ce
-//! fichier.
+//! plus, tourne en 2,0 à 2,2 ms par image sur un téléphone arm64 de 2025. **Ces
+//! deux chiffres ne font pas un rapport** — les trois caisses sont en plus, et
+//! la mesure vient de la démonstration Android, dont la résolution et le nombre
+//! de threads ne sont écrits nulle part. Ce qu'ils donnent est un ordre de
+//! grandeur du coût réel sur appareil, et rien d'autre.
 
 use core::hint::black_box;
 use core::time::Duration;

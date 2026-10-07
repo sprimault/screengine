@@ -28,13 +28,23 @@
 //! qui décide d'une image régulière est celui du **régime soutenu**, pas celui
 //! des pointes, et aucune mesure prise ici ne le donne.
 //!
-//! Le facteur de travail retenu est **×4**, repris d'un autre projet et
-//! **jamais mesuré ici** : il sert à savoir si une régression laisse encore de
-//! la marge, pas à prédire une cadence. Écrit avec sa date pour qu'il se
-//! rediscute le jour où une mesure sur appareil existera — un facteur transmis
-//! sans sa justification finit par passer pour une vérité.
+//! **Aucune cadence n'est donc imprimée ici.** Une colonne l'a été, sur un
+//! facteur de travail de ×4 repris d'un autre projet et jamais mesuré, à
+//! rediscuter « le jour où une mesure sur appareil existera ». Ce jour est venu
+//! sans rien donner : [`carte`](../carte/index.html) relève 2,0 à 2,2 ms sur un
+//! arm64 de 2025, mais sur la même scène **avec trois caisses en plus**, et
+//! depuis la démonstration Android, dont la résolution et le nombre de threads
+//! ne sont écrits nulle part. Le quotient des deux mélangerait le rapport des
+//! machines et le coût des caisses, et aucune des deux parts ne s'en déduit.
 //!
-//! Noté le 2026-09-23, avant le premier lot de l'étape 3.
+//! Le facteur est parti plutôt que d'être redaté : un nombre que personne ne
+//! peut valider finit par passer pour une vérité, et celui-ci n'alimentait
+//! qu'une colonne d'affichage. Ce qui reste — les millisecondes et le coût par
+//! pixel — est ce que ce fichier compare à lui-même.
+//!
+//! Ce qu'une mesure sur téléphone demanderait, et c'est pourquoi elle n'est pas
+//! là : la même scène des deux côtés, à la même résolution et au même nombre de
+//! threads.
 //!
 //! # La référence, reprise le 2026-09-23 après les lightmaps
 //!
@@ -79,10 +89,6 @@ const WIDTH: u32 = 640;
 
 /// Sa hauteur.
 const HEIGHT: u32 = 360;
-
-/// Le facteur de travail supposé entre ce poste et un cœur de téléphone en
-/// régime soutenu. Voir la documentation du module : il n'est pas mesuré.
-const FACTEUR_TELEPHONE: u32 = 4;
 
 /// Images mesurées par cas. Assez pour que le minimum se stabilise, assez peu
 /// pour que la mesure entière tienne en quelques secondes.
@@ -157,15 +163,16 @@ fn exige_couverture(pixels: &[u8], quoi: &str, part: f64) {
     );
 }
 
-/// Écrit une ligne de résultat, avec le coût par pixel et la cadence supposée
-/// sur téléphone.
+/// Écrit une ligne de résultat : le coût par image, puis le coût par pixel.
+///
+/// Pas de cadence extrapolée — voir la documentation du module, qui dit ce que
+/// la colonne supprimée prétendait donner et pourquoi rien ne la remplace.
 fn ligne(quoi: &str, duree: Duration) {
     let pixels = (WIDTH * HEIGHT) as f64;
     let ns = duree.as_secs_f64() * 1e9;
     let par_image = duree.as_secs_f64() * 1e3;
-    let cadence = 1.0 / (duree.as_secs_f64() * f64::from(FACTEUR_TELEPHONE));
     println!(
-        "{quoi:<28} {par_image:>7.2} ms   {:>5.1} ns/pixel   ~{cadence:>5.0} i/s à ×{FACTEUR_TELEPHONE}",
+        "{quoi:<28} {par_image:>7.2} ms   {:>5.1} ns/pixel",
         ns / pixels
     );
 }
