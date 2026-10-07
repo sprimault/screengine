@@ -390,6 +390,18 @@ liste que rien n'éprouve aujourd'hui.
 **Volontairement tardive.** Optimiser avant que le pipeline soit figé revient à
 écrire trois fois le même code.
 
+**Franchie, publiée en 0.9.0.** Les quatre chemins vectoriels remplissent une
+surface unie — SSE2 et AVX2 sur x86, NEON sur `aarch64`, `simd128` sur wasm —, et
+aucun ne déplace un pixel : chacun a sa passe de conformance, et le noyau
+s'exécute désormais sur quatre architectures au lieu d'une. La fenêtre de
+traversée est un octogone, et les deux cibles Linux sur ARM se compilent.
+
+**Le chemin texturé reste scalaire, et c'est un refus mesuré** : un chemin
+vectoriel y plafonnerait à un pour cent et demi sur un décor réel. Le temps part
+dans le calcul par pixel de l'échantillonnage — jamais dans ses accès mémoire,
+ce que la décomposition a établi contre l'hypothèse naturelle. C'est là qu'un
+gain reste à prendre, hors de cette étape.
+
 ---
 
 ## Hors périmètre v1
