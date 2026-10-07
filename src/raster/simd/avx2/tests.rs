@@ -165,13 +165,19 @@ fn avx2_et_sse2_s_accordent() {
     }
 }
 
-/// Une pente négative descend comme le scalaire.
+/// Une profondeur **vraiment négative** descend comme le scalaire.
+///
+/// Comme pour SSE2 : la valeur de départ traverse zéro, faute de quoi le bit de
+/// signe resterait libre et les deux décalages seraient identiques par
+/// construction.
 #[test]
-fn une_pente_negative_suit_le_scalaire() {
+fn une_pente_negative_traverse_zero() {
     let mut seed = Seed(0x2468_ace0_1357_9bdf);
     let (mut color, mut depth) = peuple(&mut seed, 19);
     let (mut attendu_color, mut attendu_depth) = (color.clone(), depth.clone());
-    let (start, step) = (i64::MAX / 2, -(1 << 30));
+    // Huit pixels au-dessus de zéro, onze au-dessous : la bascule tombe au
+    // milieu d'un registre, pas sur sa frontière.
+    let (start, step) = (8 * (1 << 38), -(1 << 38));
 
     if !fill_flat_row_if_available(FlatRow {
         color: &mut color,

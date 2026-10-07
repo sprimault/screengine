@@ -384,9 +384,20 @@ lint-android-versions:
 	  fi; \
 	done
 
+# Les cibles qu'un contrôle traverse au-delà de celle du poste, et le seul
+# endroit où du code propre à une autre architecture se compile ici : `neon.rs`
+# sur `aarch64`, les chemins wasm, et la largeur de pointeur de `i686`. En
+# `--lib` partout, qui n'édite aucun lien et ne demande donc ni NDK ni chaîne C
+# croisée.
+#
+# **Une seule liste**, parce que `lint` et `msrv` doivent voir les mêmes : deux
+# listes finiraient par diverger, et c'est la cible absente de l'une qui
+# porterait le défaut.
+CIBLES_CROISEES = $(CIBLE_WASM) $(CIBLES_ANDROID) $(CIBLE_X86)
+
 lint: lint-doc-tests lint-android-versions
 	cargo clippy --workspace --all-targets --all-features -- -D warnings
-	for cible in $(CIBLE_WASM) $(CIBLES_ANDROID) $(CIBLE_X86); do \
+	for cible in $(CIBLES_CROISEES); do \
 	  cargo clippy -p screengine -p screengine-ffi --lib --target $$cible -- -D warnings || exit 1; \
 	done
 
@@ -531,11 +542,23 @@ bench:
 # **Hors de la liste fixe** : elle installe une chaîne, donc elle télécharge et
 # prend du temps à froid. L'intégration continue la passe dans son job de
 # vérification, où ce coût est payé une fois.
+#
+# **Les cibles croisées en plus de celle du poste**, et c'est ce qui manquait :
+# construire pour la machine seule ne compile aucun code propre à une autre
+# architecture, si bien qu'une intrinsèque NEON dont la signature a bougé entre
+# le plancher et la chaîne du jour passait inaperçue ici. C'est le défaut qu'a
+# connu le `cpuid` d'AVX2, à ceci près que celui-là se compile sur le poste et
+# rougissait donc dès la première exécution de cette cible.
 msrv:
 	@version=$$(grep '^rust-version = ' Cargo.toml | cut -d'"' -f2); \
 	echo "version minimale declaree : $$version"; \
 	rustup toolchain install "$$version" --profile minimal --no-self-update && \
-	cargo "+$$version" build -p screengine -p screengine-ffi --all-targets
+	rustup target add --toolchain "$$version" $(CIBLES_CROISEES) && \
+	cargo "+$$version" build -p screengine -p screengine-ffi --all-targets && \
+	for cible in $(CIBLES_CROISEES); do \
+	  echo "msrv : $$cible"; \
+	  cargo "+$$version" build -p screengine -p screengine-ffi --lib --target $$cible || exit 1; \
+	done
 
 # Rejoue les scènes de référence et compare les empreintes. Une divergence est
 # soit une régression, soit une évolution volontaire du rendu — dans le second

@@ -98,10 +98,16 @@ enum Pass {
     /// départ, et seule la machine qui porte les deux peut dire qu'elles
     /// s'accordent.
     Avx2,
+    /// Tuiles de 64, le chemin de remplissage **forcé à NEON**.
+    ///
+    /// **La seule passe qui ne tourne jamais sur le poste de travail**, ni sur
+    /// aucun runner x86 : elle ne se joue que par `make conform-arm`, sous
+    /// émulation, et se saute partout ailleurs en le disant. C'est pour qu'elle
+    /// ait un endroit où tourner que cette cible existe.
+    Neon,
 }
 
 impl Pass {
-    /// Toutes les passes, dans l'ordre où la suite les rejoue.
     /// Toutes les passes, dans l'ordre où la suite les rejoue.
     ///
     /// **Le chemin scalaire vient en tête, et ce n'est pas un rangement** : la
@@ -119,7 +125,7 @@ impl Pass {
     /// lignes et donc par le reste de boucle. Le nom du chemin fautif
     /// n'apparaissait nulle part. Avec le scalaire en tête, c'est lui qui est
     /// nommé.
-    const ALL: [Self; 9] = [
+    const ALL: [Self; 10] = [
         Self::Scalar,
         Self::Tiles32,
         Self::Tiles64,
@@ -129,6 +135,7 @@ impl Pass {
         Self::Resized,
         Self::Sse2,
         Self::Avx2,
+        Self::Neon,
     ];
 
     /// Le chemin de remplissage que cette passe force.
@@ -142,8 +149,24 @@ impl Pass {
             Self::Scalar => SimdPath::Scalar,
             Self::Sse2 => SimdPath::Sse2,
             Self::Avx2 => SimdPath::Avx2,
+            Self::Neon => SimdPath::Neon,
             _ => SimdPath::Auto,
         }
+    }
+
+    /// Les passes que cette machine peut jouer, dans l'ordre de [`Pass::ALL`].
+    ///
+    /// **À préférer à `Pass::ALL` partout où l'on rend une scène.** Un chemin de
+    /// remplissage que la machine ne porte pas est refusé par le contexte, donc
+    /// un appelant qui ne filtre pas échoue sur `InvalidArgument` au lieu de
+    /// sauter. Deux cas de cette suite l'avaient oublié, et seul le matériel du
+    /// poste les gardait verts : AVX2 absent du processeur les aurait fait
+    /// échouer bien avant qu'une passe NEON existe.
+    ///
+    /// La première passe de `ALL` est en [`SimdPath::Scalar`], donc toujours
+    /// jouée : le rang zéro de cet itérateur reste celui de la référence.
+    fn playable() -> impl Iterator<Item = Self> {
+        Self::ALL.into_iter().filter(|pass| pass.available())
     }
 
     /// Cette passe peut-elle tourner sur cette machine ?
@@ -167,9 +190,10 @@ impl Pass {
             Self::Shuffled => "ordre mélangé",
             Self::Threads => "threads",
             Self::Resized => "redimensionné",
-            Self::Scalar => "chemin scalaire",
-            Self::Sse2 => "chemin SSE2",
-            Self::Avx2 => "chemin AVX2",
+            // Les passes de chemin empruntent le libellé de celui qu'elles
+            // forcent : deux listes de noms finiraient par diverger, et c'est
+            // dans un message de divergence qu'un nom faux coûte le plus.
+            Self::Scalar | Self::Sse2 | Self::Avx2 | Self::Neon => simd_label(self.simd()),
         }
     }
 
@@ -181,7 +205,8 @@ impl Pass {
             | Self::Resized
             | Self::Scalar
             | Self::Sse2
-            | Self::Avx2 => 64,
+            | Self::Avx2
+            | Self::Neon => 64,
             Self::Tiles32 | Self::Shuffled | Self::Threads => 32,
         }
     }
@@ -240,7 +265,8 @@ impl Pass {
             | Self::Resized
             | Self::Scalar
             | Self::Sse2
-            | Self::Avx2 => frame.end(&mut Rows::new(pixels, width)),
+            | Self::Avx2
+            | Self::Neon => frame.end(&mut Rows::new(pixels, width)),
             Self::Whole => {
                 let mut color = vec![0u32; width as usize * height as usize];
                 let mut depth = color.clone();
@@ -2306,13 +2332,7 @@ impl Scene {
         let views = self.views();
         let mut reference: Vec<u64> = Vec::with_capacity(views.len());
 
-        for (rank, pass) in Pass::ALL.into_iter().enumerate() {
-            // Une passe que la machine ne porte pas se saute, et la première ne
-            // se saute jamais : elle est en `Auto`, donc toujours disponible, et
-            // c'est elle qui fournit la référence des autres.
-            if !pass.available() {
-                continue;
-            }
+        for (rank, pass) in Pass::playable().enumerate() {
             for (index, view) in views.iter().enumerate() {
                 let hash = self.render_view(pass, *view).map_err(|error| {
                     format!(
@@ -2522,6 +2542,24 @@ fn parse_mode(args: &[String]) -> Result<Mode, String> {
 /// et jamais à la scène : la répéter sur chacune des vingt-neuf lignes serait du
 /// bruit, et c'est précisément ce que les lignes de saut deviennent quand elles
 /// se multiplient.
+/// Le nom d'un chemin de remplissage, dans la ligne des passes.
+///
+/// **Écrit ici plutôt que sur [`SimdPath`]**, dont il serait l'affichage
+/// naturel : un libellé posé sur le type du noyau devient un item public, donc
+/// quelque chose qui traverse l'ABI et le header pour servir une seule ligne de
+/// cette suite. Le `Debug` dérivé rendrait « Neon » au milieu d'une phrase
+/// française.
+fn simd_label(path: SimdPath) -> &'static str {
+    match path {
+        SimdPath::Auto => "automatique",
+        SimdPath::Scalar => "chemin scalaire",
+        SimdPath::Sse2 => "chemin SSE2",
+        SimdPath::Avx2 => "chemin AVX2",
+        SimdPath::Neon => "chemin NEON",
+        SimdPath::Simd128 => "chemin simd128",
+    }
+}
+
 fn passes_line() -> String {
     let mut played = Vec::new();
     let mut skipped = Vec::new();
@@ -2532,7 +2570,17 @@ fn passes_line() -> String {
             skipped.push(pass.name());
         }
     }
-    let mut line = format!("passes jouées : {}", played.join(", "));
+    // **Ce que `Auto` a résolu**, parce que sans lui le nom du chemin fautif
+    // reste introuvable. Les sept passes de découpage tournent en `Auto`, donc
+    // une variante fausse y fait diverger la première d'entre elles contre le
+    // scalaire : le message nomme alors « tuiles de 32 », qui ne désigne pas un
+    // jeu d'instructions. Vu en cassant NEON sur `aarch64`, où la divergence
+    // s'annonçait entre deux passes dont aucune ne portait ce nom.
+    let mut line = format!(
+        "passes jouées, Auto résolu en {} : {}",
+        simd_label(SimdPath::Auto.resolve()),
+        played.join(", ")
+    );
     if !skipped.is_empty() {
         line.push_str(&format!(
             " — sautées, non portées par cette machine : {}",
