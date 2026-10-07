@@ -80,6 +80,10 @@ publié, et explique les conventions du dépôt à qui y contribue.
   octogone au lieu d'un rectangle, qui laissait passer jusqu'à cinq fois ce
   qu'une ouverture allongée montre dès qu'elle penchait à l'écran. Aucune image
   ne change.
+- **Le noyau et la frontière se compilent pour Linux sur ARM**,
+  `aarch64-unknown-linux-gnu` et `armv7-unknown-linux-gnueabihf` : même jeu
+  d'instructions que les ABI Android, mais la glibc. Elles ne s'exécutent pas
+  encore, faute de chaîne croisée.
 
 ***
 
@@ -115,6 +119,10 @@ publié, et explique les conventions du dépôt à qui y contribue.
 - **Traversal culls cells seen at an angle better.** Its window is an octagon
   instead of a rectangle, which let through up to five times what a long opening
   shows as soon as it tilted on screen. No image changes.
+- **The core and the boundary build for Linux on ARM**,
+  `aarch64-unknown-linux-gnu` and `armv7-unknown-linux-gnueabihf`: the same
+  instruction sets as the Android ABIs, but glibc. They do not run yet, for want
+  of a cross toolchain.
 
 ## [0.8.9] — 2026-10-05 — Ce que rien ne vérifiait
 

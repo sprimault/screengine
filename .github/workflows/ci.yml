@@ -31,10 +31,25 @@ concurrency:
 env:
   CARGO_TERM_COLOR: always
 
+# **Chaque job porte un plafond de temps**, parce que le défaut est de six
+# heures : une étape qui pend n'échoue pas, elle se tait, et personne ne la
+# remarque avant d'aller voir. Arrivé sur une installation réseau, un
+# `apt-get update` arrêté en silence pendant trente-deux minutes.
+#
+# Les plafonds sont calibrés sur ce que les jobs prennent — onze minutes pour le
+# plus long, émulateur Android compris —, avec de quoi absorber un runner lent
+# sans laisser passer un blocage. Un job qui les atteint signale une panne,
+# jamais une charge.
+#
+# **Trop large, un plafond ne sert à rien** : à quarante minutes, le blocage de
+# trente-deux qu'on a vu serait passé dessous sans rien dire. C'est pourquoi
+# l'étape qui télécharge en porte un propre, bien plus court que celui de son
+# job.
 jobs:
   verification:
     name: Format, lint, no_std, header, licences
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -97,6 +112,9 @@ jobs:
   tests:
     name: Tests et conformance — ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
+    # Le plus large des trois : il démarre un émulateur Android, puis rejoue
+    # tout sous qemu et sous Node. Mesuré à onze minutes, émulateur compris.
+    timeout-minutes: 25
     strategy:
       fail-fast: false
       matrix:
@@ -137,8 +155,12 @@ jobs:
       # de l'hôte, qemu-user pour les ABI ARM, et KVM pour l'émulateur. L'image
       # expose /dev/kvm, mais pas à l'utilisateur du job : ouvert le temps du
       # job, plutôt que par une règle udev dont l'image n'a plus le répertoire.
+      # Un plafond propre à cette étape, en plus de celui du job : c'est elle
+      # qui télécharge, donc celle qui pend, et le dire ici nomme la panne au
+      # lieu de laisser le job entier expirer sans raison affichée.
       - name: Android
         if: runner.os == 'Linux'
+        timeout-minutes: 12
         run: |
           [ -e /dev/kvm ] || { echo "KVM absent du runner" >&2; exit 1; }
           sudo chmod 666 /dev/kvm
@@ -221,6 +243,7 @@ jobs:
   audit:
     name: Audit des dépendances
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 

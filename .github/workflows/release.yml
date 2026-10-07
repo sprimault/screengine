@@ -31,6 +31,10 @@ jobs:
   notes:
     name: Notes et version
     runs-on: ubuntu-latest
+    # Comme dans `ci.yml`, et pour la même raison : le défaut est de six heures,
+    # donc une étape qui pend se tait au lieu d'échouer. Sur une publication, ce
+    # silence retarde la release sans que rien ne dise pourquoi.
+    timeout-minutes: 15
     outputs:
       titre: ${{ steps.notes.outputs.titre }}
     steps:
@@ -85,6 +89,9 @@ jobs:
     name: Bibliothèque — ${{ matrix.cible }}
     needs: notes
     runs-on: ${{ matrix.os }}
+    # Le plus large : il repasse les tests et la conformance avant de construire
+    # l'archive, et l'entrée Android y démarre un émulateur.
+    timeout-minutes: 60
     # `construire` et `repertoire` parce que le module wasm a sa propre cible et
     # son propre profil : le panic = "unwind" de release-ffi y serait ignoré.
     strategy:
@@ -328,6 +335,7 @@ jobs:
     name: Brouillon de release
     needs: [notes, bibliotheque]
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     permissions:
       contents: write
       # L'attestation lie l'archive au commit et au workflow qui l'a produite,
