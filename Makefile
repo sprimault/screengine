@@ -12,6 +12,21 @@ CIBLE_NOSTD ?= thumbv7em-none-eabihf
 # La cible du navigateur : exports C bruts, sans wasm-bindgen.
 CIBLE_WASM ?= wasm32-unknown-unknown
 
+# La cible wasm sur laquelle le noyau s'exécute, et qui n'est pas celle qu'on
+# publie.
+#
+# **`wasm32-unknown-unknown` ne peut pas exécuter de test** : son `std` n'a ni
+# arguments, ni sortie standard, ni système de fichiers, si bien qu'un binaire
+# de test n'a aucun moyen de dire ce qu'il a trouvé et que la conformance ne
+# peut pas lire ses références. WASI les lui donne.
+#
+# Ce que l'écart coûte, et pourquoi il est acceptable : le code vectoriel et
+# toute l'arithmétique sont identiques entre les deux — même architecture, même
+# `target_feature` —, seul l'accès au système diffère, et le noyau n'y touche
+# pas. C'est le compromis de `qemu` sur Android, où les tests tournent sur l'ABI
+# publiée mais sans appareil.
+CIBLE_WASI ?= wasm32-wasip1
+
 # Les trois ABI Android. Chacune prend son module d'environnement flottant dans
 # screengine-ffi, et armv7 est celle où un `cfg` faux passait sans bruit.
 CIBLES_ANDROID ?= aarch64-linux-android armv7-linux-androideabi x86_64-linux-android
@@ -70,8 +85,8 @@ android_build = for cible in $(CIBLES_ANDROID); do \
 -include makefile.local
 
 .PHONY: build lib lib-wasm lib-android run example web test native-libs fmt fmt-fix lint lint-doc-tests \
-        lint-android-versions nostd test-arm msrv bench \
-        conform conform-arm conform-x86 conform-update conform-images mesh header header-verif audit deny doc doc-verif hosts host-c host-cpp host-web host-go \
+        lint-android-versions nostd test-arm test-wasi msrv bench \
+        conform conform-arm conform-wasi conform-x86 conform-update conform-images mesh header header-verif audit deny doc doc-verif hosts host-c host-cpp host-web host-go \
         host-android demo-c demo-cpp clean tools
 
 build:
@@ -410,12 +425,24 @@ lint: lint-doc-tests lint-android-versions
 # archive, ne donnerait aucun fichier, et awk lirait alors son entrée standard
 # au lieu d'échouer — le contrôle attendrait indéfiniment, ou ne vérifierait
 # rien.
+#
+# **La documentation se cherche au-delà de la ligne précédente**, et c'est une
+# correction : chercher sur elle seule déclarait sans documentation tout `#[test]`
+# précédé d'un attribut — un `#[cfg]` de cible, par exemple — alors que sa
+# documentation était juste au-dessus. L'état se garde donc d'une ligne à
+# l'autre, et une ligne vide le remet à zéro : c'est elle qui sépare deux
+# déclarations dans ce dépôt, donc une documentation lointaine ne couvre pas ce
+# qui suit.
 lint-doc-tests:
-	@awk '/#\[test\]/ { if (prev !~ /\/\/\//) { print FILENAME ":" FNR ": #[test] sans documentation"; bad = 1 } } \
+	@awk '/^[[:space:]]*\/\/\// { doc = 1; next } \
+	      /^[[:space:]]*$$/ { doc = 0; next } \
+	      /#\[test\]/ { if (!doc) { \
+	        print FILENAME ":" FNR ": #[test] sans documentation"; bad = 1 } } \
 	      FILENAME ~ /tests\.rs$$|\/tests\// && /^(fn|const|struct|enum|static|type) / { \
-	        if (prev !~ /\/\/\// && prev !~ /^[[:space:]]*#\[/) { \
+	        if (!doc) { \
 	          print FILENAME ":" FNR ": declaration de test sans documentation"; bad = 1 } } \
-	      { prev = $$0 } END { exit bad }' \
+	      /^[[:space:]]*#\[/ { next } \
+	      { doc = 0 } END { exit bad }' \
 	  $$(find src crates -name '*.rs') < /dev/null \
 	  || (echo "Chaque declaration d un module de test porte sa documentation, aides comprises." && exit 1)
 
@@ -514,6 +541,62 @@ $(addsuffix -arm,test conform): %-arm:
 # dynamique et la libc de la cible : sans lui, chaque binaire de test s'arrête
 # avant sa première ligne, sur un interpréteur introuvable.
 NDK_SYSROOT = $(ANDROID_NDK_HOME)/toolchains/llvm/prebuilt/linux-x86_64/sysroot
+
+# Le noyau et la conformance sur une cible wasm, exécutés par Node.
+#
+# **Rien n'y tournait**, et c'est le même angle mort qu'ARM avait : `make lint`
+# passe clippy sur `wasm32-unknown-unknown` mais n'exécute rien, et
+# `make test-wasm` lance l'hôte web, qui éprouve la bibliothèque à travers l'ABI
+# et non le noyau. Les vingt-neuf scènes, la virgule fixe et les tables n'avaient
+# donc jamais rendu de verdict sur cette famille d'architecture.
+#
+# **Node plutôt qu'un runtime à installer** : il est déjà requis par l'hôte web,
+# et son `node:wasi` suffit. L'avertissement qu'il écrit sur le drapeau
+# expérimental part sur la sortie d'erreur et ne se confond pas avec un échec,
+# que seul le code de sortie annonce.
+#
+# **Deux threads de différence avec les autres cibles** : la passe `threads` de
+# la conformance et le cas du noyau qui partage une image se sautent ici, WASI
+# n'ayant pas de threads sous Node. Les deux le disent plutôt que de se taire.
+WASI_RUNNER = node --experimental-wasi-unstable-preview1 \
+              $(CURDIR)/hosts/web/wasi-run.mjs
+
+# **En release, et c'est la mesure qui l'a imposé.** Le module de test en
+# profil `dev` fait segfauter Node au bout d'une centaine de cas, à un rang qui
+# varie d'une exécution à l'autre ; élargir la pile wasm n'y change rien, et le
+# même module en release passe les six cent dix-neuf. Ce qui déborde est du côté
+# de Node, pas du nôtre.
+#
+# **Les assertions de debug restent actives** par `-C debug-assertions=on`, qui
+# ne dépend pas du profil : les douze `debug_assert!` du noyau, dont cinq dans
+# le rasteriseur, seraient sinon la seule chose que cette cible n'éprouverait
+# pas. Vérifié en inversant l'une d'elles, qui fait bien échouer la cible.
+#
+# **`--nocapture` parce qu'une panique est un trap sur wasm** : le processus
+# s'arrête net, et le harnais n'a plus de quoi restituer la sortie qu'il avait
+# capturée. Sans ce drapeau, un échec ne nomme que le test commencé ; avec, il
+# donne le fichier et la ligne.
+WASI_FLAGS = -C debug-assertions=on
+
+# Ce que chaque cible wasm exécute, sur le modèle des cibles ARM.
+wasi_run_test    = cargo test -p screengine --release --target $(CIBLE_WASI) -- --nocapture
+wasi_run_conform = cargo run -p screengine-conformance --release --target $(CIBLE_WASI) -- --check
+
+$(addsuffix -wasi,test conform): %-wasi:
+	@if ! command -v node >/dev/null 2>&1; then \
+	  reason="node introuvable"; \
+	else \
+	  reason=""; \
+	fi; \
+	if [ -n "$$reason" ] && [ -n "$$CI" ]; then \
+	  echo "$@ impossible en integration continue : $$reason"; exit 1; \
+	elif [ -n "$$reason" ]; then \
+	  echo "$@ saute : $$reason"; \
+	else \
+	  echo "$@ : $(CIBLE_WASI)"; \
+	  CARGO_TARGET_WASM32_WASIP1_RUNNER="$(WASI_RUNNER)" RUSTFLAGS="$(WASI_FLAGS)" \
+	    $(wasi_run_$*); \
+	fi
 
 # La référence de performance, prise avant que l'étape 3 touche au remplissage.
 #
@@ -704,4 +787,4 @@ tools:
 	# avis, et son intérêt est de connaître les derniers. L'épingler figerait
 	# ce qu'il sait lire des avis publiés depuis.
 	cargo install cargo-audit --locked $(CARGO_INSTALL_FLAGS)
-	rustup target add $(CIBLE_NOSTD) $(CIBLE_WASM) $(CIBLES_ANDROID) $(CIBLE_X86)
+	rustup target add $(CIBLE_NOSTD) $(CIBLE_WASM) $(CIBLE_WASI) $(CIBLES_ANDROID) $(CIBLE_X86)

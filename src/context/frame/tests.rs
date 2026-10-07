@@ -396,6 +396,13 @@ fn des_colonnes_desalignees_rendent_l_image_entiere() {
 
 /// Des bandes rendues sur des threads distincts, chacune ses tuiles : le
 /// partage de la `Frame` ne change aucun pixel.
+///
+/// **Retiré sur wasm, où il n'a pas d'objet** : `spawn` y échoue à l'exécution
+/// faute de wasi-threads sous Node, et ce qu'il éprouve — qu'une `Frame`
+/// partagée entre threads rende la même image — est une propriété que la cible
+/// ne peut pas mettre en défaut. Un hôte wasm n'a pas de threads à nous donner,
+/// et le parallélisme est son affaire, jamais celle du noyau.
+#[cfg(not(target_family = "wasm"))]
 #[test]
 fn des_threads_rendent_la_reference() {
     extern crate std;
@@ -431,8 +438,14 @@ fn des_threads_rendent_la_reference() {
 /// La vérification passe, la prise de la tuile aussi : la panique tombe au
 /// moment où le rendu recopie sa région, donc au milieu de l'état que la fin
 /// d'image va lire.
+///
+/// Suit son seul cas hors de wasm, faute de quoi elle n'y serait plus
+/// construite — et `make lint` ne le dirait pas, ne passant pas les tests sur
+/// les cibles croisées.
+#[cfg(not(target_family = "wasm"))]
 struct SortieQuiPanique;
 
+#[cfg(not(target_family = "wasm"))]
 impl Output for SortieQuiPanique {
     fn check(&self, _rect: Rect) -> Result<()> {
         Ok(())
@@ -454,6 +467,13 @@ impl Output for SortieQuiPanique {
 /// Elle se ferme ici sans thread : `catch_unwind` rend la main exactement là où
 /// la fenêtre est ouverte, et la fin d'image appelée juste après tombe dedans.
 /// C'est l'ordre des deux gestes du garde, et lui seul, qui la referme.
+///
+/// **Retiré sur wasm, où `catch_unwind` ne rattrape rien** : une panique y est
+/// un trap, même dans un profil en `panic = "unwind"`, et le programme s'arrête
+/// au lieu de rendre la main. C'est une propriété de la cible que
+/// `docs/abi.md` décrit déjà — l'état défaillant n'y est pas observé —, et non
+/// un défaut de ce cas.
+#[cfg(not(target_family = "wasm"))]
 #[test]
 fn une_tuile_qui_ne_revient_pas_fait_refuser_la_fin() {
     extern crate std;

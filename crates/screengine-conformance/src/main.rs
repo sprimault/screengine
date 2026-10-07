@@ -177,7 +177,16 @@ impl Pass {
     /// SSE2 n'a rien à faire sur ARM —, et la poser ici évite qu'elle arrive en
     /// même temps qu'un chemin vectoriel, c'est-à-dire au moment où une
     /// divergence aurait deux causes possibles.
+    ///
+    /// **Ce n'est plus le seul chemin de remplissage qui décide.** La passe à
+    /// threads en demande à la plateforme, et WASI n'en a pas sous Node : son
+    /// `spawn` échoue à l'exécution, donc la passe panique là où une passe
+    /// indisponible devrait se sauter en le disant. C'est le genre d'écart qui
+    /// ferait conclure à une variante fausse.
     fn available(self) -> bool {
+        if self == Self::Threads {
+            return !cfg!(target_family = "wasm");
+        }
         self.simd().available()
     }
 
@@ -2363,8 +2372,21 @@ impl Scene {
 
 /// Le répertoire des références, à côté du `Cargo.toml` de la suite et non du
 /// répertoire courant : `make conform` la lance depuis la racine.
+///
+/// **Sur wasm, le chemin de compilation ne veut rien dire** : WASI ne connaît ni
+/// lettre de lecteur ni racine de la machine, et ne voit que ce que son lanceur
+/// lui monte. Celui de ce dépôt monte la racine du dépôt sur `/`, donc la suite
+/// s'y désigne par sa place dans l'arborescence — ce qui garde la propriété
+/// voulue, ne pas dépendre du répertoire courant.
 fn references() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("references")
+    #[cfg(target_family = "wasm")]
+    {
+        PathBuf::from("/crates/screengine-conformance/references")
+    }
+    #[cfg(not(target_family = "wasm"))]
+    {
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("references")
+    }
 }
 
 /// Le contenu d'un fichier de référence : l'empreinte et un saut de ligne, ce

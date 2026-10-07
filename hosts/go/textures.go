@@ -184,6 +184,21 @@ func renderTextured(filter uint32) (uint64, bool) {
 	// Refusé plutôt que rabattu sur le défaut : un succès sans le chemin demandé
 	// ferait mesurer ce qui n'a pas tourné.
 	check(C.scg_set_simd(ctx, 99) == C.SCG_ERR_INVALID_ARGUMENT, "un chemin inconnu est refusé")
+	// **Les deux refus rendent le même code et deux messages différents**, et
+	// c'est ici qu'on le vérifie, parce qu'aucun des quatre autres hôtes ne lit
+	// `scg_last_error` : un nom qui n'existe pas et un processeur qui ne porte
+	// pas le jeu demandé n'appellent pas la même correction, donc une liaison
+	// doit pouvoir les départager.
+	//
+	// `SCG_SIMD_SIMD128` plutôt qu'un chemin choisi selon l'architecture : il
+	// est connu de toute version et indisponible partout hors de wasm, donc cet
+	// hôte n'a rien à savoir de la machine qui l'exécute.
+	inconnu := lastError(ctx)
+	check(C.scg_set_simd(ctx, C.SCG_SIMD_SIMD128) == C.SCG_ERR_INVALID_ARGUMENT,
+		"un chemin que la machine ne porte pas est refusé")
+	absent := lastError(ctx)
+	check(absent != "" && absent != inconnu,
+		"les deux refus se départagent par leur message")
 	code := C.scg_submit_textured(ctx, &identity, &floorVertices[0], 4, &floorTriangles[0], 2, texture)
 	check(code == C.SCG_OK, "le lot texturé est accepté")
 

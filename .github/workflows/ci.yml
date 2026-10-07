@@ -204,6 +204,18 @@ jobs:
         if: runner.os == 'Linux'
         run: make conform-arm
 
+      # Le noyau et la conformance sur une cible wasm, exécutés par Node. Sur
+      # les deux systèmes, là où les cibles ARM demandent qemu : la cible wasm
+      # n'a besoin que de Node, que les deux images portent, et faire tourner
+      # les deux dit en plus que l'image ne dépend pas du système hôte.
+      - name: Tests du noyau sur wasm
+        run: |
+          rustup target add "$(make -s print-CIBLE_WASI)"
+          make test-wasi
+
+      - name: Conformance sur wasm
+        run: make conform-wasi
+
   # Job distinct : un avis publié en amont n'a rien à voir avec la PR en cours,
   # et son échec ne doit pas se lire comme « ta contribution est cassée ».
   audit:
