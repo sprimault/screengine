@@ -65,8 +65,8 @@
 //! gain est dans la comparaison et l'écriture masquée de plusieurs pixels à la
 //! fois, pas dans l'interpolation qui les précède.
 //!
-//! **Les trois cas texturés ne bougent pas**, et c'est attendu : aucune variante
-//! ne touche encore ce chemin. Ils servent de témoin — un écart y signalerait une
+//! **Les cas texturés ne bougent pas**, et c'est attendu : aucune variante ne
+//! touche encore ce chemin. Ils servent de témoin — un écart y signalerait une
 //! mesure qui ne porte pas sur ce qu'elle annonce.
 //!
 //! **Et la scène chargée ne bouge presque pas non plus**, pour la même raison :
@@ -74,6 +74,34 @@
 //! presque aucune place. C'est ce qui dit où va la suite de l'étape — le gain
 //! visible sur un décor réel passe par le chemin texturé, où l'échantillonnage
 //! domine.
+//!
+//! # Où part le temps de l'échantillonnage — mesuré le 2026-10-07
+//!
+//! ```text
+//! plein cadre, uni            0.23 ms    ce qu'un chemin vectoriel touche
+//! plein cadre, tramage        0.94 ms    la référence
+//! texture, densite nulle      0.94 ms    un seul texel, cache parfait
+//! texture, cote de 4          0.99 ms    pile de mipmaps en L1
+//! texture, densite 16x        0.98 ms    plusieurs texels par pixel
+//! ```
+//!
+//! **L'accès mémoire à la texture ne coûte rien de mesurable**, et c'est contraire
+//! à ce qu'on attend d'un rendu logiciel. Que la texture pèse trois cents
+//! kilo-octets ou tienne en L1, que chaque pixel relise le même texel ou saute de
+//! plusieurs, les quatre cas rendent la même durée à cinq pour cent près — l'écart
+//! d'une exécution à l'autre sur ce poste. Deux tours concordants.
+//!
+//! **Les sept dixièmes de milliseconde qui séparent le cas uni du cas tramé
+//! partent donc en calcul par pixel** : interpolation perspective des
+//! coordonnées, adressage, choix de niveau, combinaison avec l'éclairage. C'est
+//! une information actionnable, parce que du calcul entier se vectorise là où des
+//! accès dispersés ne se vectorisent pas.
+//!
+//! **Ce que cela ne change pas** : le gain d'un chemin texturé vectorisé sur le
+//! seul test de profondeur et l'écriture reste borné par le cas uni, soit
+//! 0,15 ms — un pour cent et demi sur la scène chargée. La décomposition ci-dessus
+//! n'éclaire pas ce lot-là, elle en désigne un autre : vectoriser
+//! l'échantillonnage lui-même.
 //!
 //! # La référence, reprise le 2026-09-23 après les lightmaps
 //!
@@ -164,17 +192,25 @@ fn chemins() -> Vec<(&'static str, SimdPath)> {
     .collect()
 }
 
-/// Une texture en damier de 256 texels de côté.
+/// Une texture en damier, de `side` texels de côté.
 ///
 /// Un damier plutôt qu'un aplat : il oblige la lecture à sauter d'un texel à
 /// l'autre, donc à sortir du cache comme le ferait un décor. Un aplat mesurerait
 /// surtout la vitesse d'une ligne de cache qui ne change jamais.
-fn damier() -> Texture {
-    let side = 256usize;
+///
+/// **Le côté est un paramètre depuis qu'on décompose le coût du texturé** : à
+/// 256, la pile de mipmaps pèse plus de trois cents kilo-octets et ne tient pas
+/// en L1 ; à 4, elle y tient entièrement. Deux mesures qui ne diffèrent que par
+/// là disent ce que l'échantillonnage paie en accès mémoire.
+fn damier(side: usize) -> Texture {
     let mut pixels = vec![0u8; side * side * BYTES_PER_PIXEL];
     for (i, texel) in pixels.chunks_exact_mut(BYTES_PER_PIXEL).enumerate() {
         let (x, y) = (i % side, i / side);
-        let v = if ((x / 4) ^ (y / 4)) & 1 == 0 {
+        // La case fait quatre texels sur une grande texture, un seul sur une
+        // petite : à 4 de côté, des cases de quatre rendraient un aplat, et la
+        // comparaison porterait sur deux motifs au lieu de deux tailles.
+        let case = if side >= 16 { 4 } else { 1 };
+        let v = if ((x / case) ^ (y / case)) & 1 == 0 {
             0x30
         } else {
             0xD0
@@ -238,7 +274,12 @@ fn ligne(quoi: &str, duree: Duration) {
 /// La boucle de pixels seule, ou presque : deux triangles, aucune profondeur à
 /// départager, et chaque pixel de l'image échantillonné une fois. C'est ici
 /// qu'une lecture de texture ajoutée par l'étape 3 se verra.
-fn plein_cadre(context: &mut Context, texture: &std::sync::Arc<Texture>, filter: Filter) {
+fn plein_cadre(
+    context: &mut Context,
+    texture: &std::sync::Arc<Texture>,
+    filter: Filter,
+    uv_max: f32,
+) {
     // Un plan perpendiculaire au regard, assez large pour déborder de l'écran.
     let coin = |x: f32, z: f32, u: f32, v: f32| VertexUv {
         position: Vec3::new(2.0, x, z),
@@ -247,9 +288,9 @@ fn plein_cadre(context: &mut Context, texture: &std::sync::Arc<Texture>, filter:
     };
     let vertices = [
         coin(-3.0, 2.0, 0.0, 0.0),
-        coin(3.0, 2.0, 256.0, 0.0),
-        coin(3.0, -2.0, 256.0, 256.0),
-        coin(-3.0, -2.0, 0.0, 256.0),
+        coin(3.0, 2.0, uv_max, 0.0),
+        coin(3.0, -2.0, uv_max, uv_max),
+        coin(-3.0, -2.0, 0.0, uv_max),
     ];
     // L'ordre décide de la face : pris dans l'autre sens, le quadrilatère est
     // un dos, le moteur l'élimine, et la mesure porte sur un tampon vide.
@@ -364,7 +405,7 @@ fn scene_chargee(context: &mut Context, texture: &std::sync::Arc<Texture>) {
 /// Le minimum et non la moyenne, pour la raison écrite en tête du module : une
 /// durée n'a qu'une borne basse vraie.
 fn main() {
-    let texture = std::sync::Arc::new(damier());
+    let texture = std::sync::Arc::new(damier(256));
     let mut pixels = vec![0u8; WIDTH as usize * HEIGHT as usize * BYTES_PER_PIXEL];
 
     println!(
@@ -395,13 +436,54 @@ fn main() {
         for (chemin, simd) in chemins() {
             let mut context = contexte(simd);
             let duree = mesure(|| {
-                plein_cadre(&mut context, &texture, filtre);
+                plein_cadre(&mut context, &texture, filtre, 256.0);
                 context
                     .frame_end(black_box(&mut pixels), WIDTH)
                     .expect("image rendue");
             });
             // Plein cadre veut dire plein cadre : sous 95 %, le quadrilatère est
             // mal placé et ce n'est plus la boucle de pixels qu'on chronomètre.
+            exige_couverture(&pixels, nom, 0.95);
+            ligne(&format!("{nom} — {chemin}"), duree);
+        }
+    }
+
+    // **Où part le temps dans l'échantillonnage**, qui est les trois quarts du
+    // chemin texturé : le cas uni mesure déjà ce qu'un chemin vectoriel toucherait
+    // — test, écriture, profondeur —, et l'écart avec le cas tramé est tout le
+    // reste. Ces trois lignes le découpent.
+    //
+    // **Ce ne sont pas des micro-mesures**, que ce module proscrit : c'est le même
+    // quadrilatère plein cadre et la même boucle de pixels, du premier sommet à la
+    // recopie de tuile. Seules deux données de scène changent — la densité des
+    // coordonnées et la taille de la texture —, donc le compilateur ne peut rien
+    // élider, et chaque ligne reste une image entière.
+    //
+    // - **densité nulle** : les quatre sommets portent la même coordonnée, donc un
+    //   seul texel sert à toute l'image. L'adressage, le choix de niveau et la
+    //   combinaison ont lieu pour chaque pixel ; seul l'accès mémoire devient
+    //   gratuit, la ligne de cache ne changeant jamais.
+    // - **texture de 4** : la densité du cas de référence sur une pile de mipmaps
+    //   de quelques centaines d'octets, qui tient en L1 entière. L'adressage saute
+    //   d'un texel à l'autre comme dans le cas de référence, mais sans jamais
+    //   sortir du cache.
+    // - **densité 16 fois** : des sauts de plusieurs texels par pixel. Le mipmap
+    //   doit choisir un niveau plus petit, donc ce cas dit aussi si ce choix
+    //   protège le cache comme il le promet.
+    let minuscule = std::sync::Arc::new(damier(4));
+    for (nom, source, uv_max) in [
+        ("texture, densite nulle", &texture, 0.0),
+        ("texture, cote de 4", &minuscule, 256.0),
+        ("texture, densite 16x", &texture, 4096.0),
+    ] {
+        for (chemin, simd) in chemins() {
+            let mut context = contexte(simd);
+            let duree = mesure(|| {
+                plein_cadre(&mut context, source, Filter::Dither, uv_max);
+                context
+                    .frame_end(black_box(&mut pixels), WIDTH)
+                    .expect("image rendue");
+            });
             exige_couverture(&pixels, nom, 0.95);
             ligne(&format!("{nom} — {chemin}"), duree);
         }
