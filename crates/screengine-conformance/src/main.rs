@@ -986,29 +986,39 @@ struct View {
 /// donnant que l'empreinte de la vue de rang zéro : une pose s'ajoute donc à la
 /// fin, et en insérer une devant ferait diverger les cinq hôtes sans que le
 /// défaut soit chez eux.
-const ROOM_VIEWS: [([f32; 3], f32); 8] = [
+const ROOM_VIEWS: [([f32; 3], f32, f32); 10] = [
     // Dans la salle en L, face à l'ouverture du couloir : la traversée doit
     // ramener le couloir, puis le losange derrière lui.
-    ([2.0, 2.0, 2.0], 0.0),
+    ([2.0, 2.0, 2.0], 0.0, 0.0),
     // Dans la même salle, tournée vers son coin rentrant : rien ne s'ouvre de ce
     // côté, et l'empreinte concave doit rester close.
-    ([2.0, 2.0, 2.0], core::f32::consts::FRAC_PI_2),
-    // Dans le couloir, face au portail oblique : c'est la vue où la boîte
-    // englobante de la fenêtre est la plus lâche, donc celle qui paie le
-    // sur-dessin et qui trouerait l'image si la fenêtre mordait.
-    ([10.0, 2.0, 2.0], -core::f32::consts::FRAC_PI_4),
+    ([2.0, 2.0, 2.0], core::f32::consts::FRAC_PI_2, 0.0),
+    // Dans le couloir, le portail oblique vu si obliquement que son sommet
+    // `(12, 4)` tombe à quatre-vingt-dix degrés de la direction de vue, donc à
+    // **profondeur nulle**. Il est en deçà du plan proche, et la clause qui rend
+    // alors la fenêtre inchangée s'applique : le losange est atteint avec l'image
+    // entière pour fenêtre.
+    //
+    // **C'est le cas dégénéré de la réduction, et non son pire cas.** Mesuré le
+    // 2026-10-07 : cette vue retient deux cellules, et la fenêtre du losange vaut
+    // 640×360 — pas une réduction, l'absence de réduction. Sa prose annonçait
+    // l'inverse, « la boîte englobante la plus lâche » obtenue d'un portail
+    // oblique qui réduit, ce qui a fait croire que la vue éprouvait ce que
+    // l'octogone viendra améliorer. Elle n'en éprouve rien : les deux dernières
+    // vues de cette table sont là pour cela.
+    ([10.0, 2.0, 2.0], -core::f32::consts::FRAC_PI_4, 0.0),
     // Dans le losange, retournée vers le couloir : le portail oblique vu de
     // l'autre côté, avec un enroulement inverse.
-    ([16.0, 4.0, 2.0], core::f32::consts::PI),
+    ([16.0, 4.0, 2.0], core::f32::consts::PI, 0.0),
     // À l'étage, au-dessus de la salle en L : la cellule superposée, que rien ne
     // relie au rez-de-chaussée. La traversée ne doit en montrer qu'elle.
-    ([2.0, 2.0, 10.0], 0.0),
+    ([2.0, 2.0, 10.0], 0.0, 0.0),
     // Dans le tunnel voûté, face à l'arche qui mène au second tronçon : la seule
     // vue du décor où **toutes** les surfaces visibles sont obliques, et la seule
     // où une lightmap est cuite sur des facettes dont la normale n'est ni axiale
     // ni à 45°. Le portail y a sept sommets au lieu de quatre, ce qui met la
     // réduction de fenêtre à l'épreuve d'une arche plutôt que d'un quadrilatère.
-    ([4.0, -12.0, 1.2], 0.0),
+    ([4.0, -12.0, 1.2], 0.0, 0.0),
     // **Les deux dernières approchent un plan de portail**, et ce sont les deux
     // seules : les six premières le regardent toujours de loin, ce qui est ce qui
     // a laissé passer les deux défauts des 0.8.5 et 0.8.6. Un seizième d'unité
@@ -1020,15 +1030,68 @@ const ROOM_VIEWS: [([f32; 3], f32); 8] = [
     // supprime en entier et la boîte des morceaux restants est vide. Sans la
     // clause qui rend la fenêtre reçue inchangée, le couloir n'est pas traversé
     // du tout.
-    ([7.9375, 2.0, 2.0], 0.0),
+    ([7.9375, 2.0, 2.0], 0.0, 0.0),
     // Dans le couloir, à un seizième du plan du portail **oblique**, qui s'étend
     // de part et d'autre de l'œil : le bord de `(16, 0)` est devant, celui de
     // `(12, 4)` est derrière. C'est l'autre moitié du défaut, celle qu'exiger les
     // deux conditions d'un même sommet ne voyait pas — un bord derrière l'œil a
     // une profondeur négative. Vu de biais et non par la tranche : la direction de
     // vue n'est pas celle du portail, sans quoi sa projection serait une ligne.
-    ([13.9375, 2.0, 2.0], 0.0),
+    ([13.9375, 2.0, 2.0], 0.0, 0.0),
+    // **Les deux dernières portent du roulis**, et ce sont les deux seules : les
+    // huit précédentes gardent la caméra d'aplomb, si bien que rien n'éprouvait
+    // la fenêtre de traversée sur le seul régime où sa **forme** coûte quelque
+    // chose. Une boîte axiale épouse un portail d'aplomb ; elle le déborde dès
+    // qu'il tourne à l'écran, et c'est tout ce qu'un octogone viendrait reprendre.
+    //
+    // **La pose est celle du rang 0**, au lacet et au roulis près : la fenêtre s'y
+    // compare alors terme à terme, et ce que l'angle change se lit sans qu'un
+    // déplacement vienne s'y mêler. Mesuré le 2026-10-07, fenêtres de bornage du
+    // couloir puis du losange :
+    //
+    // ```text
+    //  0°   209×209   108×126
+    // 15°   256×256   132×132
+    // 45°   296×296   153×153
+    // ```
+    //
+    // Soit, en aire, **un facteur 2,01 sur le couloir à 45°** et 1,72 sur le
+    // losange — l'ordre de grandeur que la feuille de route annonce. La fenêtre y
+    // devient **carrée**, ce qui est la signature de la boîte axiale d'un
+    // rectangle tourné d'un huitième de tour.
+    //
+    // **Depuis la salle en L et non depuis le couloir**, et c'est la mesure qui
+    // l'a décidé contre le premier choix : dans le couloir, la fenêtre du losange
+    // occupe déjà toute la hauteur de l'image, si bien qu'à 45° le portail en sort
+    // par le haut et par le bas et que la boîte **rétrécit** — 307×360 d'aplomb
+    // contre 386×246 à 45°. L'écrêtage par les bords masquait exactement la
+    // dégradation qu'il fallait montrer, et une vue prise là aurait figé une
+    // empreinte qui ne prouve rien.
+    ([2.0, 2.0, 2.0], 0.0, core::f32::consts::FRAC_PI_4),
+    ([2.0, 2.0, 2.0], 0.0, core::f32::consts::PI / 12.0),
 ];
+
+/// L'orientation d'une vue du décor de validation, lacet et roulis composés.
+///
+/// **Une fonction et non deux expressions voisines**, alors qu'elle n'a qu'une
+/// ligne : la scène la construit pour rendre, et le test d'oracle la reconstruit
+/// pour comparer la traversée au chemin brut. Recopiée, elle finirait par
+/// différer d'un ordre de composition, et l'oracle vérifierait alors deux poses
+/// distinctes en croyant en vérifier une — un test qui passe sur un rendu faux.
+///
+/// **Le roulis d'abord, le lacet ensuite** : `product` applique son argument en
+/// premier, et un roulis tourne autour de l'axe de vue, qui est le +X de la
+/// caméra avant que le lacet ne l'oriente. Composés dans l'autre sens, les deux
+/// angles donneraient une pose plausible mais fausse, qu'aucune empreinte ne
+/// dénoncerait une fois figée dessus. Ce qui garde la composition honnête est que
+/// les huit vues d'aplomb portent un roulis nul : leurs empreintes doivent rester
+/// celles d'avant, au bit près, et celle de rang zéro est en outre ce que les
+/// cinq hôtes rendent.
+fn room_view_orientation(yaw: f32, roll: f32) -> Quat {
+    Quat::from_axis_angle(Vec3::new(0.0, 0.0, 1.0), Angle::from_radians(yaw)).product(
+        Quat::from_axis_angle(Vec3::new(1.0, 0.0, 0.0), Angle::from_radians(roll)),
+    )
+}
 
 impl View {
     /// La désignation d'une vue dans un message de divergence.
@@ -2012,10 +2075,9 @@ impl Scene {
             Self::Rooms => {
                 let world = World::load(&rooms_file::bytes())
                     .unwrap_or_else(|_| unreachable!("le décor de validation est bien formé"));
-                let (position, yaw) = ROOM_VIEWS[view.angle as usize];
+                let (position, yaw, roll) = ROOM_VIEWS[view.angle as usize];
                 let position = Vec3::new(position[0], position[1], position[2]);
-                let spin =
-                    Quat::from_axis_angle(Vec3::new(0.0, 0.0, 1.0), Angle::from_radians(yaw));
+                let spin = room_view_orientation(yaw, roll);
                 context.set_camera(Camera {
                     position,
                     orientation: spin,
