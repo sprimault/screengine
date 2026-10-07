@@ -44,7 +44,24 @@ de version sont ce que lit un auteur de liaison étranger avant de savoir s'il
 doit reprendre son travail. Ce préambule reste en français : il n'est jamais
 publié, et explique les conventions du dépôt à qui y contribue.
 
-## [Non publié]
+## [0.9.0] — 2026-10-07 — SIMD
+
+**Une liaison web a une chose à reprendre, les autres rien.** Le module wasm
+exige désormais `simd128` : il ne s'instancie plus sur un navigateur qui ne le
+porte pas, et aucun réglage ne rattrape cela — le plancher est Chrome 91,
+Firefox 89 et Safari 16.4. `SCG_ABI_VERSION` reste à 1, une fonction s'ajoute,
+et le format des cartes et des maillages ne bouge pas.
+
+**Deux empreintes de conformance changent**, `collision` et `salles` : leurs
+scènes éprouvent deux cas de plus — une boîte d'étendue nulle, deux vues à
+roulis. Rien du balayage ni du rendu ne change, et **aucun des quatre chemins
+vectoriels ne déplace un seul pixel** : c'est ce que leurs passes de conformance
+vérifient, chemin par chemin, sur quatre architectures.
+
+**Ce que cette version ne fait pas encore** : le remplissage d'une surface
+texturée reste scalaire. La mesure plafonne le gain d'un chemin vectoriel à un
+pour cent et demi sur un décor réel, le temps partant ailleurs — dans le calcul
+par pixel de l'échantillonnage, et non dans ses accès mémoire.
 
 ### Ajouté
 
@@ -86,6 +103,25 @@ publié, et explique les conventions du dépôt à qui y contribue.
   encore, faute de chaîne croisée.
 
 ***
+
+## [0.9.0] — 2026-10-07 — SIMD
+
+**A web binding has one thing to revisit, the others none.** The wasm module now
+requires `simd128`: it no longer instantiates on a browser without that feature,
+and no setting works around it — the floor is Chrome 91, Firefox 89 and
+Safari 16.4. `SCG_ABI_VERSION` stays at 1, one function is added, and the map and
+mesh formats are unchanged.
+
+**Two conformance fingerprints change**, `collision` and `salles`: their scenes
+exercise two more cases — a zero-extent box, two rolled views. Nothing about the
+sweep or about rendering changes, and **none of the four vector paths moves a
+single pixel**: that is what their conformance passes check, path by path, on
+four architectures.
+
+**What this version does not do yet**: filling a textured surface is still
+scalar. Measurement caps what a vector path would gain at one and a half percent
+on a real scene, the time going elsewhere — into sampling's per-pixel
+arithmetic, not into its memory accesses.
 
 ### Added
 
