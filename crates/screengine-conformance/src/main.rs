@@ -86,19 +86,49 @@ enum Pass {
     /// C'est la forme que prendra chaque variante : une passe qui la force, et
     /// qui se saute là où la machine ne la porte pas.
     Sse2,
+    /// Tuiles de 64, le chemin de remplissage **forcé à AVX2**.
+    ///
+    /// **La première passe qui se saute vraiment**, là où celle de SSE2 tourne
+    /// partout sur `x86_64` : AVX2 n'est pas dans la base de l'architecture, et
+    /// un runner d'intégration continue peut ne pas le porter. Sa disponibilité
+    /// se demande au processeur, pas au compilateur.
+    ///
+    /// Elle ne remplace pas la passe SSE2 : les deux variantes ont un nombre de
+    /// voies différent, donc une manière différente de poser les profondeurs de
+    /// départ, et seule la machine qui porte les deux peut dire qu'elles
+    /// s'accordent.
+    Avx2,
 }
 
 impl Pass {
     /// Toutes les passes, dans l'ordre où la suite les rejoue.
-    const ALL: [Self; 8] = [
+    /// Toutes les passes, dans l'ordre où la suite les rejoue.
+    ///
+    /// **Le chemin scalaire vient en tête, et ce n'est pas un rangement** : la
+    /// passe de rang zéro fournit l'empreinte à laquelle les autres se
+    /// comparent, et toutes les passes de découpage tournent en
+    /// [`SimdPath::Auto`] — donc par le jeu le plus large de la machine. La
+    /// référence était ainsi **elle-même une variante**, c'est-à-dire exactement
+    /// ce que `docs/rust.md` refuse : « une variante se valide contre
+    /// l'empreinte du scalaire, jamais contre une capture prise avec
+    /// elle-même ».
+    ///
+    /// **Mesuré, pas supposé** : en cassant le décalage AVX2, la divergence
+    /// était annoncée entre « tuiles de 32 » et « tuiles de 64 » — deux passes
+    /// toutes deux fausses, qui ne différaient que par la longueur de leurs
+    /// lignes et donc par le reste de boucle. Le nom du chemin fautif
+    /// n'apparaissait nulle part. Avec le scalaire en tête, c'est lui qui est
+    /// nommé.
+    const ALL: [Self; 9] = [
+        Self::Scalar,
         Self::Tiles32,
         Self::Tiles64,
         Self::Whole,
         Self::Shuffled,
         Self::Threads,
         Self::Resized,
-        Self::Scalar,
         Self::Sse2,
+        Self::Avx2,
     ];
 
     /// Le chemin de remplissage que cette passe force.
@@ -111,6 +141,7 @@ impl Pass {
         match self {
             Self::Scalar => SimdPath::Scalar,
             Self::Sse2 => SimdPath::Sse2,
+            Self::Avx2 => SimdPath::Avx2,
             _ => SimdPath::Auto,
         }
     }
@@ -138,13 +169,19 @@ impl Pass {
             Self::Resized => "redimensionné",
             Self::Scalar => "chemin scalaire",
             Self::Sse2 => "chemin SSE2",
+            Self::Avx2 => "chemin AVX2",
         }
     }
 
     /// Le côté de tuile du contexte.
     fn tile_size(self) -> u32 {
         match self {
-            Self::Tiles64 | Self::Whole | Self::Resized | Self::Scalar | Self::Sse2 => 64,
+            Self::Tiles64
+            | Self::Whole
+            | Self::Resized
+            | Self::Scalar
+            | Self::Sse2
+            | Self::Avx2 => 64,
             Self::Tiles32 | Self::Shuffled | Self::Threads => 32,
         }
     }
@@ -198,9 +235,12 @@ impl Pass {
             // La passe du chemin scalaire rend comme `Tiles64` : ce qu'elle
             // change est le chemin, posé à l'ouverture du contexte, et non le
             // découpage.
-            Self::Tiles32 | Self::Tiles64 | Self::Resized | Self::Scalar | Self::Sse2 => {
-                frame.end(&mut Rows::new(pixels, width))
-            }
+            Self::Tiles32
+            | Self::Tiles64
+            | Self::Resized
+            | Self::Scalar
+            | Self::Sse2
+            | Self::Avx2 => frame.end(&mut Rows::new(pixels, width)),
             Self::Whole => {
                 let mut color = vec![0u32; width as usize * height as usize];
                 let mut depth = color.clone();

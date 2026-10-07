@@ -44,6 +44,8 @@
 //! un cas qui force le scalaire, sans que rien ne le signale. Le contexte est
 //! déjà l'objet dont la concurrence est écrite.
 
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+pub mod avx2;
 #[cfg(all(
     target_feature = "sse2",
     any(target_arch = "x86", target_arch = "x86_64")
@@ -143,6 +145,14 @@ pub fn span_depths(path: SimdPath, depth: i64, depth_x: i64, out: &mut [u32]) ->
             sse2::depths(depth, depth_x, out);
             true
         }
+        // **AVX2 interroge le processeur, là où SSE2 se décide à la
+        // compilation**, et c'est toute la différence entre les deux branches.
+        // La vérification et l'appel `unsafe` vivent dans le module de la
+        // variante, pour que la précondition et sa garantie ne soient jamais à
+        // deux étages l'une de l'autre — ce qui laisse ce fichier-ci entièrement
+        // sûr, sous le `deny(unsafe_code)` du crate.
+        #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+        SimdPath::Avx2 => avx2::depths_if_available(depth, depth_x, out),
         // Tout le reste retombe sur la référence : les variantes qui n'existent
         // pas encore, celles que cette cible ne porte pas, et le scalaire, qui
         // **est** la référence.
