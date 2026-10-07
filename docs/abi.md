@@ -7,7 +7,7 @@ Un auteur de liaison qui ne lit pas le français trouve l'essentiel dans
 `include/screengine.h`, dont la documentation est en anglais : ce qui ne peut pas
 être ignoré à l'appel y figure, fonction par fonction.
 
-**État : l'étape 8 est publiée en 0.8.0** — les sept points d'entrée de l'étape 0,
+**État : l'étape 9 est publiée en 0.9.0** — les sept points d'entrée de l'étape 0,
 le rendu par tuiles, les textures avec leur niveau de filtrage, la lumière
 (lightmaps fournies par l'hôte, lumières dynamiques, brouillard, résolution
 interne, courbe de sortie), les deux formats de données avec leurs accesseurs, la
@@ -15,10 +15,10 @@ traversée par portails avec le suivi de la cellule de la caméra et le calcul d
 lightmaps, cache compris, les quadrilatères orientés, les maillages entre deux
 trames, le texel transparent et la surface modulée, le balayage d'une boîte
 contre les cellules d'une carte, et ce qu'un éditeur réclame : le tracé de lignes
-et de points, et l'interrogation par le rayon. **Le contrat du tracé a été figé
-ci-dessous avant son premier remplissage**, comme ceux des étapes 4 à 7 l'ont
-été. Chaque décision garde ci-dessous l'option écartée et
-pourquoi. Un seul point reste marqué **À trancher** : la dépréciation, qui attend
+et de points, et l'interrogation par le rayon, et le choix du jeu d'instructions
+qui remplit les triangles. **Le contrat du tracé a été figé ci-dessous avant son
+premier remplissage**, comme ceux des étapes 4 à 7 l'ont été. Chaque décision
+garde ci-dessous l'option écartée et pourquoi. Un seul point reste marqué **À trancher** : la dépréciation, qui attend
 le gel de l'ABI en 1.0.
 
 `SCG_ABI_VERSION` reste à **1** : aucune signature publiée n'a changé, les étapes

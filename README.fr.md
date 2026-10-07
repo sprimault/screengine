@@ -48,13 +48,15 @@ Windows, dans un navigateur et sur un téléphone.
 
 ## État
 
-**Étape 8 franchie, publiée en 0.8.0 : ce qu'il faut pour éditer.** Le moteur
-n'a pas d'éditeur ; il expose ce qu'un éditeur réclame. Des lignes et des points
-se tracent dans le tampon, occultés par le décor ou visibles à travers, en
-coordonnées de monde — pour des repères et une sélection, jamais pour un HUD. Un
-rayon interroge la scène et rend la surface touchée, les surfaces non solides
-comprises. Et modifier une carte, c'est la remplacer entière : aucune fonction
-pour cela, et `ScgWorld` reste immuable.
+**Étape 9 franchie, publiée en 0.9.0 : SIMD.** Quatre chemins vectoriels
+remplissent une surface unie — SSE2 et AVX2 sur x86, NEON sur `aarch64`,
+`simd128` sur wasm —, choisis à l'exécution et forçables par l'ABI. Aucun ne
+déplace un pixel : chacun a sa passe de conformance, et le noyau s'exécute
+désormais sur quatre architectures au lieu d'une. Le remplissage d'une surface
+texturée reste scalaire, sur un gain mesuré à un pour cent et demi.
+
+Le module wasm exige `simd128` : il ne s'instancie plus sur un navigateur qui ne
+le porte pas.
 
 La feuille de route compte dix étapes, publiées à chacune.
 
