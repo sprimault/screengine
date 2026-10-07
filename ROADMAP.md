@@ -361,10 +361,16 @@ huit minimums et maximums entiers sans division ; les coordonnées obliques
 s'écrivent dans le format existant des fonctions de bord ; et le nombre de plans
 reste **fermé à huit quelle que soit la profondeur de la chaîne**, ce qu'aucune
 autre forme ne donne. Cela supprime le seul mauvais cas du rectangle, un portail
-allongé vu avec du roulis. Ici et non à l'étape 5, pour deux raisons : il faut
-toucher la boucle de lignes du remplissage, là où un rectangle ne demande rien, et
-il **ne déplace aucune empreinte** — donc il peut arriver à tout moment, sans mise
-à jour de références.
+allongé vu avec du roulis, qui laissait passer jusqu'à cinq fois ce que
+l'ouverture montre. Il **ne déplace aucune empreinte** — donc il peut arriver à
+tout moment, sans mise à jour de références.
+
+**Le remplissage n'y est pour rien**, contrairement à ce que cette étape a
+annoncé : seule la fenêtre de **propagation** devient un octogone, celle qui
+décide des cellules visitées. Celle de bornage reste un rectangle, parce que
+`fill` borne déjà son parcours par la boîte du triangle et que les coins coupés
+ne lui feraient rien gagner. L'octogone est donc entièrement dans
+`world/window.rs` et `world/traversal.rs`.
 
 **C'est ici que la matrice gagne les cibles Linux sur ARM**, et non avant : le
 projet compile `armv7-linux-androideabi` et `aarch64-linux-android`, qui sont

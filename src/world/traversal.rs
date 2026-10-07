@@ -23,7 +23,7 @@ use crate::format::World;
 use crate::math::{Affine3, Projection};
 use crate::raster::Rect;
 
-use super::window::reduce;
+use super::window::{Window, reduce};
 
 /// La profondeur maximale de la pile de traversée.
 ///
@@ -71,7 +71,11 @@ struct Frame {
     /// L'index de la cellule explorée.
     cell: u32,
     /// Sa fenêtre de propagation, propre à ce chemin.
-    window: Rect,
+    ///
+    /// Un octogone, là où celle de bornage est un rectangle : c'est elle qui
+    /// décide des cellules visitées, donc la seule des deux dont la finesse
+    /// change quelque chose.
+    window: Window,
     /// Le prochain portail à examiner.
     ///
     /// La récursion est dépliée : sans ce curseur, il faudrait empiler la liste
@@ -109,13 +113,15 @@ pub(crate) fn traverse(
 
     let mut stack: [Frame; MAX_DEPTH] = core::array::from_fn(|_| Frame {
         cell: 0,
-        window: Rect::EMPTY,
+        window: Window::EMPTY,
         cursor: 0,
     });
     let mut depth = 1;
+    // La fenêtre de départ est l'image, dont l'octogone est le rectangle
+    // lui-même : ses diagonales passent par ses coins et ne coupent rien.
     stack[0] = Frame {
         cell: start,
-        window,
+        window: Window::of(window),
         cursor: 0,
     };
     let mut truncated = !push_visit(visits, start, window);
@@ -147,12 +153,19 @@ pub(crate) fn traverse(
 
         let reduced = reduce(stack[top].window, &portal.points, view, projection);
         // Une fenêtre vide coupe la branche : c'est le terminateur normal de la
-        // traversée, et de loin le plus fréquent.
-        if reduced.width == 0 || reduced.height == 0 {
+        // traversée, et de loin le plus fréquent. **C'est aussi le seul endroit
+        // où l'octogone gagne** : une ouverture oblique y vide la fenêtre là où
+        // son rectangle englobant laissait passer la branche.
+        if reduced.is_empty() {
             continue;
         }
 
-        if !push_visit(visits, next, reduced) {
+        // **La visite porte le rectangle, la pile porte l'octogone.** Le
+        // remplissage borne un parcours de pixels, donc un rectangle lui suffit
+        // et les coins coupés ne lui feraient rien gagner ; la propagation, elle,
+        // a besoin des huit côtés, puisque c'est en les transportant au portail
+        // suivant qu'ils éliminent des cellules.
+        if !push_visit(visits, next, reduced.to_rect()) {
             truncated = true;
             continue;
         }

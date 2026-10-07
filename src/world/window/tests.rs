@@ -7,7 +7,7 @@
 //! symptôme d'une réduction fautive, et il ne se lit pas dans une empreinte.
 
 use super::*;
-use crate::math::Quat;
+use crate::math::{Angle, Quat};
 use crate::scene::Camera;
 
 /// La largeur de l'image des tests.
@@ -36,6 +36,17 @@ fn neutral() -> Affine3 {
     .view()
 }
 
+/// `reduce` vue comme avant l'octogone : un rectangle en entrée, un en sortie.
+///
+/// **Elle masque délibérément [`super::reduce`]** dans ce module. La plupart des
+/// cas d'ici éprouvent ce que la fenêtre borne — un rectangle de pixels —, et
+/// non la forme qui le transporte : les réécrire pour convertir à chaque appel
+/// n'aurait rien ajouté à ce qu'ils vérifient. Ceux qui éprouvent l'octogone
+/// lui-même appellent `super::reduce` par son chemin.
+fn reduce(window: Rect, points: &[Vec3], view: Affine3, projection: &Projection) -> Rect {
+    super::reduce(Window::of(window), points, view, projection).to_rect()
+}
+
 /// La fenêtre de départ : l'image entière.
 fn full() -> Rect {
     Rect {
@@ -55,6 +66,129 @@ fn facing(distance: f32, half: f32) -> [Vec3; 4] {
         Vec3::new(distance, half, half),
         Vec3::new(distance, -half, half),
     ]
+}
+
+/// Une fente à `x = distance`, allongée en `y` et étroite en `z`.
+///
+/// **Le mauvais cas du rectangle**, et le seul que `facing` ne donne pas : plus
+/// une ouverture est allongée, plus son rectangle englobant s'écarte d'elle dès
+/// qu'elle penche à l'écran. Un carré vu à quarante-cinq degrés de roulis coûte
+/// deux fois son aire ; une fente de rapport huit, bien davantage.
+fn slit(distance: f32, half_y: f32, half_z: f32) -> [Vec3; 4] {
+    [
+        Vec3::new(distance, -half_y, -half_z),
+        Vec3::new(distance, half_y, -half_z),
+        Vec3::new(distance, half_y, half_z),
+        Vec3::new(distance, -half_y, half_z),
+    ]
+}
+
+/// La pose d'une caméra à l'origine, regardant `+X`, roulée de `degrees`.
+///
+/// Le roulis tourne autour de l'axe du regard, donc il ne change pas ce que la
+/// caméra pointe : c'est ce qui rend la comparaison honnête — à roulis nul et à
+/// quarante-cinq degrés, la même ouverture est vue depuis le même endroit.
+fn rolled(degrees: f32) -> Affine3 {
+    Camera {
+        position: Vec3::ZERO,
+        orientation: Quat::from_axis_angle(
+            Vec3::new(1.0, 0.0, 0.0),
+            Angle::from_radians(degrees.to_radians()),
+        ),
+        fov_y: core::f32::consts::FRAC_PI_2,
+        near: 0.1,
+    }
+    .view()
+}
+
+/// **Le roulis ne doit pas élargir la fenêtre d'une ouverture.**
+///
+/// Un roulis tourne la caméra autour de son regard : la même ouverture est vue
+/// du même endroit, et son image a la même aire — seule son orientation à
+/// l'écran change. Une fenêtre qui gonfle alors ne borne plus l'ouverture mais
+/// le rectangle qui la contient, et ce qu'elle laisse passer en trop est le
+/// liseré où naissent les portails faussement visibles.
+///
+/// **Les deux seuils sont mesurés, et le rectangle échoue aux deux.** Avec lui,
+/// l'aire passait de 2 208 à 6 400 sur une fente de rapport quatre penchée de
+/// quarante-cinq degrés, et de 1 104 à 5 184 sur une fente de rapport huit —
+/// **4,7 fois ce que l'ouverture laisse voir**. L'octogone rend 1,00 et 1,01 aux
+/// mêmes points, et au pire 2,47 à quinze et trente degrés.
+///
+/// D'où la forme de ce cas, qui dit la propriété plutôt qu'un chiffre rond :
+/// **exact quand l'ouverture s'aligne sur une diagonale** — c'est la raison même
+/// de ces quatre normales —, et **jamais plus du double et demi** ailleurs, où
+/// un octogone à normales figées ne peut pas suivre une orientation
+/// quelconque. Entre les deux, à vingt-deux degrés et demi, se trouve son pire
+/// cas, et il reste sous la moitié de ce que coûtait le rectangle.
+#[test]
+fn le_roulis_n_elargit_pas_la_fenetre() {
+    let depart = Window::of(full());
+    for (rapport, points) in [
+        (1, slit(4.0, 1.0, 1.0)),
+        (4, slit(4.0, 1.0, 0.25)),
+        (8, slit(4.0, 1.0, 0.125)),
+    ] {
+        // `super::reduce` et non l'aide locale : c'est l'aire de l'octogone
+        // qu'on compare, et son rectangle englobant ne dirait rien — il est le
+        // même avec ou sans les quatre bords obliques.
+        let droite = super::reduce(depart, &points, neutral(), &projection()).area();
+
+        let alignee = super::reduce(depart, &points, rolled(45.0), &projection()).area();
+        assert!(
+            alignee * 100 <= droite * 105,
+            "fente 1:{rapport} à 45° : {alignee} contre {droite} de face, \
+             alors que la diagonale l'épouse"
+        );
+
+        for degres in [15.0f32, 30.0] {
+            let penchee = super::reduce(depart, &points, rolled(degres), &projection()).area();
+            assert!(
+                penchee * 2 <= droite * 5,
+                "fente 1:{rapport} à {degres}° : {penchee} contre {droite} de face"
+            );
+        }
+    }
+}
+
+/// **Une branche que le rectangle propageait, l'octogone la coupe.**
+///
+/// C'est le gain tout entier, et il ne se lit nulle part ailleurs : une fenêtre
+/// plus serrée ne change aucune image — le remplissage reçoit le même rectangle
+/// — mais elle vide la réduction du portail suivant, et la cellule derrière lui
+/// n'est jamais ramenée.
+///
+/// La chaîne reproduit le mauvais cas en deux portails : une fente de rapport
+/// huit penchée de quarante-cinq degrés, puis une petite ouverture placée dans
+/// un coin de son rectangle englobant. Mesuré sur ce couple, l'octogone couvre
+/// 267 493 sous-pixels carrés contre **1 320 201** pour sa boîte, et les quatre
+/// placements se comportent de même.
+///
+/// [`Window::axial_only`] rejoue la fenêtre d'avant l'octogone, sur ce code et
+/// ce décor : c'est elle qui fait de ce cas une comparaison et non une
+/// affirmation.
+#[test]
+fn l_octogone_coupe_une_branche_que_le_rectangle_propage() {
+    let depart = Window::of(full());
+    let fente = slit(4.0, 1.0, 0.125);
+    let apres = super::reduce(depart, &fente, rolled(45.0), &projection());
+
+    for (y, z) in [(0.8f32, 0.8f32), (0.8, -0.8), (-0.8, 0.8), (0.5, 0.5)] {
+        let second = [
+            Vec3::new(8.0, y - 0.1, z - 0.1),
+            Vec3::new(8.0, y + 0.1, z - 0.1),
+            Vec3::new(8.0, y + 0.1, z + 0.1),
+            Vec3::new(8.0, y - 0.1, z + 0.1),
+        ];
+        assert!(
+            super::reduce(apres, &second, rolled(45.0), &projection()).is_empty(),
+            "l'octogone a propagé la branche en ({y}, {z})"
+        );
+        assert!(
+            !super::reduce(apres.axial_only(), &second, rolled(45.0), &projection()).is_empty(),
+            "le rectangle la coupait déjà en ({y}, {z}) : ce cas ne compare plus rien"
+        );
+    }
 }
 
 /// Un portail vu de face occupe un rectangle centré, et la fenêtre s'y réduit.
@@ -383,22 +517,48 @@ fn la_fenetre_decoupe_le_portail_avant_de_le_borner() {
 /// à la fenêtre, et c'est exactement la façon dont une réduction troue l'image.
 #[test]
 fn les_bornes_couvrent_le_dernier_pixel() {
-    let bounds = Bounds::of(Rect {
+    let window = Window::of(Rect {
         x: 2,
         y: 3,
         width: 4,
         height: 5,
     });
-    assert_eq!(bounds.min_x, 32);
-    assert_eq!(bounds.max_x, 6 * 16 - 1);
-    assert_eq!(bounds.min_y, 48);
-    assert_eq!(bounds.max_y, 8 * 16 - 1);
+    // L'aller-retour est exact : un décalage d'un seul sous-pixel retirerait ou
+    // ajouterait une colonne entière de pixels, et c'est ainsi qu'une réduction
+    // troue l'image ou déborde de la fenêtre reçue.
+    assert_eq!(
+        window.to_rect(),
+        Rect {
+            x: 2,
+            y: 3,
+            width: 4,
+            height: 5,
+        }
+    );
+}
+
+/// **Un rectangle devient un octogone sans rien élargir.**
+///
+/// Ses diagonales passent par ses coins, donc elles ne coupent rien : l'aire de
+/// l'octogone est celle de la boîte. C'est ce qui permet à la fenêtre de départ
+/// d'être l'image entière sans cas particulier, et ce qui rend la conversion
+/// sûre dans ce sens — l'autre, lui, perd les coins coupés.
+#[test]
+fn un_rectangle_devient_un_octogone_qui_ne_coupe_rien() {
+    let window = Window::of(Rect {
+        x: 0,
+        y: 0,
+        width: 4,
+        height: 4,
+    });
+    let cote = 4 * 16;
+    assert_eq!(window.area(), cote * cote, "l'octogone a coupé un coin");
 }
 
 /// Des bornes que rien n'a remplies rendent un rectangle vide.
 #[test]
 fn des_bornes_vides_rendent_un_rectangle_vide() {
-    assert_eq!(Bounds::EMPTY.to_rect().width, 0);
+    assert_eq!(Window::EMPTY.to_rect().width, 0);
 }
 
 /// Une borne négative se ramène au bord de l'image sans passer par un entier
@@ -408,10 +568,10 @@ fn des_bornes_vides_rendent_un_rectangle_vide() {
 /// couvrirait l'image entière au lieu de sa part gauche : le bornage est écrit.
 #[test]
 fn une_borne_negative_se_ramene_au_bord() {
-    let mut bounds = Bounds::EMPTY;
-    bounds.add(-100, -100);
-    bounds.add(160, 160);
-    let rect = bounds.to_rect();
+    let mut window = Window::EMPTY;
+    window.add(-100, -100);
+    window.add(160, 160);
+    let rect = window.to_rect();
     assert_eq!(rect.x, 0);
     assert_eq!(rect.y, 0);
     assert!(rect.width <= 12, "largeur inattendue : {}", rect.width);
