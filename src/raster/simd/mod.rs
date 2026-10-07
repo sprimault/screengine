@@ -125,24 +125,58 @@ impl SimdPath {
     }
 }
 
-/// Calcule les profondeurs d'une ligne par le chemin demandé.
+/// Une ligne d'une surface unie, telle qu'une variante la reçoit.
 ///
-/// Rend **vrai** quand une variante a rempli `out`, **faux** quand ce chemin n'a
-/// rien à offrir ici — à l'appelant de retomber alors sur
+/// **Les deux tranches sont celles de la ligne, déjà découpées par le puits** :
+/// une variante ne sait rien de la largeur d'une région ni du rectangle d'une
+/// tuile, et n'a donc aucun indice à calculer. Ce qu'elle reçoit est exactement
+/// ce qu'elle a le droit d'écrire.
+// **Sur une cible sans variante, aucun champ n'est lu**, et c'est le cas normal
+// plutôt qu'un oubli : wasm, armv7 et la cible sans `std` n'ont que le chemin
+// scalaire, si bien que la structure traverse `fill_flat_row` pour être jetée
+// par sa branche par défaut. Le lint le signale sur ces cibles seulement, que
+// `make lint` passe précisément parce que leurs `cfg` ne sont vérifiés nulle
+// part ailleurs.
+#[allow(dead_code)]
+pub struct FlatRow<'a> {
+    /// Les couleurs de la ligne, à écrire là où la profondeur passe.
+    pub color: &'a mut [u32],
+    /// Les profondeurs de la ligne, lues puis écrites de même.
+    pub depth: &'a mut [u32],
+    /// La profondeur au premier pixel, avant son décalage de gradient.
+    pub start: i64,
+    /// Ce que la profondeur gagne d'un pixel au suivant.
+    pub step: i64,
+    /// La couleur à écrire, constante sur toute la ligne.
+    pub fill: u32,
+}
+
+/// Remplit une ligne unie par le chemin demandé, test de profondeur compris.
+///
+/// Rend **vrai** quand une variante a traité la ligne, **faux** quand ce chemin
+/// n'a rien à offrir ici — à l'appelant de retomber alors sur
 /// [`crate::raster::span_scalar`], qui est la référence.
 ///
 /// **Le point unique où les `cfg` de cible vivent.** Un puits qui appelle cette
 /// fonction n'a pas à savoir sur quelle architecture il tourne ni quels modules
 /// existent : la question « ce chemin sait-il faire » se pose une fois, ici, et
 /// les branches absentes se compilent en « non ».
-pub fn span_depths(path: SimdPath, depth: i64, depth_x: i64, out: &mut [u32]) -> bool {
+///
+/// **Le test et l'écriture sont dedans, et c'est ce que la mesure a imposé.**
+/// La première forme ne calculait que les profondeurs, à charge pour le puits de
+/// les relire pixel par pixel : l'aller-retour en mémoire coûtait plus que
+/// l'addition épargnée, et les variantes étaient **plus lentes** que le
+/// scalaire — 0,34 ms contre 0,29 sur un plein cadre uni. Ce qui se gagne ici
+/// est la comparaison et l'écriture masquée de plusieurs pixels à la fois, pas
+/// l'interpolation.
+pub fn fill_flat_row(path: SimdPath, row: FlatRow<'_>) -> bool {
     match path {
         #[cfg(all(
             target_feature = "sse2",
             any(target_arch = "x86", target_arch = "x86_64")
         ))]
         SimdPath::Sse2 => {
-            sse2::depths(depth, depth_x, out);
+            sse2::fill_flat_row(row);
             true
         }
         // **AVX2 interroge le processeur, là où SSE2 se décide à la
@@ -152,12 +186,12 @@ pub fn span_depths(path: SimdPath, depth: i64, depth_x: i64, out: &mut [u32]) ->
         // deux étages l'une de l'autre — ce qui laisse ce fichier-ci entièrement
         // sûr, sous le `deny(unsafe_code)` du crate.
         #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-        SimdPath::Avx2 => avx2::depths_if_available(depth, depth_x, out),
+        SimdPath::Avx2 => avx2::fill_flat_row_if_available(row),
         // Tout le reste retombe sur la référence : les variantes qui n'existent
         // pas encore, celles que cette cible ne porte pas, et le scalaire, qui
         // **est** la référence.
         _ => {
-            let _ = (depth, depth_x, out);
+            let _ = row;
             false
         }
     }

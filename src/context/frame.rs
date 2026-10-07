@@ -9,7 +9,6 @@
 
 use core::sync::atomic::Ordering;
 
-use crate::MAX_RESOLUTION;
 use crate::context::{
     BYTES_PER_PIXEL, CLEAR_COLOR, CLOSING, Context, OPAQUE, RECORDING, RENDERING,
 };
@@ -172,34 +171,31 @@ impl Target for Scratch<'_> {
     /// la plus longue ligne qu'une tuile puisse porter : aucune allocation par
     /// image, ce que l'invariant exige.
     fn span(&mut self, span: Span) {
-        let count = (span.x1 - span.x0 + 1) as usize;
-
-        // **Le tampon vit sur la pile de l'appel**, dimensionné pour la plus
-        // longue ligne qu'une région puisse porter : aucune allocation par
-        // image, ce que l'invariant exige. Une tuile en fait au plus 64 de côté,
-        // mais le rendu d'une région entière va jusqu'à la résolution maximale.
-        let mut depths = [0u32; MAX_RESOLUTION as usize];
-        if count > depths.len()
-            || !simd::span_depths(span.simd, span.depth, span.depth_x, &mut depths[..count])
-        {
-            // La référence, et c'est là que tout chemin sans variante retombe.
+        // **Une surface modulée garde le chemin pixel par pixel.** Elle lit la
+        // couleur déjà écrite pour la multiplier par canal, son test est non
+        // strict et décalé d'une tolérance de pente, et c'est le cas rare — une
+        // poignée de taches d'ombre dans une image de décor. La vectoriser
+        // doublerait ce module pour un gain que rien n'a mesuré.
+        if span.modulated {
             return span_scalar(self, span);
         }
 
-        // **Le test et l'écriture restent en Rust sûr**, sur des indices que le
-        // type borne : ce que la variante calcule est la profondeur, et elle
-        // seule. Porter aussi la comparaison et l'écriture masquée demanderait
-        // de confier les deux tranches à un module `unsafe`, et ce lot pose
-        // d'abord les conventions sur la partie qui ne l'exige pas.
-        for (step, &z) in depths[..count].iter().enumerate() {
-            let x = span.x0 + step as i32;
-            if span.modulated {
-                if self.test_modulated(x, span.y, z.saturating_add(span.bias)) {
-                    self.modulate(x, span.y, span.color);
-                }
-            } else if self.test(x, span.y, z) {
-                self.write(x, span.y, z, span.color);
-            }
+        let first = self.index(span.x0, span.y);
+        let count = (span.x1 - span.x0 + 1) as usize;
+        // **Les deux tranches sont celles de la ligne**, découpées ici : la
+        // variante ne sait rien du rectangle d'une région et n'a donc aucun
+        // indice à calculer. Un span est contigu par construction, les deux
+        // tampons étant indexés `ligne × largeur + colonne`.
+        let row = simd::FlatRow {
+            color: &mut self.color[first..first + count],
+            depth: &mut self.depth[first..first + count],
+            start: span.depth,
+            step: span.depth_x,
+            fill: span.color,
+        };
+        if !simd::fill_flat_row(span.simd, row) {
+            // La référence, et c'est là que tout chemin sans variante retombe.
+            span_scalar(self, span);
         }
     }
 }
