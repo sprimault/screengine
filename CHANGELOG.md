@@ -76,6 +76,10 @@ publié, et explique les conventions du dépôt à qui y contribue.
   tests et les vingt-neuf scènes de conformance y rendent les mêmes empreintes
   qu'ailleurs. Le rendu est désormais vérifié identique sur trois familles
   d'architecture.
+- **La traversée élimine mieux les cellules vues de biais.** Sa fenêtre est un
+  octogone au lieu d'un rectangle, qui laissait passer jusqu'à cinq fois ce
+  qu'une ouverture allongée montre dès qu'elle penchait à l'écran. Aucune image
+  ne change.
 
 ***
 
@@ -108,6 +112,9 @@ publié, et explique les conventions du dépôt à qui y contribue.
   tests and the twenty-nine conformance scenes produce the same fingerprints as
   everywhere else. Rendering is now verified identical across three
   architecture families.
+- **Traversal culls cells seen at an angle better.** Its window is an octagon
+  instead of a rectangle, which let through up to five times what a long opening
+  shows as soon as it tilted on screen. No image changes.
 
 ## [0.8.9] — 2026-10-05 — Ce que rien ne vérifiait
 
