@@ -42,7 +42,8 @@ pub use context::{ScgContext, ScgContextConfig};
 pub use mesh::ScgMesh;
 pub use scene::{
     SCG_BLEND_MODULATE, SCG_DEPTH_ALWAYS, SCG_DEPTH_TESTED, SCG_FILTER_BILINEAR, SCG_FILTER_DITHER,
-    SCG_PICK_ALL, SCG_PICK_SOLID, SCG_SPRITE_AXIAL, SCG_SPRITE_FACING, SCG_TEXTURE_FORMAT_RGBA8,
+    SCG_PICK_ALL, SCG_PICK_SOLID, SCG_SIMD_AUTO, SCG_SIMD_AVX2, SCG_SIMD_NEON, SCG_SIMD_SCALAR,
+    SCG_SIMD_SIMD128, SCG_SIMD_SSE2, SCG_SPRITE_AXIAL, SCG_SPRITE_FACING, SCG_TEXTURE_FORMAT_RGBA8,
     SCG_TEXTURE_FORMAT_RGBA8_MASKED, ScgCamera, ScgGrade, ScgLight, ScgLine, ScgMat4, ScgPoint,
     ScgSprite, ScgSweepHit, ScgTextureDesc, ScgTriangle, ScgVertex, ScgVertexUv, ScgVertexUv2,
     ScgVertexUvN,
@@ -277,6 +278,45 @@ pub unsafe extern "C" fn scg_clear_grade(ctx: *mut ScgContext) -> i32 {
 pub unsafe extern "C" fn scg_set_filter(ctx: *mut ScgContext, filter: u32) -> i32 {
     let set = |mut core: entry::Core<'_>| {
         core.exclusive()?.set_filter(scene::filter_of(filter)?)?;
+        Ok(())
+    };
+
+    // SAFETY: précondition de la fonction — `ctx` est nul ou un handle vivant.
+    unsafe { entry::with_context(ctx, set) }
+}
+
+/// Picks which instruction set fills triangles, from the next frames on.
+///
+/// `path` is `SCG_SIMD_AUTO`, the default, or one of `SCG_SIMD_SCALAR`,
+/// `SCG_SIMD_SSE2`, `SCG_SIMD_AVX2`, `SCG_SIMD_NEON`, `SCG_SIMD_SIMD128`. An
+/// unknown value is `SCG_ERR_INVALID_ARGUMENT`, and so is a known path this
+/// machine does not provide — the two are told apart by `scg_last_error`.
+///
+/// **This never changes the image.** Every path renders the same bits as the
+/// scalar one, which is the reference they are all validated against: what this
+/// call selects is a cost, never a rendering. A digest that moved from one path
+/// to another would mean a faulty path, not an acceptable difference.
+///
+/// **It exists so paths can be compared on one machine.** Without it, each path
+/// would only ever be exercised where it runs, and SSE2 would never be measured
+/// against the scalar one on a processor that also has AVX2 — that is, on almost
+/// every one. A host gains from it the means to step around an instruction set
+/// it holds to be at fault, without waiting for a release.
+///
+/// `SCG_SIMD_SCALAR` is available on every target; `SCG_SIMD_AUTO` picks the
+/// widest path the machine provides and is therefore always available too.
+///
+/// Rejected with `SCG_ERR_INVALID_STATE` between `scg_frame_begin` and
+/// `scg_frame_end`, for the reason of `scg_set_filter`: tiles are rendered from
+/// threads the engine knows nothing about.
+///
+/// # Safety
+///
+/// `ctx` is a live handle used by no other thread during the call.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn scg_set_simd(ctx: *mut ScgContext, path: u32) -> i32 {
+    let set = |mut core: entry::Core<'_>| {
+        core.exclusive()?.set_simd(scene::simd_path_of(path)?)?;
         Ok(())
     };
 

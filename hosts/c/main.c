@@ -632,6 +632,20 @@ static uint64_t render_textured(int *ok, uint32_t filter)
     check(scg_create(&config, &ctx) == SCG_OK, "création du contexte texturé");
     if (ctx != NULL) {
         check(scg_set_filter(ctx, filter) == SCG_OK, "le filtrage se règle");
+        /* **Le chemin de remplissage est forcé au scalaire ici, et nulle part
+         * ailleurs.** Le chemin Rust rend cette même scène en `SCG_SIMD_AUTO`,
+         * donc par le jeu d'instructions le plus large de la machine : les deux
+         * empreintes sont comparées par `make test`, et leur égalité est ce qui
+         * prouve qu'une variante rend les mêmes bits que la référence. Tant
+         * qu'aucune variante n'est écrite, elle prouve que le réglage traverse
+         * la frontière. */
+        check(scg_set_simd(ctx, SCG_SIMD_SCALAR) == SCG_OK,
+              "le chemin scalaire se force");
+        /* Une valeur qu'aucune constante ne porte est refusée, jamais rabattue
+         * sur le défaut : un hôte qui force un chemin le fait pour mesurer ou
+         * pour contourner, et les deux sont faux s'il reçoit un succès. */
+        check(scg_set_simd(ctx, 99) == SCG_ERR_INVALID_ARGUMENT,
+              "un chemin inconnu est refuse");
     }
 
     if (loaded == SCG_OK && ctx != NULL) {

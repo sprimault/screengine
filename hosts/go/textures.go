@@ -175,6 +175,15 @@ func renderTextured(filter uint32) (uint64, bool) {
 	defer C.scg_destroy(ctx)
 
 	check(C.scg_set_filter(ctx, C.uint32_t(filter)) == C.SCG_OK, "le filtrage se règle")
+	// **Le chemin de remplissage est forcé au scalaire ici, et nulle part
+	// ailleurs.** Le chemin Rust rend cette même scène en SCG_SIMD_AUTO, donc par
+	// le jeu d'instructions le plus large de la machine : `make test` compare les
+	// deux empreintes, et leur égalité prouve qu'une variante rend les mêmes bits
+	// que la référence scalaire.
+	check(C.scg_set_simd(ctx, C.SCG_SIMD_SCALAR) == C.SCG_OK, "le chemin scalaire se force")
+	// Refusé plutôt que rabattu sur le défaut : un succès sans le chemin demandé
+	// ferait mesurer ce qui n'a pas tourné.
+	check(C.scg_set_simd(ctx, 99) == C.SCG_ERR_INVALID_ARGUMENT, "un chemin inconnu est refusé")
 	code := C.scg_submit_textured(ctx, &identity, &floorVertices[0], 4, &floorTriangles[0], 2, texture)
 	check(code == C.SCG_OK, "le lot texturé est accepté")
 

@@ -13,8 +13,8 @@
 //! même. Un champ qui aurait dormi en attendant aurait été un pari sur sa forme.
 
 use screengine::{
-    Affine3, Angle, Camera, Color, Filter, Light, Line, Point, Quat, Sprite, Vec3, VertexUv,
-    VertexUv2,
+    Affine3, Angle, Camera, Color, Filter, Light, Line, Point, Quat, SimdPath, Sprite, Vec3,
+    VertexUv, VertexUv2,
 };
 
 use crate::entry::AbiError;
@@ -711,6 +711,52 @@ pub(crate) fn filter_of(value: u32) -> Result<Filter, AbiError> {
         SCG_FILTER_DITHER => Ok(Filter::Dither),
         SCG_FILTER_BILINEAR => Ok(Filter::Bilinear),
         _ => Err(AbiError::FILTER),
+    }
+}
+
+/// Let the engine pick the widest instruction set the machine provides.
+///
+/// Zero, like `SCG_FILTER_DITHER` and for the same reason: a context that is
+/// never configured must behave the way the engine behaves by default.
+pub const SCG_SIMD_AUTO: u32 = 0;
+
+/// The scalar rasteriser, which every other path is validated against.
+///
+/// Always available, on every target: it needs no instruction set. Forcing it is
+/// how a host compares a vector path against the reference on one machine, and
+/// how it steps around an instruction set it holds to be at fault.
+pub const SCG_SIMD_SCALAR: u32 = 1;
+
+/// SSE2, which every `x86_64` target provides.
+pub const SCG_SIMD_SSE2: u32 = 2;
+
+/// AVX2, the one path that is asked of the processor at run time.
+pub const SCG_SIMD_AVX2: u32 = 3;
+
+/// NEON, which every `aarch64` target provides.
+pub const SCG_SIMD_NEON: u32 = 4;
+
+/// WebAssembly `simd128`, decided when the module is compiled.
+pub const SCG_SIMD_SIMD128: u32 = 5;
+
+/// Le chemin de remplissage du noyau que désigne une valeur de l'ABI.
+///
+/// Même forme que [`filter_of`], et pour la même raison : le noyau porte une
+/// énumération et ignore qu'elle se transporte en entier.
+///
+/// **Une valeur inconnue est refusée, jamais rabattue sur le défaut.** C'est ce
+/// qui rend l'ajout d'un chemin compatible : une liaison écrite contre une
+/// version ultérieure reçoit une erreur au lieu d'un succès qui ne lui donne pas
+/// ce qu'elle a demandé.
+pub(crate) fn simd_path_of(value: u32) -> Result<SimdPath, AbiError> {
+    match value {
+        SCG_SIMD_AUTO => Ok(SimdPath::Auto),
+        SCG_SIMD_SCALAR => Ok(SimdPath::Scalar),
+        SCG_SIMD_SSE2 => Ok(SimdPath::Sse2),
+        SCG_SIMD_AVX2 => Ok(SimdPath::Avx2),
+        SCG_SIMD_NEON => Ok(SimdPath::Neon),
+        SCG_SIMD_SIMD128 => Ok(SimdPath::Simd128),
+        _ => Err(AbiError::SIMD_PATH),
     }
 }
 

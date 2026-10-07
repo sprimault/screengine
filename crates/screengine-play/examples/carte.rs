@@ -44,7 +44,7 @@ use std::sync::Arc;
 use screengine_play::screengine::Angle;
 use screengine_play::{
     Affine3, Camera, Color, DepthMode, FreeCamera, KeyCode, Lightmaps, Line, Mesh, Output, Play,
-    Point, Surfaces, Texture, Vec3, World, load_png, sweep_skin,
+    Point, SimdPath, Surfaces, Texture, Vec3, World, load_png, sweep_skin,
 };
 
 /// La carte du dépôt, celle que les cinq autres hôtes chargent.
@@ -433,6 +433,18 @@ struct Scene {
     previous: Vec3,
     /// Le calque d'éditeur est-il allumé ?
     guides: bool,
+    /// Le chemin de remplissage demandé au contexte.
+    ///
+    /// **Il est ici pour que le chemin Rust montre ce que les cinq hôtes
+    /// savent faire**, et pas par confort : ceux-ci forcent le scalaire à
+    /// travers l'ABI, et une capacité qu'aucun exemple n'exercerait finirait par
+    /// n'exister que d'un côté — ce qui s'est déjà produit une fois, quand les
+    /// hôtes ont chargé des fichiers pendant toute une étape sans qu'aucun
+    /// exemple sache le faire.
+    ///
+    /// Bascule aussi ce qu'on peut **voir** : l'image ne doit pas changer d'un
+    /// chemin à l'autre, et c'est quelque chose qui se regarde.
+    simd: SimdPath,
     /// Ce que le curseur désignait au dernier pas, ou rien.
     aim: Option<Aim>,
 }
@@ -474,6 +486,7 @@ fn main() -> Result<(), screengine_play::Error> {
         cell,
         previous: START,
         guides: true,
+        simd: SimdPath::Auto,
         aim: None,
     };
 
@@ -515,6 +528,20 @@ fn main() -> Result<(), screengine_play::Error> {
                     scene.guides = !scene.guides;
                 }
 
+                // **`P` bascule le chemin de remplissage**, et l'image ne doit
+                // pas broncher : c'est un coût qui change, jamais un rendu. Le
+                // scalaire est disponible partout, donc le réglage ne peut pas
+                // échouer ici — mais il est écrit comme un `Result` parce que
+                // l'ABI le refuse pour un chemin que la machine ne porte pas, et
+                // qu'un exemple qui l'ignorerait apprendrait le contraire à qui
+                // le recopie.
+                if tick.input().pressed(KeyCode::KeyP) {
+                    scene.simd = match scene.simd {
+                        SimdPath::Auto => SimdPath::Scalar,
+                        _ => SimdPath::Auto,
+                    };
+                }
+
                 // **L'interrogation est ici, pas au rendu** : ce que le curseur
                 // désigne est un état de la partie — un éditeur en ferait la
                 // sélection —, et le rendu n'en est que la mise en image. Elle ne se
@@ -538,16 +565,29 @@ fn main() -> Result<(), screengine_play::Error> {
                 // annonce donc, et qu'il est pavé comme lui. Ce qui les sépare
                 // dans le calque est la branche de la normale, qui sort de la
                 // surface et pointe vers le bas sur un plafond.
+                // Le chemin forcé s'annonce, et le chemin choisi se tait : sans
+                // cela on ne saurait pas lequel des deux on regarde, et c'est
+                // précisément ce que la touche `P` sert à comparer.
+                let path = match scene.simd {
+                    SimdPath::Auto => "",
+                    _ => " — scalaire",
+                };
                 let title = match &scene.aim {
                     Some(Aim::Surface(_, _, name)) => {
-                        format!("Screengine — carte chargée : {name}")
+                        format!("Screengine — carte chargée : {name}{path}")
                     }
-                    Some(Aim::Crate(rank)) => format!("Screengine — carte chargée : caisse {rank}"),
-                    None => String::from("Screengine — carte chargée"),
+                    Some(Aim::Crate(rank)) => {
+                        format!("Screengine — carte chargée : caisse {rank}{path}")
+                    }
+                    None => format!("Screengine — carte chargée{path}"),
                 };
                 tick.set_title(&title);
             },
             |scene, context| {
+                // Posé à chaque image plutôt qu'au changement : le réglage est
+                // idempotent, et le suivre par un drapeau serait un second état
+                // à tenir d'accord avec le premier.
+                let _ = context.set_simd(scene.simd);
                 let _ = context.set_camera(scene.camera.camera());
                 // Un refus ne peut venir que de la capacité, que cette scène
                 // n'approche pas ; le laisser passer vaut mieux qu'arrêter la

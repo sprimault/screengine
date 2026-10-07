@@ -200,6 +200,21 @@ function renderTextured(engine, filter) {
   }
   const ctx = engine.readU32(out);
   check(e.scg_set_filter(ctx, filter) === scg.SCG_OK, "le filtrage se règle");
+  // **Le chemin de remplissage est forcé au scalaire ici, et nulle part
+  // ailleurs.** Le chemin Rust rend cette même scène en SCG_SIMD_AUTO, donc par
+  // le jeu d'instructions le plus large de la machine : `make test` compare les
+  // deux empreintes, et leur égalité prouve qu'une variante rend les mêmes bits
+  // que la référence scalaire.
+  check(
+    e.scg_set_simd(ctx, scg.SCG_SIMD_SCALAR) === scg.SCG_OK,
+    "le chemin scalaire se force",
+  );
+  // Refusé plutôt que rabattu sur le défaut : un succès sans le chemin demandé
+  // ferait mesurer ce qui n'a pas tourné.
+  check(
+    e.scg_set_simd(ctx, 99) === scg.SCG_ERR_INVALID_ARGUMENT,
+    "un chemin inconnu est refusé",
+  );
 
   const vertexBytes = FLOOR_VERTICES.length * scg.VERTEX_UV_SIZE;
   const triangleBytes = FLOOR_TRIANGLES.length * scg.TRIANGLE_SIZE;

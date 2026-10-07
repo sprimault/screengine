@@ -28,7 +28,7 @@ use std::sync::Arc;
 
 use screengine::{
     Affine3, Angle, BYTES_PER_PIXEL, Camera, Color, Config, Context, DepthMode, Filter, Frame,
-    Light, Lightmaps, Line, MAX_OVERBRIGHT, Mesh, Point, Quat, Rect, Rows, Sprite,
+    Light, Lightmaps, Line, MAX_OVERBRIGHT, Mesh, Point, Quat, Rect, Rows, SimdPath, Sprite,
     SpriteOrientation, Texture, Triangle, Vec3, VertexUv, VertexUv2, World,
 };
 use screengine_conformance::{collision_file, mesh_file, rooms_file, world_file};
@@ -58,18 +58,61 @@ enum Pass {
     /// et un changement de résolution encore moins. Celle-ci rend la même
     /// image par un contexte dont l'histoire diffère.
     Resized,
+    /// Tuiles de 64, le chemin de remplissage **forcé au scalaire**.
+    ///
+    /// **La seule passe qui ne diffère pas par le découpage**, et c'est cohérent
+    /// avec ce que les passes existent pour établir : elles rendent toutes la
+    /// même empreinte, et un chemin de remplissage ne change pas l'image non
+    /// plus. Une option qui changerait le rendu prendrait une scène, jamais une
+    /// passe — ce n'est pas le cas de celle-ci.
+    ///
+    /// Les six autres tournent en [`SimdPath::Auto`], donc par le jeu
+    /// d'instructions le plus large de la machine. Celle-ci rejoue la même scène
+    /// par la référence, et **c'est l'égalité des deux qui valide une variante**.
+    /// Elle est redondante sur une machine où `Auto` choisit déjà le scalaire,
+    /// et inoffensive — elle coûte une passe de plus là où elle ne prouve rien.
+    ///
+    /// Chaque variante à venir ajoute la sienne : une passe par chemin, écrite
+    /// plutôt que déduite, et qui se saute quand la machine ne le porte pas.
+    Scalar,
 }
 
 impl Pass {
     /// Toutes les passes, dans l'ordre où la suite les rejoue.
-    const ALL: [Self; 6] = [
+    const ALL: [Self; 7] = [
         Self::Tiles32,
         Self::Tiles64,
         Self::Whole,
         Self::Shuffled,
         Self::Threads,
         Self::Resized,
+        Self::Scalar,
     ];
+
+    /// Le chemin de remplissage que cette passe force.
+    ///
+    /// [`SimdPath::Auto`] pour toutes celles qui n'éprouvent qu'un découpage :
+    /// elles prennent alors le jeu d'instructions le plus large de la machine,
+    /// et c'est ce qui fait de leur égalité avec [`Pass::Scalar`] la validation
+    /// d'une variante.
+    fn simd(self) -> SimdPath {
+        match self {
+            Self::Scalar => SimdPath::Scalar,
+            _ => SimdPath::Auto,
+        }
+    }
+
+    /// Cette passe peut-elle tourner sur cette machine ?
+    ///
+    /// **Écrit maintenant alors que rien ne le met encore en défaut** : le
+    /// scalaire est disponible partout, donc aucune passe ne se saute
+    /// aujourd'hui. C'est la variante suivante qui en aura besoin — une passe
+    /// SSE2 n'a rien à faire sur ARM —, et la poser ici évite qu'elle arrive en
+    /// même temps qu'un chemin vectoriel, c'est-à-dire au moment où une
+    /// divergence aurait deux causes possibles.
+    fn available(self) -> bool {
+        self.simd().available()
+    }
 
     /// Le nom de la passe, dans un message de divergence.
     fn name(self) -> &'static str {
@@ -80,13 +123,14 @@ impl Pass {
             Self::Shuffled => "ordre mélangé",
             Self::Threads => "threads",
             Self::Resized => "redimensionné",
+            Self::Scalar => "chemin scalaire",
         }
     }
 
     /// Le côté de tuile du contexte.
     fn tile_size(self) -> u32 {
         match self {
-            Self::Tiles64 | Self::Whole | Self::Resized => 64,
+            Self::Tiles64 | Self::Whole | Self::Resized | Self::Scalar => 64,
             Self::Tiles32 | Self::Shuffled | Self::Threads => 32,
         }
     }
@@ -124,6 +168,7 @@ impl Pass {
         if resized {
             context.set_resolution(width, height)?;
         }
+        context.set_simd(self.simd())?;
         Ok(context)
     }
 
@@ -136,7 +181,10 @@ impl Pass {
         height: u32,
     ) -> screengine::Result<()> {
         match self {
-            Self::Tiles32 | Self::Tiles64 | Self::Resized => {
+            // La passe du chemin scalaire rend comme `Tiles64` : ce qu'elle
+            // change est le chemin, posé à l'ouverture du contexte, et non le
+            // découpage.
+            Self::Tiles32 | Self::Tiles64 | Self::Resized | Self::Scalar => {
                 frame.end(&mut Rows::new(pixels, width))
             }
             Self::Whole => {
@@ -2205,6 +2253,12 @@ impl Scene {
         let mut reference: Vec<u64> = Vec::with_capacity(views.len());
 
         for (rank, pass) in Pass::ALL.into_iter().enumerate() {
+            // Une passe que la machine ne porte pas se saute, et la première ne
+            // se saute jamais : elle est en `Auto`, donc toujours disponible, et
+            // c'est elle qui fournit la référence des autres.
+            if !pass.available() {
+                continue;
+            }
             for (index, view) in views.iter().enumerate() {
                 let hash = self.render_view(pass, *view).map_err(|error| {
                     format!(

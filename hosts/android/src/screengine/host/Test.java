@@ -180,6 +180,19 @@ public final class Test {
         }
 
         check(Screengine.setFilter(out[0], filter) == Screengine.OK, "le filtrage se règle");
+        // **Le chemin de remplissage est forcé au scalaire ici, et nulle part
+        // ailleurs.** Le chemin Rust rend cette même scène en SIMD_AUTO, donc par
+        // le jeu d'instructions le plus large de la machine : `make test` compare
+        // les deux empreintes, et leur égalité prouve qu'une variante rend les
+        // mêmes bits que la référence scalaire.
+        check(
+                Screengine.setSimd(out[0], Screengine.SIMD_SCALAR) == Screengine.OK,
+                "le chemin scalaire se force");
+        // Refusé plutôt que rabattu sur le défaut : un succès sans le chemin
+        // demandé ferait mesurer ce qui n'a pas tourné.
+        check(
+                Screengine.setSimd(out[0], 99) == Screengine.ERR_INVALID_ARGUMENT,
+                "un chemin inconnu est refusé");
 
         float[] model = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
         // Cinq flottants par sommet : la position, puis u et v en texels, à

@@ -66,9 +66,9 @@ pub use screengine;
 // rendraient inutilisables par le même nom.
 pub use screengine::{
     Affine3, Angle, Camera, Color, Context, DepthMode, Filter, Hit, LINE_CAPACITY, Light, Lightmap,
-    LightmapFault, Lightmaps, Line, Mesh, Point, Quat, SWEEP_CELLS, Sprite, SpriteOrientation,
-    Surfaces, TRIANGLE_CAPACITY, Texture, Triangle, Vec3, VertexUv, VertexUv2, Visibility, World,
-    lightmap_fault, sweep_reach, sweep_skin,
+    LightmapFault, Lightmaps, Line, Mesh, Point, Quat, SWEEP_CELLS, SimdPath, Sprite,
+    SpriteOrientation, Surfaces, TRIANGLE_CAPACITY, Texture, Triangle, Vec3, VertexUv, VertexUv2,
+    Visibility, World, lightmap_fault, sweep_reach, sweep_skin,
 };
 pub use texture::{load_png, load_png_masked};
 pub use winit::event::MouseButton;

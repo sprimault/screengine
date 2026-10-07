@@ -21,7 +21,7 @@ use crate::math::projection::ClipVertex;
 use crate::math::{Affine3, Projection, Vec3};
 use crate::raster::{
     Bins, Grid, Lighting, MAX_CLIP_TRIANGLES, MODULATED, NO_LIGHTING, NO_TEXTURE, Prepared, Rect,
-    Segment, Vertex, clip, clip_segment, prepare, prepare_lit,
+    Segment, SimdPath, Vertex, clip, clip_segment, prepare, prepare_lit,
 };
 use crate::scene::{
     Camera, Color, DepthMode, Light, Line, Point, Sprite, SpriteOrientation, Triangle, VertexUv,
@@ -230,6 +230,14 @@ pub struct Context {
     camera: Camera,
     /// Le mode d'échantillonnage, qu'une image conserve aussi.
     filter: Filter,
+    /// Le chemin de remplissage, qu'une image conserve pour la même raison.
+    ///
+    /// **Porté par le contexte et non par un statique du crate**, alors qu'il
+    /// décrit la machine et non la scène : un global serait partagé entre
+    /// contextes et entre threads, et deux cas de test qui forcent des chemins
+    /// différents se décideraient l'un l'autre. Le contexte est déjà l'objet dont
+    /// la concurrence est écrite.
+    simd: SimdPath,
     /// Le décalage de sur-éclairement, de même.
     overbright: u32,
     /// Les lumières dynamiques de l'image, telles que l'hôte les a données.
@@ -420,6 +428,7 @@ impl Context {
             grid: Grid::new(config.width, config.height, config.tile_size),
             camera,
             filter: Filter::default(),
+            simd: SimdPath::default(),
             overbright: 0,
             lights: reserved(MAX_LIGHTS)?,
             placed: reserved(MAX_LIGHTS)?,
@@ -495,6 +504,44 @@ impl Context {
             return Err(Error::InvalidState);
         }
         self.filter = filter;
+        Ok(())
+    }
+
+    /// Le chemin de remplissage courant, tel qu'il a été demandé.
+    ///
+    /// C'est la valeur posée et non celle qui sera employée : [`SimdPath::Auto`]
+    /// se rend lui-même, et c'est [`SimdPath::resolve`] qui dit ce que la machine
+    /// en fera.
+    pub fn simd(&self) -> SimdPath {
+        self.simd
+    }
+
+    /// Change le chemin de remplissage.
+    ///
+    /// **Il ne change pas l'image, et c'est tout l'objet du réglage.** Les
+    /// variantes rendent les mêmes bits que le scalaire : ce qui se choisit ici
+    /// est un coût, jamais un rendu. Une empreinte qui bougerait d'un chemin à
+    /// l'autre désignerait une variante fausse.
+    ///
+    /// **Il existe pour que les chemins se comparent sur une même machine.**
+    /// Sans lui, chacun ne se validerait que là où il tourne, et SSE2 ne serait
+    /// jamais comparé au scalaire sur un processeur qui porte AVX2 — c'est-à-dire
+    /// sur presque tous. Un hôte y gagne en plus de quoi contourner un jeu
+    /// d'instructions qu'il tient pour fautif, sans attendre une version.
+    ///
+    /// Un chemin que la machine ne porte pas est refusé par
+    /// [`Error::InvalidArgument`] plutôt que rabattu sur le scalaire : rabattre
+    /// en silence ferait croire à une mesure de ce qui n'a pas tourné.
+    ///
+    /// Refusé pendant le rendu, comme tout réglage que les tuiles lisent.
+    pub fn set_simd(&mut self, simd: SimdPath) -> Result<()> {
+        if *self.state.get_mut() != RECORDING {
+            return Err(Error::InvalidState);
+        }
+        if !simd.available() {
+            return Err(Error::InvalidArgument(Argument::SimdPath));
+        }
+        self.simd = simd;
         Ok(())
     }
 

@@ -74,6 +74,13 @@ pub enum Argument {
     Resolution,
     /// Une taille de tuile autre que 32 ou 64.
     TileSize,
+    /// Un chemin de remplissage que cette machine ne porte pas.
+    ///
+    /// **Refusé plutôt que rabattu sur le scalaire**, à la différence d'un
+    /// réglage qu'on pourrait ignorer sans conséquence : un hôte qui force un
+    /// chemin le fait pour mesurer ou pour contourner, et les deux usages sont
+    /// faux s'il reçoit un succès sans avoir obtenu ce qu'il demandait.
+    SimdPath,
     /// Un `stride` inférieur à la largeur courante, ou si grand que la taille
     /// du tampon qu'il décrit ne tient pas dans un `usize`.
     Stride,
@@ -415,6 +422,9 @@ impl Error {
                 "invalid resolution: each side must be between 1 and 2048, and the current resolution within the maximum"
             }
             Self::InvalidArgument(Argument::TileSize) => "invalid tile size: must be 32 or 64",
+            Self::InvalidArgument(Argument::SimdPath) => {
+                "unavailable fill path: this machine does not provide that instruction set"
+            }
             Self::InvalidArgument(Argument::Stride) => {
                 "invalid stride: must be at least the internal width"
             }
