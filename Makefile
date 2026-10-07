@@ -448,11 +448,22 @@ nostd:
 # qemu, que le poste Windows n'a pas. Elle se passe par `make arm-evo`.
 CIBLES_ARM = aarch64-linux-android armv7-linux-androideabi
 
+# **Le saut est une erreur en intégration continue**, comme pour les hôtes et
+# pour la même raison : un contrôle qui ne tourne pas sans que personne le voie
+# est pire que pas de contrôle. Le job Linux installe le NDK et qemu pour
+# l'hôte Android, donc rien n'y manque et un saut y désignerait une régression
+# de l'outillage.
 test-arm:
-	@if [ -z "$(ANDROID_NDK_HOME)" ] || [ ! -d "$(NDK_BIN)" ]; then \
-	  echo "test-arm saute : NDK introuvable, ANDROID_NDK_HOME non defini ou incomplet"; \
+	@reason=""; \
+	if [ -z "$(ANDROID_NDK_HOME)" ] || [ ! -d "$(NDK_BIN)" ]; then \
+	  reason="NDK introuvable, ANDROID_NDK_HOME non defini ou incomplet"; \
 	elif ! command -v qemu-aarch64 >/dev/null 2>&1 || ! command -v qemu-arm >/dev/null 2>&1; then \
-	  echo "test-arm saute : qemu-aarch64 ou qemu-arm introuvable"; \
+	  reason="qemu-aarch64 ou qemu-arm introuvable"; \
+	fi; \
+	if [ -n "$$reason" ] && [ -n "$$CI" ]; then \
+	  echo "test-arm impossible en integration continue : $$reason"; exit 1; \
+	elif [ -n "$$reason" ]; then \
+	  echo "test-arm saute : $$reason"; \
 	else \
 	  for cible in $(CIBLES_ARM); do \
 	    echo "test-arm : $$cible"; \

@@ -340,7 +340,10 @@ toutes les autres cibles.
   **Et `qemu-arm` réclame que le filtre d'appels système soit levé** : il appelle
   `personality` pour émuler un espace 32 bits, ce que le réglage par défaut d'un
   conteneur refuse. L'image d'Android fournit le reste — NDK, cibles rustup,
-  `qemu` —, et la cible saute en le disant quand l'un manque.
+  `qemu` —, et la cible saute en le disant quand l'un manque. **En intégration
+  continue, ce saut est une erreur** : le job qui l'appelle installe tout ce
+  qu'elle demande, donc un saut n'y signale pas un poste démuni mais une étape
+  d'installation cassée, et un vert l'aurait caché.
 - **Le test a deux paliers**, et `make test-android` exige que leurs cinq
   empreintes soient identiques. **La cible entière demande un appareil ou un
   émulateur joignable par `adb`** : le premier palier s'en passe, mais il ne se
@@ -554,7 +557,7 @@ et chaque semaine pour l'audit :
 | Job | Plateforme | Contrôles |
 |---|---|---|
 | vérification | Linux | `fmt`, `lint`, `nostd`, `header-verif`, `doc-verif`, `msrv`, `deny` |
-| tests | Linux et Windows | `test`, hôtes C, C++, wasm et Go compris, `conform` ; l'hôte Android sous Linux seulement, émulateur démarré, et retiré sous Windows par `SANS=android` |
+| tests | Linux et Windows | `test`, hôtes C, C++, wasm et Go compris, `conform` ; sous Linux seulement, l'hôte Android émulateur démarré et `test-arm` sous `qemu-user` ; l'hôte Android retiré sous Windows par `SANS=android` |
 | audit | Linux | `audit`, dans un job à part : un avis publié en amont n'est pas un défaut de la PR en cours |
 
 **`make msrv` construit le noyau et la frontière avec la chaîne que
