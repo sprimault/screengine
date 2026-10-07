@@ -46,12 +46,15 @@ browser and on a phone.
 
 ## Status
 
-**Step 8 cleared, released as 0.8.0: what editing needs.** The engine has no
-editor; it exposes what an editor asks for. Lines and points draw into the
-buffer, occluded by the scenery or visible through it, in world coordinates —
-for guides and a selection, never for a HUD. A ray picks the scene and returns
-the surface hit, surfaces flagged non-solid included. And modifying a map means
-replacing it whole: no function for that, and `ScgWorld` stays immutable.
+**Step 9 cleared, released as 0.9.0: SIMD.** Four vector paths fill a flat
+surface — SSE2 and AVX2 on x86, NEON on `aarch64`, `simd128` on wasm — selected
+at runtime and forceable through the ABI. None moves a pixel: each has its own
+conformance pass, and the core now runs on four architectures instead of one.
+Filling a textured surface is still scalar, on a gain measured at one and a half
+percent.
+
+The wasm module requires `simd128`: it no longer instantiates on a browser
+without that feature.
 
 The roadmap has ten steps, each one published.
 
