@@ -68,6 +68,10 @@ publié, et explique les conventions du dépôt à qui y contribue.
 - **Le remplissage d'une surface unie est vectorisé sur les deux
   architectures** : SSE2 et AVX2 sur x86, NEON sur `aarch64`. L'image ne change
   pas, et la conformance le vérifie chemin par chemin.
+- **Le noyau s'éprouve aussi sur une cible wasm**, par WASI sous Node : ses
+  tests et les vingt-neuf scènes de conformance y rendent les mêmes empreintes
+  qu'ailleurs. Le rendu est désormais vérifié identique sur trois familles
+  d'architecture.
 
 ***
 
@@ -92,6 +96,10 @@ publié, et explique les conventions du dépôt à qui y contribue.
 - **Filling a flat surface is vectorised on both architectures**: SSE2 and AVX2
   on x86, NEON on `aarch64`. The image does not change, and the conformance
   checks it path by path.
+- **The core is also exercised on a wasm target**, through WASI under Node: its
+  tests and the twenty-nine conformance scenes produce the same fingerprints as
+  everywhere else. Rendering is now verified identical across three
+  architecture families.
 
 ## [0.8.9] — 2026-10-05 — Ce que rien ne vérifiait
 

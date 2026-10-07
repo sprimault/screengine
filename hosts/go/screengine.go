@@ -60,6 +60,23 @@ func check(ok bool, what string) {
 	}
 }
 
+// Le dernier message d'erreur du contexte, copié côté Go.
+//
+// **La copie n'est pas une précaution de style** : le header annonce que le
+// tampon rendu reste valide jusqu'au prochain appel sur le même contexte, et
+// garder le pointeur ferait lire un tampon réécrit. `C.GoString` copie, donc la
+// chaîne rendue survit à l'appel suivant — ce qui est exactement ce qu'il faut
+// pour comparer deux messages pris de part et d'autre d'un appel.
+//
+// Le contexte nul est admis par l'ABI, et désigne l'emplacement sans contexte.
+func lastError(ctx *C.ScgContext) string {
+	message := C.scg_last_error(ctx)
+	if message == nil {
+		return ""
+	}
+	return C.GoString(message)
+}
+
 // FNV-1a 64 bits, dans la forme de screengine-conformance : largeur et hauteur
 // en u32 poids faible en tête, puis la zone utile ligne par ligne.
 func fingerprint(pixels []byte, w, h, s uint32) uint64 {

@@ -123,6 +123,7 @@ l'exécution par `scg_abi_version`.
 | Linux x64 | `x86_64-unknown-linux-gnu` | `.so`, `.a` | gcc ou clang | `hosts/c`, `hosts/cpp`, `hosts/go`, conformance | CI |
 | Linux x86 | `i686-unknown-linux-gnu` | `.so`, `.a` | gcc-multilib | aucun | CI, au tag seulement |
 | Navigateur | `wasm32-unknown-unknown` | `.wasm` | cible rustup, Node | `hosts/web` | CI, `make test-wasm` sous Linux et Windows |
+| wasm WASI | `wasm32-wasip1` | `.wasm` exécutable | cible rustup, Node | aucun | CI, `make test-wasi` et `make conform-wasi`, pour le noyau |
 | Android arm64 | `aarch64-linux-android` | `.so`, `.a` | NDK, `qemu-user` | `hosts/android` | CI, `make test-android` sous Linux, sous `qemu-user` ; `make test-arm` et `make conform-arm` pour le noyau |
 | Android armv7 | `armv7-linux-androideabi` | `.so`, `.a` | NDK, `qemu-user` | `hosts/android` | CI, `make test-android` sous Linux, sous `qemu-user` ; `make test-arm` et `make conform-arm` pour le noyau |
 | Android x64 | `x86_64-linux-android` | `.so`, `.a` | NDK, SDK, émulateur | `hosts/android` | CI, `make test-android` sous Linux, sur émulateur par JNI |
@@ -263,6 +264,33 @@ toutes les autres cibles.
   navigateur ne lit pas — la page exigerait alors un compilateur, donc npm.
   La page a été vue dans un navigateur avant la 0.0.0 ; l'intégration continue
   n'en fait tourner que le test sous Node.
+- **`make test-wasi` et `make conform-wasi` exécutent le noyau sur une cible
+  wasm**, par `hosts/web/wasi-run.mjs` et le `node:wasi` de Node. Rien n'y
+  tournait : `make lint` compile pour `wasm32-unknown-unknown` sans rien
+  exécuter, et `make test-wasm` éprouve la bibliothèque à travers l'ABI, pas le
+  noyau.
+
+  **La cible n'est pas celle qu'on publie**, et c'est WASI qui fait la
+  différence : `wasm32-unknown-unknown` n'a ni arguments, ni sortie standard, ni
+  système de fichiers, donc un binaire de test n'y a aucun moyen de dire ce
+  qu'il a trouvé et la conformance ne peut pas lire ses références. Le code
+  vectoriel et l'arithmétique sont identiques entre les deux — même
+  architecture, mêmes `target_feature` —, et le noyau ne touche pas au système :
+  c'est le compromis de `qemu` sur Android, où les tests tournent sur l'ABI
+  publiée mais sans appareil.
+
+  **Deux choses que cette cible ne peut pas éprouver**, et toutes deux se
+  sautent en le disant plutôt que d'échouer : la passe `threads` de la
+  conformance, Node n'ayant pas wasi-threads, et le cas du noyau qui compte sur
+  `catch_unwind` — une panique est un trap sur wasm, ce que `docs/abi.md` décrit
+  déjà comme la raison pour laquelle l'état défaillant n'y est pas observé.
+
+  **En release, et les assertions de debug actives.** Le module de test en
+  profil `dev` fait segfauter Node au bout d'une centaine de cas, à un rang qui
+  varie d'une exécution à l'autre, et élargir la pile wasm n'y change rien ;
+  `-C debug-assertions=on` garde les douze `debug_assert!` du noyau, qui ne
+  dépendent pas du profil. Et `--nocapture`, parce qu'un trap arrête le
+  processus : sans lui, un échec ne nomme que le test commencé.
 
 ### Go
 
@@ -568,7 +596,7 @@ et chaque semaine pour l'audit :
 | Job | Plateforme | Contrôles |
 |---|---|---|
 | vérification | Linux | `fmt`, `lint`, `nostd`, `header-verif`, `doc-verif`, `msrv`, `deny` |
-| tests | Linux et Windows | `test`, hôtes C, C++, wasm et Go compris, `conform` ; sous Linux seulement, l'hôte Android émulateur démarré puis `test-arm` et `conform-arm` sous `qemu-user` ; l'hôte Android retiré sous Windows par `SANS=android` |
+| tests | Linux et Windows | `test`, hôtes C, C++, wasm et Go compris, `conform`, puis `test-wasi` et `conform-wasi` sous Node ; sous Linux seulement, l'hôte Android émulateur démarré puis `test-arm` et `conform-arm` sous `qemu-user` ; l'hôte Android retiré sous Windows par `SANS=android` |
 | audit | Linux | `audit`, dans un job à part : un avis publié en amont n'est pas un défaut de la PR en cours |
 
 **`make msrv` construit le noyau et la frontière avec la chaîne que
@@ -588,9 +616,8 @@ peut rendre vert un contrôle qui ne vérifie plus rien. C'est pour cela que
 **Les empreintes de référence sont versionnées**, et chaque plateforme les compare
 aux mêmes fichiers : Windows et Linux se comparent ainsi entre eux sans étape
 dédiée. Une conformance qui ne tournerait que sur une plateforme ne comparerait
-rien. wasm n'exécute pas la conformance en intégration continue, et ses
-empreintes se comparent par son hôte ; les deux ABI ARM d'Android la jouent sous
-`qemu-user`, l'ABI x86_64 restant couverte par son hôte sur émulateur.
+rien. Les deux ABI ARM d'Android la jouent sous `qemu-user` et wasm sous WASI,
+l'ABI Android x86_64 restant couverte par son hôte sur émulateur.
 
 ## Publication
 
