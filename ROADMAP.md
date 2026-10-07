@@ -240,7 +240,7 @@ puisque le chemin brut ne peut en avoir.
 Interpolation entre trames, quadrilatères que le moteur oriente sur la caméra,
 ordre géré par le z-buffer plutôt que par un tri.
 
-**Deux façons d'écrire un pixel que le moteur n'a pas encore** : le texel
+**Deux façons d'écrire un pixel que l'étape apporte** : le texel
 transparent, qu'on n'écrit pas, et la surface **modulée**, qui multiplie ce qui
 est déjà dans le tampon au lieu de l'écraser. La première est ce qu'un sprite
 réclame par définition ; la seconde vient avec, parce qu'elle ne coûte qu'un mode
@@ -396,17 +396,17 @@ liste que rien n'éprouve aujourd'hui.
   primitive. Le moteur calcule bien des ombres, mais à l'étape 5 et une fois
   pour toutes : ce sont les lightmaps du décor.
 
-  **Une variante étroite reste à examiner, après l'étape 6.** Ce que le budget
-  exclut, c'est de recalculer les ombres partout, à chaque image, pour huit
-  lumières : une passe de rendu par lumière, deux millions d'accès dispersés à
-  l'écran, plusieurs mégaoctets de trafic par image — alors qu'une scène
-  chargée consomme déjà près de la moitié du budget d'une image à 60 i/s. Une
-  **seule** lumière portant des ombres, en basse résolution, sur les **seuls
-  objets mobiles**, coûterait environ une milliseconde : c'est ce que faisaient
-  les moteurs de la toute fin de cette époque. Le décor garderait ses
-  lightmaps, meilleures et déjà payées. À trancher quand il y aura un objet
-  mobile à ombrer, pas avant : dimensionner pour des objets qui n'existent pas
-  revient à choisir une résolution au hasard.
+  **Une variante étroite reste à examiner, et sa condition est un objet mobile à
+  ombrer.** Ce que le budget exclut, c'est de recalculer les ombres partout, à
+  chaque image, pour huit lumières : une passe de rendu par lumière, deux
+  millions d'accès dispersés à l'écran, plusieurs mégaoctets de trafic par
+  image — à ajouter à ce qu'une scène chargée consomme déjà, que `benches/`
+  mesure et qui fait foi là plutôt qu'ici. Une **seule** lumière portant des
+  ombres, en basse résolution, sur les **seuls objets mobiles**, coûterait
+  environ une milliseconde : c'est ce que faisaient les moteurs de la toute fin
+  de cette époque. Le décor garderait ses lightmaps, meilleures et déjà payées.
+  À trancher quand il y aura un objet mobile à ombrer, pas avant : dimensionner
+  pour des objets qui n'existent pas revient à choisir une résolution au hasard.
 - **La collision contre autre chose que la géométrie d'une carte.** Un maillage
   posé — une caisse, un poteau, une étagère — n'a pas de portail, donc pas
   d'adjacence : rien de ce que l'étape 7 apprend à traverser ne s'applique à lui,
@@ -421,7 +421,10 @@ liste que rien n'éprouve aujourd'hui.
 - Post-traitement plein écran : FXAA, bloom, tout ce qui lit les pixels voisins.
 - Modèles animés par squelette : les trames interpolées suffisent à la classe
   visée.
-- Son, entrées, réseau. Ce n'est pas un moteur de jeu.
+- Son, entrées, réseau **dans le moteur**. Ce n'est pas un moteur de jeu. L'étage
+  d'accueil et les hôtes de démonstration de l'étape 4 ont leur fenêtre, leurs
+  entrées et leur boucle : c'est là qu'elles vivent, et le noyau n'en connaît
+  aucune.
 - Un éditeur livré. L'étape 8 fournit de quoi en écrire un, pas un produit.
 - iOS et macOS avant que le reste soit stable : ils exigent un runner macOS et
   un cycle de retour lent depuis un poste Windows.
