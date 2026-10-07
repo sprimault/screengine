@@ -9,13 +9,17 @@
 
 use core::sync::atomic::Ordering;
 
+use crate::MAX_RESOLUTION;
 use crate::context::{
     BYTES_PER_PIXEL, CLEAR_COLOR, CLOSING, Context, OPAQUE, RECORDING, RENDERING,
 };
 use crate::error::{Argument, Error, Result};
 use crate::light;
 use crate::light::grade::{Identity, Transfer};
-use crate::raster::{Lit, NO_LIGHTING, NO_TEXTURE, Rect, Sampling, Segment, Target, cover, fill};
+use crate::raster::{
+    Lit, NO_LIGHTING, NO_TEXTURE, Rect, Sampling, Segment, Span, Target, cover, fill, simd,
+    span_scalar,
+};
 
 /// Le plus grand côté de tuile, qui dimensionne le tampon de travail posé sur
 /// la pile.
@@ -152,6 +156,51 @@ impl Target for Scratch<'_> {
         // Sur-éclairement nul, et ce n'est pas celui du contexte : une tache
         // assombrit ou ne fait rien, elle n'éclaircit jamais.
         self.color[i] = light::modulate(self.color[i], factor, 0);
+    }
+
+    /// Le seul puits du projet qui vectorise, parce qu'il est le seul à ranger
+    /// sa couleur et sa profondeur en tableaux contigus.
+    ///
+    /// **Ce que la variante calcule est la profondeur, et elle seule** : le test
+    /// et l'écriture restent ici, en Rust sûr, sur des indices que le type
+    /// borne. Porter aussi la comparaison et l'écriture masquée en SSE2 est
+    /// faisable et viendra peut-être ; cela demanderait de sortir les deux
+    /// tranches vers un module `unsafe`, et ce lot-ci pose d'abord les
+    /// conventions sur la partie qui n'y oblige pas.
+    ///
+    /// **Le tampon de profondeurs vit sur la pile de l'appel**, dimensionné pour
+    /// la plus longue ligne qu'une tuile puisse porter : aucune allocation par
+    /// image, ce que l'invariant exige.
+    fn span(&mut self, span: Span) {
+        let count = (span.x1 - span.x0 + 1) as usize;
+
+        // **Le tampon vit sur la pile de l'appel**, dimensionné pour la plus
+        // longue ligne qu'une région puisse porter : aucune allocation par
+        // image, ce que l'invariant exige. Une tuile en fait au plus 64 de côté,
+        // mais le rendu d'une région entière va jusqu'à la résolution maximale.
+        let mut depths = [0u32; MAX_RESOLUTION as usize];
+        if count > depths.len()
+            || !simd::span_depths(span.simd, span.depth, span.depth_x, &mut depths[..count])
+        {
+            // La référence, et c'est là que tout chemin sans variante retombe.
+            return span_scalar(self, span);
+        }
+
+        // **Le test et l'écriture restent en Rust sûr**, sur des indices que le
+        // type borne : ce que la variante calcule est la profondeur, et elle
+        // seule. Porter aussi la comparaison et l'écriture masquée demanderait
+        // de confier les deux tranches à un module `unsafe`, et ce lot pose
+        // d'abord les conventions sur la partie qui ne l'exige pas.
+        for (step, &z) in depths[..count].iter().enumerate() {
+            let x = span.x0 + step as i32;
+            if span.modulated {
+                if self.test_modulated(x, span.y, z.saturating_add(span.bias)) {
+                    self.modulate(x, span.y, span.color);
+                }
+            } else if self.test(x, span.y, z) {
+                self.write(x, span.y, z, span.color);
+            }
+        }
     }
 }
 

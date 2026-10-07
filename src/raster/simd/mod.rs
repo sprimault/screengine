@@ -44,6 +44,11 @@
 //! un cas qui force le scalaire, sans que rien ne le signale. Le contexte est
 //! déjà l'objet dont la concurrence est écrite.
 
+#[cfg(all(
+    target_feature = "sse2",
+    any(target_arch = "x86", target_arch = "x86_64")
+))]
+pub mod sse2;
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 pub mod x86;
 
@@ -114,6 +119,36 @@ impl SimdPath {
             Self::Sse2
         } else {
             Self::Scalar
+        }
+    }
+}
+
+/// Calcule les profondeurs d'une ligne par le chemin demandé.
+///
+/// Rend **vrai** quand une variante a rempli `out`, **faux** quand ce chemin n'a
+/// rien à offrir ici — à l'appelant de retomber alors sur
+/// [`crate::raster::span_scalar`], qui est la référence.
+///
+/// **Le point unique où les `cfg` de cible vivent.** Un puits qui appelle cette
+/// fonction n'a pas à savoir sur quelle architecture il tourne ni quels modules
+/// existent : la question « ce chemin sait-il faire » se pose une fois, ici, et
+/// les branches absentes se compilent en « non ».
+pub fn span_depths(path: SimdPath, depth: i64, depth_x: i64, out: &mut [u32]) -> bool {
+    match path {
+        #[cfg(all(
+            target_feature = "sse2",
+            any(target_arch = "x86", target_arch = "x86_64")
+        ))]
+        SimdPath::Sse2 => {
+            sse2::depths(depth, depth_x, out);
+            true
+        }
+        // Tout le reste retombe sur la référence : les variantes qui n'existent
+        // pas encore, celles que cette cible ne porte pas, et le scalaire, qui
+        // **est** la référence.
+        _ => {
+            let _ = (depth, depth_x, out);
+            false
         }
     }
 }
