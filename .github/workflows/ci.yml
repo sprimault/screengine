@@ -168,15 +168,6 @@ jobs:
           disable-animations: true
           script: make test
 
-      # Les tests du noyau sur les deux ABI ARM, sous qemu-user et sans
-      # appareil : ils n'y tournaient nulle part ailleurs, seul l'hôte C y
-      # rendant une empreinte. Hors de l'action émulateur, qui ne leur sert
-      # pas — qemu-user exécute des binaires, pas un système —, et après les
-      # tests pour que l'échec le plus courant reste le premier annoncé.
-      - name: Tests du noyau sur ARM
-        if: runner.os == 'Linux'
-        run: make test-arm
-
       # Windows n'a ni qemu-user ni KVM pour l'émulateur : l'hôte Android y est
       # retiré par une exclusion écrite, et non par un saut que CI ferait échouer.
       - name: Tests
@@ -196,6 +187,22 @@ jobs:
         run: |
           rustup target add "$(make -s print-CIBLE_X86)"
           make conform-x86
+
+      # Les deux ABI ARM, sous qemu-user et sans appareil. En dernier, et sous
+      # émulation : un échec y est moins probable que partout ailleurs, et le
+      # premier annoncé doit être le plus courant. Hors de l'action émulateur,
+      # qui ne leur sert pas — qemu-user exécute des binaires, pas un système.
+      - name: Tests du noyau sur ARM
+        if: runner.os == 'Linux'
+        run: make test-arm
+
+      # Les mêmes scènes et les mêmes empreintes, sur une autre architecture.
+      # C'est le seul endroit où les vingt-neuf se comparent hors de x86 : les
+      # hôtes n'en portent que quatorze, par le seul chemin que leur machine
+      # résout.
+      - name: Conformance sur ARM
+        if: runner.os == 'Linux'
+        run: make conform-arm
 
   # Job distinct : un avis publié en amont n'a rien à voir avec la PR en cours,
   # et son échec ne doit pas se lire comme « ta contribution est cassée ».
