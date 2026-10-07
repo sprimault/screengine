@@ -2508,6 +2508,40 @@ fn parse_mode(args: &[String]) -> Result<Mode, String> {
     }
 }
 
+/// Ce que cette machine joue des passes, et ce qu'elle saute.
+///
+/// **Une passe sautée se taisait, et une scène dont une passe n'a pas tourné
+/// s'affichait « conforme » comme les autres.** C'est la forme exacte du piège
+/// que ce dépôt connaît déjà ailleurs : une ligne de saut qui se lit comme un
+/// succès quand on ne la cherche pas. Les chemins vectoriels la rendent
+/// courante — NEON n'existe pas sur x86, `simd128` hors wasm, AVX2 nulle part
+/// par défaut —, si bien qu'un journal entièrement vert pourrait ne rien dire
+/// d'une variante.
+///
+/// **En tête et une seule fois**, parce que la disponibilité tient à la machine
+/// et jamais à la scène : la répéter sur chacune des vingt-neuf lignes serait du
+/// bruit, et c'est précisément ce que les lignes de saut deviennent quand elles
+/// se multiplient.
+fn passes_line() -> String {
+    let mut played = Vec::new();
+    let mut skipped = Vec::new();
+    for pass in Pass::ALL {
+        if pass.available() {
+            played.push(pass.name());
+        } else {
+            skipped.push(pass.name());
+        }
+    }
+    let mut line = format!("passes jouées : {}", played.join(", "));
+    if !skipped.is_empty() {
+        line.push_str(&format!(
+            " — sautées, non portées par cette machine : {}",
+            skipped.join(", ")
+        ));
+    }
+    line
+}
+
 /// L'empreinte que `--print` écrit, celle à laquelle un hôte compare la sienne.
 ///
 /// **Une fonction plutôt que le corps du mode**, pour qu'un test l'atteigne :
@@ -2579,6 +2613,8 @@ fn main() -> ExitCode {
             };
         }
     };
+
+    println!("{}", passes_line());
 
     let mut failed = false;
     for scene in Scene::ALL {
