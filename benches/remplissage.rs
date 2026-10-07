@@ -46,6 +46,32 @@
 //! là : la même scène des deux côtés, à la même résolution et au même nombre de
 //! threads.
 //!
+//! # Ce que les chemins vectoriels rapportent, mesuré le 2026-10-07
+//!
+//! **Rien, et c'est le résultat du lot qui les a mesurés.** Sur un poste de
+//! travail ordinaire — donc des chiffres qui ne valent que les uns contre les
+//! autres, pris dans le même tour :
+//!
+//! ```text
+//! plein cadre, uni — scalaire    0.29 ms
+//! plein cadre, uni — SSE2        0.34 ms
+//! plein cadre, uni — AVX2        0.34 ms
+//! ```
+//!
+//! **Les variantes sont très légèrement plus lentes**, et la cause tient à ce
+//! qu'elles font : elles vectorisent le calcul des profondeurs, puis l'écrivent
+//! dans un tampon que la boucle relit pixel par pixel pour tester et écrire. Cet
+//! aller-retour en mémoire coûte plus que l'addition `i64` qu'il épargne, là où
+//! le chemin scalaire accumule dans un registre et teste dans la foulée.
+//!
+//! **Les trois cas texturés ne bougent pas**, et c'est attendu : aucune variante
+//! ne touche encore ce chemin. Ils servent de témoin — un écart y signalerait une
+//! mesure qui ne porte pas sur ce qu'elle annonce.
+//!
+//! Ce que cela dit de la suite : un gain demandera de vectoriser le **test de
+//! profondeur et l'écriture**, c'est-à-dire de traiter les deux tampons du puits
+//! d'un bloc. Vectoriser ce qui les précède ne paie pas.
+//!
 //! # La référence, reprise le 2026-09-23 après les lightmaps
 //!
 //! ```text
@@ -81,7 +107,8 @@ use std::hint::black_box;
 use std::time::{Duration, Instant};
 
 use screengine::{
-    Affine3, BYTES_PER_PIXEL, Color, Config, Context, Filter, Texture, Triangle, Vec3, VertexUv,
+    Affine3, BYTES_PER_PIXEL, Color, Config, Context, Filter, SimdPath, Texture, Triangle, Vec3,
+    VertexUv,
 };
 
 /// La résolution interne de référence du projet.
@@ -94,9 +121,14 @@ const HEIGHT: u32 = 360;
 /// pour que la mesure entière tienne en quelques secondes.
 const IMAGES: u32 = 60;
 
-/// Un contexte à la résolution de référence.
-fn contexte() -> Context {
-    Context::new(Config {
+/// Un contexte à la résolution de référence, sur le chemin demandé.
+///
+/// **Le chemin est un paramètre, et c'est tout l'objet de ces mesures** : une
+/// variante vectorielle est juste quand elle rend les bits du scalaire, ce que
+/// la conformance exige ; elle n'est **utile** que si elle est plus rapide, ce
+/// qu'aucun contrôle ne dit et que seul ce fichier peut établir.
+fn contexte(simd: SimdPath) -> Context {
+    let mut context = Context::new(Config {
         max_width: WIDTH,
         max_height: HEIGHT,
         width: WIDTH,
@@ -105,7 +137,28 @@ fn contexte() -> Context {
         max_triangles: 0,
         max_lines: 0,
     })
-    .expect("configuration valide")
+    .expect("configuration valide");
+    context.set_simd(simd).expect("chemin disponible");
+    context
+}
+
+/// Les chemins que cette machine peut mesurer, le scalaire en tête.
+///
+/// **Le scalaire d'abord, parce que c'est la référence** : les lignes se lisent
+/// les unes sous les autres, et c'est au premier chiffre que les suivants se
+/// comparent. Un chemin que la machine ne porte pas ne s'imprime pas du tout,
+/// plutôt que d'afficher une durée qui serait celle du scalaire déguisée.
+fn chemins() -> Vec<(&'static str, SimdPath)> {
+    [
+        ("scalaire", SimdPath::Scalar),
+        ("SSE2", SimdPath::Sse2),
+        ("AVX2", SimdPath::Avx2),
+        ("NEON", SimdPath::Neon),
+        ("simd128", SimdPath::Simd128),
+    ]
+    .into_iter()
+    .filter(|(_, path)| path.available())
+    .collect()
 }
 
 /// Une texture en damier de 256 texels de côté.
@@ -172,7 +225,7 @@ fn ligne(quoi: &str, duree: Duration) {
     let ns = duree.as_secs_f64() * 1e9;
     let par_image = duree.as_secs_f64() * 1e3;
     println!(
-        "{quoi:<28} {par_image:>7.2} ms   {:>5.1} ns/pixel",
+        "{quoi:<38} {par_image:>7.2} ms   {:>5.1} ns/pixel",
         ns / pixels
     );
 }
@@ -211,6 +264,42 @@ fn plein_cadre(context: &mut Context, texture: &std::sync::Arc<Texture>, filter:
     context.set_filter(filter).expect("hors image");
     context
         .submit_textured(Affine3::IDENTITY, &vertices, &triangles, texture)
+        .expect("capacité");
+}
+
+/// Le même quadrilatère, **sans texture ni éclairage**.
+///
+/// **C'est le seul cas qui emprunte le chemin uni**, et son absence a laissé
+/// toute une étape sans mesure : les trois cas d'origine sont texturés, si bien
+/// qu'une variante écrite pour le chemin uni ne s'y voyait pas du tout. Mesuré
+/// le 2026-10-07 — les trois lignes texturées ne bougeaient pas d'un chemin à
+/// l'autre, et ce n'était ni un gain nul ni une variante lente : c'était du code
+/// qui ne tournait jamais.
+///
+/// Il est bref et c'est voulu : une couleur constante, une profondeur affine, et
+/// rien à échantillonner. Ce qu'il chronomètre est la boucle que `Target::span`
+/// propose d'un bloc, et elle seule.
+fn plein_cadre_uni(context: &mut Context) {
+    let coin = |x: f32, z: f32| Vec3::new(2.0, x, z);
+    let vertices = [
+        coin(-3.0, 2.0),
+        coin(3.0, 2.0),
+        coin(3.0, -2.0),
+        coin(-3.0, -2.0),
+    ];
+    let triangles = [
+        Triangle {
+            indices: [0, 1, 2],
+            color: Color::new(0xC0, 0xB0, 0x90, 0xFF),
+        },
+        Triangle {
+            indices: [0, 2, 3],
+            color: Color::new(0xC0, 0xB0, 0x90, 0xFF),
+        },
+    ];
+
+    context
+        .submit(Affine3::IDENTITY, &vertices, &triangles)
         .expect("capacité");
 }
 
@@ -280,30 +369,54 @@ fn main() {
          le facteur telephone n'est pas mesure : voir la documentation du module\n"
     );
 
-    for (nom, filtre) in [
-        ("plein cadre, tramage", Filter::Dither),
-        ("plein cadre, bilineaire", Filter::Bilinear),
-    ] {
-        let mut context = contexte();
+    // **Le chemin uni d'abord**, parce que c'est le seul que les variantes
+    // touchent aujourd'hui : les lignes texturées qui suivent servent de témoin
+    // — elles ne doivent pas bouger d'un chemin à l'autre, n'empruntant aucun
+    // code vectoriel.
+    for (chemin, simd) in chemins() {
+        let mut context = contexte(simd);
         let duree = mesure(|| {
-            plein_cadre(&mut context, &texture, filtre);
+            plein_cadre_uni(&mut context);
             context
                 .frame_end(black_box(&mut pixels), WIDTH)
                 .expect("image rendue");
         });
-        // Plein cadre veut dire plein cadre : sous 95 %, le quadrilatère est
-        // mal placé et ce n'est plus la boucle de pixels qu'on chronomètre.
-        exige_couverture(&pixels, nom, 0.95);
-        ligne(nom, duree);
+        exige_couverture(&pixels, "plein cadre, uni", 0.95);
+        ligne(&format!("plein cadre, uni — {chemin}"), duree);
     }
 
-    let mut context = contexte();
-    let duree = mesure(|| {
-        scene_chargee(&mut context, &texture);
-        context
-            .frame_end(black_box(&mut pixels), WIDTH)
-            .expect("image rendue");
-    });
-    exige_couverture(&pixels, "scene", 0.5);
-    ligne("scene, 600 triangles", duree);
+    for (nom, filtre) in [
+        ("plein cadre, tramage", Filter::Dither),
+        ("plein cadre, bilineaire", Filter::Bilinear),
+    ] {
+        for (chemin, simd) in chemins() {
+            let mut context = contexte(simd);
+            let duree = mesure(|| {
+                plein_cadre(&mut context, &texture, filtre);
+                context
+                    .frame_end(black_box(&mut pixels), WIDTH)
+                    .expect("image rendue");
+            });
+            // Plein cadre veut dire plein cadre : sous 95 %, le quadrilatère est
+            // mal placé et ce n'est plus la boucle de pixels qu'on chronomètre.
+            exige_couverture(&pixels, nom, 0.95);
+            ligne(&format!("{nom} — {chemin}"), duree);
+        }
+    }
+
+    // **La scène chargée se mesure aussi par chemin**, et c'est elle qui décide :
+    // le plein cadre est un quadrilatère unique, quand celle-ci empile six cents
+    // triangles avec leur mise en place, leur répartition et leur recouvrement.
+    // Un gain qui n'apparaîtrait que sur le premier ne serait pas un gain.
+    for (chemin, simd) in chemins() {
+        let mut context = contexte(simd);
+        let duree = mesure(|| {
+            scene_chargee(&mut context, &texture);
+            context
+                .frame_end(black_box(&mut pixels), WIDTH)
+                .expect("image rendue");
+        });
+        exige_couverture(&pixels, "scene", 0.5);
+        ligne(&format!("scene, 600 triangles — {chemin}"), duree);
+    }
 }
