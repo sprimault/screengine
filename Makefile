@@ -62,6 +62,23 @@ CIBLES_ANDROID ?= aarch64-linux-android armv7-linux-androideabi x86_64-linux-and
 # propre est la x87, que Rust évite en activant SSE2 sur ces cibles.
 CIBLE_X86 ?= i686-pc-windows-msvc
 
+# Les deux cibles Linux sur ARM, celles d'un Raspberry Pi.
+#
+# **Même jeu d'instructions que les ABI Android, une autre bibliothèque C.** Le
+# projet compilait `aarch64-linux-android` et `armv7-linux-androideabi`, qui
+# portent la bionic du NDK ; celles-ci portent la glibc. Le noyau n'emploie
+# aucune des deux et devrait s'y porter sans rien changer — mais la frontière
+# passe par `std`, donc rien ne le garantissait tant qu'on ne l'avait pas
+# construit.
+#
+# **Elles ne s'exécutent pas ici, et c'est le seul blocage** : lier un binaire
+# de test réclame une chaîne croisée — `gcc-aarch64-linux-gnu` —, que ce poste
+# n'a pas et que l'image d'Android ne porte pas non plus, un NDK n'étant pas une
+# glibc. Une rlib, elle, ne s'édite pas : `lint` et `msrv` les compilent donc en
+# `--lib` sans rien installer, et c'est ce qui répond à la question que la
+# feuille de route posait.
+CIBLES_LINUX_ARM ?= aarch64-unknown-linux-gnu armv7-unknown-linux-gnueabihf
+
 # cargo install construit dans un répertoire temporaire du système et n'honore
 # pas CARGO_TARGET_DIR. Sur un poste où ce répertoire est surveillé, la variable
 # reçoit un --target-dir dans makefile.local ; ailleurs elle reste vide.
@@ -429,7 +446,7 @@ lint-android-versions:
 # **Une seule liste**, parce que `lint` et `msrv` doivent voir les mêmes : deux
 # listes finiraient par diverger, et c'est la cible absente de l'une qui
 # porterait le défaut.
-CIBLES_CROISEES = $(CIBLE_WASM) $(CIBLES_ANDROID) $(CIBLE_X86)
+CIBLES_CROISEES = $(CIBLE_WASM) $(CIBLES_ANDROID) $(CIBLE_X86) $(CIBLES_LINUX_ARM)
 
 lint: lint-doc-tests lint-android-versions
 	cargo clippy --workspace --all-targets --all-features -- -D warnings
@@ -807,4 +824,5 @@ tools:
 	# avis, et son intérêt est de connaître les derniers. L'épingler figerait
 	# ce qu'il sait lire des avis publiés depuis.
 	cargo install cargo-audit --locked $(CARGO_INSTALL_FLAGS)
-	rustup target add $(CIBLE_NOSTD) $(CIBLE_WASM) $(CIBLE_WASI) $(CIBLES_ANDROID) $(CIBLE_X86)
+	rustup target add $(CIBLE_NOSTD) $(CIBLE_WASM) $(CIBLE_WASI) $(CIBLES_ANDROID) \
+	  $(CIBLE_X86) $(CIBLES_LINUX_ARM)

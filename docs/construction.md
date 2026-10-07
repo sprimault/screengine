@@ -127,6 +127,8 @@ l'exécution par `scg_abi_version`.
 | Android arm64 | `aarch64-linux-android` | `.so`, `.a` | NDK, `qemu-user` | `hosts/android` | CI, `make test-android` sous Linux, sous `qemu-user` ; `make test-arm` et `make conform-arm` pour le noyau |
 | Android armv7 | `armv7-linux-androideabi` | `.so`, `.a` | NDK, `qemu-user` | `hosts/android` | CI, `make test-android` sous Linux, sous `qemu-user` ; `make test-arm` et `make conform-arm` pour le noyau |
 | Android x64 | `x86_64-linux-android` | `.so`, `.a` | NDK, SDK, émulateur | `hosts/android` | CI, `make test-android` sous Linux, sur émulateur par JNI |
+| Linux arm64 | `aarch64-unknown-linux-gnu` | `.rlib` du noyau et de la frontière | cible rustup | aucun | `make lint` et `make msrv`, CI |
+| Linux armv7 | `armv7-unknown-linux-gnueabihf` | `.rlib` du noyau et de la frontière | cible rustup | aucun | `make lint` et `make msrv`, CI |
 | Sans `std` | `thumbv7em-none-eabihf` | `.rlib` du noyau seul | cible rustup | aucun | `make nostd`, CI |
 | iOS, macOS | — | — | — | — | hors périmètre v1 |
 
@@ -137,6 +139,20 @@ plus 32 bits, et révèle au même moment une hypothèse sur la largeur de `usiz
 
 **iOS et macOS attendent que le reste soit stable.** Ils exigent un runner macOS,
 et un cycle de retour lent depuis un poste Windows.
+
+**Les deux cibles Linux sur ARM se compilent, et ne s'exécutent pas.** Elles ont
+le jeu d'instructions des ABI Android et une autre bibliothèque C — la glibc là
+où le NDK porte la bionic —, ce qui est précisément la question qu'elles
+répondent : le noyau n'emploie aucune des deux, mais la frontière passe par
+`std`, et rien ne le garantissait tant qu'on ne l'avait pas construit.
+`make lint` et `make msrv` les compilent en `--lib`, donc sans éditer de liens
+et sans rien installer.
+
+**À vérifier** : les exécuter demande une chaîne croisée — `gcc-aarch64-linux-gnu` —
+que ni le poste ni l'image d'Android ne portent, un NDK n'étant pas une glibc.
+Et `screengine-play` n'entre pas dans cette boucle, qui ne prend que le noyau et
+la frontière : son portage sur un Raspberry Pi, `winit` et `softbuffer` compris,
+reste donc entier.
 
 **Les deux cibles bureau 32 bits ne portent aucun hôte, et sont éprouvées par la
 conformance seule.** Lier `hosts/c` ou `hosts/cpp` contre elles demanderait une
@@ -620,6 +636,20 @@ chaîne annoncée.
 
 Tout passe par le `Makefile`, et les outils par `make tools`. Les actions sont
 épinglées au SHA.
+
+**Chaque job porte un plafond de temps**, et celui de publication aussi. Le
+défaut de GitHub est de six heures : une étape qui pend ne rouge pas, elle se
+tait, et il faut qu'un humain aille voir. Constaté sur une installation réseau,
+un `apt-get update` arrêté en silence pendant trente-deux minutes alors que le
+job entier tourne en **onze**, émulateur Android compris. Les plafonds sont
+calibrés dessus, avec de quoi absorber un runner lent : les atteindre signale
+une panne, jamais une charge.
+
+**Un plafond trop large ne sert à rien**, et c'est ce qui donne sa forme à
+celui de l'étape d'installation Android : à quarante minutes sur le job, le
+blocage de trente-deux serait passé dessous sans rien dire. L'étape qui
+télécharge en porte donc un propre, bien plus court — ce qui nomme la panne au
+lieu de laisser le job expirer sans raison affichée.
 
 La protection de branche exige les contrôles par leur nom : un workflow modifié
 peut rendre vert un contrôle qui ne vérifie plus rien. C'est pour cela que
