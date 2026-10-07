@@ -3,16 +3,26 @@
 
 //! Le remplissage d'une ligne unie en SSE2.
 //!
-//! **Deux pixels par tour, et non quatre.** La profondeur interpolée est un
-//! `i64` avant son décalage de gradient : un registre de cent vingt-huit bits
-//! n'en tient que deux. La ramener en trente-deux bits plus tôt donnerait quatre
-//! pixels par tour et **d'autres bits** que le scalaire, ce qui est la seule
-//! chose que cette variante n'a pas le droit de faire.
+//! **Quatre pixels par tour**, et c'est la largeur du test, non celle de
+//! l'interpolation : les profondeurs se calculent deux par deux — un registre de
+//! cent vingt-huit bits ne tient que deux `i64` —, puis se rassemblent en quatre
+//! valeurs de trente-deux bits pour la comparaison et l'écriture, qui sont le
+//! vrai travail.
 //!
-//! **Rien ici ne décide de ce qui est écrit**, et c'est ce qui rend la variante
-//! vérifiable : elle reproduit l'expression du scalaire, opération pour
-//! opération, sur deux pixels à la fois. Le reste du remplissage — mise en place
-//! du triangle, fonctions de bord, parcours des lignes — lui est commun.
+//! **C'est la mesure qui a donné cette forme.** Une première version ne
+//! calculait que les profondeurs et laissait le puits tester et écrire pixel par
+//! pixel : elle était **plus lente que le scalaire**, l'aller-retour par un
+//! tampon intermédiaire coûtant plus que l'addition épargnée.
+//!
+//! # Deux pièges de SSE2, et tous deux changent le résultat
+//!
+//! - **La comparaison d'entiers n'existe qu'en signé**, `_mm_cmpgt_epi32`, et la
+//!   profondeur est un `u32` dont le bit de poids fort est posé dès qu'on est
+//!   près de la caméra. Les deux côtés se biaisent donc de `0x8000_0000`, ce qui
+//!   transporte l'ordre non signé dans l'ordre signé sans rien perdre ;
+//! - **l'écriture masquée n'existe pas** — `_mm_blendv_epi8` est SSE4.1 —, d'où
+//!   la forme `(nouveau & masque) | (ancien & !masque)`, qui écrit toujours les
+//!   quatre pixels mais n'en change que ceux dont le test a réussi.
 //!
 //! Aucune intrinsèque fusionnée, relâchée ni approximative : il n'y en a pas
 //! ici, le chemin étant entièrement entier.
@@ -25,74 +35,115 @@ use core::arch::x86 as arch;
 use core::arch::x86_64 as arch;
 
 use arch::{
-    __m128i, _mm_add_epi64, _mm_set_epi64x, _mm_set1_epi64x, _mm_srli_epi64, _mm_storeu_si128,
+    __m128i, _mm_add_epi64, _mm_and_si128, _mm_andnot_si128, _mm_cmpgt_epi32, _mm_loadu_si128,
+    _mm_or_si128, _mm_set_epi32, _mm_set_epi64x, _mm_set1_epi32, _mm_set1_epi64x, _mm_srli_epi64,
+    _mm_storeu_si128, _mm_xor_si128,
 };
 
+use super::FlatRow;
 use crate::raster::plane::GRADIENT_BITS;
 
-/// Les profondeurs d'une ligne, calculées deux par deux.
-///
-/// Écrites dans `out`, qui porte exactement `count` valeurs. L'appelant les
-/// consomme ensuite pixel par pixel : ce qui se vectorise est leur **calcul**,
-/// pas le test ni l'écriture, qui lisent et écrivent un tampon dont ce module ne
-/// connaît ni la disposition ni les bornes.
-///
-/// **Le résultat est celui du scalaire, au bit près**, et c'est vérifiable ligne
-/// à ligne : l'accumulation est la même addition enveloppante, dans le même
-/// ordre, et le décalage le même décalage logique. Deux voies parallèles qui
-/// avancent chacune de deux pas donnent les mêmes valeurs qu'une voie qui en
-/// avance d'un, l'addition entière étant associative.
-///
-/// # Safety
-///
-/// Rien n'est exigé de l'appelant : les écritures passent par `out`, dont la
-/// longueur borne la boucle, et les chargements sont non alignés.
-pub fn depths(depth: i64, depth_x: i64, out: &mut [u32]) {
-    let count = out.len();
-    if count == 0 {
-        return;
-    }
+/// Ce qui transporte l'ordre non signé dans l'ordre signé.
+const SIGN: i32 = i32::MIN;
 
-    // Deux voies : la première part de `depth`, la seconde un pas plus loin, et
-    // chacune avance de deux pas par tour.
+/// Remplit une ligne unie : profondeurs, test strict, écriture masquée.
+///
+/// **Le résultat est celui du chemin scalaire, au bit près.** Le test est
+/// strict — à profondeur égale, le triangle soumis le premier reste —, et c'est
+/// ce qui rend l'égalité indépendante du découpage en tuiles.
+pub fn fill_flat_row(row: FlatRow<'_>) {
+    let FlatRow {
+        color,
+        depth,
+        start,
+        step,
+        fill,
+    } = row;
+    let count = depth.len();
+
+    // Deux voies d'interpolation, décalées d'un pas, qui avancent de deux par
+    // demi-tour ; quatre pixels se rassemblent à partir de deux demi-tours.
     //
-    // SAFETY: `_mm_set_epi64x` et `_mm_set1_epi64x` ne lisent aucune mémoire.
-    let (mut pair, step) = unsafe {
+    // SAFETY: ces intrinsèques ne lisent ni n'écrivent de mémoire.
+    let (mut low, mut high, wide) = unsafe {
         (
-            _mm_set_epi64x(depth.wrapping_add(depth_x), depth),
-            _mm_set1_epi64x(depth_x.wrapping_mul(2)),
+            _mm_set_epi64x(start.wrapping_add(step), start),
+            _mm_set_epi64x(
+                start.wrapping_add(step.wrapping_mul(3)),
+                start.wrapping_add(step.wrapping_mul(2)),
+            ),
+            _mm_set1_epi64x(step.wrapping_mul(4)),
         )
     };
+    // SAFETY: même garantie.
+    let (fill_v, sign_v) = unsafe { (_mm_set1_epi32(fill as i32), _mm_set1_epi32(SIGN)) };
 
     let mut i = 0;
-    // Le reste impair se traite après la boucle, en scalaire : écrire deux
-    // valeurs là où une seule est attendue déborderait de `out`.
-    while i + 2 <= count {
-        // SAFETY: `_mm_srli_epi64` et `_mm_add_epi64` ne touchent pas la
-        // mémoire ; `_mm_storeu_si128` écrit seize octets **non alignés**, et
-        // `scratch` reçoit une adresse de pile dont l'alignement n'est pas
-        // garanti — d'où la forme non alignée, jamais `_mm_store_si128`.
-        let shifted = unsafe { _mm_srli_epi64::<{ GRADIENT_BITS as i32 }>(pair) };
-        let mut scratch = [0u64; 2];
-        // SAFETY: `scratch` porte seize octets inscriptibles, ce que l'écriture
-        // non alignée demande en tout et pour tout.
-        unsafe { _mm_storeu_si128(scratch.as_mut_ptr().cast::<__m128i>(), shifted) };
-        out[i] = scratch[0] as u32;
-        out[i + 1] = scratch[1] as u32;
-        // SAFETY: addition enveloppante sur deux voies, sans accès mémoire.
-        pair = unsafe { _mm_add_epi64(pair, step) };
-        i += 2;
+    while i + 4 <= count {
+        // SAFETY: décalages et additions sans accès mémoire ; les deux
+        // rassemblements prennent la moitié basse de chaque voie, qui porte la
+        // profondeur après décalage.
+        let zs = unsafe {
+            let a = _mm_srli_epi64::<{ GRADIENT_BITS as i32 }>(low);
+            let b = _mm_srli_epi64::<{ GRADIENT_BITS as i32 }>(high);
+            let mut lanes = [0u64; 2];
+            let mut upper = [0u64; 2];
+            _mm_storeu_si128(lanes.as_mut_ptr().cast::<__m128i>(), a);
+            _mm_storeu_si128(upper.as_mut_ptr().cast::<__m128i>(), b);
+            _mm_set_epi32(
+                upper[1] as i32,
+                upper[0] as i32,
+                lanes[1] as i32,
+                lanes[0] as i32,
+            )
+        };
+
+        // SAFETY: `_mm_loadu_si128` lit seize octets **non alignés**, et les
+        // quatre `u32` de `depth[i..i + 4]` les portent — la boucle garantit
+        // `i + 4 <= count`. Jamais `_mm_load_si128`, dont l'alignement n'est
+        // pas garanti par une tranche.
+        let old = unsafe { _mm_loadu_si128(depth[i..].as_ptr().cast::<__m128i>()) };
+
+        // Le test du puits est `z > profondeur`, **non signé**. SSE2 ne compare
+        // qu'en signé, d'où le biais appliqué aux deux côtés : il préserve
+        // l'ordre, et c'est exactement ce qu'on lui demande.
+        //
+        // SAFETY: aucune de ces intrinsèques ne touche la mémoire.
+        let (kept_depth, kept_color) = unsafe {
+            let mask = _mm_cmpgt_epi32(_mm_xor_si128(zs, sign_v), _mm_xor_si128(old, sign_v));
+            let seen = _mm_loadu_si128(color[i..].as_ptr().cast::<__m128i>());
+            (
+                _mm_or_si128(_mm_and_si128(mask, zs), _mm_andnot_si128(mask, old)),
+                _mm_or_si128(_mm_and_si128(mask, fill_v), _mm_andnot_si128(mask, seen)),
+            )
+        };
+
+        // SAFETY: les deux tranches portent au moins quatre `u32` à partir de
+        // `i`, et l'écriture est non alignée pour la raison déjà dite.
+        unsafe {
+            _mm_storeu_si128(depth[i..].as_mut_ptr().cast::<__m128i>(), kept_depth);
+            _mm_storeu_si128(color[i..].as_mut_ptr().cast::<__m128i>(), kept_color);
+        }
+
+        // SAFETY: additions enveloppantes sur deux voies, sans accès mémoire.
+        unsafe {
+            low = _mm_add_epi64(low, wide);
+            high = _mm_add_epi64(high, wide);
+        }
+        i += 4;
     }
 
-    if i < count {
-        // La voie de rang pair porte la valeur du pixel `i` : c'est elle qu'on
-        // reprend, et non une reconstruction à partir de `depth`, qui
-        // réintroduirait une multiplication là où le scalaire n'a que des
-        // additions.
-        let mut scratch = [0u64; 2];
-        // SAFETY: même garantie que plus haut — seize octets inscriptibles.
-        unsafe { _mm_storeu_si128(scratch.as_mut_ptr().cast::<__m128i>(), pair) };
-        out[i] = (scratch[0] >> GRADIENT_BITS) as u32;
+    // Le reste, en scalaire et dans les mêmes termes que la référence : écrire
+    // quatre pixels là où moins sont attendus déborderait des tranches.
+    let mut z = start.wrapping_add(step.wrapping_mul(i as i64));
+    while i < count {
+        let value = (z >> GRADIENT_BITS) as u32;
+        if value > depth[i] {
+            depth[i] = value;
+            color[i] = fill;
+        }
+        z = z.wrapping_add(step);
+        i += 1;
     }
 }
 

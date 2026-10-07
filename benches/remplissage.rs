@@ -48,29 +48,32 @@
 //!
 //! # Ce que les chemins vectoriels rapportent, mesuré le 2026-10-07
 //!
-//! **Rien, et c'est le résultat du lot qui les a mesurés.** Sur un poste de
-//! travail ordinaire — donc des chiffres qui ne valent que les uns contre les
-//! autres, pris dans le même tour :
+//! Sur un poste de travail ordinaire — donc des chiffres qui ne valent que les
+//! uns contre les autres, pris dans le même tour :
 //!
 //! ```text
-//! plein cadre, uni — scalaire    0.29 ms
-//! plein cadre, uni — SSE2        0.34 ms
-//! plein cadre, uni — AVX2        0.34 ms
+//! plein cadre, uni — scalaire    0.24 ms
+//! plein cadre, uni — SSE2        0.10 ms
+//! plein cadre, uni — AVX2        0.09 ms
 //! ```
 //!
-//! **Les variantes sont très légèrement plus lentes**, et la cause tient à ce
-//! qu'elles font : elles vectorisent le calcul des profondeurs, puis l'écrivent
-//! dans un tampon que la boucle relit pixel par pixel pour tester et écrire. Cet
-//! aller-retour en mémoire coûte plus que l'addition `i64` qu'il épargne, là où
-//! le chemin scalaire accumule dans un registre et teste dans la foulée.
+//! **Un facteur 2,4 et 2,7**, et il a fallu une première tentative pour trouver
+//! où il était. Celle-ci ne vectorisait que le calcul des profondeurs, puis les
+//! écrivait dans un tampon que la boucle relisait pixel par pixel pour tester et
+//! écrire : elle rendait **0,34 ms, soit plus lent que le scalaire**, cet
+//! aller-retour en mémoire coûtant davantage que l'addition `i64` épargné. Le
+//! gain est dans la comparaison et l'écriture masquée de plusieurs pixels à la
+//! fois, pas dans l'interpolation qui les précède.
 //!
 //! **Les trois cas texturés ne bougent pas**, et c'est attendu : aucune variante
 //! ne touche encore ce chemin. Ils servent de témoin — un écart y signalerait une
 //! mesure qui ne porte pas sur ce qu'elle annonce.
 //!
-//! Ce que cela dit de la suite : un gain demandera de vectoriser le **test de
-//! profondeur et l'écriture**, c'est-à-dire de traiter les deux tampons du puits
-//! d'un bloc. Vectoriser ce qui les précède ne paie pas.
+//! **Et la scène chargée ne bouge presque pas non plus**, pour la même raison :
+//! elle est texturée de bout en bout, si bien que le chemin uni n'y tient
+//! presque aucune place. C'est ce qui dit où va la suite de l'étape — le gain
+//! visible sur un décor réel passe par le chemin texturé, où l'échantillonnage
+//! domine.
 //!
 //! # La référence, reprise le 2026-09-23 après les lightmaps
 //!
