@@ -131,6 +131,7 @@ pub fn all() -> Vec<Sweep> {
         }
     }
     sweeps.push(saturating());
+    sweeps.push(ray());
     sweeps
 }
 
@@ -154,6 +155,44 @@ fn saturating() -> Sweep {
         half: Vec3::new(0.5, 0.5, 0.5),
         from: Vec3::new(entry[0], entry[1], entry[2]),
         to: Vec3::new(exit[0], exit[1], exit[2]),
+    }
+}
+
+/// Le balayage d'une boîte d'étendue nulle, c'est-à-dire un lancer de rayon.
+///
+/// **Ce qu'il éprouve est la clause du rayon sur les deux marges**, et c'est le
+/// seul endroit du dépôt où elle traverse l'ABI : `scg_sweep_skin` et
+/// `scg_sweep_reach` rendent zéro pour un rayon, l'un n'ayant pas de dilatation
+/// à annoncer et l'autre aucune distance à laquelle perdre un jeu qu'il n'a pas.
+/// Les deux sortent sur `largest <= 0.0`, une branche que les trois tailles du
+/// treillis — 0,45, 0,5 et 0,55 — ne prenaient jamais : la clause était tenue par
+/// les tests du noyau et par ceux de la frontière, et par aucun hôte.
+///
+/// **Ce qu'il n'éprouve pas, et il faut le dire pour qu'on ne le croie pas** :
+/// le parcours du balayage en régime rayon. `World::pick` *est* ce balayage-ci à
+/// `Surfaces` près, et la scène d'interrogation pose déjà la moitié de ses rayons
+/// contre les surfaces solides — donc les cinq hôtes hachent ce parcours depuis
+/// l'étape 8. Ce qui vient en plus ici tient au point d'entrée : `scg_world_sweep`
+/// **accepte** des demi-étendues nulles, son lecteur ne refusant que le négatif et
+/// le non fini, et rien ne le vérifiait de ce côté.
+///
+/// **Le trajet est celui que le treillis joue déjà avec ses deux boîtes** — un
+/// départ du couloir, la direction `+X`, la même portée. C'est ce qui rend le
+/// rapport texte lisible : les trois enregistrements se lisent côte à côte, et
+/// l'on voit la dilatation reculer le contact de la petite boîte là où le rayon
+/// s'arrête sur le plan. Un trajet à lui n'aurait rien montré de plus et
+/// n'aurait pas eu de témoin.
+fn ray() -> Sweep {
+    // Les cotes suivent l'empreinte du couloir plutôt que des nombres écrits :
+    // posées en dur, elles tomberaient hors cellule le jour où le décor bouge,
+    // et le cas se perdrait en rendant un déplacement libre sans rien signaler.
+    let x = collision_file::CORRIDOR[0][0] + INSET;
+    let y = (collision_file::CORRIDOR[0][1] + collision_file::CORRIDOR[2][1]) * 0.5;
+    let z = collision_file::FLOOR_Z + 1.0;
+    Sweep {
+        half: Vec3::ZERO,
+        from: Vec3::new(x, y, z),
+        to: Vec3::new(x + REACH, y, z),
     }
 }
 

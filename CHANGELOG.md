@@ -46,6 +46,19 @@ publié, et explique les conventions du dépôt à qui y contribue.
 
 ## [Non publié]
 
+### Modifié
+
+- **Empreinte déplacée** : la scène `collision` balaie désormais une boîte
+  d'étendue nulle, dont la marge et la portée valent zéro. Rien du balayage ne
+  change.
+
+***
+
+### Changed
+
+- **Digest moved**: the `collision` scene now sweeps a zero-extent box, whose
+  skin and reach are both zero. Nothing about the sweep itself changes.
+
 ## [0.8.9] — 2026-10-05 — Ce que rien ne vérifiait
 
 ### Ajouté
