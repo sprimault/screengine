@@ -203,6 +203,20 @@ impl AbiError {
         code: SCG_ERR_INVALID_ARGUMENT,
         message: "filter must be SCG_FILTER_DITHER or SCG_FILTER_BILINEAR",
     };
+
+    /// Le chemin de remplissage demandé n'existe pas dans cette bibliothèque.
+    ///
+    /// Même forme et même raison que [`AbiError::FILTER`] : une valeur inconnue
+    /// est refusée plutôt que rabattue sur le défaut.
+    ///
+    /// **À ne pas confondre avec un chemin connu mais absent de la machine**,
+    /// que le noyau refuse de son côté avec son propre message : l'un dit « ce
+    /// nom n'existe pas », l'autre « ce processeur ne le porte pas », et un hôte
+    /// qui cherche pourquoi son forçage échoue n'a pas la même chose à corriger.
+    pub(crate) const SIMD_PATH: Self = Self {
+        code: SCG_ERR_INVALID_ARGUMENT,
+        message: "fill path must be one of the SCG_SIMD_* values",
+    };
 }
 
 impl From<Error> for AbiError {

@@ -2347,6 +2347,75 @@ Une plage vide ne coûte rien, et un code s'y ajoutera plus tard sans incrément
 - **Pas d'éditeur.** Le moteur expose ce qu'un éditeur réclame ; l'éditeur vit
   dans un hôte.
 
+### Étape 9
+
+**Une fonction, six constantes, aucune structure, aucun code d'erreur nouveau et
+aucun statut.** Aucune signature publiée, aucune structure, aucune précondition
+ne bouge : `SCG_ABI_VERSION` reste à **1**, et `version_format` non plus.
+
+```c
+int32_t scg_set_simd(ScgContext *ctx, uint32_t path);
+```
+
+Constantes : `SCG_SIMD_AUTO` (0), `SCG_SIMD_SCALAR` (1), `SCG_SIMD_SSE2` (2),
+`SCG_SIMD_AVX2` (3), `SCG_SIMD_NEON` (4), `SCG_SIMD_SIMD128` (5).
+
+**Aucun appel de cette étape ne change l'image, et c'est son contrat entier.**
+Les variantes vectorielles rendent les mêmes bits que le rasteriseur scalaire,
+qui reste compilé et reste la référence : une empreinte qui bougerait d'un chemin
+à l'autre désigne une variante fausse, jamais une différence acceptable. Ce que
+cette fonction choisit est un **coût**.
+
+Une liaison qui ne l'appelle jamais obtient le comportement d'avant : zéro vaut
+défaut pour un réglage de contexte, et `SCG_SIMD_AUTO` prend le jeu
+d'instructions le plus large de la machine.
+
+#### Pourquoi un hôte doit pouvoir forcer un chemin
+
+- **Pour comparer.** Sans levier, chaque chemin ne s'éprouve que là où il tourne,
+  et SSE2 ne serait jamais mesuré contre le scalaire sur un processeur qui porte
+  aussi AVX2 — c'est-à-dire sur presque tous. La conformance de ce dépôt s'en
+  sert pour rejouer chaque scène par chaque chemin et exiger la même empreinte ;
+  un intégrateur qui soupçonne une divergence a besoin du même geste.
+- **Pour contourner.** Un jeu d'instructions qu'un hôte tient pour fautif — un
+  émulateur incomplet, un processeur rare, un noyau qui ne sauvegarde pas les
+  registres larges — se retire sans attendre une version de la bibliothèque.
+
+**Il est exposé dès l'étape, et non quand un intégrateur le réclamera**, parce
+que le chemin Rust le permet : la règle des deux chemins veut que tout ce que
+l'un donne, l'autre le donne aussi, et une capacité qui n'existerait que d'un
+côté se découvre tard et se paie en version.
+
+#### Ce que l'appel refuse
+
+- **Une valeur qu'aucune constante ne porte** : `SCG_ERR_INVALID_ARGUMENT`,
+  jamais un repli silencieux sur le défaut. C'est ce qui rend l'ajout d'un chemin
+  compatible — une liaison écrite contre une version ultérieure reçoit une erreur
+  au lieu d'un succès qui ne lui a pas donné ce qu'elle demandait.
+- **Un chemin connu que cette machine ne porte pas** : le même code, et un
+  message distinct. Les deux cas se départagent par `scg_last_error`, parce qu'ils
+  n'appellent pas la même correction — l'un est un nom qui n'existe pas, l'autre
+  un processeur qui ne l'a pas.
+- **Tout appel entre `scg_frame_begin` et `scg_frame_end`** :
+  `SCG_ERR_INVALID_STATE`, pour la raison de `scg_set_filter`. Les tuiles se
+  rendent depuis des threads que le moteur ne connaît pas, et un chemin changé au
+  milieu laisserait une part de l'image remplie autrement que le reste.
+
+**`SCG_SIMD_SCALAR` est disponible sur toute cible**, et `SCG_SIMD_AUTO` par
+conséquent aussi : un hôte ne peut donc pas se mettre dans une position où aucun
+chemin n'est acceptable.
+
+#### Ce que l'étape ne fait pas
+
+- **Elle ne dit pas quel chemin tourne.** Aucune fonction ne rend le chemin
+  résolu, et il n'y en a pas besoin pour le contrat : ce qu'un hôte peut
+  observer, c'est que son forçage a été accepté. Une fonction d'interrogation
+  pourra s'ajouter sans changer la version d'ABI, comme celle qui rendrait le
+  rectangle d'une tuile.
+- **Elle ne crée aucun thread**, et ne change rien à la concurrence : le rendu
+  des tuiles en parallèle est acquis depuis l'étape 1, et c'est l'hôte qui le
+  conduit depuis ses propres threads.
+
 ### Étapes suivantes
 
 Prévisionnel. Ce qui doit être exposé est arrêté par la feuille de route ; les
@@ -2362,6 +2431,7 @@ noms ne le sont pas.
 | 6 | ✓ modes d'écriture de pixel, quadrilatères orientés, trames, normale par sommet — voir « Étape 6 » |
 | 7 | ✓ balayage d'une boîte contre les cellules, utilisable sans contexte de rendu — voir « Étape 7 » |
 | 8 | ✓ tracé de lignes et de points, interrogation de la scène par le rayon, et la modification d'une carte, qui n'ajoute aucune fonction — voir « Étape 8 » |
+| 9 | ✓ le choix du chemin de remplissage, qui ne change jamais l'image — voir « Étape 9 » |
 
 ## Ce qu'un auteur de liaison doit savoir
 

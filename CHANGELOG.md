@@ -46,6 +46,11 @@ publié, et explique les conventions du dépôt à qui y contribue.
 
 ## [Non publié]
 
+### Ajouté
+
+- `scg_set_simd` choisit le jeu d'instructions qui remplit les triangles, parmi
+  les constantes `SCG_SIMD_*`. Il ne change jamais l'image, seulement son coût.
+
 ### Modifié
 
 - **Empreinte déplacée** : la scène `collision` balaie désormais une boîte
@@ -55,6 +60,11 @@ publié, et explique les conventions du dépôt à qui y contribue.
   de roulis. Rien du rendu ne change.
 
 ***
+
+### Added
+
+- `scg_set_simd` picks the instruction set that fills triangles, among the
+  `SCG_SIMD_*` constants. It never changes the image, only its cost.
 
 ### Changed
 

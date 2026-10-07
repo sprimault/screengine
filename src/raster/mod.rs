@@ -12,16 +12,54 @@ mod bins;
 mod clip;
 mod line;
 mod plane;
+pub mod simd;
 mod triangle;
 
 pub use bins::{Bins, Grid};
 pub use clip::{MAX_CLIP_TRIANGLES, clip};
 pub use line::{Segment, clip_segment, cover};
+pub use simd::SimdPath;
 pub(crate) use triangle::DITHER;
 pub use triangle::{
-    Lighting, Lit, MODULATED, NO_LIGHTING, NO_TEXTURE, Prepared, Sampling, Vertex, fill, prepare,
+    Lighting, Lit, MODULATED, NO_LIGHTING, NO_TEXTURE, Prepared, Sampling, Vertex, prepare,
     prepare_lit,
 };
+
+/// Remplit un triangle par le chemin demandé.
+///
+/// **C'est le seul endroit où un chemin se choisit**, et c'est voulu : la
+/// sélection vit à la frontière du remplissage, pas à l'intérieur. Une variante
+/// qui déciderait d'elle-même rendrait le forçage inopérant, et c'est lui qui
+/// permet de jouer les trois chemins sur le même processeur.
+///
+/// **Toutes les variantes rendent la même image, au bit près.** Une divergence
+/// est une variante fausse, jamais une différence acceptable — c'est ce que la
+/// conformance vérifie en rejouant chaque scène par chaque chemin disponible.
+pub fn fill<T: Target>(
+    target: &mut T,
+    window: Rect,
+    triangle: &Prepared,
+    sampling: Option<Sampling<'_>>,
+    lit: Option<Lit<'_>>,
+    simd: SimdPath,
+) {
+    match simd.resolve() {
+        // **Toutes délèguent encore au scalaire**, et ce n'est pas un trou :
+        // c'est le témoin du socle. Tant qu'aucune variante n'est écrite, ce
+        // `match` prouve que la sélection atteint bien chaque branche et que la
+        // conformance compare des chemins qui existent — sans que la justesse
+        // dépende d'un code vectoriel qu'on n'a pas encore. Chaque lot suivant
+        // remplace une branche et doit rendre la même empreinte qu'elle rend ici.
+        SimdPath::Auto
+        | SimdPath::Scalar
+        | SimdPath::Sse2
+        | SimdPath::Avx2
+        | SimdPath::Neon
+        | SimdPath::Simd128 => {
+            triangle::fill(target, window, triangle, sampling, lit);
+        }
+    }
+}
 
 /// Un rectangle de l'image, en pixels.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

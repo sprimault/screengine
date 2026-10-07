@@ -395,7 +395,7 @@ impl Context {
                     overbright: self.overbright,
                 }),
             };
-            fill(&mut scratch, window, triangle, sampling, lit);
+            fill(&mut scratch, window, triangle, sampling, lit, self.simd);
         }
 
         // **Le tracé vient après tout le remplissage, et après le brouillard.**

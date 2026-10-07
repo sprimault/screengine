@@ -146,6 +146,16 @@ static jint set_filter(JNIEnv *env, jclass cls, jlong ctx, jint filter)
     return (jint)scg_set_filter((ScgContext *)(intptr_t)ctx, (uint32_t)filter);
 }
 
+/* scg_set_simd. Même forme que ci-dessus, et pour la même raison : les valeurs
+ * vivent dans le header, pas ici, et une valeur inconnue traverse pour se faire
+ * refuser par la bibliothèque. */
+static jint set_simd(JNIEnv *env, jclass cls, jlong ctx, jint path)
+{
+    (void)env;
+    (void)cls;
+    return (jint)scg_set_simd((ScgContext *)(intptr_t)ctx, (uint32_t)path);
+}
+
 /*
  * scg_frame_end dans un ByteBuffer direct, à `offset` octets de son début.
  * L'offset permet à l'hôte de désaligner volontairement la base : le moteur
@@ -1368,6 +1378,7 @@ static const JNINativeMethod METHODS[] = {
     {"submitLit", "(J[F[F[I[BJJ)I", (void *)submit_lit},
     {"setResolution", "(JII)I", (void *)set_resolution},
     {"setFilter", "(JI)I", (void *)set_filter},
+    {"setSimd", "(JI)I", (void *)set_simd},
     {"setOverbright", "(JI)I", (void *)set_overbright},
     {"setFog", "(JIIIFF)I", (void *)set_fog},
     {"clearFog", "(J)I", (void *)clear_fog},

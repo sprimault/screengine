@@ -174,6 +174,41 @@ export const SCG_FILTER_DITHER = 0;
 /** Le bilinéaire, un niveau de qualité au-dessus, qui remplace le tramage. */
 export const SCG_FILTER_BILINEAR = 1;
 
+/**
+ * Le moteur choisit le jeu d'instructions le plus large de la machine.
+ *
+ * Zéro, comme `SCG_FILTER_DITHER` et pour la même raison : un contexte qu'on ne
+ * configure pas doit se comporter comme le moteur se comporte par défaut.
+ */
+export const SCG_SIMD_AUTO = 0;
+
+/**
+ * Le rasteriseur scalaire, la référence contre laquelle toute variante se valide.
+ *
+ * Disponible sur toute cible : il n'a besoin d'aucun jeu d'instructions. C'est
+ * aussi le seul que ce module peut forcer sans savoir sur quoi il tourne.
+ */
+export const SCG_SIMD_SCALAR = 1;
+
+/**
+ * SSE2, que toute cible `x86_64` porte.
+ *
+ * **Recopiée bien qu'un module wasm ne puisse jamais l'obtenir**, comme les
+ * trois suivantes : le test compare cette liste au header, constante par
+ * constante, et une liaison qui n'en porterait qu'une partie refuserait un jour
+ * une valeur légitime en croyant la connaître.
+ */
+export const SCG_SIMD_SSE2 = 2;
+
+/** AVX2, le seul chemin que le moteur demande au processeur à l'exécution. */
+export const SCG_SIMD_AVX2 = 3;
+
+/** NEON, que toute cible `aarch64` porte. */
+export const SCG_SIMD_NEON = 4;
+
+/** `simd128`, décidé à la compilation du module — le seul que le web peut avoir. */
+export const SCG_SIMD_SIMD128 = 5;
+
 /** Les fonctions que le module doit exporter, en plus de `memory`. */
 export const EXPORTS = [
   "scg_abi_version",
@@ -200,6 +235,7 @@ export const EXPORTS = [
   "scg_set_grade",
   "scg_clear_grade",
   "scg_set_filter",
+  "scg_set_simd",
   "scg_set_overbright",
   "scg_set_fog",
   "scg_clear_fog",

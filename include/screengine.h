@@ -115,6 +115,31 @@
 // is no staircase left to hide once coordinates are interpolated.
 #define SCG_FILTER_BILINEAR 1
 
+// Let the engine pick the widest instruction set the machine provides.
+//
+// Zero, like `SCG_FILTER_DITHER` and for the same reason: a context that is
+// never configured must behave the way the engine behaves by default.
+#define SCG_SIMD_AUTO 0
+
+// The scalar rasteriser, which every other path is validated against.
+//
+// Always available, on every target: it needs no instruction set. Forcing it is
+// how a host compares a vector path against the reference on one machine, and
+// how it steps around an instruction set it holds to be at fault.
+#define SCG_SIMD_SCALAR 1
+
+// SSE2, which every `x86_64` target provides.
+#define SCG_SIMD_SSE2 2
+
+// AVX2, the one path that is asked of the processor at run time.
+#define SCG_SIMD_AVX2 3
+
+// NEON, which every `aarch64` target provides.
+#define SCG_SIMD_NEON 4
+
+// WebAssembly `simd128`, decided when the module is compiled.
+#define SCG_SIMD_SIMD128 5
+
 // Success.
 #define SCG_OK 0
 
@@ -921,6 +946,36 @@ int32_t scg_clear_grade(struct ScgContext *ctx);
 //
 // `ctx` is a live handle used by no other thread during the call.
 int32_t scg_set_filter(struct ScgContext *ctx, uint32_t filter);
+
+// Picks which instruction set fills triangles, from the next frames on.
+//
+// `path` is `SCG_SIMD_AUTO`, the default, or one of `SCG_SIMD_SCALAR`,
+// `SCG_SIMD_SSE2`, `SCG_SIMD_AVX2`, `SCG_SIMD_NEON`, `SCG_SIMD_SIMD128`. An
+// unknown value is `SCG_ERR_INVALID_ARGUMENT`, and so is a known path this
+// machine does not provide — the two are told apart by `scg_last_error`.
+//
+// **This never changes the image.** Every path renders the same bits as the
+// scalar one, which is the reference they are all validated against: what this
+// call selects is a cost, never a rendering. A digest that moved from one path
+// to another would mean a faulty path, not an acceptable difference.
+//
+// **It exists so paths can be compared on one machine.** Without it, each path
+// would only ever be exercised where it runs, and SSE2 would never be measured
+// against the scalar one on a processor that also has AVX2 — that is, on almost
+// every one. A host gains from it the means to step around an instruction set
+// it holds to be at fault, without waiting for a release.
+//
+// `SCG_SIMD_SCALAR` is available on every target; `SCG_SIMD_AUTO` picks the
+// widest path the machine provides and is therefore always available too.
+//
+// Rejected with `SCG_ERR_INVALID_STATE` between `scg_frame_begin` and
+// `scg_frame_end`, for the reason of `scg_set_filter`: tiles are rendered from
+// threads the engine knows nothing about.
+//
+// # Safety
+//
+// `ctx` is a live handle used by no other thread during the call.
+int32_t scg_set_simd(struct ScgContext *ctx, uint32_t path);
 
 // Sets how much lit surfaces are brightened, from the next frames on.
 //

@@ -642,6 +642,22 @@ public final class Screengine {
     static native int setFilter(long ctx, int filter);
 
     /**
+     * {@code scg_set_simd}.
+     *
+     * <p>Les valeurs vivent dans le header et ne sont pas recopiées ici : une
+     * valeur inconnue traverse le pont et se fait refuser par la bibliothèque,
+     * qui seule fait foi.
+     *
+     * @param ctx handle, ou 0
+     * @param path le chemin de remplissage
+     * @return le code de retour
+     */
+    static native int setSimd(long ctx, int path);
+
+    /** Le chemin de remplissage scalaire, disponible sur toute cible. */
+    static final int SIMD_SCALAR = 1;
+
+    /**
      * {@code scg_set_resolution}.
      *
      * Les deux côtés doivent tenir sous le maximum passé à la création : au
