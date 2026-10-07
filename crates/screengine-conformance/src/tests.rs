@@ -288,12 +288,12 @@ fn le_fond_d_une_scene_est_uniforme() {
 /// coordonnées issues de la projection. Cette règle-là se prouve dans les tests
 /// du noyau, qui placent les arêtes sur la ligne des centres exprès.
 ///
-/// Sur toutes les vues et toutes les passes : seize orientations d'arête, trois
-/// résolutions internes, cinq découpages.
+/// Sur toutes les vues et toutes les passes que la machine porte : seize
+/// orientations d'arête, trois résolutions internes, cinq découpages.
 #[test]
 fn aucune_couture_dans_la_scene_en_rotation() {
     for view in Scene::Rotation.views() {
-        for pass in Pass::ALL {
+        for pass in Pass::playable() {
             let pixels = Scene::Rotation
                 .render_pixels(pass, view)
                 .expect("scène valide");
@@ -381,7 +381,7 @@ fn une_reference_differente_diverge() {
 /// change aussi bien pour un filtrage correct que pour un rendu bruité.
 #[test]
 fn le_sol_texture_est_plus_lisse_au_loin_qu_au_pres() {
-    for pass in Pass::ALL {
+    for pass in Pass::playable() {
         for view in Scene::Textured.views() {
             let pixels = Scene::Textured
                 .render_pixels(pass, view)

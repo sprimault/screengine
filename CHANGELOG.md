@@ -65,6 +65,9 @@ publié, et explique les conventions du dépôt à qui y contribue.
   de conformance tournent sur `aarch64` et `armv7` sous émulation, à chaque
   pull request, contre les mêmes empreintes qu'ailleurs. Rien n'y était exécuté
   jusqu'ici, seulement compilé.
+- **Le remplissage d'une surface unie est vectorisé sur les deux
+  architectures** : SSE2 et AVX2 sur x86, NEON sur `aarch64`. L'image ne change
+  pas, et la conformance le vérifie chemin par chemin.
 
 ***
 
@@ -86,6 +89,9 @@ publié, et explique les conventions du dépôt à qui y contribue.
   conformance scenes run on `aarch64` and `armv7` under emulation, on every pull
   request, against the same fingerprints as everywhere else. Nothing ran there
   before, only compiled.
+- **Filling a flat surface is vectorised on both architectures**: SSE2 and AVX2
+  on x86, NEON on `aarch64`. The image does not change, and the conformance
+  checks it path by path.
 
 ## [0.8.9] — 2026-10-05 — Ce que rien ne vérifiait
 

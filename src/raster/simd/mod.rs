@@ -46,6 +46,8 @@
 
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 pub mod avx2;
+#[cfg(target_arch = "aarch64")]
+pub mod neon;
 #[cfg(all(
     target_feature = "sse2",
     any(target_arch = "x86", target_arch = "x86_64")
@@ -187,6 +189,13 @@ pub fn fill_flat_row(path: SimdPath, row: FlatRow<'_>) -> bool {
         // sûr, sous le `deny(unsafe_code)` du crate.
         #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
         SimdPath::Avx2 => avx2::fill_flat_row_if_available(row),
+        // NEON se décide à la compilation comme SSE2, la cible le portant dans
+        // sa base : rien à demander au processeur, et rien à activer.
+        #[cfg(target_arch = "aarch64")]
+        SimdPath::Neon => {
+            neon::fill_flat_row(row);
+            true
+        }
         // Tout le reste retombe sur la référence : les variantes qui n'existent
         // pas encore, celles que cette cible ne porte pas, et le scalaire, qui
         // **est** la référence.
