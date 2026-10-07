@@ -23,6 +23,8 @@
 
 #![allow(unsafe_code)]
 
+use core::sync::atomic::{AtomicU8, Ordering};
+
 #[cfg(target_arch = "x86")]
 use core::arch::x86 as arch;
 #[cfg(target_arch = "x86_64")]
@@ -42,12 +44,48 @@ const XCR0_SSE_AVX: u64 = 0b110;
 
 /// AVX2 est-il utilisable, processeur **et** système compris ?
 ///
-/// **Interrogé à chaque appel, et ce n'est pas un oubli de cache.** La réponse
-/// ne sert qu'au choix d'un chemin, qui a lieu une fois par image et non par
-/// pixel ; un cache demanderait un statique du crate, donc un état partagé entre
-/// contextes et entre threads, pour épargner trois instructions. Le jour où la
-/// mesure montrerait que cela compte, c'est le contexte qui retiendrait la
-/// réponse, comme il retient déjà le chemin choisi.
+/// **La réponse est retenue après la première question**, et ce cache n'est pas
+/// une optimisation de confort : sans lui, le chemin AVX2 est **treize fois plus
+/// lent que le scalaire**, mesuré le 2026-10-07 — 3,97 ms contre 0,30 sur un
+/// plein cadre uni. `cpuid` sérialise l'exécution et vide le pipeline, et le
+/// choix du chemin a lieu une fois par **ligne de triangle**, pas une fois par
+/// image.
+///
+/// **C'est une fréquence que ce fichier annonçait fausse.** Il disait « une fois
+/// par image et non par pixel » pour justifier l'absence de cache ; la mesure a
+/// montré des centaines d'appels par image, et la régression touchait toute
+/// scène rendue par défaut, `SCG_SIMD_AUTO` résolvant vers AVX2 sur un poste
+/// récent.
+///
+/// **Un statique partagé entre contextes et entre threads est ici sans danger**,
+/// là où il ne le serait pas pour un réglage : ce qu'il retient est une
+/// propriété de la machine, immuable pour la vie du processus. Deux threads qui
+/// le peupleraient en même temps y écriraient la même valeur, et `Relaxed`
+/// suffit — il n'y a aucune autre écriture à ordonner avec celle-ci.
+pub fn has_avx2() -> bool {
+    // Trois états : pas encore demandé, absent, présent. Un `AtomicBool` ne les
+    // distinguerait pas du premier, et un second drapeau ouvrirait une course
+    // entre les deux.
+    const UNKNOWN: u8 = 0;
+    const ABSENT: u8 = 1;
+    const PRESENT: u8 = 2;
+    static CACHED: AtomicU8 = AtomicU8::new(UNKNOWN);
+
+    match CACHED.load(Ordering::Relaxed) {
+        ABSENT => false,
+        PRESENT => true,
+        _ => {
+            let present = probe_avx2();
+            CACHED.store(if present { PRESENT } else { ABSENT }, Ordering::Relaxed);
+            present
+        }
+    }
+}
+
+/// La question posée au processeur, sans cache.
+///
+/// Séparée de [`has_avx2`] pour que le cache tienne en quatre lignes lisibles et
+/// que l'ordre des trois interrogations reste au premier plan.
 // **Le bloc `unsafe` autour de `__cpuid` est exigé par le plancher, pas par la
 // chaîne courante**, qui l'a marquée sûre depuis — l'instruction est dans la base
 // de toute cible x86, n'écrit rien et ne lit aucune mémoire, donc elle n'a aucune
@@ -61,7 +99,7 @@ const XCR0_SSE_AVX: u64 = 0b110;
 // **À retirer le jour où `make msrv` passe sans lui**, et cette condition se
 // vérifie mécaniquement plutôt que de se chercher dans des notes de version.
 #[allow(unused_unsafe)]
-pub fn has_avx2() -> bool {
+fn probe_avx2() -> bool {
     // SAFETY: `__cpuid` ne lit ni n'écrit de mémoire et existe sur toute cible
     // x86 ; l'appelant n'a aucune précondition à tenir. Seul `_xgetbv`, plus bas,
     // en a une véritable.
