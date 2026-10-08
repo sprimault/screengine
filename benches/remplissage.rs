@@ -200,6 +200,32 @@
 //! lightmap est lue ainsi par la variante, une texture bilinéaire restant sur le
 //! chemin scalaire.
 //!
+//! # Ce qu'AVX2 ajoute à SSE2 — mesuré le 2026-10-08
+//!
+//! Deux tours concordants. Les trois chemins dans le même tour, la machine
+//! étant encore plus chargée que pour les sections précédentes :
+//!
+//! ```text
+//!                                 scalaire    SSE2    AVX2
+//! segments, texture et lightmap      3.65     1.43    1.07 ms
+//! plein cadre, tramage               1.06     0.67    0.60 ms
+//! salles traverse (carte.rs)         1.30     0.92    0.89 ms
+//! scene, 600 triangles              11.95    10.27    9.68 ms
+//! ```
+//!
+//! **Un facteur 3,4 contre le scalaire sur le cas dominant**, et un quart de
+//! mieux que SSE2. Le reste du gain d'AVX2 est modeste — un dixième sur le plein
+//! cadre, trois pour cent sur le décor —, ce qui dit où va son avantage : ce
+//! n'est pas la largeur des registres, c'est `vpgatherdd`. Le cas dominant lit
+//! cinq texels par pixel, le plein cadre un seul, et c'est exactement dans cet
+//! ordre que l'écart se creuse.
+//!
+//! **La largeur seule n'aurait presque rien donné**, et le détail compte pour la
+//! suite : NEON et `simd128` ont la largeur de SSE2 **et** n'ont pas de
+//! `gather`. Ce relevé est donc la meilleure estimation de ce qu'ils peuvent
+//! rendre, et c'est la colonne SSE2 qu'il faut lire pour eux, jamais celle
+//! d'AVX2.
+//!
 //! # La référence, reprise le 2026-09-23 après les lightmaps
 //!
 //! ```text

@@ -327,18 +327,28 @@ pub struct SampledRow<'a> {
 /// genre de copie dont ce projet sait qu'elle finit par diverger. Le marcheur
 /// étant affine, l'avancer de ce compte est exact.
 ///
-/// **AVX2 passe ici par le chemin SSE2**, qu'il porte toujours. Ce n'est pas un
-/// oubli : lui donner son propre chemin large est un lot à lui, et sans ce
-/// renvoi une machine qui a AVX2 — c'est-à-dire presque toutes — retomberait au
-/// scalaire alors qu'elle sait faire mieux. Les deux rendent les mêmes bits,
-/// étant le même code.
+/// **AVX2 a désormais son propre chemin**, à huit pixels et avec le `gather`
+/// que SSE2 n'a pas : il ne passe plus par le chemin à quatre voies. Les deux
+/// rendent les mêmes bits, ce que la conformance exige chemin par chemin.
 pub fn fill_sampled_row(path: SimdPath, row: SampledRow<'_>) -> Option<usize> {
     match path {
+        // **AVX2 interroge le processeur**, là où SSE2 se décide à la
+        // compilation : la vérification et l'appel `unsafe` vivent dans le
+        // module de la variante, pour que la précondition et sa garantie ne
+        // soient jamais à deux étages l'une de l'autre.
+        #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+        SimdPath::Avx2 => {
+            if row.lit {
+                avx2::fill_sampled_row_if_available::<true>(row)
+            } else {
+                avx2::fill_sampled_row_if_available::<false>(row)
+            }
+        }
         #[cfg(all(
             target_feature = "sse2",
             any(target_arch = "x86", target_arch = "x86_64")
         ))]
-        SimdPath::Sse2 | SimdPath::Avx2 => Some(if row.lit {
+        SimdPath::Sse2 => Some(if row.lit {
             sse2::fill_sampled_row::<true>(row)
         } else {
             sse2::fill_sampled_row::<false>(row)
