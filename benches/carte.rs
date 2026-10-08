@@ -70,12 +70,29 @@
 //! la mesure vient de la démonstration Android, dont la résolution et le nombre
 //! de threads ne sont écrits nulle part. Ce qu'ils donnent est un ordre de
 //! grandeur du coût réel sur appareil, et rien d'autre.
+//!
+//! # Le décor par chemin de remplissage — depuis le 2026-10-08
+//!
+//! ```text
+//! salles traverse — scalaire    1.06 ms
+//! salles traverse — SSE2        0.80 ms
+//! ```
+//!
+//! **C'est le seul endroit du dépôt qui mesure une variante sur une vraie
+//! carte**, et c'est pour cela qu'il existe : le plein cadre de
+//! [`remplissage`](../remplissage/index.html) est un quadrilatère unique, et la
+//! scène chargée qui l'accompagne empile de petits quadrilatères dont les
+//! segments font moins de quatre pixels. Ni l'un ni l'autre n'a la forme d'un
+//! décor, qui porte de grandes surfaces vues de biais — et c'est cette forme-là
+//! qui décide si une variante rapporte quelque chose à un hôte.
 
 use core::hint::black_box;
 use core::time::Duration;
 use std::time::Instant;
 
-use screengine::{Affine3, BYTES_PER_PIXEL, Camera, Config, Context, Texture, Vec3, World};
+use screengine::{
+    Affine3, BYTES_PER_PIXEL, Camera, Config, Context, SimdPath, Texture, Vec3, World,
+};
 
 /// Largeur de référence.
 const WIDTH: u32 = 640;
@@ -229,6 +246,46 @@ fn main() {
 
         ligne(&alloc_nom(nom, "brut"), brute);
         ligne(&alloc_nom(nom, "traverse"), visible);
+    }
+
+    // **Le décor traversé, par chemin de remplissage**, et c'est la seule mesure
+    // du dépôt qui dise ce qu'une variante rend sur une carte réelle. Le plein
+    // cadre de `remplissage` est un quadrilatère unique, et la scène chargée qui
+    // l'accompagne est faite de petits quadrilatères empilés : ni l'un ni
+    // l'autre n'a la forme d'un décor, qui porte de grandes surfaces vues de
+    // biais. Un gain qui n'apparaîtrait pas ici ne serait pas un gain.
+    //
+    // Les salles plutôt que le couloir, et traversées plutôt que brutes : c'est
+    // ce qu'un hôte fait. Un chemin que la machine ne porte pas ne s'imprime
+    // pas, pour ne pas afficher une durée qui serait celle du scalaire déguisée.
+    let world = World::load(SALLES).expect("carte valide");
+    let position = Vec3::new(2.0, 2.0, 2.0);
+    let cell = world.locate(position);
+    for (chemin, path) in [
+        ("scalaire", SimdPath::Scalar),
+        ("SSE2", SimdPath::Sse2),
+        ("AVX2", SimdPath::Avx2),
+        ("NEON", SimdPath::Neon),
+        ("simd128", SimdPath::Simd128),
+    ] {
+        if !path.available() {
+            continue;
+        }
+        context.set_simd(path).expect("chemin disponible");
+        let duree = mesure(|| {
+            context
+                .submit_world_visible(Affine3::IDENTITY, &world, cell, None, |_| Some(&texture))
+                .expect("capacité");
+            context
+                .frame_end(black_box(&mut pixels), WIDTH)
+                .expect("image rendue");
+        });
+        let tout = peints(&pixels);
+        assert!(
+            tout as f64 >= f64::from(WIDTH * HEIGHT) * 0.5,
+            "salles {chemin} : {tout} pixels peints, la mesure ne porte sur rien"
+        );
+        ligne(&format!("salles traverse — {chemin}"), duree);
     }
 }
 
