@@ -216,6 +216,45 @@ pub fn fill_flat_row(path: SimdPath, row: FlatRow<'_>) -> bool {
     }
 }
 
+/// Ce qu'une lightmap ajoute à un segment texturé.
+///
+/// **Toujours présente dans la description, et lue seulement si le segment en
+/// porte une** : c'est le patron de `Crawl::EMPTY` et `Ramp::EMPTY` du
+/// scalaire, qui remplit un champ qu'un paramètre de type rend mort. Une
+/// `Option` aurait coûté un test par bloc là où il n'en faut aucun.
+// Même raison que pour `SampledRow` : sur une cible sans variante, rien n'est lu.
+#[allow(dead_code)]
+pub struct LightmapRow<'a> {
+    /// Les deux coordonnées au premier pixel, avant décalage de niveau.
+    pub uv: [i64; 2],
+    /// Ce que chacune gagne d'un pixel au suivant.
+    pub uv_step: [i64; 2],
+    /// Le décalage de niveau, non borné, comme celui de la texture.
+    pub shift: u32,
+    /// Les texels du niveau lu.
+    pub texels: &'a [u32],
+    /// Ses dimensions, toutes deux puissances de deux.
+    pub size: (u32, u32),
+    /// Le décalage de la combinaison : `LIGHT_BITS` moins le sur-éclairement.
+    pub shade: u32,
+}
+
+impl LightmapRow<'_> {
+    /// La lightmap d'un segment qui n'en a pas.
+    ///
+    /// Jamais lue, mais il faut remplir le champ. Les dimensions valent un
+    /// plutôt que zéro : leur masque de repli est `dimension − 1`, et zéro y
+    /// donnerait un masque de tous les bits.
+    pub const NONE: Self = Self {
+        uv: [0; 2],
+        uv_step: [0; 2],
+        shift: 0,
+        texels: &[],
+        size: (1, 1),
+        shade: 0,
+    };
+}
+
 /// Un segment **texturé** d'une ligne, tel qu'une variante le reçoit.
 ///
 /// **Le cas le plus simple qui échantillonne**, et c'est ce qui le rend
@@ -265,6 +304,14 @@ pub struct SampledRow<'a> {
     pub x0: i32,
     /// Son ordonnée, de même.
     pub y: i32,
+    /// La lightmap du segment, ou [`LightmapRow::NONE`] quand il n'en a pas.
+    pub lightmap: LightmapRow<'a>,
+    /// Le segment porte-t-il une lightmap ?
+    ///
+    /// **Un drapeau à côté de la lightmap, et non une `Option`** : il décide
+    /// d'un paramètre de type, donc le segment qui n'en porte pas ne compile
+    /// même pas la lecture — là où une `Option` l'aurait examinée par bloc.
+    pub lit: bool,
 }
 
 /// Remplit un segment texturé par le chemin demandé, test de profondeur
@@ -291,7 +338,11 @@ pub fn fill_sampled_row(path: SimdPath, row: SampledRow<'_>) -> Option<usize> {
             target_feature = "sse2",
             any(target_arch = "x86", target_arch = "x86_64")
         ))]
-        SimdPath::Sse2 | SimdPath::Avx2 => Some(sse2::fill_sampled_row(row)),
+        SimdPath::Sse2 | SimdPath::Avx2 => Some(if row.lit {
+            sse2::fill_sampled_row::<true>(row)
+        } else {
+            sse2::fill_sampled_row::<false>(row)
+        }),
         _ => {
             let _ = row;
             None

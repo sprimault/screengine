@@ -18,7 +18,7 @@ pub mod grade;
 pub const MAX_OVERBRIGHT: u32 = 2;
 
 /// Bits de l'éclairage, et le décalage de la combinaison sans sur-éclairement.
-const LIGHT_BITS: u32 = 8;
+pub(crate) const LIGHT_BITS: u32 = 8;
 
 /// Combine un texel et son éclairage, canal par canal.
 ///

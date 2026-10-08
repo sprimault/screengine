@@ -48,19 +48,25 @@ publié, et explique les conventions du dépôt à qui y contribue.
 
 ### Modifié
 
-- **Une surface texturée sans lightmap se remplit par SSE2**, sur `x86_64` et
-  `x86` : un quart du temps de rendu en moins sur une carte traversée, un tiers
-  sur un quadrilatère plein cadre. L'image ne bouge pas d'un pixel, et il n'y a
-  rien à régler.
+- **Une surface texturée se remplit par SSE2**, sa lightmap comprise, sur
+  `x86_64` et `x86` : un tiers du temps de rendu en moins sur une carte
+  traversée, et **plus de la moitié** sur une surface qui porte texture et
+  lightmap, ce qu'un décor emprunte partout. L'image ne bouge pas d'un pixel.
+- **NEON et `simd128` ne couvrent toujours que la surface unie.** L'écart entre
+  chemins est donc réel désormais : forcer NEON sur `aarch64` ne donne pas ce que
+  SSE2 donne sur x86.
 
 ***
 
 ### Changed
 
-- **A textured surface without a lightmap now fills through SSE2** on `x86_64`
-  and `x86`: a quarter off the render time of a traversed map, a third off a
-  full-screen quad. The image does not move by a single pixel, and there is
-  nothing to configure.
+- **A textured surface now fills through SSE2**, its lightmap included, on
+  `x86_64` and `x86`: a third off the render time of a traversed map, and **more
+  than half** off a surface carrying both texture and lightmap, which is what a
+  map uses throughout. The image does not move by a single pixel.
+- **NEON and `simd128` still only cover the flat surface.** The gap between
+  paths is now real: forcing NEON on `aarch64` does not give what SSE2 gives on
+  x86.
 
 ## [0.9.0] — 2026-10-07 — SIMD
 

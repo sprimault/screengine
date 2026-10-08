@@ -14,7 +14,7 @@ use crate::math::fixed::{PIXEL_CENTER, SUBPIXEL_SCALE, UV_BITS};
 use crate::math::projection::ProjectedVertex;
 
 use super::plane::{GRADIENT_BITS, Plane};
-use super::simd::{self, SampledRow};
+use super::simd::{self, LightmapRow, SampledRow};
 use super::{Rect, SimdPath, Span, Target};
 use crate::texture::{ALPHA_THRESHOLD, Filter, MAX_TEXTURE_SIZE, Texture};
 
@@ -856,22 +856,34 @@ fn fill_segment<T: Target>(
         modulated: triangle.modulated(),
     };
     match texels {
-        Some((sampling, mut texel)) => {
-            // **La tentative vectorielle n'a lieu que sur le chemin le plus
-            // simple qui échantillonne** : une texture tramée, sans masquage,
-            // sans éclairage et sans modulation. Tout le reste passe par le
-            // parcours scalaire, qui reste la référence contre laquelle cette
-            // variante se valide.
-            if lit.is_none()
+        Some((sampling, texel)) => {
+            // **Deux ombrages passent par la variante** : une texture tramée
+            // nue, et la même avec sa lightmap — ce qu'une surface de carte
+            // emprunte. Dans les deux cas sans masquage ni modulation, et sans
+            // lumière dynamique, dont la rampe n'est pas vectorisée. Tout le
+            // reste passe par le parcours scalaire, qui reste la référence
+            // contre laquelle cette variante se valide.
+            let mapped = lit
+                .filter(|l| !l.planes.is_lit())
+                .and_then(|l| l.lightmap.map(|t| (t, l.planes, l.overbright)));
+            if (lit.is_none() || mapped.is_some())
                 && !walk.modulated
                 && sampling.filter == Filter::Dither
                 && !sampling.texture.masked()
             {
+                let lm = mapped.map(|(texture, planes, overbright)| {
+                    (
+                        Crawl::new(triangle, planes.planes(), ey, &ends),
+                        texture,
+                        overbright,
+                    )
+                });
                 let done = sampled_simd(
                     walk.target,
                     triangle,
                     sampling.texture,
                     &texel,
+                    lm.as_ref(),
                     y,
                     draw,
                     simd,
@@ -879,13 +891,20 @@ fn fill_segment<T: Target>(
                 if done == draw.1 - draw.0 + 1 {
                     return;
                 }
-                // Le marcheur est affine : l'avancer du compte traité est exact,
-                // et le parcours reprend au premier pixel que la variante a
-                // laissé. Sans cela il faudrait recopier l'échantillonnage dans
-                // la variante pour qu'elle finisse elle-même.
-                for _ in 0..done {
-                    texel.step();
-                }
+                // **Le reste reprend depuis un segment dont le départ a avancé**,
+                // et non depuis des marcheurs qu'on aurait fait avancer à la
+                // main. Les deux sont exacts pour la texture — un marcheur est
+                // affine, donc `premier + pente · n` vaut n pas de pente —, mais
+                // la texture n'est pas seule : l'éclairage reconstruit son propre
+                // marcheur depuis `ends`, et il repartirait du premier pixel du
+                // segment pendant que le parcours reprend `done` pixels plus
+                // loin. C'est une lightmap décalée, que seules les scènes qui en
+                // portent une peuvent montrer — et elles l'ont montré.
+                let ends = Ends {
+                    start: draw.0 + done,
+                    ..ends
+                };
+                let texel = Crawl::new(triangle, &triangle.uv, ey, &ends);
                 let reste = Walk {
                     draw: (draw.0 + done, draw.1),
                     ..walk
@@ -929,6 +948,7 @@ fn sampled_simd<T: Target>(
     triangle: &Prepared,
     texture: &Texture,
     texel: &Crawl,
+    lightmap: Option<&(Crawl, &Texture, u32)>,
     y: i32,
     draw: (i32, i32),
     simd: SimdPath,
@@ -953,6 +973,19 @@ fn sampled_simd<T: Target>(
     };
     let texels = texture.level_texels(level);
     let size = texture.level_size(level);
+    // La lightmap suit la même règle sur son niveau : celui qu'on lit est borné,
+    // celui qui décale ne l'est pas.
+    let lit = lightmap.map(|(crawl, texture, overbright)| {
+        let level = (crawl.level as usize).min(texture.level_count() - 1);
+        LightmapRow {
+            uv: crawl.value,
+            uv_step: crawl.slope,
+            shift: crawl.level,
+            texels: texture.level_texels(level),
+            size: texture.level_size(level),
+            shade: light::LIGHT_BITS - overbright,
+        }
+    });
     let Some((color, depth)) = target.rows(draw.0, y, count) else {
         return 0;
     };
@@ -969,6 +1002,8 @@ fn sampled_simd<T: Target>(
         dither,
         x0: draw.0,
         y,
+        lit: lit.is_some(),
+        lightmap: lit.unwrap_or(LightmapRow::NONE),
     };
     simd::fill_sampled_row(simd, row).unwrap_or(0) as i32
 }
@@ -1427,6 +1462,7 @@ impl Reciprocal {
 }
 
 /// Ce qu'un segment a de commun à tous ses attributs.
+#[derive(Clone, Copy)]
 struct Ends {
     from: Reciprocal,
     to: Reciprocal,
