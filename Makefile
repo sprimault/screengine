@@ -123,7 +123,7 @@ android_build = for cible in $(CIBLES_ANDROID); do \
 -include makefile.local
 
 .PHONY: build lib lib-wasm lib-android run example web test native-libs fmt fmt-fix lint lint-doc-tests \
-        lint-android-versions nostd test-arm test-wasi msrv bench \
+        lint-android-versions nostd test-arm test-wasi msrv bench stubs \
         conform conform-arm conform-wasi conform-x86 conform-update conform-images mesh header header-verif audit deny doc doc-verif hosts host-c host-cpp host-web host-go \
         host-android demo-c demo-cpp clean tools
 
@@ -644,6 +644,31 @@ $(addsuffix -wasi,test conform): %-wasi:
 # fichier de mesure porte en commentaire.
 bench:
 	cargo bench -p screengine
+
+# Les marqueurs d'étape qui restent dans le noyau et la frontière, que
+# `ROADMAP.md` lit comme mesure d'avancement.
+#
+# La mesure est ici, et par `grep`, parce qu'écrite dans un document elle y
+# dépendait de ripgrep, qu'aucune cible n'installe, et rendait zéro de deux
+# façons qu'on ne distingue pas : aucun marqueur, ou la recherche qui n'a pas eu
+# lieu. Le code de la recherche est donc lu, et un échec le dit.
+#
+# **Aucun accent dans une recette, ni en motif ni en message** : make les
+# réencode avant de les passer au shell, si bien qu'un `é` part en `Ã©`. Dans un
+# message cela salit la sortie ; dans un motif cela ne reconnaît plus rien, et
+# rend le zéro même que cette cible existe pour ne plus confondre. D'où `todo!`
+# et non `todo!("étape`, qui ne rate rien : `docs/rust.md` veut que tout
+# marqueur porte son étape, et un `todo!()` nu, qu'il refuse, se voit ici.
+stubs:
+	@liste=$$(grep -rno --exclude='*tests*' --exclude-dir='*tests*' \
+	    'todo!' src crates); \
+	code=$$?; \
+	if [ $$code -ge 2 ]; then \
+	  echo "$@ : la recherche n'a pas abouti (code $$code)" >&2; exit 1; \
+	fi; \
+	if [ -z "$$liste" ]; then echo 0; else \
+	  printf '%s\n' "$$liste"; printf '%s\n' "$$liste" | wc -l; \
+	fi
 
 # La version minimale déclarée, compilée pour de bon.
 #

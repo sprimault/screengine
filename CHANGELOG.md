@@ -44,6 +44,8 @@ de version sont ce que lit un auteur de liaison étranger avant de savoir s'il
 doit reprendre son travail. Ce préambule reste en français : il n'est jamais
 publié, et explique les conventions du dépôt à qui y contribue.
 
+## [Non publié]
+
 ## [0.9.0] — 2026-10-07 — SIMD
 
 **Une liaison web a une chose à reprendre, les autres rien.** Le module wasm
