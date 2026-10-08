@@ -97,11 +97,56 @@
 //! une information actionnable, parce que du calcul entier se vectorise là où des
 //! accès dispersés ne se vectorisent pas.
 //!
+//! **Cette soustraction mélangeait deux boucles, et la section suivante la
+//! refait autrement.** Le cas uni passe par le bloc que `Target::span` propose,
+//! le cas tramé par des segments de seize pixels avec leur division de
+//! perspective : leur écart porte donc le changement de boucle en plus de
+//! l'échantillonnage. La conclusion tient — c'est bien l'échantillonnage qu'il
+//! faut viser —, sa quantité était sous-estimée d'un tiers.
+//!
 //! **Ce que cela ne change pas** : le gain d'un chemin texturé vectorisé sur le
 //! seul test de profondeur et l'écriture reste borné par le cas uni, soit
 //! 0,15 ms — un pour cent et demi sur la scène chargée. La décomposition ci-dessus
 //! n'éclaire pas ce lot-là, elle en désigne un autre : vectoriser
 //! l'échantillonnage lui-même.
+//!
+//! # Ce que coûte le chemin dominant — mesuré le 2026-10-08
+//!
+//! Trois tours concordants, le scalaire seul, sur un poste de travail
+//! ordinaire :
+//!
+//! ```text
+//! plein cadre, uni                 0.23 ms    1.0 ns/px   le bloc de Target::span
+//! segments, rampe seule            0.75 ms    3.3         la boucle a segments, aucune image lue
+//! plein cadre, tramage             0.94 ms    4.1         un echantillonnage trame
+//! segments, texture et rampe       1.71 ms    7.4         les deux
+//! segments, texture et lightmap    3.34 ms   14.5         ce qu'une surface de carte emprunte
+//! ```
+//!
+//! **La boucle à segments nue ne coûte presque rien, et c'est ce que les trois
+//! premières lignes établissent sans qu'un quatrième cas soit nécessaire.** En
+//! notant `S` la boucle, `T` l'échantillonnage et `R` la rampe, les mesures
+//! donnent `S + T`, `S + R` et `S + T + R` : leur combinaison rend `S ≈ −0,02`,
+//! soit le bruit de la mesure. Le coût est donc presque entièrement dans les
+//! attributs, division de perspective, test et écriture compris.
+//!
+//! **Le chemin qu'un décor emprunte vraiment coûte trois fois et demi le
+//! quadrilatère tramé**, et il n'était mesuré nulle part : une surface de carte
+//! porte sa texture **et** l'atlas de sa cellule. Les 2,4 ms que la lightmap
+//! ajoute sont cohérentes avec le coût du bilinéaire mesuré à part — une lightmap
+//! se lit toujours ainsi, quel que soit le filtrage —, et elles en font le
+//! premier poste du remplissage, devant l'échantillonnage de la texture.
+//!
+//! **Ce que cela désigne n'est donc pas ce que la section précédente annonçait.**
+//! Ce qui domine le chemin dominant est la lecture bilinéaire de la lightmap et
+//! la combinaison qui suit, pas l'adressage tramé de la texture. Les deux sont du
+//! calcul entier par pixel, donc vectorisables ; c'est la seconde qu'il faut
+//! prendre d'abord.
+//!
+//! **La lightmap de ce cas est étirée une fois sur toute l'étendue** quand la
+//! texture se répète, ce qui est le régime d'une carte. Une lightmap plus dense
+//! ne changerait pas la nature du coût, les accès mémoire ne pesant rien :
+//! c'est établi par les trois lignes de densité de la section précédente.
 //!
 //! # La référence, reprise le 2026-09-23 après les lightmaps
 //!
@@ -138,8 +183,8 @@ use std::hint::black_box;
 use std::time::{Duration, Instant};
 
 use screengine::{
-    Affine3, BYTES_PER_PIXEL, Color, Config, Context, Filter, SimdPath, Texture, Triangle, Vec3,
-    VertexUv,
+    Affine3, BYTES_PER_PIXEL, Color, Config, Context, Filter, Light, SimdPath, Texture, Triangle,
+    Vec3, VertexUv, VertexUv2,
 };
 
 /// La résolution interne de référence du projet.
@@ -347,6 +392,85 @@ fn plein_cadre_uni(context: &mut Context) {
         .expect("capacité");
 }
 
+/// Le même quadrilatère, texturé **et** couvert d'une lightmap.
+///
+/// **C'est le chemin dominant d'un décor réel**, et aucune autre ligne ne le
+/// mesure : une surface de carte porte sa texture et son atlas de cellule, donc
+/// deux jeux de coordonnées, deux marches, et deux lectures par pixel — dont
+/// celle de la lightmap, toujours bilinéaire quel que soit le filtrage.
+///
+/// La lightmap est volontairement **étirée une seule fois** sur toute l'étendue,
+/// là où la texture se répète : c'est ce que fait une carte, et c'est ce qui
+/// donne aux deux marches des pentes d'ordres différents.
+fn plein_cadre_lightmap(
+    context: &mut Context,
+    texture: &std::sync::Arc<Texture>,
+    lightmap: &std::sync::Arc<Texture>,
+) {
+    let coin = |x: f32, z: f32, u: f32, v: f32, u2: f32, v2: f32| VertexUv2 {
+        position: Vec3::new(2.0, x, z),
+        u,
+        v,
+        u2,
+        v2,
+        normal: Vec3::ZERO,
+    };
+    let vertices = [
+        coin(-3.0, 2.0, 0.0, 0.0, 0.0, 0.0),
+        coin(3.0, 2.0, 256.0, 0.0, 16.0, 0.0),
+        coin(3.0, -2.0, 256.0, 256.0, 16.0, 16.0),
+        coin(-3.0, -2.0, 0.0, 256.0, 0.0, 16.0),
+    ];
+    let triangles = [
+        Triangle {
+            indices: [0, 1, 2],
+            color: Color::new(0xFF, 0xFF, 0xFF, 0xFF),
+        },
+        Triangle {
+            indices: [0, 2, 3],
+            color: Color::new(0xFF, 0xFF, 0xFF, 0xFF),
+        },
+    ];
+
+    context.set_filter(Filter::Dither).expect("hors image");
+    context
+        .submit_lit(
+            Affine3::IDENTITY,
+            &vertices,
+            &triangles,
+            Some(texture),
+            lightmap,
+        )
+        .expect("capacité");
+}
+
+/// Pose une lumière unique, dont seule la **portée** nous intéresse.
+///
+/// **Ce qu'elle sert à mesurer n'est pas l'éclairage mais un chemin.** Dès
+/// qu'une lumière est réglée, tout triangle devient éclairé, donc passe par les
+/// segments de perspective au lieu du chemin uni que `Target::span` propose d'un
+/// bloc. C'est le seul moyen d'obtenir la boucle à segments **sans qu'elle lise
+/// une image** : la lightmap y est absente, et un lot uni n'a pas de texel.
+///
+/// Sans cela, la part de l'échantillonnage ne se déduit pas. L'écart entre le
+/// cas uni et le cas tramé mélange deux choses — la lecture du texel, et le
+/// passage d'une boucle d'un bloc à une boucle par segments avec sa division de
+/// perspective. Un chemin vectoriel ne reprendrait que la première.
+///
+/// La portée décide de ce que le remplissage compile : au-delà de la distance
+/// des coins, les trois canaux de la rampe s'ajoutent à chaque pixel ; en deçà,
+/// aucun sommet n'est atteint, les plans restent nuls et le remplissage le sait.
+fn lumiere(context: &mut Context, portee: f32) {
+    context
+        .set_lights(&[Light {
+            // Au centre du quadrilatère, dont les coins sont à 3,6 unités.
+            position: Vec3::new(2.0, 0.0, 0.0),
+            radius: portee,
+            color: Color::new(0xFF, 0xE0, 0xC0, 0xFF),
+        }])
+        .expect("hors image");
+}
+
 /// Une scène chargée : trois cents quadrilatères texturés qui se recouvrent.
 ///
 /// Le coût réel d'une image, répartition par tuile et recopie comprises, avec
@@ -449,9 +573,9 @@ fn main() {
     }
 
     // **Où part le temps dans l'échantillonnage**, qui est les trois quarts du
-    // chemin texturé : le cas uni mesure déjà ce qu'un chemin vectoriel toucherait
-    // — test, écriture, profondeur —, et l'écart avec le cas tramé est tout le
-    // reste. Ces trois lignes le découpent.
+    // chemin texturé. Ces trois lignes disent ce que l'accès mémoire y pèse ;
+    // ce que pèse la boucle elle-même se lit plus bas, le cas uni empruntant un
+    // autre chemin que celui-ci.
     //
     // **Ce ne sont pas des micro-mesures**, que ce module proscrit : c'est le même
     // quadrilatère plein cadre et la même boucle de pixels, du premier sommet à la
@@ -487,6 +611,72 @@ fn main() {
             exige_couverture(&pixels, nom, 0.95);
             ligne(&format!("{nom} — {chemin}"), duree);
         }
+    }
+
+    // **Ce que la boucle à segments coûte avant d'échantillonner quoi que ce
+    // soit**, et c'est la part que la décomposition précédente ne sépare pas.
+    //
+    // Les lignes ci-dessus comparent le cas uni au cas tramé, et leur écart
+    // mélange deux choses : la lecture du texel, et le changement de boucle — le
+    // cas uni passe par le bloc que `Target::span` propose, le cas tramé par des
+    // segments de seize pixels avec leur division de perspective. Un chemin
+    // vectoriel ne reprendrait que la première, donc l'écart surestime ce qu'il
+    // peut rendre.
+    //
+    // La ligne qui suit emprunte **la boucle à segments sans lire aucune
+    // image** : la lumière ouvre ce chemin, la lightmap est absente, et le lot
+    // est uni. Sa distance au cas texturé est la part vraiment en jeu.
+    //
+    // **Une lumière hors de portée aurait donné un cas de plus** — la boucle à
+    // segments sans même la rampe — et il n'y est pas : une surface que plus
+    // aucune lumière n'atteint s'éteint, par contrat, donc l'image est noire. Le
+    // contrôle de couverture la refuse, et il a raison de ne pas savoir
+    // distinguer ce noir-là d'une scène mal cadrée.
+    for (chemin, simd) in chemins() {
+        let mut context = contexte(simd);
+        let duree = mesure(|| {
+            lumiere(&mut context, 8.0);
+            plein_cadre_uni(&mut context);
+            context
+                .frame_end(black_box(&mut pixels), WIDTH)
+                .expect("image rendue");
+        });
+        exige_couverture(&pixels, "segments, rampe seule", 0.95);
+        ligne(&format!("segments, rampe seule — {chemin}"), duree);
+    }
+
+    // Et le même chemin **avec** la texture, pour que la soustraction porte sur
+    // deux cas qui ne diffèrent que par l'échantillonnage : mêmes segments, même
+    // rampe, même division de perspective.
+    for (chemin, simd) in chemins() {
+        let mut context = contexte(simd);
+        let duree = mesure(|| {
+            lumiere(&mut context, 8.0);
+            plein_cadre(&mut context, &texture, Filter::Dither, 256.0);
+            context
+                .frame_end(black_box(&mut pixels), WIDTH)
+                .expect("image rendue");
+        });
+        exige_couverture(&pixels, "segments, texture et rampe", 0.95);
+        ligne(&format!("segments, texture et rampe — {chemin}"), duree);
+    }
+
+    // **Et le chemin dominant d'un décor réel**, qui n'était mesuré nulle part :
+    // une surface de carte porte sa texture et l'atlas de sa cellule. C'est lui
+    // qu'un chemin vectoriel doit viser, et pas le quadrilatère nu des lignes du
+    // haut — une lightmap se lit toujours en bilinéaire, donc quatre texels et
+    // leur mélange, là où la rampe ci-dessus n'évalue que trois plans.
+    let atlas = std::sync::Arc::new(damier(16));
+    for (chemin, simd) in chemins() {
+        let mut context = contexte(simd);
+        let duree = mesure(|| {
+            plein_cadre_lightmap(&mut context, &texture, &atlas);
+            context
+                .frame_end(black_box(&mut pixels), WIDTH)
+                .expect("image rendue");
+        });
+        exige_couverture(&pixels, "segments, texture et lightmap", 0.95);
+        ligne(&format!("segments, texture et lightmap — {chemin}"), duree);
     }
 
     // **La scène chargée se mesure aussi par chemin**, et c'est elle qui décide :
