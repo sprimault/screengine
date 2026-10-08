@@ -52,6 +52,9 @@ publié, et explique les conventions du dépôt à qui y contribue.
   `x86_64` et `x86` : un tiers du temps de rendu en moins sur une carte
   traversée, et **plus de la moitié** sur une surface qui porte texture et
   lightmap, ce qu'un décor emprunte partout. L'image ne bouge pas d'un pixel.
+- **AVX2 a son propre chemin**, à huit pixels et avec le `gather` que SSE2 n'a
+  pas : un quart de mieux que lui sur une surface texturée et éclairée, soit un
+  facteur trois et demi contre le remplissage pixel par pixel.
 - **NEON et `simd128` ne couvrent toujours que la surface unie.** L'écart entre
   chemins est donc réel désormais : forcer NEON sur `aarch64` ne donne pas ce que
   SSE2 donne sur x86.
@@ -64,6 +67,9 @@ publié, et explique les conventions du dépôt à qui y contribue.
   `x86_64` and `x86`: a third off the render time of a traversed map, and **more
   than half** off a surface carrying both texture and lightmap, which is what a
   map uses throughout. The image does not move by a single pixel.
+- **AVX2 has its own path**, eight pixels wide and with the `gather` SSE2 lacks:
+  a quarter better than it on a textured, lit surface — three and a half times
+  the pixel-by-pixel fill.
 - **NEON and `simd128` still only cover the flat surface.** The gap between
   paths is now real: forcing NEON on `aarch64` does not give what SSE2 gives on
   x86.
