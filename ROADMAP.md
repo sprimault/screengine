@@ -4,11 +4,14 @@ Les numéros font foi : ce sont eux que portent les `todo!("étape N : …")` du
 code.
 
 ```
-rg -o 'todo!\("étape' src crates --glob '!*tests*' | wc -l
+make stubs
 ```
 
-`src` autant que `crates` : le noyau est le paquet racine, et une mesure qui ne
-regarde que `crates/` ignore précisément l'endroit où le travail se fait.
+La mesure vit dans le `Makefile` et non dans ce document, où elle valait zéro
+aussi bien pour un dépôt sans marqueur que pour une recherche qui n'avait pas eu
+lieu — un chemin omis, un outil absent. La cible distingue les deux, et elle
+regarde le noyau autant que `crates/` : le premier est le paquet racine, et
+l'endroit où le travail se fait.
 
 **Ce compte vaut zéro, et il a valu zéro à chacune des versions publiées.** Ce
 n'est pas un défaut de la mesure : elle compte ce qui a été *amorcé* puis laissé
