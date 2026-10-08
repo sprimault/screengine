@@ -211,6 +211,28 @@ pub trait Target {
         span_scalar(self, span);
     }
 
+    /// Les tranches de couleur et de profondeur de `count` pixels consécutifs à
+    /// partir de `(x0, y)`, quand le puits les range en tableaux contigus.
+    ///
+    /// **C'est le pendant de [`Target::span`] pour les chemins qui
+    /// échantillonnent**, et il lui ressemble par le même raisonnement : un
+    /// segment est contigu par construction, les deux tampons étant indexés
+    /// `ligne × largeur + colonne`. La différence est où le travail se fait —
+    /// `span` décrit une ligne unie assez complètement pour que le puits la
+    /// remplisse seul, alors qu'un segment échantillonné porte sa texture, ses
+    /// deux marches et son éclairage. Les faire traverser ce trait publierait
+    /// toute la machinerie d'ombrage dans le contrat d'un puits ; rendre les
+    /// deux tranches suffit, et laisse la boucle vectorielle dans `raster/`, à
+    /// côté du scalaire qui lui sert de référence.
+    ///
+    /// **Le défaut rend `None`**, et c'est ce qui garde l'étanchéité
+    /// vérifiable : un puits de comptage ne range rien de contigu, ne surcharge
+    /// pas, et continue donc de voir chaque pixel proposé par [`Target::test`].
+    fn rows(&mut self, x0: i32, y: i32, count: usize) -> Option<(&mut [u32], &mut [u32])> {
+        let _ = (x0, y, count);
+        None
+    }
+
     /// Propose un pixel couvert, en coordonnées entières de l'image, avec sa
     /// profondeur en 0.32 : rend vrai s'il passe le test de profondeur.
     ///

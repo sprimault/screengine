@@ -157,6 +157,21 @@ impl Target for Scratch<'_> {
         self.color[i] = light::modulate(self.color[i], factor, 0);
     }
 
+    /// Les deux tranches du segment, que ce puits peut rendre parce qu'il est le
+    /// seul à ranger sa couleur et sa profondeur en tableaux contigus.
+    ///
+    /// Les bornes ne sont pas vérifiées ici parce qu'elles le sont déjà : le
+    /// remplissage ne propose que des pixels de la région passée, et un segment
+    /// tient sur une ligne. C'est la même précondition que [`Target::test`], et
+    /// l'indexation la ferait valoir en paniquant si elle tombait.
+    fn rows(&mut self, x0: i32, y: i32, count: usize) -> Option<(&mut [u32], &mut [u32])> {
+        let first = self.index(x0, y);
+        Some((
+            &mut self.color[first..first + count],
+            &mut self.depth[first..first + count],
+        ))
+    }
+
     /// Le seul puits du projet qui vectorise, parce qu'il est le seul à ranger
     /// sa couleur et sa profondeur en tableaux contigus.
     ///

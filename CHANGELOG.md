@@ -46,6 +46,22 @@ publié, et explique les conventions du dépôt à qui y contribue.
 
 ## [Non publié]
 
+### Modifié
+
+- **Une surface texturée sans lightmap se remplit par SSE2**, sur `x86_64` et
+  `x86` : un quart du temps de rendu en moins sur une carte traversée, un tiers
+  sur un quadrilatère plein cadre. L'image ne bouge pas d'un pixel, et il n'y a
+  rien à régler.
+
+***
+
+### Changed
+
+- **A textured surface without a lightmap now fills through SSE2** on `x86_64`
+  and `x86`: a quarter off the render time of a traversed map, a third off a
+  full-screen quad. The image does not move by a single pixel, and there is
+  nothing to configure.
+
 ## [0.9.0] — 2026-10-07 — SIMD
 
 **Une liaison web a une chose à reprendre, les autres rien.** Le module wasm

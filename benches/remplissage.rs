@@ -148,6 +148,32 @@
 //! ne changerait pas la nature du coût, les accès mémoire ne pesant rien :
 //! c'est établi par les trois lignes de densité de la section précédente.
 //!
+//! # Ce que le chemin texturé vectorisé rapporte — mesuré le 2026-10-08
+//!
+//! Deux tours concordants, SSE2 contre le scalaire dans le même tour :
+//!
+//! ```text
+//! plein cadre, tramage         0.87 -> 0.58 ms    -31 %
+//! salles traverse (carte.rs)   1.06 -> 0.80 ms    -23 %
+//! scene, 600 triangles         8.76 -> 8.59 ms     -2 %
+//! segments, texture et rampe   1.66 -> 1.70 ms   inchange, temoin
+//! ```
+//!
+//! **Le chiffre qui décide est celui du décor**, pas celui du plein cadre : un
+//! quart du temps de rendu d'une carte traversée. Il est dans
+//! [`carte`](../carte/index.html), qui mesure désormais par chemin — le seul
+//! endroit du dépôt qui dise ce qu'une variante rend sur une vraie carte.
+//!
+//! **La scène chargée ne gagne presque rien, et c'est explicable** : ses six
+//! cents quadrilatères sont petits et vus de près, si bien que la plupart de ses
+//! segments font moins de quatre pixels et que la variante n'a rien à prendre.
+//! Un décor réel a de grandes surfaces vues de biais, d'où l'écart entre les
+//! deux lignes.
+//!
+//! **Le cas éclairé est le témoin, et il ne doit pas bouger** : la variante ne
+//! couvre que le chemin texturé sans éclairage. Un écart là signalerait qu'elle
+//! s'applique où elle ne devrait pas.
+//!
 //! # La référence, reprise le 2026-09-23 après les lightmaps
 //!
 //! ```text

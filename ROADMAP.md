@@ -399,11 +399,14 @@ aucun ne déplace un pixel : chacun a sa passe de conformance, et le noyau
 s'exécute désormais sur quatre architectures au lieu d'une. La fenêtre de
 traversée est un octogone, et les deux cibles Linux sur ARM se compilent.
 
-**Le chemin texturé reste scalaire, et c'est un refus mesuré** : un chemin
-vectoriel y plafonnerait à un pour cent et demi sur un décor réel. Le temps part
-dans le calcul par pixel de l'échantillonnage — jamais dans ses accès mémoire,
-ce que la décomposition a établi contre l'hypothèse naturelle. C'est là qu'un
-gain reste à prendre, hors de cette étape.
+**L'étape a laissé le chemin texturé scalaire, et sa mesure ne portait pas sur
+ce qu'on croyait** : le pour cent et demi écarté était celui du seul test de
+profondeur et de l'écriture, jamais celui de l'échantillonnage, où le temps part
+vraiment — dans le calcul par pixel et non dans les accès mémoire, contre
+l'hypothèse naturelle. Reprise depuis, cette mesure-là a donné près d'un quart
+du temps de rendu d'une carte, et une surface texturée sans lightmap se remplit
+désormais par SSE2. Ce qui reste à prendre est le cas dominant, texture **et**
+lightmap.
 
 ---
 

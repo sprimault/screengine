@@ -50,8 +50,6 @@ browser and on a phone.
 surface — SSE2 and AVX2 on x86, NEON on `aarch64`, `simd128` on wasm — selected
 at runtime and forceable through the ABI. None moves a pixel: each has its own
 conformance pass, and the core now runs on four architectures instead of one.
-Filling a textured surface is still scalar, on a gain measured at one and a half
-percent.
 
 The wasm module requires `simd128`: it no longer instantiates on a browser
 without that feature.

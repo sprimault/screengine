@@ -216,6 +216,89 @@ pub fn fill_flat_row(path: SimdPath, row: FlatRow<'_>) -> bool {
     }
 }
 
+/// Un segment **texturé** d'une ligne, tel qu'une variante le reçoit.
+///
+/// **Le cas le plus simple qui échantillonne**, et c'est ce qui le rend
+/// mesurable : une texture tramée, sans masquage, sans éclairage et sans
+/// modulation. Tout ce qui s'en écarte retombe sur le chemin scalaire, qui reste
+/// la référence.
+///
+/// **Les deux tranches sont celles du segment**, que le puits a découpées : une
+/// variante ne sait rien du rectangle d'une région et n'a aucun indice à
+/// calculer.
+// Même raison que pour `FlatRow` : sur une cible sans variante, aucun champ
+// n'est lu, et c'est le cas normal plutôt qu'un oubli.
+#[allow(dead_code)]
+pub struct SampledRow<'a> {
+    /// Les couleurs du segment, à écrire là où la profondeur passe.
+    pub color: &'a mut [u32],
+    /// Les profondeurs, lues puis écrites de même.
+    pub depth: &'a mut [u32],
+    /// La profondeur au premier pixel, avant son décalage de gradient.
+    pub start: i64,
+    /// Ce que la profondeur gagne d'un pixel au suivant.
+    pub step: i64,
+    /// Les deux coordonnées de texture au premier pixel, **avant** le décalage
+    /// de niveau.
+    pub uv: [i64; 2],
+    /// Ce que chacune gagne d'un pixel au suivant.
+    pub uv_step: [i64; 2],
+    /// Le décalage de niveau, **non borné par la hauteur de la pile**.
+    ///
+    /// C'est celui que le scalaire applique à la coordonnée interpolée, et le
+    /// borner ici déplacerait l'image d'une surface dont la densité dépasse sa
+    /// pile de mipmaps : la lecture, elle, se fait dans le dernier niveau, d'où
+    /// deux valeurs et non une.
+    pub shift: u32,
+    /// Les texels du niveau lu, lignes jointives.
+    pub texels: &'a [u32],
+    /// Ses dimensions, toutes deux puissances de deux.
+    pub size: (u32, u32),
+    /// Les quatre décalages de tramage du bloc, en `u` puis en `v`.
+    ///
+    /// **Ils ne dépendent pas du bloc**, et c'est ce qui les met hors de la
+    /// boucle : le motif a une période de quatre en `x`, les blocs avancent de
+    /// quatre, donc `x & 3` ne change pas d'un bloc au suivant. Le tramage ne
+    /// coûte alors rien par pixel, là où le scalaire lit sa table à chacun.
+    pub dither: [[i32; 4]; 2],
+    /// L'abscisse du premier pixel dans l'image, dont le reste scalaire a besoin.
+    pub x0: i32,
+    /// Son ordonnée, de même.
+    pub y: i32,
+}
+
+/// Remplit un segment texturé par le chemin demandé, test de profondeur
+/// compris.
+///
+/// Rend le **nombre de pixels traités**, toujours un multiple de la largeur du
+/// chemin, ou `None` quand ce chemin n'a rien à offrir ici.
+///
+/// **Le reste du segment appartient à l'appelant**, et c'est voulu : il le finit
+/// par son parcours scalaire, celui-là même qui fait référence. Une variante qui
+/// terminerait elle-même recopierait la formule d'échantillonnage — niveau,
+/// tramage, repli, adressage — dans un second endroit, et c'est exactement le
+/// genre de copie dont ce projet sait qu'elle finit par diverger. Le marcheur
+/// étant affine, l'avancer de ce compte est exact.
+///
+/// **AVX2 passe ici par le chemin SSE2**, qu'il porte toujours. Ce n'est pas un
+/// oubli : lui donner son propre chemin large est un lot à lui, et sans ce
+/// renvoi une machine qui a AVX2 — c'est-à-dire presque toutes — retomberait au
+/// scalaire alors qu'elle sait faire mieux. Les deux rendent les mêmes bits,
+/// étant le même code.
+pub fn fill_sampled_row(path: SimdPath, row: SampledRow<'_>) -> Option<usize> {
+    match path {
+        #[cfg(all(
+            target_feature = "sse2",
+            any(target_arch = "x86", target_arch = "x86_64")
+        ))]
+        SimdPath::Sse2 | SimdPath::Avx2 => Some(sse2::fill_sampled_row(row)),
+        _ => {
+            let _ = row;
+            None
+        }
+    }
+}
+
 /// AVX2 est-il utilisable, processeur et système compris ?
 ///
 /// Hors de `x86`, la question ne se pose pas et la réponse est non.

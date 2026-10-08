@@ -14,6 +14,7 @@ use crate::math::fixed::{PIXEL_CENTER, SUBPIXEL_SCALE, UV_BITS};
 use crate::math::projection::ProjectedVertex;
 
 use super::plane::{GRADIENT_BITS, Plane};
+use super::simd::{self, SampledRow};
 use super::{Rect, SimdPath, Span, Target};
 use crate::texture::{ALPHA_THRESHOLD, Filter, MAX_TEXTURE_SIZE, Texture};
 
@@ -716,7 +717,17 @@ pub fn fill<T: Target>(
                     let base = x - x.rem_euclid(SEGMENT);
                     let segment = (base.max(gl), (base + SEGMENT - 1).min(gr));
                     let last = segment.1.min(hi);
-                    fill_segment(target, triangle, sampling, lit, y, segment, gr, (x, last));
+                    fill_segment(
+                        target,
+                        triangle,
+                        sampling,
+                        lit,
+                        y,
+                        segment,
+                        gr,
+                        (x, last),
+                        simd,
+                    );
                     x = last + 1;
                 }
             }
@@ -807,6 +818,7 @@ fn fill_segment<T: Target>(
     segment: (i32, i32),
     span_end: i32,
     draw: (i32, i32),
+    simd: SimdPath,
 ) {
     // Les écarts se recalculent ici plutôt que de traverser la signature :
     // deux soustractions par segment, contre deux paramètres de plus dans une
@@ -844,15 +856,121 @@ fn fill_segment<T: Target>(
         modulated: triangle.modulated(),
     };
     match texels {
-        Some((sampling, texel)) => match sampling.filter {
-            Filter::Dither => textured::<T, false>(walk, sampling.texture, texel, lit, ey, &ends),
-            Filter::Bilinear => textured::<T, true>(walk, sampling.texture, texel, lit, ey, &ends),
-        },
+        Some((sampling, mut texel)) => {
+            // **La tentative vectorielle n'a lieu que sur le chemin le plus
+            // simple qui échantillonne** : une texture tramée, sans masquage,
+            // sans éclairage et sans modulation. Tout le reste passe par le
+            // parcours scalaire, qui reste la référence contre laquelle cette
+            // variante se valide.
+            if lit.is_none()
+                && !walk.modulated
+                && sampling.filter == Filter::Dither
+                && !sampling.texture.masked()
+            {
+                let done = sampled_simd(
+                    walk.target,
+                    triangle,
+                    sampling.texture,
+                    &texel,
+                    y,
+                    draw,
+                    simd,
+                );
+                if done == draw.1 - draw.0 + 1 {
+                    return;
+                }
+                // Le marcheur est affine : l'avancer du compte traité est exact,
+                // et le parcours reprend au premier pixel que la variante a
+                // laissé. Sans cela il faudrait recopier l'échantillonnage dans
+                // la variante pour qu'elle finisse elle-même.
+                for _ in 0..done {
+                    texel.step();
+                }
+                let reste = Walk {
+                    draw: (draw.0 + done, draw.1),
+                    ..walk
+                };
+                return match sampling.filter {
+                    Filter::Dither => {
+                        textured::<T, false>(reste, sampling.texture, texel, lit, ey, &ends)
+                    }
+                    Filter::Bilinear => {
+                        textured::<T, true>(reste, sampling.texture, texel, lit, ey, &ends)
+                    }
+                };
+            }
+            match sampling.filter {
+                Filter::Dither => {
+                    textured::<T, false>(walk, sampling.texture, texel, lit, ey, &ends)
+                }
+                Filter::Bilinear => {
+                    textured::<T, true>(walk, sampling.texture, texel, lit, ey, &ends)
+                }
+            }
+        }
         None => match lit {
             Some(lit) => plain(walk, lit, ey, &ends),
             None => walk.run(Flat(triangle.color)),
         },
     }
+}
+
+/// Tente le chemin vectoriel sur un segment texturé, et rend le nombre de
+/// pixels qu'il a traités.
+///
+/// **Zéro n'est pas un échec**, c'est le cas ordinaire : il arrive quand le
+/// puits ne range rien de contigu — un puits de comptage —, quand le chemin
+/// retenu n'a pas de variante, ou quand le segment est plus court que la largeur
+/// du chemin. L'appelant parcourt alors en scalaire ce qui reste, et c'est tout
+/// ce qu'il a à savoir.
+#[allow(clippy::too_many_arguments)]
+fn sampled_simd<T: Target>(
+    target: &mut T,
+    triangle: &Prepared,
+    texture: &Texture,
+    texel: &Crawl,
+    y: i32,
+    draw: (i32, i32),
+    simd: SimdPath,
+) -> i32 {
+    let count = (draw.1 - draw.0 + 1) as usize;
+    // Le niveau **lu** est borné par la hauteur de la pile, le **décalage** ne
+    // l'est pas : voir `SampledRow::shift`, et `Crawl::sample`, qui fait déjà
+    // cette distinction.
+    let level = (texel.level as usize).min(texture.level_count() - 1);
+    let ey = (py_of(y) - triangle.ref_y) as i64;
+    let ex = (draw.0 * SUBPIXEL_SCALE + PIXEL_CENTER - triangle.ref_x) as i64;
+    let start = triangle.depth.at(ex, ey);
+    let step = triangle.depth.step_x(SUBPIXEL_SCALE);
+    // Les quatre décalages du bloc, pris par la fonction du scalaire plutôt que
+    // par une seconde formule : c'est elle qui décide de l'image.
+    let dither = {
+        let at = |k: i32| dither_offsets(draw.0 + k, y);
+        [
+            [at(0)[0], at(1)[0], at(2)[0], at(3)[0]],
+            [at(0)[1], at(1)[1], at(2)[1], at(3)[1]],
+        ]
+    };
+    let texels = texture.level_texels(level);
+    let size = texture.level_size(level);
+    let Some((color, depth)) = target.rows(draw.0, y, count) else {
+        return 0;
+    };
+    let row = SampledRow {
+        color,
+        depth,
+        start,
+        step,
+        uv: texel.value,
+        uv_step: texel.slope,
+        shift: texel.level,
+        texels,
+        size,
+        dither,
+        x0: draw.0,
+        y,
+    };
+    simd::fill_sampled_row(simd, row).unwrap_or(0) as i32
 }
 
 /// Construit l'éclairage d'un segment, les deux sources portées par le type.
@@ -1516,7 +1634,7 @@ pub(crate) const DITHER: [i32; 16] = [
 ///
 /// `& 3` et non `% 4` : le masque replie aussi une coordonnée négative du bon
 /// côté, pour la même raison que le repli des texels.
-fn dither_offsets(x: i32, y: i32) -> [i32; 2] {
+pub(crate) fn dither_offsets(x: i32, y: i32) -> [i32; 2] {
     let (cx, cy) = ((x & 3) as usize, (y & 3) as usize);
     [DITHER[cy * 4 + cx], DITHER[cx * 4 + cy]]
 }

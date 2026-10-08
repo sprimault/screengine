@@ -11,9 +11,11 @@
 use alloc::vec;
 use alloc::vec::Vec;
 
-use super::fill_flat_row;
+use super::{fill_flat_row, fill_sampled_row};
+use crate::math::fixed::UV_BITS;
 use crate::raster::plane::GRADIENT_BITS;
-use crate::raster::simd::FlatRow;
+use crate::raster::simd::{FlatRow, SampledRow};
+use crate::raster::triangle::dither_offsets;
 
 /// Ce que le chemin scalaire écrit, repris ici mot pour mot.
 ///
@@ -188,4 +190,173 @@ fn une_pente_negative_traverse_zero() {
 
     assert_eq!(depth, attendu_depth);
     assert_eq!(color, attendu_color);
+}
+
+/// L'échantillonnage du chemin scalaire, repris ici mot pour mot.
+///
+/// Même exception que [`scalar`], et pour la même raison : c'est le scalaire qui
+/// fait référence, et le partager supprimerait la référence. Elle réunit ce que
+/// trois endroits font là-bas — le décalage de niveau et le tramage de
+/// `Crawl::sample`, le repli et l'adressage de `Texture::texel`, le test strict
+/// et l'écriture de `Walk::run`.
+#[allow(clippy::too_many_arguments)]
+fn scalar_sampled(
+    color: &mut [u32],
+    depth: &mut [u32],
+    start: i64,
+    step: i64,
+    uv: [i64; 2],
+    uv_step: [i64; 2],
+    shift: u32,
+    texels: &[u32],
+    size: (u32, u32),
+    x0: i32,
+    y: i32,
+) {
+    let (width, height) = size;
+    let mut z = start;
+    let mut uv = uv;
+    for i in 0..depth.len() {
+        let value = (z >> GRADIENT_BITS) as u32;
+        let offsets = dither_offsets(x0 + i as i32, y);
+        // Le tramage s'ajoute **entre** les deux décalages, et la conversion en
+        // non signé précède le masque : un `u32` négatif se replie, il ne sature
+        // pas.
+        let coord = |c: i64, d: i32| (((c >> shift) + i64::from(d)) >> UV_BITS) as i32;
+        let tx = (coord(uv[0], offsets[0]) as u32) & (width - 1);
+        let ty = (coord(uv[1], offsets[1]) as u32) & (height - 1);
+        let texel = texels[(ty * width + tx) as usize];
+        if value > depth[i] {
+            depth[i] = value;
+            color[i] = texel;
+        }
+        z = z.wrapping_add(step);
+        uv[0] = uv[0].wrapping_add(uv_step[0]);
+        uv[1] = uv[1].wrapping_add(uv_step[1]);
+    }
+}
+
+/// Une texture dont chaque texel porte son propre indice.
+///
+/// **Un damier ne vaudrait rien ici** : deux texels voisins y sont identiques,
+/// donc une erreur d'adressage d'un texel passerait inaperçue. Avec l'indice
+/// pour valeur, toute erreur de repli, de niveau ou de tramage change la
+/// couleur écrite.
+fn marquee(width: u32, height: u32) -> Vec<u32> {
+    (0..width * height).map(|i| i | 0xFF00_0000).collect()
+}
+
+/// Les deux chemins échantillonnent les mêmes bits, sur les quatre restes.
+///
+/// Les coordonnées sont tirées **des deux côtés de zéro**, et les niveaux vont
+/// de zéro à quarante : ce cas garde le décalage, le tramage, le repli,
+/// l'adressage et le test de profondeur.
+///
+/// **Ce qu'il ne garde pas, et c'est vérifié plutôt que supposé** :
+/// l'émulation du décalage arithmétique de `shift_right_arithmetic`. Retirée, ce
+/// cas reste vert — les coordonnées tenant dans un `i32`, les bits où les deux
+/// décalages diffèrent sont ceux que le repli jette. Sa documentation dit
+/// pourquoi elle reste écrite malgré cela ; prétendre ici qu'un cas la protège
+/// serait faux.
+#[test]
+fn les_deux_chemins_echantillonnent_les_memes_bits() {
+    let mut seed = Seed(0xfeed_4321_0fed_cba9);
+    let texels = marquee(64, 32);
+    for count in 0..34usize {
+        for shift in [0u32, 1, 5, 40] {
+            let start = (seed.next() >> 1) as i64;
+            let step = (seed.next() as i64) >> 20;
+            // Des coordonnées qui traversent zéro et dépassent la texture, pour
+            // que le repli et le signe travaillent tous les deux.
+            let uv = [(seed.next() as i64) >> 28, (seed.next() as i64) >> 28];
+            let uv_step = [(seed.next() as i64) >> 44, (seed.next() as i64) >> 44];
+            let (mut color, mut depth) = peuple(&mut seed, count);
+            let (mut attendu_color, mut attendu_depth) = (color.clone(), depth.clone());
+            let (x0, y) = (seed.next() as i32 & 0x3FF, seed.next() as i32 & 0x3FF);
+
+            let traites = fill_sampled_row(SampledRow {
+                color: &mut color,
+                depth: &mut depth,
+                start,
+                step,
+                uv,
+                uv_step,
+                shift,
+                texels: &texels,
+                size: (64, 32),
+                dither: [
+                    [
+                        dither_offsets(x0, y)[0],
+                        dither_offsets(x0 + 1, y)[0],
+                        dither_offsets(x0 + 2, y)[0],
+                        dither_offsets(x0 + 3, y)[0],
+                    ],
+                    [
+                        dither_offsets(x0, y)[1],
+                        dither_offsets(x0 + 1, y)[1],
+                        dither_offsets(x0 + 2, y)[1],
+                        dither_offsets(x0 + 3, y)[1],
+                    ],
+                ],
+                x0,
+                y,
+            });
+            assert_eq!(traites, count & !3, "pixels traités, {count} pixels");
+
+            // La référence ne joue que ce que la variante a traité : le reste du
+            // segment appartient à l'appelant, qui le finit par le vrai chemin
+            // scalaire.
+            scalar_sampled(
+                &mut attendu_color[..traites],
+                &mut attendu_depth[..traites],
+                start,
+                step,
+                uv,
+                uv_step,
+                shift,
+                &texels,
+                (64, 32),
+                x0,
+                y,
+            );
+
+            assert_eq!(depth, attendu_depth, "profondeurs, {count} pixels");
+            assert_eq!(color, attendu_color, "couleurs, {count} pixels");
+        }
+    }
+}
+
+/// Un segment plus court qu'un bloc n'est pas traité du tout.
+///
+/// **Et ce n'est pas un échec** : l'appelant parcourt alors le segment entier en
+/// scalaire. Le cas est écrit parce que la variante doit rendre zéro plutôt que
+/// d'écrire hors des tranches — c'est la borne de la boucle, et elle se vérifie
+/// plutôt qu'elle se relit.
+#[test]
+fn un_segment_plus_court_qu_un_bloc_reste_intact() {
+    let mut seed = Seed(0x0bad_c0de_dead_beef);
+    let texels = marquee(16, 16);
+    for count in 0..4usize {
+        let (mut color, mut depth) = peuple(&mut seed, count);
+        let (attendu_color, attendu_depth) = (color.clone(), depth.clone());
+
+        let traites = fill_sampled_row(SampledRow {
+            color: &mut color,
+            depth: &mut depth,
+            start: 1 << 40,
+            step: 1 << 30,
+            uv: [0, 0],
+            uv_step: [1 << 16, 1 << 16],
+            shift: 0,
+            texels: &texels,
+            size: (16, 16),
+            dither: [[0; 4], [0; 4]],
+            x0: 0,
+            y: 0,
+        });
+
+        assert_eq!(traites, 0, "{count} pixels");
+        assert_eq!(depth, attendu_depth, "{count} pixels");
+        assert_eq!(color, attendu_color, "{count} pixels");
+    }
 }

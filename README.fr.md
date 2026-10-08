@@ -52,8 +52,7 @@ Windows, dans un navigateur et sur un téléphone.
 remplissent une surface unie — SSE2 et AVX2 sur x86, NEON sur `aarch64`,
 `simd128` sur wasm —, choisis à l'exécution et forçables par l'ABI. Aucun ne
 déplace un pixel : chacun a sa passe de conformance, et le noyau s'exécute
-désormais sur quatre architectures au lieu d'une. Le remplissage d'une surface
-texturée reste scalaire, sur un gain mesuré à un pour cent et demi.
+désormais sur quatre architectures au lieu d'une.
 
 Le module wasm exige `simd128` : il ne s'instancie plus sur un navigateur qui ne
 le porte pas.
