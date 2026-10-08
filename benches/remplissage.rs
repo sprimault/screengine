@@ -174,6 +174,32 @@
 //! couvre que le chemin texturé sans éclairage. Un écart là signalerait qu'elle
 //! s'applique où elle ne devrait pas.
 //!
+//! # Ce que la lightmap vectorisée rapporte — mesuré le 2026-10-08
+//!
+//! Deux tours concordants, SSE2 contre le scalaire dans le même tour. Les
+//! chiffres du scalaire ont monté depuis la section précédente, la machine étant
+//! plus chargée : **ce sont les rapports qui se comparent, jamais les valeurs
+//! d'un tour à l'autre.**
+//!
+//! ```text
+//! segments, texture et lightmap   3.57 -> 1.36 ms    -62 %   le cas dominant
+//! plein cadre, tramage            0.98 -> 0.58 ms    -41 %
+//! salles traverse (carte.rs)      1.24 -> 0.83 ms    -33 %
+//! scene, 600 triangles           10.95 -> 8.92 ms    -18 %
+//! plein cadre, bilineaire         2.14 -> 2.14 ms   inchange, temoin
+//! ```
+//!
+//! **Le facteur deux et demi du cas dominant vient du bilinéaire**, pas de
+//! l'adressage : une lightmap coûte trois mélanges et quatre lectures par pixel,
+//! et les trois mélanges sont du calcul entier pur — exactement ce qui se
+//! vectorise, là où les lectures ne se vectorisent pas. C'est ce que la
+//! décomposition annonçait, et c'est la première fois qu'une mesure la confirme
+//! dans ce sens.
+//!
+//! **Le bilinéaire de texture est le témoin et il ne bouge pas** : seule la
+//! lightmap est lue ainsi par la variante, une texture bilinéaire restant sur le
+//! chemin scalaire.
+//!
 //! # La référence, reprise le 2026-09-23 après les lightmaps
 //!
 //! ```text

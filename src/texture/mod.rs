@@ -299,8 +299,8 @@ impl Texture {
 ///
 /// Huit bits : de quoi mélanger deux octets sans perdre de marche, et le
 /// produit de deux canaux empaquetés tient encore dans un `u32`.
-const WEIGHT_BITS: u32 = 8;
-const HALF_TEXEL: i32 = 1 << (UV_BITS - 1);
+pub(crate) const WEIGHT_BITS: u32 = 8;
+pub(crate) const HALF_TEXEL: i32 = 1 << (UV_BITS - 1);
 
 /// Mélange deux texels, `t` sur huit bits pour le second.
 ///
@@ -312,7 +312,7 @@ const HALF_TEXEL: i32 = 1 << (UV_BITS - 1);
 ///
 /// L'arrondi est celui que `docs/rust.md` fixe, `(… + 128) >> 8`, posé sur les
 /// deux canaux du mot en une addition.
-fn mix(a: u32, b: u32, t: u32) -> u32 {
+pub(crate) fn mix(a: u32, b: u32, t: u32) -> u32 {
     const MASK: u32 = 0x00FF_00FF;
     const ROUND: u32 = 0x0080_0080;
     let blend = |a: u32, b: u32| ((a * (256 - t) + b * t + ROUND) >> WEIGHT_BITS) & MASK;
