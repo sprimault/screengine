@@ -403,10 +403,16 @@ traversée est un octogone, et les deux cibles Linux sur ARM se compilent.
 ce qu'on croyait** : le pour cent et demi écarté était celui du seul test de
 profondeur et de l'écriture, jamais celui de l'échantillonnage, où le temps part
 vraiment — dans le calcul par pixel et non dans les accès mémoire, contre
-l'hypothèse naturelle. Reprise depuis, cette mesure-là a donné près d'un quart
-du temps de rendu d'une carte, et une surface texturée sans lightmap se remplit
-désormais par SSE2. Ce qui reste à prendre est le cas dominant, texture **et**
-lightmap.
+l'hypothèse naturelle. Reprise depuis, cette mesure-là a donné un tiers du temps
+de rendu d'une carte, et les quatre jeux remplissent désormais une surface
+texturée, sa lightmap comprise.
+
+**Seul AVX2 y va par huit pixels, et son avance vient de son `gather`**, non de
+sa largeur : un quart sur le cas dominant, qui lit cinq texels par pixel, un
+dixième là où il en lit un. Les trois autres n'en ont pas, et partagent donc la
+même forme à quatre voies. Le gain de NEON et de `simd128` n'est pas mesuré —
+aucune des deux cibles n'a de machine de référence dans ce dépôt —, seule leur
+justesse l'est.
 
 ---
 

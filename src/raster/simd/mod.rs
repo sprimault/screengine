@@ -327,9 +327,13 @@ pub struct SampledRow<'a> {
 /// genre de copie dont ce projet sait qu'elle finit par diverger. Le marcheur
 /// étant affine, l'avancer de ce compte est exact.
 ///
-/// **AVX2 a désormais son propre chemin**, à huit pixels et avec le `gather`
-/// que SSE2 n'a pas : il ne passe plus par le chemin à quatre voies. Les deux
-/// rendent les mêmes bits, ce que la conformance exige chemin par chemin.
+/// **Les quatre jeux ont leur chemin, et AVX2 est le seul à huit pixels** :
+/// lui seul porte un `gather`, et c'est de là que vient son avance sur le cas
+/// dominant, non de sa largeur. SSE2, NEON et `simd128` partagent donc la forme
+/// à quatre voies, chacune dans ses propres intrinsèques — la duplication entre
+/// variantes est de celles que ce projet garde, le scalaire restant la
+/// référence. Tous rendent les mêmes bits, ce que la conformance exige chemin
+/// par chemin.
 pub fn fill_sampled_row(path: SimdPath, row: SampledRow<'_>) -> Option<usize> {
     match path {
         // **AVX2 interroge le processeur**, là où SSE2 se décide à la
@@ -352,6 +356,21 @@ pub fn fill_sampled_row(path: SimdPath, row: SampledRow<'_>) -> Option<usize> {
             sse2::fill_sampled_row::<true>(row)
         } else {
             sse2::fill_sampled_row::<false>(row)
+        }),
+        // NEON et `simd128` se décident à la compilation, comme SSE2 : aucune
+        // des deux n'a de gather, donc toutes deux suivent la forme à quatre
+        // voies plutôt que celle d'AVX2.
+        #[cfg(target_arch = "aarch64")]
+        SimdPath::Neon => Some(if row.lit {
+            neon::fill_sampled_row::<true>(row)
+        } else {
+            neon::fill_sampled_row::<false>(row)
+        }),
+        #[cfg(target_feature = "simd128")]
+        SimdPath::Simd128 => Some(if row.lit {
+            simd128::fill_sampled_row::<true>(row)
+        } else {
+            simd128::fill_sampled_row::<false>(row)
         }),
         _ => {
             let _ = row;
