@@ -55,9 +55,10 @@ publié, et explique les conventions du dépôt à qui y contribue.
 - **AVX2 a son propre chemin**, à huit pixels et avec le `gather` que SSE2 n'a
   pas : un quart de mieux que lui sur une surface texturée et éclairée, soit un
   facteur trois et demi contre le remplissage pixel par pixel.
-- **NEON et `simd128` ne couvrent toujours que la surface unie.** L'écart entre
-  chemins est donc réel désormais : forcer NEON sur `aarch64` ne donne pas ce que
-  SSE2 donne sur x86.
+- **NEON et `simd128` remplissent à leur tour une surface texturée**, lightmap
+  comprise : les quatre jeux couvrent désormais le même chemin. Leur gain n'est
+  pas mesuré, aucune des deux cibles n'ayant de machine de référence ici ; leur
+  justesse l'est, par la conformance.
 
 ***
 
