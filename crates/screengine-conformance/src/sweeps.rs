@@ -536,6 +536,13 @@ fn absorb(hit: &Hit, status: u8, bytes: &mut Vec<u8>) {
 /// comme un avertissement ferait traverser le mur que le moteur n'a pas eu le
 /// temps de regarder.
 ///
+/// **Elle couvre aussi le point et la cellule, et c'est ce qui manquait.** Un
+/// tronqué ne nomme aucune surface, donc il ne décrit aucun contact : un point
+/// ou une cellule non nuls y désignent une géométrie que le même résultat
+/// déclare ne pas avoir rencontrée. Ces deux champs entrent dans l'empreinte, et
+/// n'étaient pourtant regardés par aucun oracle — l'égalité avec la force brute
+/// exempte le tronqué, et la cohérence interne s'arrêtait à la fraction.
+///
 /// **Écartée, et c'est l'erreur qu'il fallait éviter ici : l'inégalité des deux
 /// fractions.** Elle se lit comme un conservatisme vérifié et ne vérifie rien —
 /// un trajet qui sature est dégagé par construction, donc la force brute y rend
@@ -551,11 +558,13 @@ fn agree(fast: &Hit, slow: &Hit) -> Result<(), &'static str> {
     }
     // Comparaison écrite, sur une valeur dont la finitude est acquise : une
     // fraction ne sort jamais de `[0, 1]`.
-    if fast.fraction < 1.0 {
-        Ok(())
-    } else {
-        Err("la traversée annonce une troncature et rend le déplacement entier")
+    if fast.fraction >= 1.0 {
+        return Err("la traversée annonce une troncature et rend le déplacement entier");
     }
+    if fast.point != Vec3::ZERO || fast.cell != 0 {
+        return Err("la traversée tronque et nomme pourtant une géométrie");
+    }
+    Ok(())
 }
 
 /// Deux résultats portent-ils exactement les mêmes bits ?

@@ -1881,15 +1881,26 @@ disposition de `ScgSprite`, et pour la même raison.
   écrite de mémoire se trompera : trois cas distincts le rendent, que seuls la
   fraction et le statut départagent.
 
-  | `surface_id` | `fraction` | Statut | Ce qui s'est passé |
-  |---|---|---|---|
-  | `0` | `1` | `SCG_OK` | rien sur le trajet, déplacement entier |
-  | `0` | `< 1` | `SCG_STATUS_INCOMPLETE` | tronqué au bord de la région examinée, rien de touché |
-  | `0` | `< 1` | `SCG_OK` | arrêté par un **portail non apparié** : un mur que la carte ne porte pas comme surface |
-  | `≠ 0` | `≤ 1` | quelconque | la surface nommée arrête, et son matériau se lit |
+  | `surface_id` | `fraction` | Statut | `point` | `cell_id` | Ce qui s'est passé |
+  |---|---|---|---|---|---|
+  | `0` | `1` | `SCG_OK` | l'arrivée demandée | `0` | rien sur le trajet, déplacement entier |
+  | `0` | `1` | `SCG_STATUS_NO_CELL` | l'arrivée demandée | `0` | `from_cell` nul : rien n'a été examiné |
+  | `0` | `< 1` | `SCG_STATUS_INCOMPLETE` | **nul** | `0` | tronqué au bord de la région examinée, rien de touché |
+  | `0` | `< 1` | `SCG_OK` | le contact | la cellule | arrêté par un **portail non apparié** : un mur que la carte ne porte pas comme surface |
+  | `≠ 0` | `≤ 1` | quelconque | le contact | la cellule | la surface nommée arrête, et son matériau se lit |
 
   Le critère qui tient dans tous les cas est donc `fraction < 1`, jamais
   `surface_id ≠ 0`.
+
+  **`point` suit le contact, pas `surface_id`**, et les deux colonnes se
+  décollent deux fois. Sur un **portail non apparié** il décrit un vrai contact
+  alors qu'aucune surface n'est nommée. Sur un résultat **tronqué** il est le
+  vecteur nul, et `cell_id` avec lui : le mouvement s'arrête au bord de la
+  région examinée, où le moteur n'a rien regardé, et nommer là une cellule ou un
+  point de contact serait décrire une géométrie que le même résultat déclare ne
+  pas avoir rencontrée. **Ce n'est donc pas la position d'arrêt du mobile** —
+  celle-là se calcule depuis la fraction, et c'est aussi vrai des deux premières
+  lignes, où `point` ne fait que redonner l'arrivée que l'hôte a passée.
 - **`point` figure dès la publication**, et c'est la clause des trois décalages
   de `ScgGrade` : trois flottants ne tiendraient jamais dans deux champs
   réservés, et un point de contact n'a pas zéro pour neutre — il aurait donc
@@ -1946,7 +1957,8 @@ s'ajoute plus tard sans incrémenter `SCG_ABI_VERSION`.
   déplacement est alors **tronqué** à la fraction où s'arrête la région examinée,
   et c'est la seule réponse conservatrice : rendre le déplacement libre ferait
   passer une entité à travers un mur que le moteur n'a pas eu le temps de
-  regarder.
+  regarder. Rien n'ayant été touché, le résultat ne nomme **ni point de contact
+  ni cellule** — voir la table ci-dessus.
 - **`SCG_STATUS_START_SOLID`** quand la boîte est déjà en intersection au départ.
   `fraction` vaut alors 0, et la normale est celle de la surface de moindre
   pénétration le long de sa propre normale intérieure, à égalité l'ordre du

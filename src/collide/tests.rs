@@ -935,6 +935,66 @@ fn une_chaine_au_dela_de_la_borne_tronque_le_deplacement() {
     assert!(!again.start_solid, "et il n'est pas dans un mur");
 }
 
+/// Un résultat tronqué ne nomme ni point de contact ni cellule.
+///
+/// **Le régime où rien n'a été retenu**, et c'est celui qui laissait passer la
+/// destination entière : un trajet dégagé part de [`Hit::free`], dont le `point`
+/// est `to`, et la troncature ne le reprenait pas. L'hôte lisait donc l'arrivée
+/// qu'il n'atteint pas, à côté d'une fraction qui dit le contraire.
+///
+/// Son jumeau éprouve l'autre extrémité — un contact retenu puis écarté —, qui
+/// seule fait mentir `cell` et ne se reproduit pas sur un trajet dégagé.
+#[test]
+fn une_chaine_tronquee_ne_nomme_aucune_geometrie() {
+    let count = SWEEP_CELLS as u32 + 8;
+    let world = chain(count);
+    let half = Vec3d::new(0.5, 0.5, 0.5);
+    let from = Vec3d::new(2.0, 2.0, 2.0);
+    let to = Vec3d::new(f64::from(count * 4) - 2.0, 2.0, 2.0);
+
+    let hit = sweep(&world, 1, half, from, to).expect("cellule connue");
+    assert!(hit.incomplete, "la région examinée s'arrête avant la fin");
+    assert_eq!(
+        hit.point,
+        Vec3::ZERO,
+        "le point ne désigne rien, pas même l'arrivée"
+    );
+    assert_eq!(hit.cell, 0, "et aucune cellule ne porte de contact");
+}
+
+/// Une troncature oublie le contact qu'elle écarte, entièrement.
+///
+/// **Le régime que le décor ne produit pas**, et c'est le seul où `cell` mente :
+/// la pile de traversée est LIFO, si bien qu'un contact peut être retenu dans
+/// une cellule dépilée tôt, puis la borne tomber sur un portail que le trajet
+/// atteint **avant** lui. La fraction, la normale et la surface étaient alors
+/// reprises ; le point et la cellule restaient ceux du contact écarté, c'est-à-
+/// dire d'une surface que le même résultat déclare ne pas avoir touchée.
+///
+/// Monté à la main plutôt que par un décor : construire la ramification qui le
+/// produit coûterait soixante-cinq cellules pour éprouver trois lignes de
+/// départage, et le ferait dépendre d'un ordre de pile qu'aucune clause
+/// n'annonce.
+#[test]
+fn une_troncature_oublie_le_contact_qu_elle_ecarte() {
+    let mut best = Best::new(Vec3d::new(10.0, 0.0, 0.0));
+    best.fraction = 0.9;
+    best.rank = shape::RANK_FACE;
+    best.hit.fraction = 0.9;
+    best.hit.normal = Vec3::new(-1.0, 0.0, 0.0);
+    best.hit.point = Vec3::new(9.0, 0.0, 0.0);
+    best.hit.surface = 7;
+    best.hit.cell = 3;
+
+    best.truncate(0.5);
+
+    assert!(best.hit.fraction < 0.9, "la troncature a bien mordu");
+    assert_eq!(best.hit.surface, 0, "aucune surface n'est nommée");
+    assert_eq!(best.hit.normal, Vec3::ZERO, "aucune normale non plus");
+    assert_eq!(best.hit.point, Vec3::ZERO, "ni le point du contact écarté");
+    assert_eq!(best.hit.cell, 0, "ni la cellule qui le portait");
+}
+
 /// **Un portail non apparié arrête le balayage**, comme le ferait un mur.
 ///
 /// C'est le mot du format — « un portail non apparié est un mur » — et c'est ce

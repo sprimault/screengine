@@ -805,17 +805,28 @@ typedef struct ScgSweepHit {
   // them. A character stopping dead against an angled wall is three lines of
   // projection away on your side, not a defect on ours.
   float normal[3];
-  // The contact point, on the plane of the surface that was touched.
+  // The contact point, on the plane of whatever stopped the move.
   //
   // A face-to-face contact is a rectangle and not a point; the engine picks
   // the projection of the box centre onto that plane and freezes it, so that
   // two targets agree on it.
+  //
+  // **Zero on a truncated result**, together with `cell_id`: the move then
+  // stops at the edge of the examined region, where nothing was looked at,
+  // and naming a contact there would describe geometry the same result says
+  // it never met. Note this follows the contact and not `surface_id`, which
+  // an unpaired portal leaves at `0` while still reporting one. **It is never
+  // where the mover ends up** — compute that from `fraction`; when the move
+  // is free, `point` merely hands back the destination you passed.
   float point[3];
   // The stable identifier of the surface touched, or `0`.
   //
   // Pass it to `scg_world_surface_material` to learn what it is made of.
   uint32_t surface_id;
   // The stable identifier of the cell the contact happened in, or `0`.
+  //
+  // Zero whenever no contact was met, a truncated result included. It is not
+  // the cell the mover ends up in: ask `scg_world_track` for that.
   uint32_t cell_id;
   // Reserved, must be zero.
   uint32_t reserved0;
