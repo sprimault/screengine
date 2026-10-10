@@ -464,6 +464,22 @@ aux fonctions de bord.
 - **NaN se teste nommément**, par `is_nan`, avant les comparaisons : toute
   comparaison avec lui est fausse, et un refus écrit `x <= seuil` le laisserait
   passer.
+- **Le refus du non fini appartient au noyau, partout où il reçoit la valeur.**
+  Caméra, matrice modèle, sommets d'un lot, demi-étendues et extrémités d'un
+  balayage : chacun se refuse là où il arrive, et non à la frontière. La laisser
+  s'en charger fait du chemin Rust le plus permissif des deux, ce que la règle
+  des deux chemins interdit — et le symptôme est le pire possible, puisqu'un
+  argument non fini ne se voit pas : il rend un lot invisible, ou un déplacement
+  libre, sans qu'aucun appel ne signale rien.
+
+  **Ce que la frontière garde malgré cela, et pourquoi ce n'est pas une
+  duplication** : un message qui nomme la structure C que l'hôte a remplie, à
+  code égal ; la dernière ligne d'une `ScgMat4`, où une perspective pourrait se
+  cacher et que le noyau ne voit pas en 3×4 ; et le parcours du tableau de
+  sommets, qu'elle est seule à voir, confiant l'indexation au noyau par un
+  lecteur par triangle. La règle est donc : **un contrôle vit là où
+  l'information existe**, et deux passages ne se justifient que par deux formes
+  d'entrée.
 
 - **L'interpolation entre trames s'écrit en trois cas, tranchés une fois par
   lot** et jamais par sommet : `frame_a == frame_b` ou `t == 0` lit la première

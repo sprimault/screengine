@@ -129,6 +129,23 @@ pub enum Argument {
     /// Un champ de vision hors de `]0, π[`, ou un plan proche nul, négatif ou
     /// démesuré.
     Projection,
+    /// Une position ou une orientation de caméra non finie.
+    ///
+    /// Séparée de [`Argument::Projection`], qui nomme le champ de vision et le
+    /// plan proche : les deux vivent dans la même structure et se corrigent
+    /// autrement — l'un est un réglage hors domaine, l'autre une pose que rien
+    /// ne décrit. Un quaternion non fini se normalise en vecteur nul, et la
+    /// matrice de vue qui en sort rendrait la scène entière depuis nulle part.
+    Camera,
+    /// Un coefficient de matrice modèle non fini.
+    ///
+    /// **La finitude est au noyau, la forme reste à la frontière.** Celui-ci
+    /// reçoit une 3×4 et vérifie ses douze coefficients ; la dernière ligne
+    /// d'une 4×4, où une perspective pourrait se cacher, n'existe que du côté C
+    /// et s'y refuse. Sans ce contrôle, un modèle non fini portait tous les
+    /// sommets hors de la projection et le lot disparaissait sans erreur — le
+    /// traitement réservé à une donnée, pour un argument mal construit.
+    Matrix,
     /// Une coordonnée de texture non finie, ou au-delà de
     /// [`MAX_TEXEL_COORD`] texels.
     ///
@@ -452,6 +469,12 @@ impl Error {
             }
             Self::InvalidArgument(Argument::VertexCoordinate) => {
                 "vertex coordinate is not finite: NaN and infinities are rejected, and the whole batch with them"
+            }
+            Self::InvalidArgument(Argument::Camera) => {
+                "camera position and orientation must be finite numbers"
+            }
+            Self::InvalidArgument(Argument::Matrix) => {
+                "model matrix coefficients must be finite numbers"
             }
             Self::InvalidArgument(Argument::TextureCapacity) => {
                 "too many distinct textures in one frame for the capacity reserved at creation"

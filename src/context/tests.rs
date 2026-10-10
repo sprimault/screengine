@@ -167,6 +167,82 @@ fn ahead() -> [Vec3; 3] {
     ]
 }
 
+/// La caméra refuse une position ou une orientation non finies.
+///
+/// **Le noyau ne vérifiait que `fov_y` et `near`**, par `Projection::new` ; la
+/// position et le quaternion passaient. Un quaternion non fini se normalise en
+/// vecteur nul, et la matrice de vue qui en sort n'a plus de sens : la scène
+/// entière se rend depuis une pose que rien ne décrit, sans erreur.
+///
+/// La frontière C les refusait déjà, par `CAMERA_NOT_FINITE` : c'est le chemin
+/// Rust qui était le seul à les accepter, et ce qu'elle garde désormais est son
+/// message, pas le contrôle.
+#[test]
+fn une_camera_non_finie_est_refusee() {
+    for bad in [f32::NAN, f32::INFINITY, -f32::INFINITY] {
+        let mut ctx = small();
+        let refus = Err(Error::InvalidArgument(Argument::Camera));
+
+        let mut camera = Camera::DEFAULT;
+        camera.position.y = bad;
+        assert_eq!(ctx.set_camera(camera), refus, "position, {bad}");
+
+        let mut camera = Camera::DEFAULT;
+        camera.orientation.z = bad;
+        assert_eq!(ctx.set_camera(camera), refus, "orientation, {bad}");
+    }
+}
+
+/// Une matrice modèle non finie refuse le lot, au lieu de l'effacer en silence.
+///
+/// **C'était le trou le plus discret des trois** : le noyau ne regardait pas la
+/// matrice du tout. Un modèle non fini porte tous les sommets à `NaN`, aucun ne
+/// se projette, et le lot disparaît **sans erreur** — ce que le contrat réserve
+/// à un triangle hors du tronc de vue, qui est une donnée, et non à un argument
+/// que l'hôte a mal construit.
+///
+/// La frontière refuse la 4×4 par `MATRIX`, et elle garde ce contrôle pour sa
+/// dernière ligne, que le noyau ne voit pas en 3×4.
+#[test]
+fn une_matrice_modele_non_finie_refuse_le_lot() {
+    for bad in [f32::NAN, f32::INFINITY, -f32::INFINITY] {
+        let mut ctx = small();
+        let mut model = Affine3::IDENTITY;
+        model.m[7] = bad;
+        assert_eq!(
+            ctx.submit(model, &ahead(), &one()),
+            Err(Error::InvalidArgument(Argument::Matrix)),
+            "{bad}"
+        );
+        assert_eq!(ctx.triangles.len(), 0, "et rien n'est resté");
+    }
+}
+
+/// Le tableau de sommets est refusé entier, pas seulement ce qu'un indice nomme.
+///
+/// **Le noyau ne voyait que les sommets indexés**, triangle par triangle : un
+/// sommet non fini qu'aucun triangle ne référence passait en Rust et était
+/// refusé en C, où la frontière parcourt le tableau entier. C'est la même
+/// valeur, refusée par un chemin et acceptée par l'autre.
+///
+/// Le contrôle porte sur le chemin Rust seul, et c'est une propriété de la forme
+/// d'entrée : le noyau reçoit ici une tranche, là où une soumission venue de
+/// l'ABI lui arrive par un lecteur par triangle qui ne lui montre jamais le
+/// tableau.
+#[test]
+fn un_sommet_non_reference_refuse_aussi_le_lot() {
+    let mut ctx = small();
+    let mut vertices = vec![ahead()[0], ahead()[1], ahead()[2], ahead()[0]];
+    vertices[3].x = f32::NAN;
+
+    assert_eq!(
+        ctx.submit(Affine3::IDENTITY, &vertices, &one()),
+        Err(Error::InvalidArgument(Argument::VertexCoordinate)),
+        "le quatrième sommet n'est nommé par aucun triangle"
+    );
+    assert_eq!(ctx.triangles.len(), 0, "et rien n'est resté");
+}
+
 /// Le même, derrière elle.
 fn behind() -> [Vec3; 3] {
     ahead().map(|v| Vec3::new(-v.x, v.y, v.z))
