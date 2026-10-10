@@ -12,6 +12,7 @@
 use alloc::vec::Vec;
 
 use super::*;
+use crate::error::{Argument, Error};
 use crate::format::world::tests::{cell_bytes, file, material, portal_bytes, surface_in_plane};
 use crate::testing::Rng;
 
@@ -993,6 +994,81 @@ fn une_troncature_oublie_le_contact_qu_elle_ecarte() {
     assert_eq!(best.hit.normal, Vec3::ZERO, "aucune normale non plus");
     assert_eq!(best.hit.point, Vec3::ZERO, "ni le point du contact écarté");
     assert_eq!(best.hit.cell, 0, "ni la cellule qui le portait");
+}
+
+/// La cellule nulle et la cellule inconnue ne rendent plus la même chose.
+///
+/// **C'est la distinction que `Option<Hit>` ne pouvait pas porter**, et elle
+/// commande deux conduites opposées : se relocaliser, ou corriger
+/// l'identifiant qu'on passe. La frontière C la fait depuis l'étape 7, le
+/// chemin Rust ne la faisait pas — alors qu'il n'est pas de seconde classe.
+#[test]
+fn la_cellule_nulle_se_distingue_de_la_cellule_inconnue() {
+    let world = chain(3);
+    let half = Vec3::new(0.5, 0.5, 0.5);
+    let from = Vec3::new(2.0, 2.0, 2.0);
+    let to = Vec3::new(6.0, 2.0, 2.0);
+
+    assert_eq!(
+        world.sweep_checked(0, half, from, to),
+        Ok(Sweep::NoCell),
+        "zéro est l'absence de cellule, pas une faute"
+    );
+    assert_eq!(
+        world.pick_checked(0, from, to, Surfaces::All),
+        Ok(Sweep::NoCell),
+        "et le rayon la traite pareil"
+    );
+    assert_eq!(
+        world.sweep_checked(9999, half, from, to),
+        Err(Error::UnknownResource),
+        "un identifiant qu'aucune cellule ne porte est une faute d'appel"
+    );
+    assert_eq!(
+        world.pick_checked(9999, from, to, Surfaces::All),
+        Err(Error::UnknownResource)
+    );
+}
+
+/// Une entrée non finie est refusée, et ne passe plus pour un chemin dégagé.
+///
+/// **C'est le défaut tel qu'il se mesure, et il est pire que « un point
+/// illisible »** : un `from` non fini ou une demi-étendue non finie rendaient un
+/// déplacement **libre**, fraction à un et rien de touché. Un hôte dont la
+/// physique a produit un `NaN` — une division par zéro suffit — voyait son
+/// mobile traverser tous les murs, sans erreur ni drapeau.
+///
+/// `docs/rust.md` portait déjà l'obligation — « `is_nan` nommément sur ce que
+/// l'hôte passe » —, et seule la frontière la tenait.
+#[test]
+fn une_entree_non_finie_est_refusee() {
+    let world = chain(3);
+    let half = Vec3::new(0.5, 0.5, 0.5);
+    let from = Vec3::new(2.0, 2.0, 2.0);
+    let to = Vec3::new(6.0, 2.0, 2.0);
+    let nan = Vec3::new(f32::NAN, 2.0, 2.0);
+    let refus = Err(Error::InvalidArgument(Argument::VertexCoordinate));
+
+    assert_eq!(world.sweep_checked(1, half, nan, to), refus, "départ");
+    assert_eq!(world.sweep_checked(1, half, from, nan), refus, "arrivée");
+    assert_eq!(
+        world.sweep_checked(1, Vec3::new(f32::INFINITY, 0.5, 0.5), from, to),
+        refus,
+        "demi-étendue"
+    );
+    assert_eq!(
+        world.sweep_checked(1, Vec3::new(-0.5, 0.5, 0.5), from, to),
+        refus,
+        "une demi-étendue négative n'est pas une boîte"
+    );
+    assert_eq!(world.pick_checked(1, nan, to, Surfaces::Solid), refus);
+
+    // **Les deux méthodes d'avant deviennent sûres sans changer de signature.**
+    // `None` y dit « aucun résultat exploitable » et non plus seulement « cellule
+    // inconnue » : la cause est ambiguë, mais plus personne ne lit un chemin
+    // dégagé qui n'a pas été examiné.
+    assert_eq!(world.sweep(1, half, nan, to), None);
+    assert_eq!(world.pick(1, nan, to, Surfaces::Solid), None);
 }
 
 /// **Un portail non apparié arrête le balayage**, comme le ferait un mur.
