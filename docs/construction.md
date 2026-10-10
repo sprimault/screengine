@@ -138,8 +138,8 @@ l'exécution par `scg_abi_version`.
 | Android arm64 | `aarch64-linux-android` | `.so`, `.a` | NDK, `qemu-user` | `hosts/android` | CI, `make test-android` sous Linux, sous `qemu-user` ; `make test-arm` et `make conform-arm` pour le noyau |
 | Android armv7 | `armv7-linux-androideabi` | `.so`, `.a` | NDK, `qemu-user` | `hosts/android` | CI, `make test-android` sous Linux, sous `qemu-user` ; `make test-arm` et `make conform-arm` pour le noyau |
 | Android x64 | `x86_64-linux-android` | `.so`, `.a` | NDK, SDK, émulateur | `hosts/android` | CI, `make test-android` sous Linux, sur émulateur par JNI |
-| Linux arm64 | `aarch64-unknown-linux-gnu` | `.rlib` du noyau, de la frontière et de l'étage d'accueil | cible rustup | `screengine-play`, compilé et non exécuté | `make lint` ; `make msrv` pour le noyau et la frontière, CI |
-| Linux armv7 | `armv7-unknown-linux-gnueabihf` | `.rlib` du noyau, de la frontière et de l'étage d'accueil | cible rustup | `screengine-play`, compilé et non exécuté | `make lint` ; `make msrv` pour le noyau et la frontière, CI |
+| Linux arm64 | `aarch64-unknown-linux-gnu` | `.rlib` du noyau, de la frontière et de l'étage d'accueil | cible rustup, `gcc-aarch64-linux-gnu`, `qemu-user` | `screengine-play`, compilé et non exécuté | CI, `make test-linux-arm` et `make conform-linux-arm` sous `qemu-user` ; `make lint` et `make msrv` |
+| Linux armv7 | `armv7-unknown-linux-gnueabihf` | `.rlib` du noyau, de la frontière et de l'étage d'accueil | cible rustup, `gcc-arm-linux-gnueabihf`, `qemu-user` | `screengine-play`, compilé et non exécuté | CI, `make test-linux-arm` et `make conform-linux-arm` sous `qemu-user` ; `make lint` et `make msrv` |
 | Sans `std` | `thumbv7em-none-eabihf` | `.rlib` du noyau seul | cible rustup | aucun | `make nostd`, CI |
 | iOS, macOS | — | — | — | — | hors périmètre v1 |
 
@@ -151,13 +151,30 @@ plus 32 bits, et révèle au même moment une hypothèse sur la largeur de `usiz
 **iOS et macOS attendent que le reste soit stable.** Ils exigent un runner macOS,
 et un cycle de retour lent depuis un poste Windows.
 
-**Les deux cibles Linux sur ARM se compilent, et ne s'exécutent pas.** Elles ont
-le jeu d'instructions des ABI Android et une autre bibliothèque C — la glibc là
-où le NDK porte la bionic —, ce qui est précisément la question qu'elles
-répondent : le noyau n'emploie aucune des deux, mais la frontière passe par
-`std`, et rien ne le garantissait tant qu'on ne l'avait pas construit.
-`make lint` et `make msrv` les compilent en `--lib`, donc sans éditer de liens
-et sans rien installer.
+**Les deux cibles Linux sur ARM s'exécutent sous `qemu-user`.** Elles ont le jeu
+d'instructions des ABI Android et une autre bibliothèque C — la glibc là où le
+NDK porte la bionic —, ce qui est précisément la question qu'elles répondent : le
+noyau n'emploie aucune des deux, mais la frontière passe par `std`.
+
+**`make test-linux-arm` exécute le noyau et la frontière**, `make
+conform-linux-arm` rejoue les vingt-neuf scènes contre les **mêmes** empreintes
+versionnées — la raison qui donne sa forme à `conform-arm` et à `conform-x86`.
+La frontière rend un test de moins sur armv7, et c'est attendu : celui du
+registre flottant n'existe que sur `aarch64`, les fonctionnalités ARM 32 bits
+étant instables sur chaîne stable.
+
+**Pas de liaison statique ici**, contrairement aux cibles Android : celles-là
+réclament `/system/bin/linker64`, qui n'existe que sur un appareil, là où une
+glibc porte son éditeur de liens dynamique dans le sysroot croisé — que `-L`
+donne à qemu. Et pas de `seccomp=unconfined` : c'est la bionic 32 bits qui
+appelle `personality` à son démarrage, pas la glibc.
+
+**Les `libc6-dev-*-cross` se nomment explicitement** quand on installe
+l'outillage. Sans eux, le `gcc` croisé est présent mais l'édition de liens
+échoue sur `Scrt1.o` et `crti.o` introuvables — un message qui ne nomme pas le
+paquet qui manque. `docker/linux-arm/Dockerfile` fournit l'ensemble sous Linux,
+et `make lint` et `make msrv` continuent de les compiler en `--lib`, sans rien
+installer.
 
 **`screengine-play` entre dans la boucle de `make lint`** sur ces deux cibles, en
 `--lib` : X11, Wayland et xkbcommon passant par `dlopen`, la compilation n'exige
@@ -167,10 +184,10 @@ fenêtre. Il reste hors de `make msrv`, qui ne répond que du noyau et de la
 frontière : le plancher de `winit`, de `softbuffer` et de `png` n'est pas sous le
 contrôle du projet.
 
-**À vérifier** : les exécuter demande une chaîne croisée — `gcc-aarch64-linux-gnu` —
-que ni le poste ni l'image d'Android ne portent, un NDK n'étant pas une glibc. Et
-l'ouverture d'une fenêtre sur un appareil ARM reste entière : ce que la boucle
-prouve est que le code compile, jamais qu'un compositeur l'accepte.
+**À vérifier** : l'ouverture d'une fenêtre sur un appareil ARM. Ce que la boucle
+prouve est que l'étage d'accueil compile, jamais qu'un compositeur l'accepte — et
+l'exécution ci-dessus ne couvre que le noyau et la frontière, qui n'ouvrent
+rien.
 
 **Les deux cibles bureau 32 bits ne portent aucun hôte, et sont éprouvées par la
 conformance seule.** Lier `hosts/c` ou `hosts/cpp` contre elles demanderait une
