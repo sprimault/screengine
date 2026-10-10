@@ -39,11 +39,13 @@ Les versions sont épinglées dans le `Makefile` et nulle part ailleurs.
 `wasm32-unknown-unknown`, `i686-pc-windows-msvc` et les trois cibles Android.
 `make lint` passe aussi clippy sur toutes celles-là **sauf la cible sans `std`**,
 là où un `cfg` propre à une plateforme ne serait vérifié par rien d'autre ; celle
-sans `std` est couverte par `make nostd`, qui la compile. Il entraîne en outre
-deux contrôles qui ne sont pas clippy : la documentation des fonctions de test,
-que `missing_docs` ne voit pas, et la concordance des versions d'outillage
-Android. L'intégration
-continue appelle `make tools`, qui les installe aux versions épinglées ici.
+sans `std` est couverte par `make nostd`, qui la compile. Il y ajoute
+`screengine-play` sur les deux cibles Linux ARM, et nulle part ailleurs. Il
+entraîne en outre **trois** contrôles qui ne sont pas clippy : la documentation
+des fonctions de test, que `missing_docs` ne voit pas, la concordance des
+versions d'outillage Android, et celle de l'état annoncé avec la version du
+paquet. L'intégration continue appelle `make tools`, qui installe les outils aux
+versions épinglées ici.
 
 **`make doc-verif` passe rustdoc en `-D warnings`, et aucune autre cible ne
 l'entraîne** : un renvoi vers un élément qu'aucun `pub use` n'expose ne fait
@@ -136,8 +138,8 @@ l'exécution par `scg_abi_version`.
 | Android arm64 | `aarch64-linux-android` | `.so`, `.a` | NDK, `qemu-user` | `hosts/android` | CI, `make test-android` sous Linux, sous `qemu-user` ; `make test-arm` et `make conform-arm` pour le noyau |
 | Android armv7 | `armv7-linux-androideabi` | `.so`, `.a` | NDK, `qemu-user` | `hosts/android` | CI, `make test-android` sous Linux, sous `qemu-user` ; `make test-arm` et `make conform-arm` pour le noyau |
 | Android x64 | `x86_64-linux-android` | `.so`, `.a` | NDK, SDK, émulateur | `hosts/android` | CI, `make test-android` sous Linux, sur émulateur par JNI |
-| Linux arm64 | `aarch64-unknown-linux-gnu` | `.rlib` du noyau et de la frontière | cible rustup | aucun | `make lint` et `make msrv`, CI |
-| Linux armv7 | `armv7-unknown-linux-gnueabihf` | `.rlib` du noyau et de la frontière | cible rustup | aucun | `make lint` et `make msrv`, CI |
+| Linux arm64 | `aarch64-unknown-linux-gnu` | `.rlib` du noyau, de la frontière et de l'étage d'accueil | cible rustup | `screengine-play`, compilé et non exécuté | `make lint` ; `make msrv` pour le noyau et la frontière, CI |
+| Linux armv7 | `armv7-unknown-linux-gnueabihf` | `.rlib` du noyau, de la frontière et de l'étage d'accueil | cible rustup | `screengine-play`, compilé et non exécuté | `make lint` ; `make msrv` pour le noyau et la frontière, CI |
 | Sans `std` | `thumbv7em-none-eabihf` | `.rlib` du noyau seul | cible rustup | aucun | `make nostd`, CI |
 | iOS, macOS | — | — | — | — | hors périmètre v1 |
 
@@ -157,11 +159,18 @@ répondent : le noyau n'emploie aucune des deux, mais la frontière passe par
 `make lint` et `make msrv` les compilent en `--lib`, donc sans éditer de liens
 et sans rien installer.
 
+**`screengine-play` entre dans la boucle de `make lint`** sur ces deux cibles, en
+`--lib` : X11, Wayland et xkbcommon passant par `dlopen`, la compilation n'exige
+aucune bibliothèque système. C'est la seule paire de cibles où il y entre — un
+Raspberry Pi est la seule machine de la matrice où quelqu'un ouvrirait une
+fenêtre. Il reste hors de `make msrv`, qui ne répond que du noyau et de la
+frontière : le plancher de `winit`, de `softbuffer` et de `png` n'est pas sous le
+contrôle du projet.
+
 **À vérifier** : les exécuter demande une chaîne croisée — `gcc-aarch64-linux-gnu` —
-que ni le poste ni l'image d'Android ne portent, un NDK n'étant pas une glibc.
-Et `screengine-play` n'entre pas dans cette boucle, qui ne prend que le noyau et
-la frontière : son portage sur un Raspberry Pi, `winit` et `softbuffer` compris,
-reste donc entier.
+que ni le poste ni l'image d'Android ne portent, un NDK n'étant pas une glibc. Et
+l'ouverture d'une fenêtre sur un appareil ARM reste entière : ce que la boucle
+prouve est que le code compile, jamais qu'un compositeur l'accepte.
 
 **Les deux cibles bureau 32 bits ne portent aucun hôte, et sont éprouvées par la
 conformance seule.** Lier `hosts/c` ou `hosts/cpp` contre elles demanderait une

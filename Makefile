@@ -613,10 +613,28 @@ etat-verif:
 # porterait le défaut.
 CIBLES_CROISEES = $(CIBLE_WASM) $(CIBLES_ANDROID) $(CIBLE_X86) $(CIBLES_LINUX_ARM)
 
+# **L'étage d'accueil entre dans la boucle, mais sur les deux cibles Linux ARM
+# seulement**, et c'est ce que son portage demande : un Raspberry Pi est la seule
+# machine de cette liste où quelqu'un lancerait une fenêtre. Sur les autres, la
+# question ne se pose pas — wasm et Android passent par d'autres chemins de
+# `winit`, et `i686-pc-windows-msvc` ne porte aucun hôte.
+#
+# **En `--lib`, donc sans éditer de liens et sans rien installer** : X11, Wayland
+# et xkbcommon sont chargés par `dlopen`, et seule l'exécution les exige.
+#
+# **Hors de `msrv`, et c'est délibéré.** Celui-ci ne prend que le noyau et la
+# frontière, parce que le plancher annoncé est une promesse faite à qui intègre
+# la bibliothèque. L'étage d'accueil traîne `winit`, `softbuffer` et `png` :
+# leur plancher n'est pas sous notre contrôle, et l'y faire entrer donnerait une
+# contrainte qu'une montée de dépendance casserait sans qu'on puisse rien.
+
 lint: lint-doc-tests lint-android-versions etat-verif
 	cargo clippy --workspace --all-targets --all-features -- -D warnings
 	for cible in $(CIBLES_CROISEES); do \
 	  cargo clippy -p screengine -p screengine-ffi --lib --target $$cible -- -D warnings || exit 1; \
+	done
+	for cible in $(CIBLES_LINUX_ARM); do \
+	  cargo clippy -p screengine-play --lib --target $$cible -- -D warnings || exit 1; \
 	done
 
 # missing_docs ne voit pas les fonctions privées d'un `mod tests`, alors que la
