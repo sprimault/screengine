@@ -19,8 +19,8 @@ use alloc::vec::Vec;
 use super::ears::{MAX_POLYGON, triangulate};
 use super::{Cursor, decode};
 use crate::buffer::{owned, reserved};
-use crate::collide::{Hit, Surfaces};
-use crate::error::{Element, Error, Malformation, Result};
+use crate::collide::{Hit, Surfaces, Sweep};
+use crate::error::{Argument, Element, Error, Malformation, Result};
 use crate::math::{MAX_TEXEL_COORD, Quat, Vec3};
 use crate::scene::{Color, Light, VertexUv};
 use crate::texture::MAX_TEXTURE_SIZE;
@@ -631,12 +631,100 @@ impl World {
             .unwrap_or(0)
     }
 
+    /// Balaie une boîte axiale, en départageant les trois réponses possibles.
+    ///
+    /// **C'est la forme complète du balayage**, et [`World::sweep`] en est le
+    /// raccourci. Celui-ci rend `Option<Hit>`, qui ne peut pas porter trois
+    /// réponses : un résultat, « la boîte n'est nulle part », et un refus. La
+    /// frontière C les sépare depuis l'étape 7 — elle traite `from_cell` à zéro
+    /// avant d'appeler et vérifie la finitude de ce qu'on lui passe —, si bien
+    /// que l'ABI donnait une information que le chemin Rust ne donnait pas. La
+    /// règle des deux chemins veut l'inverse.
+    ///
+    /// - `from_cell` à zéro rend [`Sweep::NoCell`] : rien n'est examiné, et
+    ///   c'est un **succès**, un hôte pouvant légitimement poser son mobile
+    ///   dans un interstice d'une carte en cours d'édition ;
+    /// - un identifiant qu'aucune cellule ne porte rend
+    ///   [`Error::UnknownResource`], qui est une faute d'appel ;
+    /// - une coordonnée non finie, une demi-étendue non finie ou négative
+    ///   rendent [`Error::InvalidArgument`]. Le refus est nécessaire et non
+    ///   cosmétique : toute comparaison avec un `NaN` est fausse, si bien
+    ///   qu'aucun contact ne battait le meilleur connu et que le balayage
+    ///   **déclarait le chemin libre**. Un hôte dont la physique a produit un
+    ///   `NaN` voyait son mobile traverser les murs, sans erreur ni drapeau.
+    pub fn sweep_checked(&self, from_cell: u32, half: Vec3, from: Vec3, to: Vec3) -> Result<Sweep> {
+        self.checked(from_cell, half, from, to, Surfaces::Solid)
+    }
+
+    /// Le même départage pour l'interrogation par rayon.
+    ///
+    /// Les demi-étendues d'un rayon sont nulles, donc toujours finies : ce qui
+    /// se vérifie ici est le segment, et `surfaces` n'a pas de domaine à
+    /// contrôler — c'est une énumération du noyau, et la frontière refuse déjà
+    /// une valeur qu'aucune constante ne porte.
+    pub fn pick_checked(
+        &self,
+        from_cell: u32,
+        from: Vec3,
+        to: Vec3,
+        surfaces: Surfaces,
+    ) -> Result<Sweep> {
+        self.checked(from_cell, Vec3::ZERO, from, to, surfaces)
+    }
+
+    /// Le contrôle des arguments et le départage, partagés par les deux.
+    ///
+    /// Un seul endroit, parce que les deux requêtes sont le même parcours — un
+    /// rayon est le balayage d'une boîte nulle — et qu'une seconde copie de ces
+    /// refus finirait par diverger de celle-ci sur le cas qu'on ajoute en
+    /// dernier.
+    fn checked(
+        &self,
+        from_cell: u32,
+        half: Vec3,
+        from: Vec3,
+        to: Vec3,
+        surfaces: Surfaces,
+    ) -> Result<Sweep> {
+        // `is_finite` nommément, et avant les comparaisons de bornes : celles-ci
+        // sont fausses dans les deux sens sur un `NaN`, donc un test écrit
+        // `half.x < 0.0` seul le laisserait passer.
+        for value in [
+            half.x, half.y, half.z, from.x, from.y, from.z, to.x, to.y, to.z,
+        ] {
+            if !value.is_finite() {
+                return Err(Error::InvalidArgument(Argument::VertexCoordinate));
+            }
+        }
+        if half.x < 0.0 || half.y < 0.0 || half.z < 0.0 {
+            return Err(Error::InvalidArgument(Argument::VertexCoordinate));
+        }
+        if from_cell == 0 {
+            return Ok(Sweep::NoCell);
+        }
+        crate::collide::sweep(
+            self,
+            from_cell,
+            half.into(),
+            from.into(),
+            to.into(),
+            surfaces,
+        )
+        .map(Sweep::Reached)
+        .ok_or(Error::UnknownResource)
+    }
+
     /// Balaie une boîte axiale de `from` à `to`, depuis la cellule `from_cell`.
     ///
-    /// Rend `None` quand `from_cell` ne désigne aucune cellule : c'est à
-    /// l'appelant d'en faire une erreur de ressource inconnue, le noyau ne
-    /// connaissant pas les codes de l'ABI. `0` n'arrive pas ici — l'absence de
-    /// cellule se traite avant, et elle n'est pas une erreur.
+    /// **Le raccourci de [`World::sweep_checked`]**, qui ne distingue pas les
+    /// trois réponses : `None` y dit « aucun résultat exploitable » — cellule
+    /// nulle, cellule inconnue, ou argument refusé —, et c'est pour départager
+    /// ces cas que l'autre existe. Un appelant qui n'a qu'à savoir s'il avance
+    /// s'en tient à celui-ci.
+    ///
+    /// **Il refuse une entrée non finie comme l'autre**, et c'est ce qui a
+    /// changé : il rendait auparavant un déplacement libre, donc un chemin
+    /// dégagé que rien n'avait examiné.
     ///
     /// **Appelable depuis plusieurs threads sur la même carte.** Rien n'y est
     /// muté, rien n'y est retenu, et le résultat ne dépend que des arguments :
@@ -646,14 +734,10 @@ impl World {
     /// règle d'usage est dans `docs/rust.md`, au même endroit que la clause du
     /// `f64`.
     pub fn sweep(&self, from_cell: u32, half: Vec3, from: Vec3, to: Vec3) -> Option<Hit> {
-        crate::collide::sweep(
-            self,
-            from_cell,
-            half.into(),
-            from.into(),
-            to.into(),
-            Surfaces::Solid,
-        )
+        match self.sweep_checked(from_cell, half, from, to) {
+            Ok(Sweep::Reached(hit)) => Some(hit),
+            _ => None,
+        }
     }
 
     /// Interroge la scène par un rayon, et rend la surface touchée.
@@ -670,14 +754,10 @@ impl World {
     ///
     /// Rend `None` quand la cellule de départ n'existe pas, comme le balayage.
     pub fn pick(&self, from_cell: u32, from: Vec3, to: Vec3, surfaces: Surfaces) -> Option<Hit> {
-        crate::collide::sweep(
-            self,
-            from_cell,
-            Vec3::ZERO.into(),
-            from.into(),
-            to.into(),
-            surfaces,
-        )
+        match self.pick_checked(from_cell, from, to, surfaces) {
+            Ok(Sweep::Reached(hit)) => Some(hit),
+            _ => None,
+        }
     }
 
     /// Le même rayon, contre **toutes** les cellules et sans traversée.

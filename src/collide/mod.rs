@@ -204,6 +204,40 @@ impl Surfaces {
     }
 }
 
+/// Ce qu'une requête de balayage rend, quand elle a pu être examinée.
+///
+/// **Trois réponses, que `Option<Hit>` ne peut pas porter.** Une requête se
+/// solde par un résultat, par « la boîte n'est nulle part », ou par un refus —
+/// une cellule inconnue, un argument non fini. Les deux premières sont des
+/// succès et la troisième une erreur, d'où `Result<Sweep>` : c'est le patron de
+/// [`crate::Visibility`], qui départage les mêmes cas pour la traversée de
+/// rendu, et le départager autrement aurait donné deux formes à la même
+/// question.
+///
+/// **La distinction qui compte est « nulle part » contre « cette cellule
+/// n'existe pas ».** La première est légitime — un hôte pose son mobile dans un
+/// interstice d'une carte en cours d'édition —, la seconde est une faute
+/// d'appel, et les deux appellent des conduites opposées : se relocaliser, ou
+/// corriger l'identifiant qu'on passe. La frontière C les sépare depuis
+/// l'étape 7 ; ceci les sépare pour le chemin Rust, qui n'est pas de seconde
+/// classe.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Sweep {
+    /// La requête a été examinée : voici ce qu'elle a rencontré.
+    ///
+    /// Un déplacement sans obstacle en fait partie, avec sa fraction à un : le
+    /// moteur a regardé, et il n'a rien trouvé. C'est ce qui le distingue de
+    /// [`Sweep::NoCell`], où il n'a rien regardé.
+    Reached(Hit),
+    /// Aucune cellule de départ n'a été donnée, et rien n'a été examiné.
+    ///
+    /// Le moteur ne se relocalise jamais de lui-même : c'est à l'hôte de
+    /// rappeler [`crate::World::locate`]. Rendre un déplacement libre serait
+    /// inventer un chemin dégagé qu'on n'a pas vérifié, et faire traverser les
+    /// murs à qui lit la fraction.
+    NoCell,
+}
+
 /// Ce qu'un balayage rend.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Hit {

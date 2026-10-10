@@ -51,9 +51,11 @@ pub use screengine;
 // le rater.
 //
 // Le critère d'entrée est le **vocabulaire qu'un hôte écrit**, et non ce que la
-// surface de ce crate oblige à nommer : `Hit`, `Surfaces`, `SWEEP_CELLS`,
-// `sweep_skin` et `sweep_reach` ne figurent dans aucune signature d'ici, et un
-// hôte qui déplace un personnage les écrit tous les cinq. Les deux dernières y
+// surface de ce crate oblige à nommer : `Hit`, `Surfaces`, `Sweep`,
+// `SWEEP_CELLS`, `sweep_skin` et `sweep_reach` ne figurent dans aucune signature
+// d'ici, et un hôte qui déplace un personnage les écrit tous les six. `Sweep` est
+// de ceux-là sans discussion : c'est ce que rend `World::sweep_checked`, donc ce
+// qu'un `match` de l'hôte nomme à chaque pas de son mobile. Les deux dernières y
 // sont entrées sur le constat d'un intégrateur, qui consommait ce crate et non le
 // header : une fonction d'ABI seule ne lui aurait rien rendu de lisible. Ce que la surface impose en fait partie — `Context` est le
 // paramètre des rappels de rendu, `Visibility` ce que rend `submit_world_visible`,
@@ -83,9 +85,9 @@ pub use screengine::{
     Error as CoreError, Filter, Frame, Hit, LINE_CAPACITY, Light, Lightmap, LightmapFault,
     Lightmaps, Line, MAX_LIGHTMAP_SIZE, MAX_LIGHTS, MAX_OVERBRIGHT, MAX_RESOLUTION,
     MAX_TEXEL_COORD, MAX_TEXTURE_SIZE, Malformation, Mesh, Output as CoreOutput, Point, Quat, Rect,
-    Rows, SWEEP_CELLS, SimdPath, Sprite, SpriteOrientation, Surfaces, TILE_SIZES, TRAVERSAL_CELLS,
-    TRAVERSAL_DEPTH, TRIANGLE_CAPACITY, Texture, Triangle, Vec3, VertexUv, VertexUv2, Visibility,
-    World, lightmap_fault, sweep_reach, sweep_skin,
+    Rows, SWEEP_CELLS, SimdPath, Sprite, SpriteOrientation, Surfaces, Sweep, TILE_SIZES,
+    TRAVERSAL_CELLS, TRAVERSAL_DEPTH, TRIANGLE_CAPACITY, Texture, Triangle, Vec3, VertexUv,
+    VertexUv2, Visibility, World, lightmap_fault, sweep_reach, sweep_skin,
 };
 pub use texture::{load_png, load_png_masked};
 pub use winit::event::MouseButton;

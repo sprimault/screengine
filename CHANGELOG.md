@@ -66,22 +66,40 @@ publié, et explique les conventions du dépôt à qui y contribue.
 **Le rendu d'une image ne change pas ; deux empreintes de conformance se
 déplacent**, `collision` et `selection`.
 
+### Ajouté
+
+- **`World::sweep_checked` et `World::pick_checked`**, côté Rust, départagent
+  « la boîte n'est nulle part » de « cette cellule n'existe pas » par
+  `Result<Sweep>` — ce que l'ABI séparait déjà par ses statuts.
+
 ### Corrigé
 
 - **Un balayage ou un rayon tronqué par `SCG_SWEEP_CELLS` ne nomme plus ni point
   de contact ni cellule** : `point` est le vecteur nul et `cell_id` vaut zéro,
   comme `surface_id` et `normal` le faisaient déjà.
+- **L'API Rust refuse une coordonnée ou une demi-étendue non finie**, là où le
+  balayage rendait un déplacement libre : un mobile à position `NaN` traversait
+  les murs. L'ABI la refusait déjà.
 
 ***
 
 **Rendering is unchanged; two conformance digests move**, `collision` and
 `selection`.
 
+### Added
+
+- **`World::sweep_checked` and `World::pick_checked`**, on the Rust side, tell
+  "the box is nowhere" from "that cell does not exist" through `Result<Sweep>` —
+  what the ABI already separated through its statuses.
+
 ### Fixed
 
 - **A sweep or ray truncated by `SCG_SWEEP_CELLS` no longer names a contact
   point or a cell**: `point` is the zero vector and `cell_id` is zero, as
   `surface_id` and `normal` already were.
+- **The Rust API rejects a non-finite coordinate or half-extent**, where the
+  sweep used to report a free move: a mover at a `NaN` position went through
+  walls. The ABI already rejected it.
 
 ## [1.0.0] — 2026-10-10 — L'ABI gelée
 
