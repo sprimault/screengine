@@ -531,8 +531,11 @@ pointeurs, pas sur une fenêtre, et son rôle est le serveur — où il n'y en a
   d'avertissement du projet, et une dépendance tierce n'a pas à l'être.
 - **Les deux DLL sont copiées à côté de l'exécutable** pour l'hôte C++, celle du
   moteur et celle de SDL3, pour la raison déjà donnée plus haut.
-- **Vus sous Windows** avec SDL3 3.4.16. **À vérifier** : les deux démonstrations
-  sous Linux, où SDL3 vient du gestionnaire de paquets.
+- **Vus sous Windows** avec SDL3 3.4.16, **et sous Linux** avec le SDL3 du
+  gestionnaire de paquets, `libsdl3-dev` 3.4.2 : les deux s'y lient par
+  `pkg-config`, ouvrent leur fenêtre et rendent la même image. Vérifié sur un
+  serveur X virtuel, en capturant l'écran — un binaire qui démarre sans rien
+  afficher passerait un contrôle qui ne regarde que son code de sortie.
 - **Android a la sienne, `DemoActivity`** : une `SurfaceView`, deux zones
   tactiles — moitié gauche pour avancer et reculer, moitié droite pour tourner —,
   et le décor rangé dans les ressources de l'APK par `aapt2 link -A`, puisqu'une
