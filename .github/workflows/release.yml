@@ -226,21 +226,17 @@ jobs:
       # qui permet de choisir son fichier et d'en garder deux versions côte à
       # côte. Les deux licences vont dans l'archive et non à côté : personne ne
       # télécharge un asset séparé pour accompagner une bibliothèque.
+      # La disposition vient de `make paquet` et non de lignes écrites ici :
+      # c'est la même que `make test-paquet` éprouve à chaque PR, et c'est tout
+      # l'intérêt. Décrite aux deux endroits, elle aurait divergé — ce qui est
+      # arrivé deux fois à la liste des scènes, et les deux fois l'échec est
+      # apparu une fois la version posée.
       - name: Empaqueter
         run: |
           paquet="screengine_${GITHUB_REF_NAME}_${{ matrix.cible }}"
-          mkdir -p "paquets/$paquet/lib" "paquets/$paquet/include" publication
-          for fichier in ${{ matrix.fichiers }}; do
-            case "$fichier" in
-              *:*)
-                mkdir -p "paquets/$paquet/lib/${fichier%%:*}"
-                cp "${{ matrix.repertoire }}/${fichier#*:}/release-ffi/libscreengine.so" "paquets/$paquet/lib/${fichier%%:*}/" ;;
-              *)
-                cp "${{ matrix.repertoire }}/$fichier" "paquets/$paquet/lib/" ;;
-            esac
-          done
-          cp include/screengine.h "paquets/$paquet/include/"
-          cp LICENSE-MIT LICENSE-APACHE THIRD-PARTY-NOTICES "paquets/$paquet/"
+          mkdir -p publication
+          make paquet PAQUET="paquets/$paquet" \
+            SOURCE="${{ matrix.repertoire }}" FICHIERS="${{ matrix.fichiers }}"
 
           # Zip sous Windows, tar.gz ailleurs : ce que chaque système ouvre sans
           # rien installer.

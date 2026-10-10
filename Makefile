@@ -361,7 +361,8 @@ archive_vars_wasm  = WASM=$(abspath $(PAQUET))/lib/screengine.wasm HEADER=$(absp
 # qui se charge.
 archive_vars_go    = $(archive_vars_abi)
 
-ARCHIVE_TARGETS := test-archive archive-empreintes $(addprefix test-archive-,$(ARCHIVE_HOSTS_ALL))
+ARCHIVE_TARGETS := test-archive archive-empreintes paquet paquet-verif test-paquet \
+  $(addprefix test-archive-,$(ARCHIVE_HOSTS_ALL))
 .PHONY: $(ARCHIVE_TARGETS)
 
 # La recette ne tourne qu'une fois les hôtes passés : elle ne sert qu'à refuser
@@ -373,6 +374,95 @@ test-archive: $(addprefix test-archive-,$(ARCHIVE_HOSTS))
 	elif [ -z "$(ARCHIVE_HOSTS)" ]; then \
 	  echo "test-archive : aucune bibliotheque a lier dans $(PAQUET)/lib"; exit 1; \
 	fi
+
+# Monte un paquet à la disposition d'une archive publiée : `lib/`, `include/`,
+# les deux licences et les mentions de tiers.
+#
+#   make paquet PAQUET=<destination> SOURCE=<répertoire> FICHIERS="<liste>"
+#
+# **La disposition descend ici pour la raison qui a déjà sorti `test-archive` du
+# workflow de release** : elle n'était écrite qu'à un endroit, et cet endroit ne
+# tourne qu'au tag. Une entrée `abi:triple` range la bibliothèque de ce triple
+# sous `lib/<abi>/`, la disposition de `jniLibs/` qu'un projet Android reprend
+# telle quelle.
+#
+# Le répertoire de destination est **effacé** d'abord : un paquet monté par
+# dessus un précédent porterait une bibliothèque d'avant le dernier changement,
+# et `test-archive` la comparerait aux empreintes du jour.
+paquet:
+	@if [ -z "$(PAQUET)" ] || [ -z "$(SOURCE)" ] || [ -z "$(FICHIERS)" ]; then \
+	  echo "paquet : PAQUET, SOURCE et FICHIERS sont tous requis"; exit 1; \
+	fi
+	@rm -rf "$(PAQUET)"
+	@mkdir -p "$(PAQUET)/lib" "$(PAQUET)/include"
+	@for fichier in $(FICHIERS); do \
+	  case "$$fichier" in \
+	    *:*) mkdir -p "$(PAQUET)/lib/$${fichier%%:*}" && \
+	      cp "$(SOURCE)/$${fichier#*:}/release-ffi/libscreengine.so" \
+	         "$(PAQUET)/lib/$${fichier%%:*}/" ;; \
+	    *) cp "$(SOURCE)/$$fichier" "$(PAQUET)/lib/" ;; \
+	  esac || exit 1; \
+	done
+	@cp include/screengine.h "$(PAQUET)/include/"
+	@cp LICENSE-MIT LICENSE-APACHE THIRD-PARTY-NOTICES "$(PAQUET)/"
+	@echo "paquet : $(PAQUET), $(words $(FICHIERS)) fichier(s)"
+
+# Les paquets de cette machine, montés puis éprouvés **hors de toute
+# publication**.
+#
+# **Ce que cette cible ferme** : `test-archive` n'était appelé qu'au tag, donc sa
+# logique — déduction des hôtes depuis `lib/`, liaison de chacun contre le seul
+# contenu du paquet, comparaison au chemin Rust — n'était vérifiée que par la
+# publication elle-même. Deux fois cette logique a divergé, et les deux fois
+# l'échec est apparu une fois la version posée.
+#
+# **Deux paquets et non un** : aucune archive ne mêle le module wasm aux
+# bibliothèques natives, et un paquet qui les mêlerait ferait éprouver une
+# disposition que personne ne télécharge. L'archive Android n'en est pas un
+# troisième — elle ne porte aucun hôte à lier, et son en-tête ELF se lit sans
+# rien exécuter.
+TARGET_DIR := $(or $(CARGO_TARGET_DIR),target)
+PAQUET_OUT  = $(abspath $(SORTIE))/paquet
+
+# Ce que `release-ffi` laisse sur cette machine. Nommés plutôt que pris par
+# wildcard : un wildcard sur un répertoire de build attraperait aussi ce qu'un
+# profil précédent y a laissé, et le paquet porterait une bibliothèque qu'on
+# n'a pas construite.
+ifeq ($(OS),Windows_NT)
+PAQUET_NATIF = screengine.dll screengine.dll.lib screengine.lib
+else
+PAQUET_NATIF = libscreengine.so libscreengine.a
+endif
+
+# Les hôtes que chaque paquet doit porter. **C'est un contrôle, pas une
+# information** : `ARCHIVE_HOSTS` se déduit de ce que `lib/` porte, forme juste
+# pour une archive publiée — dont le contenu varie par cible — mais qui rend un
+# fichier oublié ici totalement muet. Mesuré en retirant la bibliothèque
+# statique de la liste ci-dessus : l'hôte C disparaissait, les deux autres
+# passaient, et la cible rendait un succès.
+PAQUET_HOTES_natif = abi cpp go
+PAQUET_HOTES_wasm32 = wasm
+
+# Monte un paquet, vérifie qu'il porte les hôtes attendus, puis l'éprouve.
+#
+# La vérification arrive **entre les deux** et non dans `test-archive` : les
+# prérequis de celle-ci sont la liste déduite, donc déjà expansée quand sa
+# recette parle. Ici, le paquet est monté et rien n'a encore été lié.
+paquet-verif:
+	@obtenu=$$($(MAKE) -s --no-print-directory print-ARCHIVE_HOSTS PAQUET="$(PAQUET)"); \
+	if [ "$$obtenu" != "$(ATTENDUS)" ]; then \
+	  echo "paquet : $(PAQUET) porte les hotes '$$obtenu', attendu '$(ATTENDUS)'"; exit 1; \
+	fi
+
+paquet_eprouve = $(MAKE) -s --no-print-directory paquet PAQUET=$(PAQUET_OUT)/$(1) \
+	  SOURCE=$(2) FICHIERS="$(3)" \
+	&& $(MAKE) -s --no-print-directory paquet-verif PAQUET=$(PAQUET_OUT)/$(1) \
+	  ATTENDUS="$(PAQUET_HOTES_$(1))" \
+	&& $(MAKE) -s --no-print-directory test-archive PAQUET=$(PAQUET_OUT)/$(1)
+
+test-paquet: lib lib-wasm
+	$(call paquet_eprouve,natif,$(TARGET_DIR)/release-ffi,$(PAQUET_NATIF))
+	$(call paquet_eprouve,wasm32,$(TARGET_DIR)/$(CIBLE_WASM)/release-wasm,screengine.wasm)
 
 # Phony, et donc jouée une fois pour tous les hôtes de l'appel : un fichier
 # daterait de l'exécution précédente et ferait comparer l'archive à des
