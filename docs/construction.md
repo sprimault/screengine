@@ -723,6 +723,18 @@ l'ABI Android x86_64 restant couverte par son hôte sur émulateur.
   des scènes y vit déjà** : recopiée là où elle ne tourne qu'au tag, elle a
   divergé deux fois, et les deux fois l'échec est apparu une fois la version
   posée.
+- **`make paquet` monte le paquet, et c'est la même disposition pour tous** :
+  `lib/`, `include/`, les deux licences et `THIRD-PARTY-NOTICES`, une entrée
+  `abi:triple` rangeant sa bibliothèque sous `lib/<abi>/`. Elle descend dans le
+  `Makefile` pour la raison qui y a déjà fait descendre `test-archive` — une
+  disposition écrite au seul endroit qui ne tourne qu'au tag n'est vérifiée que
+  par la publication elle-même.
+- **`make test-paquet` monte les deux paquets de la machine et les éprouve**,
+  hors de toute publication : le natif puis celui de wasm. Deux et non un, parce
+  qu'aucune archive ne mêle le module wasm aux bibliothèques natives, et qu'un
+  paquet qui les mêlerait ferait éprouver une disposition que personne ne
+  télécharge. Elle reste hors de la liste d'avant-publication : elle construit en
+  `release-ffi`, dont la LTO complète se paierait à chaque passage.
 - **Le tag se pose directement**, `vX.Y.Z`, sans tag d'essai préalable : le
   brouillon est déjà le moment où l'on relit avant de rendre visible, et ce que
   le workflow ferait de plus est ce que la liste fixe a vérifié avant le commit.

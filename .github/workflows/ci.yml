@@ -238,6 +238,18 @@ jobs:
       - name: Conformance sur wasm
         run: make conform-wasi
 
+      # Le paquet que la publication produit, monté puis éprouvé **hors d'un
+      # tag**. Sans cette étape, la logique de `make test-archive` — déduire les
+      # hôtes de `lib/`, les lier contre le seul contenu du paquet, comparer au
+      # chemin Rust — n'était vérifiée que par la publication elle-même, et elle
+      # a divergé deux fois sans que rien ne le voie avant la version posée.
+      #
+      # Ici plutôt que dans la liste d'avant-publication, comme `make msrv` :
+      # elle construit en `release-ffi`, dont la LTO complète se paierait à
+      # chaque passage local. En dernier, parce qu'elle est la plus lente.
+      - name: Paquet de publication
+        run: make test-paquet
+
   # Job distinct : un avis publié en amont n'a rien à voir avec la PR en cours,
   # et son échec ne doit pas se lire comme « ta contribution est cassée ».
   audit:
