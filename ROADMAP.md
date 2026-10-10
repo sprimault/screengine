@@ -29,9 +29,14 @@ notes de version disent ce qu'elles ne font pas encore.
 renumérotent jamais — ce sont eux que portent les marqueurs du code. Une étape
 qui apparaît s'ajoute à la fin, quelle que soit sa place logique.
 
-**Chaque étape franchie est publiée.** L'étape N porte la version 0.N.0. Une
-bibliothèque dont l'ABI n'est pas figée reste en `0.x` : le mineur marque une
-étape, pas une rupture.
+**Chaque étape franchie a été publiée.** L'étape N portait la version 0.N.0 :
+tant que l'ABI n'était pas figée, le projet restait en `0.x`, où le mineur
+marquait une étape et non une rupture.
+
+**Les dix étapes sont livrées, et l'ABI est gelée en 1.0.0.** Cette règle n'a
+donc plus d'étape à numéroter, et c'est SemVer qui s'applique désormais en
+entier — `CHANGELOG.md` en porte les trois clauses. Une étape qui s'ajouterait
+ici prendrait un mineur comme toute autre fonctionnalité.
 
 **Les notes d'une version qui ne rend encore rien doivent dire ce qu'elle ne fait
 pas.** Quelqu'un télécharge une archive dont la bibliothèque panique sur

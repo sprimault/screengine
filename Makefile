@@ -539,15 +539,21 @@ lint-android-versions:
 # trouvé la fois d'avant.
 #
 # **Pourquoi ce motif et pas l'interdiction des versions passées.** Celle-ci est
-# impraticable : il y en a vingt-huit dans les documents, et toutes datent
+# impraticable : il y en a près de trente dans les documents, et toutes datent
 # légitimement une étape — « Franchie, publiée en 0.4.0 » — ou une décision —
 # « ajoutée après la 0.8.1 ». Ce qui distingue une **annonce d'état** est de
-# porter un numéro d'étape *et* une version du dépôt sur la même ligne, ce
-# qu'aucune datation ne fait. Mesuré : le motif rend exactement les quatre
-# annonces, sans un faux positif.
+# porter le mot « version » immédiatement devant un numéro, ce qu'aucune
+# datation ne fait. Mesuré : le motif rend exactement les quatre annonces, sans
+# un faux positif.
 #
-# **Il est en ASCII, et c'est obligatoire** : `tape` capture « Étape » comme
-# « étape », là où un motif accentué ne reconnaîtrait plus rien — make réencode
+# **Il a porté « un numéro d'étape et une version » jusqu'à la 1.0.0**, et c'est
+# le passage en 1.0 qui l'a fait changer — cette version ne franchit aucune
+# étape, les dix étant déjà livrées. Le contrôle a rougi au bon moment, ce qui
+# était sa raison d'être : il force à revoir le motif quand les annonces se
+# reformulent, au lieu de rendre zéro en silence.
+#
+# **Il est en ASCII, et c'est obligatoire** : `ersion` capture « Version » comme
+# « version », là où un motif accentué ne reconnaîtrait plus rien — make réencode
 # les accents d'une recette avant de les passer au shell, et la recherche rendrait
 # « rien trouvé » sans qu'on puisse le distinguer d'un dépôt conforme.
 #
@@ -565,7 +571,7 @@ ETAT_DOCS = $(wildcard README.md README.fr.md ROADMAP.md CONTRIBUTING*.md \
 # que la première version de `make stubs` a payée. Le jour où ces annonces se
 # reformulent — au passage en 1.0, où il n'y aura plus d'étape à nommer —, cette
 # cible rougit et le motif se revoit. C'est le seul moment où il faut y penser.
-ETAT_MOTIF = (tape|Step) [0-9]+.*[0-9]+\.[0-9]+\.[0-9]+|[0-9]+\.[0-9]+\.[0-9]+.*(tape|Step) [0-9]+
+ETAT_MOTIF = ersion [0-9]+\.[0-9]+\.[0-9]+
 
 # Combien d'annonces le dépôt porte, et **c'est un contrôle, pas un réglage** :
 # les deux `README`, `docs/abi.md` et `docs/construction.md`.

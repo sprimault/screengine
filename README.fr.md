@@ -48,16 +48,18 @@ Windows, dans un navigateur et sur un téléphone.
 
 ## État
 
-**Étape 9 franchie, publiée en 0.9.0 : SIMD.** Quatre chemins vectoriels
-remplissent une surface unie — SSE2 et AVX2 sur x86, NEON sur `aarch64`,
+**Version 1.0.0 : l'ABI est gelée.** Les dix étapes de la feuille de route sont
+livrées, et la frontière C ne bouge plus : rien de publié n'est jamais retiré,
+même déprécié, et un incrément de `SCG_ABI_VERSION` impose un majeur. Un hôte
+compilé contre ce header continuera de se lier.
+
+Quatre chemins vectoriels remplissent une surface unie **et une surface
+texturée**, lightmap comprise — SSE2 et AVX2 sur x86, NEON sur `aarch64`,
 `simd128` sur wasm —, choisis à l'exécution et forçables par l'ABI. Aucun ne
-déplace un pixel : chacun a sa passe de conformance, et le noyau s'exécute
-désormais sur quatre architectures au lieu d'une.
+déplace un pixel : chacun a sa passe de conformance.
 
-Le module wasm exige `simd128` : il ne s'instancie plus sur un navigateur qui ne
+Le module wasm exige `simd128` : il ne s'instancie pas sur un navigateur qui ne
 le porte pas.
-
-La feuille de route compte dix étapes, publiées à chacune.
 
 - [`ROADMAP.md`](ROADMAP.md) — les étapes, celles qui sont franchies et ce qui
   est hors périmètre v1

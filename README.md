@@ -46,15 +46,18 @@ browser and on a phone.
 
 ## Status
 
-**Step 9 cleared, released as 0.9.0: SIMD.** Four vector paths fill a flat
-surface — SSE2 and AVX2 on x86, NEON on `aarch64`, `simd128` on wasm — selected
-at runtime and forceable through the ABI. None moves a pixel: each has its own
-conformance pass, and the core now runs on four architectures instead of one.
+**Version 1.0.0: the ABI is frozen.** All ten roadmap steps are delivered, and
+the C boundary no longer moves: nothing published is ever removed, not even once
+deprecated, and an increment of `SCG_ABI_VERSION` forces a major. A host
+compiled against this header will keep linking.
 
-The wasm module requires `simd128`: it no longer instantiates on a browser
-without that feature.
+Four vector paths fill a flat surface **and a textured one**, lightmap included
+— SSE2 and AVX2 on x86, NEON on `aarch64`, `simd128` on wasm — selected at
+runtime and forceable through the ABI. None moves a pixel: each has its own
+conformance pass.
 
-The roadmap has ten steps, each one published.
+The wasm module requires `simd128`: it does not instantiate on a browser without
+that feature.
 
 - [`ROADMAP.md`](ROADMAP.md) — the steps, which are cleared, and what is out of
   scope for v1 (French)
