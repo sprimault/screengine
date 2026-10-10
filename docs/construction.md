@@ -3,7 +3,7 @@
 Cibles, matrice de compilation, génération du header, liaisons. Toute question
 du genre « pourquoi le `.so` Android ne se charge pas » se tranche ici.
 
-**État : version 1.0.0.** Ce document décrit la construction
+**État : version 1.1.0.** Ce document décrit la construction
 telle qu'elle est ; les points que l'outillage réel doit encore confirmer sont
 marqués **À vérifier**, et les choix restants **À trancher**.
 
