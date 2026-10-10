@@ -9,6 +9,48 @@
 
 use super::{Play, Scale};
 
+/// Chaque item du noyau que ce crate promet à plat est joignable sans
+/// `screengine::`.
+///
+/// **Le seul contrôle de la surface plate, et il ne tenait à rien jusqu'ici.**
+/// Un item retiré de la liste ne casse aucune compilation : l'hôte passe par le
+/// chemin long, personne ne le voit, et la promesse « rien n'est atteignable par
+/// un seul chemin » se perd en silence. Ce cas-ci la tient parce qu'il **nomme**
+/// chaque item sans préfixe : un nom qui sort de la liste ne compile plus.
+///
+/// Ce qu'il ne fait pas, et qu'il ne faut pas lui prêter : détecter un item
+/// **nouveau** du noyau qu'on aurait oublié de propager. Aucune comparaison des
+/// deux surfaces n'est possible sans réflexion, et c'est la question posée à
+/// chaque lot qui rattrape celle-là.
+#[test]
+fn la_surface_plate_reste_joignable() {
+    // **L'import fait tout le travail** : un nom absent de la liste plate est une
+    // erreur de compilation, que `allow(unused_imports)` ne masque pas — il ne
+    // tait que l'inutilisation. Nommer les types dans des annotations en plus
+    // n'aurait rien prouvé de mieux, et aurait traîné leurs paramètres de durée
+    // de vie dans un cas qui ne parle pas d'eux.
+    #[allow(unused_imports)]
+    use super::{
+        Affine3, Angle, Argument, BYTES_PER_PIXEL, Camera, Color, Config, Context, CoreError,
+        CoreOutput, DepthMode, Element, Filter, Frame, Hit, LINE_CAPACITY, Light, Lightmap,
+        LightmapFault, Lightmaps, Line, MAX_LIGHTMAP_SIZE, MAX_LIGHTS, MAX_OVERBRIGHT,
+        MAX_RESOLUTION, MAX_TEXEL_COORD, MAX_TEXTURE_SIZE, Malformation, Mesh, Point, Quat, Rect,
+        Rows, SWEEP_CELLS, SimdPath, Sprite, SpriteOrientation, Surfaces, TILE_SIZES,
+        TRAVERSAL_CELLS, TRAVERSAL_DEPTH, TRIANGLE_CAPACITY, Texture, Triangle, Vec3, VertexUv,
+        VertexUv2, Visibility, World, lightmap_fault, sweep_reach, sweep_skin,
+    };
+
+    // Les bornes de traversée sont lues plutôt que seulement importées : elles
+    // sont les deux dernières entrées de la liste, et un `pub use` tronqué à
+    // l'avant-dernière ligne se verrait ici autant qu'à la compilation.
+    //
+    // En bloc `const`, ce que clippy exige d'une assertion sur des constantes —
+    // et il a raison : évaluée à la compilation, elle ne peut plus être fausse à
+    // l'exécution.
+    const { assert!(TRAVERSAL_DEPTH > 0 && TRAVERSAL_CELLS > 0) };
+    assert!(TILE_SIZES.iter().all(|&t| t.is_power_of_two()));
+}
+
 /// Les réglages par défaut passent la résolution d'ouverture en plafond, et
 /// laissent les deux budgets à `0` — ce que le moteur lit comme « prends le
 /// défaut ».

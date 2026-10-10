@@ -177,6 +177,12 @@ else accumulates as patches. Direct consequence: **the number warns of
 nothing**, and it is the release notes that must say what a binding author has
 to rework.
 
+**As soon as the major leaves zero, the clause falls away**: SemVer applies in
+full, an increment of `SCG_ABI_VERSION` forces a major, and nothing published is
+ever removed — not even once deprecated. These three rules are spelled out in
+[`CHANGELOG.md`](CHANGELOG.md), which is authoritative; `make lint` checks the
+second one.
+
 ## Language
 
 **Identifiers are in English** — directories, files, modules, types, functions,

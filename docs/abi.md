@@ -18,8 +18,9 @@ contre les cellules d'une carte, et ce qu'un éditeur réclame : le tracé de li
 et de points, et l'interrogation par le rayon, et le choix du jeu d'instructions
 qui remplit les triangles. **Le contrat du tracé a été figé ci-dessous avant son
 premier remplissage**, comme ceux des étapes 4 à 7 l'ont été. Chaque décision
-garde ci-dessous l'option écartée et pourquoi. Un seul point reste marqué **À trancher** : la dépréciation, qui attend
-le gel de l'ABI en 1.0.
+garde ci-dessous l'option écartée et pourquoi. **Plus aucun point n'est marqué
+À trancher** : le dernier était la dépréciation, fermée au gel de l'ABI — rien
+de publié n'est jamais retiré.
 
 `SCG_ABI_VERSION` reste à **1** : aucune signature publiée n'a changé, les étapes
 6, 7 et 8 n'ayant fait qu'ajouter des fonctions — comme `scg_world_light_id`,
@@ -697,9 +698,25 @@ int32_t scg_frame_end(ScgContext *ctx, uint8_t *pixels, uint32_t stride);
 - **`scg_abi_version` rend un `uint32_t`, qu'une liaison peut recevoir signé.**
   En JNI il arrive en `jint`, sur wasm il revient en `i32` côté JavaScript : la
   comparaison se fait sur la valeur non signée, et la version reste loin de 2³¹.
-- **À trancher — A10** : la dépréciation. Une fonction remplacée reste exportée et
-  documentée comme dépréciée. Reste à dire si elle est un jour retirée.
-  Recommandation : jamais en `0.x` ; la question se rouvre au gel de l'ABI en 1.0.
+- **Rien de publié n'est jamais retiré**, et c'est arrêté. Une fonction, une
+  constante ou un code remplacé reste exporté pour toujours, documenté comme
+  déprécié : la dépréciation est une recommandation d'usage, pas un calendrier.
+
+  **L'asymétrie des coûts décide, et elle est totale.** Un symbole déprécié
+  coûte une ligne de header et, au plus, une délégation ; son retrait oblige
+  chaque liaison existante à être reprise, et ce projet ne saura jamais combien
+  il y en a — elles vivent dans des dépôts séparés, écrites par des gens qu'il
+  ne connaît pas. Le seul cas concret à ce jour est `SCG_ERR_POISONED`, déprécié
+  depuis la 0.0.0 : le retirer n'aurait économisé rien du tout.
+
+  Écarté : le retrait au majeur suivant, que SemVer autoriserait. `SCG_ABI_VERSION`
+  existe déjà pour annoncer une rupture, et une liaison qui en vérifie l'égalité
+  refuse proprement une bibliothèque incompatible — ce qu'un symbole disparu, lui,
+  ne permet pas : l'échec tombe à l'édition de liens, ou au premier appel pour une
+  liaison qui résout à la demande.
+
+  La question était ouverte sous le nom **A10**, et son déclencheur était le gel
+  de l'ABI en 1.0. Elle est fermée, et ne se rouvre pas au majeur suivant.
 
 ## Fonctions
 

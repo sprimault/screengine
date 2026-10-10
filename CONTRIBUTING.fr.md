@@ -181,6 +181,11 @@ reste s'accumule en correctif. Conséquence directe : **le numéro ne prévient 
 rien**, et ce sont les notes de version qui doivent dire ce qu'un auteur de
 liaison doit reprendre.
 
+**Dès que le majeur quitte zéro, la clause tombe** : SemVer s'applique en
+entier, un incrément de `SCG_ABI_VERSION` impose un majeur, et rien de publié
+n'est jamais retiré — même déprécié. Le détail de ces trois règles est dans
+[`CHANGELOG.md`](CHANGELOG.md), qui fait foi ; `make lint` vérifie la seconde.
+
 ## Langue
 
 **Les identifiants sont en anglais** — répertoires, fichiers, modules, types,

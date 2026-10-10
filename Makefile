@@ -580,10 +580,31 @@ ETAT_MOTIF = (tape|Step) [0-9]+.*[0-9]+\.[0-9]+\.[0-9]+|[0-9]+\.[0-9]+\.[0-9]+.*
 # annoncer l'état doit être vu, et c'est ce chiffre qui le fait voir.
 ETAT_ANNONCES = 4
 
+# La cible vérifie en outre que **le majeur n'est jamais inférieur à
+# `SCG_ABI_VERSION`**, ce que `CHANGELOG.md` arrête : un incrément de la seconde
+# impose le premier.
+#
+# **Une implication et non une égalité**, et c'est un cas réel qui l'exige : une
+# rupture de `version_format` — le maillage l'a fait à l'étape 6, en refusant les
+# fichiers de version 1 — mérite un majeur sans que la frontière C bouge. Exiger
+# l'égalité ferait alors rougir un dépôt juste.
+#
+# **Et la clause du zéro est encodée** : tant que le majeur vaut zéro, rien n'est
+# imposé, donc la comparaison ne s'applique pas. Sans cette exemption, le
+# contrôle rougirait sur la 0.9.0, dont l'ABI vaut déjà 1.
+
 etat-verif:
 	@version=$$(sed -n 's/^version = "\(.*\)"$$/\1/p' Cargo.toml); \
 	if [ -z "$$version" ]; then \
 	  echo "etat-verif : version introuvable dans Cargo.toml"; exit 1; \
+	fi; \
+	majeur=$${version%%.*}; \
+	abi=$$(sed -n 's/^#define SCG_ABI_VERSION *//p' include/screengine.h); \
+	if [ -z "$$abi" ]; then \
+	  echo "etat-verif : SCG_ABI_VERSION introuvable dans include/screengine.h"; exit 1; \
+	fi; \
+	if [ "$$majeur" != "0" ] && [ "$$majeur" -lt "$$abi" ]; then \
+	  echo "etat-verif : majeur $$majeur inferieur a SCG_ABI_VERSION $$abi"; exit 1; \
 	fi; \
 	lignes=$$(grep -nE "$(ETAT_MOTIF)" $(ETAT_DOCS) || true); \
 	compte=$$(printf '%s' "$$lignes" | grep -c . || true); \
@@ -600,7 +621,7 @@ etat-verif:
 	  echo "etat-verif : section du CHANGELOG en cours absente, la publication s'arreterait"; \
 	  exit 1; \
 	fi; \
-	echo "etat-verif : $$(echo "$$lignes" | wc -l | tr -d ' ') annonce(s) a $$version, section en cours presente"
+	echo "etat-verif : $$(echo "$$lignes" | wc -l | tr -d ' ') annonce(s) a $$version, section en cours presente, majeur $$majeur pour une ABI $$abi"
 
 # Les cibles qu'un contrôle traverse au-delà de celle du poste, et le seul
 # endroit où du code propre à une autre architecture se compile ici : `neon.rs`

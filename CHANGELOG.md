@@ -6,6 +6,23 @@ SemVer avec la clause du zéro : **en `0.x`, rien n'est imposé**. Le mineur
 marque une étape de la feuille de route, pas une rupture d'API — tout le reste
 s'accumule en correctif, correctifs, fonctionnalités et ruptures confondus.
 
+**Dès que le majeur quitte zéro, la clause tombe et SemVer s'applique en
+entier** : un majeur pour une rupture, un mineur pour un ajout, un correctif
+pour le reste. La feuille de route n'y entre plus — ses dix étapes sont ce que le
+`0.x` a servi à livrer, et il n'en reste aucune à numéroter.
+
+**Ce qui impose un majeur, et c'est une règle et non un usage : un incrément de
+`SCG_ABI_VERSION`.** Le majeur est donc toujours supérieur ou égal à lui, ce que
+`make lint` vérifie. L'inverse n'est pas vrai, et c'est voulu : un format de
+fichier qui refuse les anciens — ce que `version_format` a déjà fait — est une
+rupture qui mérite un majeur sans que la frontière C bouge.
+
+**Rien de publié n'est jamais retiré**, même déprécié : une fonction ou une
+constante remplacée reste exportée pour toujours, et la dépréciation est une
+recommandation d'usage, sans calendrier. L'asymétrie décide — un symbole
+déprécié coûte une ligne de header, son retrait oblige chaque liaison existante
+à être reprise, et le projet ne saura jamais combien il y en a.
+
 Trois numéros à ne pas confondre :
 
 | Numéro | Où | Ce qu'il suit |
@@ -46,6 +63,12 @@ publié, et explique les conventions du dépôt à qui y contribue.
 
 ## [Non publié]
 
+### Ajouté
+
+- **L'étage d'accueil réexporte à plat tout ce qu'un hôte Rust écrit** : les
+  bornes publiées, les types du rendu par tuiles, et l'erreur du noyau sous
+  `CoreError` — `CoreOutput` de même, les deux noms existant déjà ici.
+
 ### Modifié
 
 - **Une surface texturée se remplit par SSE2**, sa lightmap comprise, sur
@@ -62,6 +85,12 @@ publié, et explique les conventions du dépôt à qui y contribue.
 
 ***
 
+### Added
+
+- **The host layer now re-exports flat everything a Rust host writes**: the
+  published bounds, the tiled-render types, and the core error as `CoreError` —
+  `CoreOutput` likewise, both names already existing here.
+
 ### Changed
 
 - **A textured surface now fills through SSE2**, its lightmap included, on
@@ -71,9 +100,10 @@ publié, et explique les conventions du dépôt à qui y contribue.
 - **AVX2 has its own path**, eight pixels wide and with the `gather` SSE2 lacks:
   a quarter better than it on a textured, lit surface — three and a half times
   the pixel-by-pixel fill.
-- **NEON and `simd128` still only cover the flat surface.** The gap between
-  paths is now real: forcing NEON on `aarch64` does not give what SSE2 gives on
-  x86.
+- **NEON and `simd128` now fill a textured surface too**, lightmap included: all
+  four instruction sets cover the same path. Their gain is unmeasured, neither
+  target having a reference machine here; their correctness is, through the
+  conformance suite.
 
 ## [0.9.0] — 2026-10-07 — SIMD
 
