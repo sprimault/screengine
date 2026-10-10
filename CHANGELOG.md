@@ -74,6 +74,9 @@ déplacent**, `collision` et `selection`.
 
 ### Corrigé
 
+- **`scg_world_surface_material` rend un rang dans la table des matériaux**, et
+  `docs/abi.md` annonçait un identifiant : un hôte qui le suivait lisait le nom
+  du matériau suivant. Le code n'a pas changé, les documents si.
 - **Un balayage ou un rayon tronqué par `SCG_SWEEP_CELLS` ne nomme plus ni point
   de contact ni cellule** : `point` est le vecteur nul et `cell_id` vaut zéro,
   comme `surface_id` et `normal` le faisaient déjà.
@@ -98,6 +101,9 @@ déplacent**, `collision` et `selection`.
 
 ### Fixed
 
+- **`scg_world_surface_material` returns a rank into the material table**, where
+  `docs/abi.md` announced an identifier: a host following it read the name of the
+  next material. The code did not change, the documents did.
 - **A sweep or ray truncated by `SCG_SWEEP_CELLS` no longer names a contact
   point or a cell**: `point` is the zero vector and `cell_id` is zero, as
   `surface_id` and `normal` already were.

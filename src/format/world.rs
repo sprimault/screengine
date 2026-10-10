@@ -782,11 +782,20 @@ impl World {
         crate::collide::sweep_brute(self, half.into(), from.into(), to.into(), Surfaces::Solid)
     }
 
-    /// Le matériau d'une surface, par son identifiant stable.
+    /// Le **rang** du matériau d'une surface, par l'identifiant stable de
+    /// celle-ci.
     ///
     /// `None` quand aucune surface ne le porte. C'est le pendant de
     /// l'identifiant que le balayage rend : sans lui, l'hôte recevrait un
     /// identifiant qu'aucune fonction ne traduit.
+    ///
+    /// **Ce qu'elle rend est un rang, et c'est ce que [`World::material_name`]
+    /// prend** — jamais l'identifiant que le fichier porte. Sa signature ne
+    /// peut pas le dire, les deux étant des `u32`, et une carte dont le premier
+    /// matériau porte l'identifiant `1` ferait rendre `0` : qui confondrait les
+    /// deux lirait le nom du matériau suivant. L'asymétrie est voulue — la
+    /// soumission lie les textures dans l'ordre des matériaux, et résoudre un
+    /// identifiant par surface et par image serait le coût que le rang évite.
     pub fn surface_material(&self, surface_id: u32) -> Option<u32> {
         let (cell, rank) = self.surface_at(surface_id)?;
         Some(self.cells[cell as usize].surfaces[rank as usize].material)
@@ -1773,7 +1782,7 @@ pub enum LightmapFault {
 ///
 /// **C'est le prédicat du chargeur lui-même**, et non une seconde écriture : le
 /// chargement appelle cette fonction, si bien que les deux ne peuvent pas
-/// divenger. C'est la raison d'être de son exposition — un générateur de cartes
+/// diverger. C'est la raison d'être de son exposition — un générateur de cartes
 /// avait dû la réimplémenter, tolérance et somme de Newell comprises, et sa copie
 /// serait devenue silencieusement fausse le jour où la valeur bouge.
 ///

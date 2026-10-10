@@ -15,10 +15,16 @@
 //! cases n'auraient plus la taille que le décor annonce. Une troisième carte qui
 //! les recopierait au jugé finirait par en dériver.
 
-/// Le rang du matériau des murs dans la table.
+/// L'identifiant du matériau des murs.
+///
+/// **Un identifiant et non un rang**, contrairement à ce que ces deux lignes
+/// ont longtemps dit : c'est ce que le champ `material` d'une surface porte
+/// dans le fichier, et le chargement le convertit en rang. Les deux se
+/// confondent d'autant plus facilement qu'ils sont tous deux des `u32` — ici la
+/// table commence à `1`, donc le rang du mur est `0`.
 pub const WALLS: u32 = 1;
 
-/// Le rang du matériau du sol et du plafond.
+/// L'identifiant du matériau du sol et du plafond.
 pub const FLOOR: u32 = 2;
 
 /// Texels par unité de monde sur un mur.
