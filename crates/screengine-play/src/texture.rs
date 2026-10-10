@@ -15,6 +15,55 @@ use screengine::{Argument, MAX_TEXTURE_SIZE, Texture};
 
 use crate::Error;
 
+/// Le plus grand côté qu'une icône de fenêtre peut avoir.
+///
+/// Aucun système n'en demande davantage : au-delà de 256, c'est le compositeur
+/// qui réduit, et il le fait moins bien qu'un outil d'image. La borne existe
+/// surtout pour que le refus tombe sur l'en-tête plutôt qu'après avoir alloué
+/// ce qu'un PNG de 8192 réclamerait.
+const MAX_ICON_SIZE: u32 = 256;
+
+/// Une icône de fenêtre décodée, prête pour le système.
+///
+/// **Un type à nous plutôt que celui de `winit`**, qui n'apparaît dans aucune
+/// signature de ce crate : son `Icon` n'est pas construisible hors d'une boucle
+/// d'événements sur toutes les plateformes, et l'exposer ferait dépendre les
+/// réglages d'un hôte d'une bibliothèque qui change d'API à chaque mineure.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Icon {
+    /// Les texels, quatre octets par pixel, lignes jointives.
+    pub(crate) rgba: Vec<u8>,
+    /// La largeur en pixels.
+    pub(crate) width: u32,
+    /// La hauteur en pixels.
+    pub(crate) height: u32,
+}
+
+/// Décode un PNG en icône de fenêtre.
+///
+/// **Les côtés ne sont pas tenus d'être des puissances de deux**, à la
+/// différence d'une texture : une icône ne se replie pas par masque, et les
+/// tailles que les systèmes attendent — 16, 24, 48 — n'en sont pas. Ce qui est
+/// refusé est une dimension nulle ou au-delà de 256.
+///
+/// L'usage naturel est `include_bytes!` : l'icône voyage dans le binaire, et la
+/// question du répertoire courant à l'exécution ne se pose pas.
+pub fn load_png_icon(bytes: &[u8]) -> Result<Icon, Error> {
+    let fits = |s: u32| s > 0 && s <= MAX_ICON_SIZE;
+    let (rgba, width, height) = decode_rgba(bytes, |w, h| {
+        if fits(w) && fits(h) {
+            Ok(())
+        } else {
+            Err(screengine::Error::InvalidArgument(Argument::TextureSize).into())
+        }
+    })?;
+    Ok(Icon {
+        rgba,
+        width,
+        height,
+    })
+}
+
 /// Décode un PNG et en fait une texture du moteur, mipmaps compris.
 ///
 /// Tout ce que le format porte est ramené à quatre octets par texel : palette
@@ -47,18 +96,42 @@ pub fn load_png_masked(bytes: &[u8]) -> Result<Texture, Error> {
 
 /// Le corps commun des deux, `masked` décidant du format.
 fn decode(bytes: &[u8], masked: bool) -> Result<Texture, Error> {
+    // Les deux côtés en puissance de deux, jusqu'au plafond du moteur : c'est
+    // la contrainte du repli par masque, et elle est propre à une texture — une
+    // icône n'y est pas tenue.
+    let side = |s: u32| s.is_power_of_two() && s <= MAX_TEXTURE_SIZE;
+    let (rgba, width, height) = decode_rgba(bytes, |w, h| {
+        if side(w) && side(h) {
+            Ok(())
+        } else {
+            Err(screengine::Error::InvalidArgument(Argument::TextureSize).into())
+        }
+    })?;
+
+    Ok(if masked {
+        Texture::load_masked(width, height, &rgba)?
+    } else {
+        Texture::load(width, height, &rgba)?
+    })
+}
+
+/// Décode un PNG en octets RGBA, avec ses dimensions.
+///
+/// **`accepte` reçoit les dimensions avant toute allocation**, et c'est sa
+/// raison d'être : un fichier de 8192 de côté demanderait deux cent cinquante
+/// mégaoctets pour être refusé juste après. Le contrôle n'est pas le même selon
+/// l'usage — une texture veut des puissances de deux, une icône une taille que
+/// le système accepte —, donc il se passe en paramètre plutôt que de vivre ici.
+pub(crate) fn decode_rgba(
+    bytes: &[u8],
+    accepte: impl Fn(u32, u32) -> Result<(), Error>,
+) -> Result<(Vec<u8>, u32, u32), Error> {
     let mut decoder = Decoder::new(Cursor::new(bytes));
     decoder.set_transformations(Transformations::normalize_to_color8() | Transformations::ALPHA);
     let mut reader = decoder.read_info()?;
 
-    // Les dimensions se contrôlent sur l'en-tête, avant d'allouer quoi que ce
-    // soit : un fichier de 8192 de côté demanderait deux cent cinquante
-    // mégaoctets pour être refusé juste après par `Texture::load`.
     let (width, height) = reader.info().size();
-    let side = |s: u32| s.is_power_of_two() && s <= MAX_TEXTURE_SIZE;
-    if !side(width) || !side(height) {
-        return Err(screengine::Error::InvalidArgument(Argument::TextureSize).into());
-    }
+    accepte(width, height)?;
 
     // Borné par ce qui précède, donc jamais nul en pratique ; un zéro se fait
     // rejeter par `next_frame`, qui refuse un tampon trop court, plutôt que par
@@ -77,11 +150,7 @@ fn decode(bytes: &[u8], masked: bool) -> Result<Texture, Error> {
         ColorType::Grayscale | ColorType::Indexed => expand(&raw, 1, |p| [p[0], p[0], p[0], 0xFF]),
     };
 
-    Ok(if masked {
-        Texture::load_masked(width, height, &rgba)?
-    } else {
-        Texture::load(width, height, &rgba)?
-    })
+    Ok((rgba, width, height))
 }
 
 /// Recompose un bloc RGBA depuis des pixels de `samples` octets.

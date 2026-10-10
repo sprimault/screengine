@@ -89,7 +89,7 @@ pub use screengine::{
     TRAVERSAL_CELLS, TRAVERSAL_DEPTH, TRIANGLE_CAPACITY, Texture, Triangle, Vec3, VertexUv,
     VertexUv2, Visibility, World, lightmap_fault, sweep_reach, sweep_skin,
 };
-pub use texture::{load_png, load_png_masked};
+pub use texture::{Icon, load_png, load_png_icon, load_png_masked};
 pub use winit::event::MouseButton;
 pub use winit::keyboard::KeyCode;
 
@@ -123,6 +123,9 @@ pub struct Play {
     scale: Scale,
     rate: u32,
     exit_on_escape: bool,
+    /// L'icône de la fenêtre, absente par défaut — le système pose alors la
+    /// sienne, et un exemple qui n'en veut pas n'a rien à écrire.
+    icon: Option<Icon>,
 }
 
 impl Default for Play {
@@ -144,6 +147,7 @@ impl Play {
             scale: Scale::Integer,
             rate: 60,
             exit_on_escape: true,
+            icon: None,
         }
     }
 
@@ -224,6 +228,24 @@ impl Play {
     pub fn exit_on_escape(mut self, exit: bool) -> Self {
         self.exit_on_escape = exit;
         self
+    }
+
+    /// L'icône que la fenêtre porte à son ouverture, depuis un PNG.
+    ///
+    /// Sans elle, le système pose la sienne. Les côtés n'ont pas à être des
+    /// puissances de deux — 16, 24 et 48 n'en sont pas, et ce sont des tailles
+    /// d'icône courantes —, mais ni nuls ni au-delà de 256.
+    ///
+    /// **Sans effet sous Wayland**, qui tire l'icône du fichier de bureau de
+    /// l'application plutôt que de la fenêtre. Rien ne le signale à
+    /// l'exécution, d'où cette phrase : l'exemple s'ouvre normalement, avec
+    /// l'icône par défaut du compositeur.
+    ///
+    /// L'erreur de décodage est rendue ici et non à l'ouverture, pour qu'un
+    /// PNG fautif se voie à la ligne qui le passe.
+    pub fn icon(mut self, png: &[u8]) -> Result<Self, Error> {
+        self.icon = Some(load_png_icon(png)?);
+        Ok(self)
     }
 
     /// Ouvre la fenêtre et fait tourner la boucle jusqu'à sa fermeture.
@@ -309,6 +331,7 @@ pub struct Tick<'a> {
     captured: bool,
     capture: Option<bool>,
     title: Option<String>,
+    icon: Option<Icon>,
 }
 
 impl<'a> Tick<'a> {
@@ -328,6 +351,7 @@ impl<'a> Tick<'a> {
             captured,
             capture: None,
             title: None,
+            icon: None,
         }
     }
 
@@ -381,5 +405,26 @@ impl<'a> Tick<'a> {
     /// pas, c'est la dernière qui compte.
     pub fn set_title(&mut self, title: &str) {
         self.title = Some(title.to_owned());
+    }
+
+    /// Change l'icône de la fenêtre, à la fin de ce pas.
+    ///
+    /// **Cet appel décode un PNG, donc il ne se fait pas par image.** C'est ce
+    /// qui le distingue de [`Tick::set_title`], dont le coût est une chaîne :
+    /// l'icône se change sur un **changement d'état** — une alerte, une partie
+    /// en attente — et le décodage se paie à ce moment-là. Appelée plusieurs
+    /// fois dans le même pas, c'est la dernière qui compte.
+    ///
+    /// L'erreur est rendue à l'appel plutôt que perdue après le pas : un PNG
+    /// que le décodeur refuse est une faute de l'hôte, et il doit l'apprendre
+    /// là où il peut encore la corriger.
+    ///
+    /// **Sans effet sous Wayland**, qui n'a pas d'icône par fenêtre : le
+    /// protocole la tire du fichier de bureau de l'application. `winit` le
+    /// documente et l'appel y est ignoré — rien ne rougira jamais là-dessus,
+    /// d'où cette phrase.
+    pub fn set_icon(&mut self, png: &[u8]) -> Result<(), Error> {
+        self.icon = Some(load_png_icon(png)?);
+        Ok(())
     }
 }

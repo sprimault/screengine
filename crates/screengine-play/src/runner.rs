@@ -14,11 +14,12 @@ use winit::dpi::PhysicalSize;
 use winit::event::{DeviceEvent, DeviceId, ElementState, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop, OwnedDisplayHandle};
 use winit::keyboard::{KeyCode, PhysicalKey};
-use winit::window::{CursorGrabMode, Window, WindowId};
+use winit::window::{CursorGrabMode, Icon as WinitIcon, Window, WindowId};
 
 use crate::clock::Clock;
 use crate::input::Input;
 use crate::scale::{Scale, Scaler};
+use crate::texture::Icon;
 use crate::{DEFAULT_WINDOW_FACTOR, Error, Output, Play, Tick};
 
 /// La fenêtre et sa surface, qui vivent et meurent ensemble.
@@ -53,6 +54,19 @@ fn grab_cursor(window: &Window, capture: bool) -> bool {
         || window.set_cursor_grab(CursorGrabMode::Confined).is_ok();
     window.set_cursor_visible(!grabbed);
     grabbed
+}
+
+/// Convertit une icône décodée en celle de `winit`.
+///
+/// **`None` sur un refus plutôt qu'une erreur remontée**, et c'est le seul
+/// endroit du crate où un échec se perd volontairement : les dimensions ont
+/// déjà été vérifiées au décodage, donc `from_rgba` ne peut échouer que sur un
+/// désaccord entre la longueur et les côtés, qui serait un défaut d'ici et non
+/// de l'hôte. La fenêtre s'ouvre alors avec l'icône du système, ce qui est
+/// exactement ce que l'absence d'icône donne — et c'est déjà ce qui arrive sous
+/// Wayland, où la pose est ignorée.
+fn to_winit_icon(icon: &Icon) -> Option<WinitIcon> {
+    WinitIcon::from_rgba(icon.rgba.clone(), icon.width, icon.height).ok()
 }
 
 /// L'état de la boucle, et ce que l'appelant lui a confié.
@@ -166,6 +180,7 @@ where
         // juste.
         let attributes = Window::default_attributes()
             .with_title(self.play.title.clone())
+            .with_window_icon(self.play.icon.as_ref().and_then(to_winit_icon))
             .with_inner_size(PhysicalSize::new(size.0, size.1));
         let window = Rc::new(
             event_loop
@@ -360,6 +375,7 @@ where
                 captured: self.captured,
                 capture: None,
                 title: None,
+                icon: None,
             };
             (self.update)(&mut self.state, &mut tick);
             let exit = tick.exit;
@@ -368,6 +384,9 @@ where
             }
             if let Some(title) = &tick.title {
                 display.window.set_title(title);
+            }
+            if let Some(icon) = &tick.icon {
+                display.window.set_window_icon(to_winit_icon(icon));
             }
             self.input.end_step();
             self.index += 1;
