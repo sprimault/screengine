@@ -41,9 +41,15 @@ impl ScgVertex {
 /// Refuse un lot dont un sommet n'est pas fini.
 ///
 /// En amont de la soumission, et sur le tableau entier plutôt que sur les seuls
-/// sommets indexés : la soumission ne rend qu'une erreur du noyau, qui n'a pas
-/// de mot pour une coordonnée que l'hôte lui a donnée non finie — il la
-/// traiterait comme une donnée et ferait disparaître le triangle en silence.
+/// sommets indexés.
+///
+/// **Ce n'est plus une compensation, c'est un message.** Le noyau refuse
+/// désormais la même chose, tableau entier compris, et les deux rendent
+/// `SCG_ERR_INVALID_ARGUMENT` : ce que ce contrôle garde en propre est un texte
+/// qui nomme la structure C que l'hôte a remplie. Il reste ici aussi parce que
+/// la frontière est le seul endroit qui **voit** ce tableau — elle confie
+/// l'indexation au noyau par un lecteur, et c'est cette asymétrie de forme
+/// d'entrée qui justifie les deux passages, non un trou à couvrir.
 pub(crate) fn check_finite(vertices: &[ScgVertex]) -> Result<(), AbiError> {
     let finite = vertices
         .iter()

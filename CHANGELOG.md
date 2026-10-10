@@ -80,6 +80,10 @@ déplacent**, `collision` et `selection`.
 - **L'API Rust refuse une coordonnée ou une demi-étendue non finie**, là où le
   balayage rendait un déplacement libre : un mobile à position `NaN` traversait
   les murs. L'ABI la refusait déjà.
+- **Le noyau refuse aussi une caméra, une matrice modèle ou un sommet non
+  finis**, et le tableau de sommets est vérifié **entier** : une matrice non
+  finie effaçait le lot sans erreur, et un sommet qu'aucun indice ne nomme était
+  refusé en C et accepté en Rust. Deux variantes d'`Argument` s'y ajoutent.
 
 ***
 
@@ -100,6 +104,10 @@ déplacent**, `collision` et `selection`.
 - **The Rust API rejects a non-finite coordinate or half-extent**, where the
   sweep used to report a free move: a mover at a `NaN` position went through
   walls. The ABI already rejected it.
+- **The core now also rejects a non-finite camera, model matrix or vertex**, and
+  the vertex array is checked **in full**: a non-finite matrix used to erase the
+  batch without an error, and a vertex no index names was rejected in C and
+  accepted in Rust. Two `Argument` variants come with it.
 
 ## [1.0.0] — 2026-10-10 — L'ABI gelée
 

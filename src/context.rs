@@ -336,6 +336,59 @@ const RENDERING: u8 = 1;
 /// La fin d'image a pris la main : plus aucune tuile ne commence.
 const CLOSING: u8 = 2;
 
+/// Tous ces flottants sont-ils finis ?
+///
+/// Écrit par `is_finite` et non par une comparaison de bornes : celles-ci sont
+/// fausses dans les deux sens sur un `NaN`, et le laisseraient passer.
+fn finite(values: &[f32]) -> bool {
+    values.iter().all(|value| value.is_finite())
+}
+
+/// Refuse une matrice modèle dont un coefficient n'est pas fini.
+///
+/// **Un seul endroit pour toutes les soumissions**, appelé par les deux points
+/// de convergence — celui des triangles et celui du tracé. Réparti sur les
+/// onze fonctions publiques, il finirait par manquer sur celle qu'on ajoute en
+/// dernier, et c'est précisément ce que ce lot corrige ailleurs.
+///
+/// Ce qu'il refuse n'est pas une donnée mais un **argument** : un modèle non
+/// fini porte tous les sommets hors de la projection, si bien que le lot
+/// disparaissait sans erreur — le traitement que le contrat réserve à un
+/// triangle hors du tronc de vue. La frontière, qui reçoit une 4×4, garde en
+/// propre le contrôle de sa dernière ligne : le noyau n'en a pas.
+fn finite_model(model: Affine3) -> Result<()> {
+    if finite(&model.m) {
+        Ok(())
+    } else {
+        Err(Error::InvalidArgument(Argument::Matrix))
+    }
+}
+
+/// Refuse un tableau de sommets dont une position n'est pas finie, **entier**.
+///
+/// **Le tableau et non les seuls sommets qu'un triangle indexe**, et c'est ce
+/// qui alignait mal les deux chemins : la frontière C parcourt le tableau reçu,
+/// si bien qu'un sommet non fini qu'aucun indice ne nomme faisait refuser le lot
+/// en C et passer en Rust. La même scène était acceptée par un chemin et refusée
+/// par l'autre, ce que la règle des deux chemins interdit.
+///
+/// **L'alignement ne pouvait se faire que dans ce sens.** La frontière ne voit
+/// pas quels sommets sont référencés — elle confie l'indexation au noyau par un
+/// lecteur —, donc restreindre son contrôle lui coûterait de refaire ce travail.
+///
+/// Ce que cela coûte est borné par construction : seules les cinq soumissions
+/// qui reçoivent une tranche de l'appelant passent ici. Une carte, un maillage
+/// et un lot de quadrilatères lisent une ressource chargée ou une description,
+/// et le chemin dominant d'un décor ne paie donc rien.
+fn finite_positions(positions: impl Iterator<Item = Vec3>) -> Result<()> {
+    for position in positions {
+        if !finite(&[position.x, position.y, position.z]) {
+            return Err(Error::InvalidArgument(Argument::VertexCoordinate));
+        }
+    }
+    Ok(())
+}
+
 /// Les textures distinctes qu'une image peut employer, pour une capacité de
 /// `triangles` triangles préparés.
 ///
@@ -470,6 +523,22 @@ impl Context {
             return Err(Error::InvalidState);
         }
         self.require_empty_frame()?;
+        // **Avant la projection, qui ne répond que de `fov_y` et de `near`.** Un
+        // quaternion non fini se normalise en vecteur nul, et la matrice de vue
+        // qui en sort n'a plus de sens : la scène se rendrait depuis une pose que
+        // rien ne décrit, sans qu'aucun appel ne l'ait signalé. La frontière C le
+        // refusait déjà, et le chemin Rust était seul à l'accepter.
+        if !finite(&[
+            camera.position.x,
+            camera.position.y,
+            camera.position.z,
+            camera.orientation.x,
+            camera.orientation.y,
+            camera.orientation.z,
+            camera.orientation.w,
+        ]) {
+            return Err(Error::InvalidArgument(Argument::Camera));
+        }
         self.projection = Projection::new(self.width, self.height, camera.fov_y, camera.near)?;
         self.view = camera.view();
         let moved_near = self.camera.near != camera.near;
@@ -917,6 +986,7 @@ impl Context {
         vertices: &[Vec3],
         triangles: &[Triangle],
     ) -> Result<()> {
+        finite_positions(vertices.iter().copied())?;
         self.submit_each(model, triangles.len(), |i| {
             let triangle = triangles[i];
             let mut corners = [Vec3::ZERO; 3];
@@ -988,6 +1058,7 @@ impl Context {
         texture: Option<&Arc<Texture>>,
         lightmap: &Arc<Texture>,
     ) -> Result<()> {
+        finite_positions(vertices.iter().map(|v| v.position))?;
         self.submit_each_lit(model, triangles.len(), texture, lightmap, |i| {
             let triangle = triangles[i];
             let mut corners = [VertexUv2::unlit(VertexUv::untextured(Vec3::ZERO)); 3];
@@ -1489,6 +1560,7 @@ impl Context {
         triangles: &[Triangle],
         texture: Option<&Arc<Texture>>,
     ) -> Result<()> {
+        finite_positions(vertices.iter().map(|v| v.position))?;
         self.submit_each_uv(model, triangles.len(), texture, |i| {
             let triangle = triangles[i];
             let mut corners = [VertexUv::untextured(Vec3::ZERO); 3];
@@ -1539,6 +1611,7 @@ impl Context {
         triangles: &[Triangle],
         texture: Option<&Arc<Texture>>,
     ) -> Result<()> {
+        finite_positions(vertices.iter().map(|v| v.position))?;
         self.submit_each_blended(model, triangles.len(), texture, |i| {
             let triangle = triangles[i];
             let mut corners = [VertexUv::untextured(Vec3::ZERO); 3];
@@ -1736,6 +1809,7 @@ impl Context {
         if *self.state.get_mut() != RECORDING {
             return Err(Error::InvalidState);
         }
+        finite_model(model)?;
         self.drop_closed_frame();
         let (mark, textures) = (self.triangles.len(), self.textures.len());
         let lights = self.lighting.len();
@@ -2029,6 +2103,7 @@ impl Context {
         if *self.state.get_mut() != RECORDING {
             return Err(Error::InvalidState);
         }
+        finite_model(model)?;
         self.drop_closed_frame();
 
         let mark = self.segments.len();
