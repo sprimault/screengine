@@ -123,8 +123,8 @@ android_build = for cible in $(CIBLES_ANDROID); do \
 -include makefile.local
 
 .PHONY: build lib lib-wasm lib-android run example web test native-libs fmt fmt-fix lint lint-doc-tests \
-        lint-android-versions etat-verif nostd test-arm test-wasi msrv bench stubs \
-        conform conform-arm conform-wasi conform-x86 conform-update conform-images mesh header header-verif audit deny doc doc-verif hosts host-c host-cpp host-web host-go \
+        lint-android-versions etat-verif nostd test-arm test-linux-arm test-wasi msrv bench stubs \
+        conform conform-arm conform-linux-arm conform-wasi conform-x86 conform-update conform-images mesh header header-verif audit deny doc doc-verif hosts host-c host-cpp host-web host-go \
         host-android demo-c demo-cpp clean tools
 
 build:
@@ -755,6 +755,55 @@ $(addsuffix -arm,test conform): %-arm:
 	  for cible in $(CIBLES_ARM); do \
 	    echo "$@ : $$cible"; \
 	    $(ARM_ENV) $(arm_run_$*) || exit 1; \
+	  done; \
+	fi
+
+# Les deux cibles Linux sur ARM, exécutées sous qemu. **Ce qu'elles ont de propre
+# est la bibliothèque C** : même jeu d'instructions et même largeur que les ABI
+# Android, mais la glibc là où le NDK porte la bionic. Le noyau n'en emploie
+# aucune ; la frontière passe par `std`, et c'est elle que ces cibles éprouvent.
+#
+# **La conformance y rejoue les mêmes empreintes versionnées**, pour la raison qui
+# donne sa forme à `conform-arm` et à `conform-x86` : des références propres à une
+# cible ne diraient que « elle est reproductible avec elle-même ».
+#
+# **Pas de liaison statique ici**, contrairement aux cibles Android : celles-là
+# réclament `/system/bin/linker64`, qui n'existe que sur un appareil. Une glibc a
+# son éditeur de liens dynamique dans le sysroot croisé, que `-L` donne à qemu.
+LINUX_ARM_ENV = \
+  CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc \
+  CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_RUNNER="qemu-aarch64-static -L /usr/aarch64-linux-gnu" \
+  CARGO_TARGET_ARMV7_UNKNOWN_LINUX_GNUEABIHF_LINKER=arm-linux-gnueabihf-gcc \
+  CARGO_TARGET_ARMV7_UNKNOWN_LINUX_GNUEABIHF_RUNNER="qemu-arm-static -L /usr/arm-linux-gnueabihf"
+
+# Le noyau **et la frontière** : celle-ci est la raison d'être de ces cibles, et
+# l'oublier laisserait éprouver ce qui ne dépend d'aucune bibliothèque C. Un test
+# de moins sur armv7 est attendu — celui du registre flottant, que `fpenv` ne
+# porte que sur `aarch64`, les fonctionnalités ARM 32 bits étant instables.
+linux_arm_run_test    = cargo test -p screengine -p screengine-ffi --target $$cible
+linux_arm_run_conform = cargo run -p screengine-conformance --release --target $$cible -- --check
+
+# Même forme de saut que les cibles Android, et **erreur en intégration
+# continue** pour la même raison : le job Linux installe tout ce qu'elles
+# demandent, donc un saut n'y signale pas un poste démuni mais une étape
+# d'installation cassée.
+$(addsuffix -linux-arm,test conform): %-linux-arm:
+	@reason=""; \
+	if ! command -v aarch64-linux-gnu-gcc >/dev/null 2>&1 \
+	    || ! command -v arm-linux-gnueabihf-gcc >/dev/null 2>&1; then \
+	  reason="chaine C croisee introuvable, gcc-aarch64-linux-gnu ou gcc-arm-linux-gnueabihf"; \
+	elif ! command -v qemu-aarch64-static >/dev/null 2>&1 \
+	    || ! command -v qemu-arm-static >/dev/null 2>&1; then \
+	  reason="qemu-aarch64-static ou qemu-arm-static introuvable"; \
+	fi; \
+	if [ -n "$$reason" ] && [ -n "$$CI" ]; then \
+	  echo "$@ impossible en integration continue : $$reason"; exit 1; \
+	elif [ -n "$$reason" ]; then \
+	  echo "$@ saute : $$reason"; \
+	else \
+	  for cible in $(CIBLES_LINUX_ARM); do \
+	    echo "$@ : $$cible"; \
+	    $(LINUX_ARM_ENV) $(linux_arm_run_$*) || exit 1; \
 	  done; \
 	fi
 

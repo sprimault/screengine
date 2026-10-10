@@ -226,6 +226,33 @@ jobs:
         if: runner.os == 'Linux'
         run: make conform-arm
 
+      # Les deux cibles Linux sur ARM, sous qemu. Ce qu'elles ont de propre est
+      # la **glibc** là où les ABI Android portent la bionic : le noyau n'en
+      # emploie aucune, mais la frontière passe par `std`, et c'est la seule
+      # chose que ces cibles existent pour éprouver.
+      #
+      # Les `libc6-dev-*-cross` sont nommés explicitement : sans eux, `gcc-*`
+      # croisé est là mais l'édition de liens échoue sur `Scrt1.o` introuvable,
+      # un message qui ne nomme pas le paquet qui manque.
+      - name: Chaînes croisées Linux ARM
+        if: runner.os == 'Linux'
+        timeout-minutes: 5
+        run: |
+          rustup target add $(make -s print-CIBLES_LINUX_ARM)
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            gcc-aarch64-linux-gnu libc6-dev-arm64-cross \
+            gcc-arm-linux-gnueabihf libc6-dev-armhf-cross \
+            qemu-user-static
+
+      - name: Tests du noyau et de la frontière sur Linux ARM
+        if: runner.os == 'Linux'
+        run: make test-linux-arm
+
+      - name: Conformance sur Linux ARM
+        if: runner.os == 'Linux'
+        run: make conform-linux-arm
+
       # Le noyau et la conformance sur une cible wasm, exécutés par Node. Sur
       # les deux systèmes, là où les cibles ARM demandent qemu : la cible wasm
       # n'a besoin que de Node, que les deux images portent, et faire tourner
