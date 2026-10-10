@@ -63,6 +63,12 @@ publié, et explique les conventions du dépôt à qui y contribue.
 
 ## [Non publié]
 
+## [1.1.0] — 2026-10-10 — Le chemin Rust rattrape la frontière
+
+**`SCG_ABI_VERSION` reste à 1, aucune signature publiée ne change et le format
+des cartes et des maillages ne bouge pas** : une liaison écrite contre la 1.0.0
+fonctionne telle quelle.
+
 **Le rendu d'une image ne change pas ; deux empreintes de conformance se
 déplacent**, `collision` et `selection`.
 
@@ -92,6 +98,9 @@ déplacent**, `collision` et `selection`.
   refusé en C et accepté en Rust. Deux variantes d'`Argument` s'y ajoutent.
 
 ***
+
+**`SCG_ABI_VERSION` stays at 1, no published signature changes and the map and
+mesh formats do not move**: a binding written against 1.0.0 works as is.
 
 **Rendering is unchanged; two conformance digests move**, `collision` and
 `selection`.

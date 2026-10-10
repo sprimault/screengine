@@ -46,7 +46,7 @@ browser and on a phone.
 
 ## Status
 
-**Version 1.0.0: the ABI is frozen.** All ten roadmap steps are delivered, and
+**Version 1.1.0: the ABI is frozen.** All ten roadmap steps are delivered, and
 the C boundary no longer moves: nothing published is ever removed, not even once
 deprecated, and an increment of `SCG_ABI_VERSION` forces a major. A host
 compiled against this header will keep linking.
