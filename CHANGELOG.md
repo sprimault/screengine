@@ -68,6 +68,9 @@ déplacent**, `collision` et `selection`.
 
 ### Ajouté
 
+- **L'étage d'accueil pose une icône de fenêtre**, par `Play::icon` à
+  l'ouverture et `Tick::set_icon` ensuite, depuis un PNG. Sans effet sous
+  Wayland, qui tire l'icône du fichier de bureau de l'application.
 - **`World::sweep_checked` et `World::pick_checked`**, côté Rust, départagent
   « la boîte n'est nulle part » de « cette cellule n'existe pas » par
   `Result<Sweep>` — ce que l'ABI séparait déjà par ses statuts.
@@ -95,6 +98,9 @@ déplacent**, `collision` et `selection`.
 
 ### Added
 
+- **The host stage sets a window icon**, through `Play::icon` at startup and
+  `Tick::set_icon` afterwards, from a PNG. No effect under Wayland, which takes
+  the icon from the application's desktop file.
 - **`World::sweep_checked` and `World::pick_checked`**, on the Rust side, tell
   "the box is nowhere" from "that cell does not exist" through `Result<Sweep>` —
   what the ABI already separated through its statuses.

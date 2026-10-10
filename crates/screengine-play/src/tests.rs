@@ -7,7 +7,7 @@
 //! des réglages en [`Config`], si : c'est le seul endroit où un réglage peut
 //! partir à zéro sans que rien ne rougisse.
 
-use super::{Play, Scale};
+use super::{Play, Scale, load_png, load_png_icon};
 
 /// Chaque item du noyau que ce crate promet à plat est joignable sans
 /// `screengine::`.
@@ -95,4 +95,60 @@ fn une_capacite_demesuree_part_telle_quelle() {
     let config = Play::new().max_triangles(u32::MAX).config();
 
     assert_eq!(config.max_triangles, u32::MAX);
+}
+
+/// L'icône du dépôt se décode, et ses côtés sortent tels quels.
+///
+/// **Le seul contrôle que l'icône puisse recevoir sans fenêtre**, et il vaut
+/// d'être écrit : rien d'autre n'éprouve ce chemin — aucun test n'ouvre de
+/// fenêtre, et la pose sous Wayland est un no-op que rien ne fera jamais
+/// rougir. Ce qu'il attrape est un PNG versionné devenu illisible, ou un
+/// décodage qui perdrait les dimensions en route.
+#[test]
+fn l_icone_du_depot_se_decode() {
+    let icon = load_png_icon(include_bytes!("../assets/icone.png")).expect("icône du dépôt");
+
+    assert_eq!((icon.width, icon.height), (64, 64));
+    assert_eq!(icon.rgba.len(), 64 * 64 * 4, "quatre octets par pixel");
+}
+
+/// Une icône hors bornes est refusée, et une texture reste tenue aux puissances
+/// de deux.
+///
+/// **Les deux domaines ne sont pas le même, et c'est tout l'objet du cas.** Une
+/// icône de 24 est légitime — c'est une taille que les systèmes demandent — là
+/// où une texture de 24 ne l'est pas, le repli du moteur se faisant par masque.
+/// Partager le contrôle entre les deux aurait donc refusé la moitié des tailles
+/// d'icône usuelles, et c'est l'erreur que le paramètre de dimensions évite.
+#[test]
+fn les_bornes_d_une_icone_ne_sont_pas_celles_d_une_texture() {
+    let png = png_uni(24, 24);
+
+    let icon = load_png_icon(&png).expect("vingt-quatre est une taille d'icône");
+    assert_eq!((icon.width, icon.height), (24, 24));
+    assert!(
+        load_png(&png).is_err(),
+        "et ce n'est pas une taille de texture"
+    );
+
+    // L'autre bout du domaine propre à l'icône : au-delà de 256, c'est le
+    // compositeur qui réduirait, et moins bien qu'un outil d'image.
+    assert!(load_png_icon(&png_uni(512, 512)).is_err(), "trop grande");
+}
+
+/// Un PNG RGBA d'une seule couleur, écrit pour le test.
+///
+/// Encodé ici plutôt que versionné : le projet écrit ses fichiers d'épreuve en
+/// octets, et une image de plus dans `assets/` pour deux assertions serait un
+/// binaire que personne ne relit.
+fn png_uni(width: u32, height: u32) -> Vec<u8> {
+    let mut out = Vec::new();
+    let mut encoder = png::Encoder::new(&mut out, width, height);
+    encoder.set_color(png::ColorType::Rgba);
+    encoder.set_depth(png::BitDepth::Eight);
+    let mut writer = encoder.write_header().expect("en-tête PNG");
+    let pixels = vec![0x40; (width * height * 4) as usize];
+    writer.write_image_data(&pixels).expect("données PNG");
+    writer.finish().expect("PNG complet");
+    out
 }
