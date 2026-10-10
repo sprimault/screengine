@@ -50,9 +50,17 @@ espace par famille** : une cellule 1 et une surface 1 coexistent sans conflit.
 - **Ils n'ont pas à être triés dans le fichier.** Le chargement en trie une copie
   pour vérifier l'unicité ; l'exiger du fichier obligerait l'éditeur à réécrire
   la carte entière pour un ajout.
-- **Ce sont eux que l'ABI prend et rend**, jamais un rang : la cellule de départ
-  d'une traversée, celle dont on calcule les lightmaps, la surface qu'un balayage
-  touche. Un rang serait faux dès la première suppression au milieu.
+- **Ce sont eux que l'ABI prend et rend partout où elle désigne un objet** : la
+  cellule de départ d'une traversée, celle dont on calcule les lightmaps, la
+  surface qu'un balayage touche. Un rang y serait faux dès la première
+  suppression au milieu.
+
+  **Le « jamais un rang » ne vaut pas comme énoncé général**, et il a été écrit
+  ainsi : l'ABI prend un rang chaque fois qu'elle énumère plutôt qu'elle ne
+  désigne — les lumières et les entités d'une carte, ses cellules, les
+  emplacements de texture d'un maillage, et le matériau qu'une surface emploie,
+  qui est son rang dans la table. Ce qu'un rang ne peut pas être, c'est une
+  référence qu'on **garde** d'un chargement à l'autre.
 
 ## Une cellule
 

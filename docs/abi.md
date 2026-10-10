@@ -2151,8 +2151,21 @@ Le jeu tient **strictement en deçà** : à cette coordonnée, il est déjà per
 Elle existe parce que `surface_id` la réclame. Sans elle, l'hôte reçoit un
 identifiant qu'aucune fonction ne traduit avant l'étape 8 — donc un champ mort
 dans une structure qui ne se modifie plus, ce qui est pire que d'anticiper un
-accesseur. Elle rend l'identifiant de matériau de la surface, que
-`scg_world_material_name` nomme.
+accesseur.
+
+**Elle rend un rang dans la table des matériaux, jamais l'identifiant que le
+fichier porte**, et c'est le rang que `scg_world_material_name` prend. La
+distinction n'est pas académique : une carte dont le premier matériau porte
+l'identifiant `1` fait rendre `0` pour les surfaces qui l'emploient, si bien
+qu'un hôte qui croirait lire un identifiant demanderait le nom du **suivant**.
+C'est le seul endroit de l'ABI où une valeur rendue est un rang, et le document
+a dit le contraire — le code, lui, ne l'a jamais fait.
+
+**Le rang et non l'identifiant parce que la soumission lie les textures dans
+l'ordre des matériaux** : l'hôte passe son tableau de handles dans cet ordre, et
+résoudre un identifiant par surface et par image serait exactement le coût que
+le rang existe pour éviter. Les identifiants restent dans la table, où
+l'interrogation de la scène les retrouve.
 
 C'est la seule fonction de l'étape qui entame l'interrogation de scène de
 l'étape 8, et le risque est assumé : elle pourra s'y retrouver seule d'une

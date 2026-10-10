@@ -1698,6 +1698,15 @@ static uint64_t render_sweeps(int *ok, const char *world_path, const char *sweep
     int formed = list_len >= 12 && memcmp(list, "SCGSWEEP", 8) == 0;
     check(formed, "la liste de balayages porte sa magie");
 
+    /* Lu une fois : c'est la borne contre laquelle chaque materiau rendu plus
+     * bas se verifie, et la relire par balayage ne dirait rien de plus. */
+    uint32_t sweep_materials = 0;
+    if (loaded) {
+        check(scg_world_material_count(world, &sweep_materials) == SCG_OK
+                  && sweep_materials == 2,
+              "le decor de collision declare deux materiaux");
+    }
+
     uint32_t count = 0;
     if (formed) {
         count = (uint32_t)list[8] | ((uint32_t)list[9] << 8) | ((uint32_t)list[10] << 16)
@@ -1748,11 +1757,31 @@ static uint64_t render_sweeps(int *ok, const char *world_path, const char *sweep
 
             /* Le contrepoids de `surface_id` : sans cet appel, le champ serait
              * un identifiant qu'aucune fonction ne traduit, et rien dans les
-             * cinq hôtes ne l'emprunterait. */
+             * cinq hôtes ne l'emprunterait.
+             *
+             * **Et la valeur se lit, elle ne se jette pas.** Les cinq hôtes
+             * appelaient cette fonction en ne regardant que son code de retour,
+             * si bien qu'aucun n'aurait vu ce qu'elle rend changer de nature.
+             * Le rang est sous le compte des materiaux ; un identifiant ne
+             * l'aurait pas ete, cette carte portant les identifiants 1 et 2
+             * pour deux entrees de rangs 0 et 1 — c'est ce qui departage les
+             * deux ici, et rien d'autre ne le ferait. */
             if (hit.surface_id != 0) {
                 uint32_t material = 0;
+                char material_name[32];
+                size_t needed = 0;
                 check(scg_world_surface_material(world, hit.surface_id, &material) == SCG_OK,
                       "la surface touchee nomme son materiau");
+                check(material < sweep_materials,
+                      "le materiau rendu est un rang, donc sous le compte de la table");
+                int named = scg_world_material_name(world, material, NULL, 0, &needed) == SCG_OK
+                            && needed + 1 <= sizeof material_name
+                            && scg_world_material_name(world, material, material_name,
+                                                       sizeof material_name, &needed)
+                                   == SCG_OK;
+                check(named && (strcmp(material_name, "mur") == 0
+                                || strcmp(material_name, "sol") == 0),
+                      "et ce rang nomme un materiau de ce decor");
             }
 
             /* **Le seul endroit où ces deux-ci traversent l'ABI.** Les tests de
