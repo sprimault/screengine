@@ -62,21 +62,37 @@ pub use screengine;
 // Tout le reste du noyau reste joignable par `screengine::`, qui est réexporté
 // entier juste au-dessus — cette liste est un raccourci, pas une frontière.
 //
-// `screengine::Output` n'y entre pas : ce crate a le sien, et les deux se
-// rendraient inutilisables par le même nom.
+// **Les deux collisions se résolvent par un préfixe, et non par un nom retiré.**
+// `screengine::Error` et `screengine::Output` portent le nom de types de ce
+// crate, qui sont autre chose — le second est un **trait**, « où une image écrit
+// ses pixels », qu'un hôte implémente pour rendre ses tuiles depuis ses propres
+// threads, là où celui d'ici est le tampon prêté au jeu pour son écran. Les
+// laisser dehors les rendait joignables par le seul chemin long, et avec
+// `Error` partaient `Argument`, `Element` et `Malformation`, qui disent *quelle*
+// surface une carte fait refuser — précisément ce que le noyau a ajouté après
+// que son absence s'est payée deux fois. D'où `CoreError` et `CoreOutput` :
+// renommer l'un des deux côtés aurait touché du code publié.
+//
+// **Et les bornes y entrent toutes**, là où `SWEEP_CELLS` y était seule de sa
+// famille. `docs/abi.md` dit d'elles que « la valeur d'une borne est un réglage ;
+// ce qu'elle rend quand on l'atteint est un contrat » : un hôte qui journalise un
+// statut incomplet ou dimensionne une lightmap les écrit, et il n'y avait aucune
+// raison que celle du balayage soit la seule joignable.
 pub use screengine::{
-    Affine3, Angle, Camera, Color, Context, DepthMode, Filter, Hit, LINE_CAPACITY, Light, Lightmap,
-    LightmapFault, Lightmaps, Line, Mesh, Point, Quat, SWEEP_CELLS, SimdPath, Sprite,
-    SpriteOrientation, Surfaces, TRIANGLE_CAPACITY, Texture, Triangle, Vec3, VertexUv, VertexUv2,
-    Visibility, World, lightmap_fault, sweep_reach, sweep_skin,
+    Affine3, Angle, Argument, BYTES_PER_PIXEL, Camera, Color, Config, Context, DepthMode, Element,
+    Error as CoreError, Filter, Frame, Hit, LINE_CAPACITY, Light, Lightmap, LightmapFault,
+    Lightmaps, Line, MAX_LIGHTMAP_SIZE, MAX_LIGHTS, MAX_OVERBRIGHT, MAX_RESOLUTION,
+    MAX_TEXEL_COORD, MAX_TEXTURE_SIZE, Malformation, Mesh, Output as CoreOutput, Point, Quat, Rect,
+    Rows, SWEEP_CELLS, SimdPath, Sprite, SpriteOrientation, Surfaces, TILE_SIZES, TRAVERSAL_CELLS,
+    TRAVERSAL_DEPTH, TRIANGLE_CAPACITY, Texture, Triangle, Vec3, VertexUv, VertexUv2, Visibility,
+    World, lightmap_fault, sweep_reach, sweep_skin,
 };
 pub use texture::{load_png, load_png_masked};
 pub use winit::event::MouseButton;
 pub use winit::keyboard::KeyCode;
 
-// `Context` n'est plus ici : il entre dans la portée par le réexport public
-// ci-dessus, et l'importer deux fois ne compile pas.
-use screengine::Config;
+// Ni `Context` ni `Config` ne sont ici : tous deux entrent dans la portée par le
+// réexport public ci-dessus, et les importer deux fois ne compile pas.
 
 /// La résolution interne par défaut.
 ///
