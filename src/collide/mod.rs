@@ -212,14 +212,26 @@ pub struct Hit {
     /// La normale du contact, unitaire, opposée au mouvement.
     ///
     /// Nulle quand rien n'est touché : le vecteur nul est ce que la table de
-    /// racine inverse rend d'une longueur négligeable, et l'hôte n'a de toute
-    /// façon rien à en faire quand `surface` vaut zéro.
+    /// racine inverse rend d'une longueur négligeable. Le critère est bien « rien
+    /// de rencontré » et non `surface == 0`, qu'un portail non apparié laisse nul
+    /// tout en rendant une normale utile.
     pub normal: Vec3,
-    /// Le point de contact, sur le plan de la surface touchée.
+    /// Le point de contact, sur le plan de ce qui arrête.
+    ///
+    /// **Nul quand rien n'est rencontré**, et c'est le déplacement libre autant
+    /// que le résultat tronqué : celui-ci s'arrête au bord de la région
+    /// examinée, où le moteur n'a rien regardé. Ce n'est donc jamais la position
+    /// d'arrêt du mobile, que l'hôte obtient de la fraction — et ce n'est pas
+    /// non plus lié à `surface`, qu'un portail non apparié laisse nulle en
+    /// portant pourtant un contact.
     pub point: Vec3,
     /// L'identifiant de la surface touchée, ou zéro.
     pub surface: u32,
     /// L'identifiant de la cellule où le contact a lieu, ou zéro.
+    ///
+    /// Nulle avec `point` et pour la même raison : une cellule n'est nommée que
+    /// si un contact y a lieu. Un portail non apparié en nomme une sans nommer
+    /// de surface, n'en étant pas une.
     pub cell: u32,
     /// La boîte était-elle déjà en intersection au départ ?
     pub start_solid: bool,
@@ -281,6 +293,14 @@ impl Best {
     /// Aucune surface n'est nommée : le moteur n'en a touché aucune, et prétendre
     /// le contraire serait inventer de la géométrie. C'est le statut qui dit à
     /// l'hôte pourquoi il s'arrête là.
+    ///
+    /// **Et cet argument porte sur les cinq champs du contact, pas sur trois.**
+    /// Le point et la cellule décrivent un contact autant que la surface et la
+    /// normale : laissés en place, ils désignaient soit la destination que
+    /// [`Hit::free`] y avait posée — une arrivée que le mouvement n'atteint
+    /// pas —, soit la surface d'un contact que cette troncature vient
+    /// précisément d'écarter. Un hôte lisait donc une géométrie dans le même
+    /// résultat qui déclare n'en avoir rencontré aucune.
     fn truncate(&mut self, reached: f64) {
         // Jamais en deçà du départ : sur un balayage assez court pour que sa
         // première cellule soit déjà la dernière examinable, le recul mordrait
@@ -297,6 +317,8 @@ impl Best {
             self.hit.fraction = stopped as f32;
             self.hit.surface = 0;
             self.hit.normal = Vec3::ZERO;
+            self.hit.point = Vec3::ZERO;
+            self.hit.cell = 0;
         }
     }
 }

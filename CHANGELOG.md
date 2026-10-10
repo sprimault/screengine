@@ -63,6 +63,26 @@ publié, et explique les conventions du dépôt à qui y contribue.
 
 ## [Non publié]
 
+**Le rendu d'une image ne change pas ; deux empreintes de conformance se
+déplacent**, `collision` et `selection`.
+
+### Corrigé
+
+- **Un balayage ou un rayon tronqué par `SCG_SWEEP_CELLS` ne nomme plus ni point
+  de contact ni cellule** : `point` est le vecteur nul et `cell_id` vaut zéro,
+  comme `surface_id` et `normal` le faisaient déjà.
+
+***
+
+**Rendering is unchanged; two conformance digests move**, `collision` and
+`selection`.
+
+### Fixed
+
+- **A sweep or ray truncated by `SCG_SWEEP_CELLS` no longer names a contact
+  point or a cell**: `point` is the zero vector and `cell_id` is zero, as
+  `surface_id` and `normal` already were.
+
 ## [1.0.0] — 2026-10-10 — L'ABI gelée
 
 **Un auteur de liaison n'a rien à reprendre, et c'est le sujet de cette
