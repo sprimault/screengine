@@ -51,6 +51,15 @@ rougir ni `lint` ni `test`, et c'est ainsi qu'une constante est restée
 inatteignable une version entière. Elle est dans la liste d'avant-publication et
 dans le job de vérification, au même titre que `header-verif`.
 
+**`make lint` entraîne un troisième contrôle qui n'est pas clippy :
+`etat-verif`**, la concordance de l'état annoncé avec la version du
+`Cargo.toml`. Toute ligne d'un document versionné qui porte un numéro d'étape
+**et** une version du dépôt annonce l'état courant, et doit donc porter celle du
+paquet ; les datations — « Franchie, publiée en 0.4.0 », « ajoutée après la
+0.8.1 » — n'en portent pas et restent dehors. Le compte des annonces est vérifié
+lui aussi : un motif à moitié faux n'en perdrait qu'une partie, et le contrôle
+passerait en ne surveillant plus qu'un document.
+
 **`make print-<VARIABLE>` écrit une valeur et rien d'autre**, et c'est ainsi que
 les workflows lisent ce qui vit dans le `Makefile` plutôt que de le recopier :
 la cible wasm, les trois cibles Android, la liste des scènes que les hôtes

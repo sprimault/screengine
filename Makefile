@@ -123,7 +123,7 @@ android_build = for cible in $(CIBLES_ANDROID); do \
 -include makefile.local
 
 .PHONY: build lib lib-wasm lib-android run example web test native-libs fmt fmt-fix lint lint-doc-tests \
-        lint-android-versions nostd test-arm test-wasi msrv bench stubs \
+        lint-android-versions etat-verif nostd test-arm test-wasi msrv bench stubs \
         conform conform-arm conform-wasi conform-x86 conform-update conform-images mesh header header-verif audit deny doc doc-verif hosts host-c host-cpp host-web host-go \
         host-android demo-c demo-cpp clean tools
 
@@ -527,6 +527,81 @@ lint-android-versions:
 	  fi; \
 	done
 
+# La concordance de l'état annoncé avec la version du paquet, troisième contrôle
+# que `lint` entraîne sans être clippy — comme la documentation des tests et les
+# versions d'outillage Android.
+#
+# **Ce qu'il ferme.** Au tag de la 0.9.0, les deux `README` et `docs/abi.md`
+# annonçaient encore l'étape 8 ; le lot qui les a corrigés s'est fié à une liste
+# de trois fichiers, où `docs/construction.md` ne figurait pas — et celui-ci est
+# resté en arrière une version de plus. **Une liste fermée est le défaut**, pas
+# l'oubli : elle transforme un contrôle exhaustif en récitation de ce qu'il avait
+# trouvé la fois d'avant.
+#
+# **Pourquoi ce motif et pas l'interdiction des versions passées.** Celle-ci est
+# impraticable : il y en a vingt-huit dans les documents, et toutes datent
+# légitimement une étape — « Franchie, publiée en 0.4.0 » — ou une décision —
+# « ajoutée après la 0.8.1 ». Ce qui distingue une **annonce d'état** est de
+# porter un numéro d'étape *et* une version du dépôt sur la même ligne, ce
+# qu'aucune datation ne fait. Mesuré : le motif rend exactement les quatre
+# annonces, sans un faux positif.
+#
+# **Il est en ASCII, et c'est obligatoire** : `tape` capture « Étape » comme
+# « étape », là où un motif accentué ne reconnaîtrait plus rien — make réencode
+# les accents d'une recette avant de les passer au shell, et la recherche rendrait
+# « rien trouvé » sans qu'on puisse le distinguer d'un dépôt conforme.
+#
+# **Par un glob et non par `git grep`** : celui-ci exige un dépôt, et deux
+# chemins n'en ont pas — `verif-evo`, qui emporte le lot par `git archive`, et
+# une archive source dans laquelle quelqu'un lance `make lint`. Le contrôle y
+# rendait zéro, ce que le compte ci-dessous a attrapé. Les emplacements listés
+# sont ceux de la documentation publiée ; un document local comme un fichier de
+# travail n'y entre pas, et un document nouveau qui annoncerait l'état vivrait
+# dans `docs/`, donc sous le glob.
+ETAT_DOCS = $(wildcard README.md README.fr.md ROADMAP.md CONTRIBUTING*.md \
+  SECURITY*.md docs/*.md)
+#
+# **Aucune ligne trouvée est donc un échec**, jamais un succès : c'est la faute
+# que la première version de `make stubs` a payée. Le jour où ces annonces se
+# reformulent — au passage en 1.0, où il n'y aura plus d'étape à nommer —, cette
+# cible rougit et le motif se revoit. C'est le seul moment où il faut y penser.
+ETAT_MOTIF = (tape|Step) [0-9]+.*[0-9]+\.[0-9]+\.[0-9]+|[0-9]+\.[0-9]+\.[0-9]+.*(tape|Step) [0-9]+
+
+# Combien d'annonces le dépôt porte, et **c'est un contrôle, pas un réglage** :
+# les deux `README`, `docs/abi.md` et `docs/construction.md`.
+#
+# **Un compte et non « au moins une », parce que la cassure l'a exigé.** Un motif
+# accentué — `étape` au lieu de `tape` — n'en perd que les **trois** françaises
+# et garde l'anglaise, que l'accent ne touche pas : le contrôle passait alors en
+# ne surveillant plus qu'un document sur quatre. C'est la panne silencieuse de la
+# famille des accents de recette, sous une forme partielle qu'on n'attendait pas.
+#
+# Un écart dans les deux sens est un échec. En plus : un document qui se met à
+# annoncer l'état doit être vu, et c'est ce chiffre qui le fait voir.
+ETAT_ANNONCES = 4
+
+etat-verif:
+	@version=$$(sed -n 's/^version = "\(.*\)"$$/\1/p' Cargo.toml); \
+	if [ -z "$$version" ]; then \
+	  echo "etat-verif : version introuvable dans Cargo.toml"; exit 1; \
+	fi; \
+	lignes=$$(grep -nE "$(ETAT_MOTIF)" $(ETAT_DOCS) || true); \
+	compte=$$(printf '%s' "$$lignes" | grep -c . || true); \
+	if [ "$$compte" != "$(ETAT_ANNONCES)" ]; then \
+	  echo "etat-verif : $$compte annonce(s) reconnue(s), $(ETAT_ANNONCES) attendue(s)"; \
+	  echo "$$lignes"; exit 1; \
+	fi; \
+	mauvaises=$$(echo "$$lignes" | grep -vF "$$version" || true); \
+	if [ -n "$$mauvaises" ]; then \
+	  echo "etat-verif : annonce(s) qui ne portent pas la version $$version :"; \
+	  echo "$$mauvaises"; exit 1; \
+	fi; \
+	if ! grep -q '^## \[Non' CHANGELOG.md; then \
+	  echo "etat-verif : section du CHANGELOG en cours absente, la publication s'arreterait"; \
+	  exit 1; \
+	fi; \
+	echo "etat-verif : $$(echo "$$lignes" | wc -l | tr -d ' ') annonce(s) a $$version, section en cours presente"
+
 # Les cibles qu'un contrôle traverse au-delà de celle du poste, et le seul
 # endroit où du code propre à une autre architecture se compile ici : `neon.rs`
 # sur `aarch64`, les chemins wasm, et la largeur de pointeur de `i686`. En
@@ -538,7 +613,7 @@ lint-android-versions:
 # porterait le défaut.
 CIBLES_CROISEES = $(CIBLE_WASM) $(CIBLES_ANDROID) $(CIBLE_X86) $(CIBLES_LINUX_ARM)
 
-lint: lint-doc-tests lint-android-versions
+lint: lint-doc-tests lint-android-versions etat-verif
 	cargo clippy --workspace --all-targets --all-features -- -D warnings
 	for cible in $(CIBLES_CROISEES); do \
 	  cargo clippy -p screengine -p screengine-ffi --lib --target $$cible -- -D warnings || exit 1; \
