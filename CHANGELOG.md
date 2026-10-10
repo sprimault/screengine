@@ -63,6 +63,25 @@ publié, et explique les conventions du dépôt à qui y contribue.
 
 ## [Non publié]
 
+## [1.0.0] — 2026-10-10 — L'ABI gelée
+
+**Un auteur de liaison n'a rien à reprendre, et c'est le sujet de cette
+version.** `SCG_ABI_VERSION` reste à 1, aucune signature publiée ne change, le
+format des cartes et des maillages ne bouge pas, et aucune empreinte de
+conformance ne se déplace : une liaison écrite contre la 0.9.0 fonctionne telle
+quelle.
+
+**Ce que le majeur apporte est une garantie, pas une fonctionnalité.** Les dix
+étapes de la feuille de route sont livrées et la frontière C est gelée : rien de
+publié n'est jamais retiré, même déprécié, et un incrément de
+`SCG_ABI_VERSION` imposera désormais un majeur. La clause du zéro tombe avec
+lui — en `1.x`, le numéro prévient.
+
+**Ce que la 0.9.0 annonçait ne pas faire est fait** : le remplissage d'une
+surface texturée n'est plus scalaire, sur les quatre jeux d'instructions. Le
+gain de NEON et de `simd128` n'est pas mesuré, aucune des deux cibles n'ayant de
+machine de référence dans ce dépôt.
+
 ### Ajouté
 
 - **L'étage d'accueil réexporte à plat tout ce qu'un hôte Rust écrit** : les
@@ -84,6 +103,22 @@ publié, et explique les conventions du dépôt à qui y contribue.
   justesse l'est, par la conformance.
 
 ***
+
+## [1.0.0] — 2026-10-10 — The frozen ABI
+
+**A binding author has nothing to revisit, and that is what this release is
+about.** `SCG_ABI_VERSION` stays at 1, no published signature changes, the map
+and mesh formats are unchanged, and no conformance fingerprint moves: a binding
+written against 0.9.0 works as is.
+
+**What the major brings is a guarantee, not a feature.** All ten roadmap steps
+are delivered and the C boundary is frozen: nothing published is ever removed,
+not even once deprecated, and an increment of `SCG_ABI_VERSION` will from now on
+force a major. The zero clause falls away with it — in `1.x`, the number warns.
+
+**What 0.9.0 announced it did not do is done**: filling a textured surface is no
+longer scalar, on all four instruction sets. The gain of NEON and `simd128` is
+unmeasured, neither target having a reference machine in this repository.
 
 ### Added
 

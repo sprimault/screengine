@@ -97,11 +97,16 @@ jobs:
     strategy:
       matrix:
         include:
+          # `hotes` est ce que `paquet-verif` exige de trouver dans `lib/` : la
+          # liste que `make test-archive` doit déduire, et non celle qu'il a
+          # déduite. Les entrées sans hôte à lier — Android, les deux 32 bits —
+          # ne la portent pas, leurs archives s'éprouvant par l'en-tête ELF.
           - os: windows-latest
             cible: windows_x64
             construire: make lib
             repertoire: target/release-ffi
             fichiers: screengine.dll screengine.dll.lib screengine.lib
+            hotes: abi cpp go
           - os: windows-latest
             cible: windows_x86
             construire: make lib CIBLE_LIB=i686-pc-windows-msvc
@@ -112,6 +117,7 @@ jobs:
             construire: make lib
             repertoire: target/release-ffi
             fichiers: libscreengine.so libscreengine.a
+            hotes: abi cpp go
           - os: ubuntu-latest
             cible: linux_x86
             construire: make lib CIBLE_LIB=i686-unknown-linux-gnu
@@ -122,6 +128,7 @@ jobs:
             construire: make lib-wasm
             repertoire: target/wasm32-unknown-unknown/release-wasm
             fichiers: screengine.wasm
+            hotes: wasm
           # Une entrée `abi:triple` range la bibliothèque de ce triple sous
           # lib/<abi>/, la disposition de jniLibs/ qu'un projet Android reprend
           # telle quelle.
@@ -285,6 +292,15 @@ jobs:
       # le Makefile. Recopiées ici, elles divergeaient — deux fois, et chaque
       # fois l'échec n'est apparu qu'au tag, cette étape ne tournant nulle part
       # ailleurs.
+      # `paquet-verif` d'abord, et c'est un angle mort mesuré : `test-archive`
+      # déduit les hôtes de ce que `lib/` porte — forme juste pour une archive,
+      # dont le contenu varie par cible —, si bien qu'un fichier perdu par une
+      # entrée de la matrice en retirerait un **sans un mot**, et l'étape
+      # suivante rendrait un succès sur moins d'hôtes qu'elle ne croit.
+      - name: Vérifier ce que le paquet porte
+        if: matrix.cible != 'android' && !endsWith(matrix.cible, '_x86')
+        run: make paquet-verif PAQUET="$PAQUET" ATTENDUS="${{ matrix.hotes }}"
+
       - name: Éprouver l'archive
         if: matrix.cible != 'android' && !endsWith(matrix.cible, '_x86')
         run: make test-archive PAQUET="$PAQUET"
