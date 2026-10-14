@@ -258,12 +258,17 @@
 //! elle donne un plafond, pas une prévision de couloir.
 
 use std::hint::black_box;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use screengine::{
     Affine3, BYTES_PER_PIXEL, Color, Config, Context, Filter, Light, SimdPath, Texture, Triangle,
     Vec3, VertexUv, VertexUv2,
 };
+
+#[path = "harnais/mod.rs"]
+mod harnais;
+
+use harnais::{Image, exige, mesure};
 
 /// La résolution interne de référence du projet.
 const WIDTH: u32 = 640;
@@ -341,41 +346,6 @@ fn damier(side: usize) -> Texture {
         texel.copy_from_slice(&[v, v, v, 0xFF]);
     }
     Texture::load(side as u32, side as u32, &pixels).expect("texture valide")
-}
-
-/// Le plus court temps observé sur `IMAGES` répétitions.
-fn mesure(mut image: impl FnMut()) -> Duration {
-    // Deux tours à blanc : la première image d'un processus paie le cache
-    // d'instructions et les défauts de page du tampon, qui ne sont pas ce
-    // qu'on mesure.
-    image();
-    image();
-
-    let mut court = Duration::MAX;
-    for _ in 0..IMAGES {
-        let debut = Instant::now();
-        image();
-        court = court.min(debut.elapsed());
-    }
-    court
-}
-
-/// Refuse de mesurer une image qui ne couvre presque rien.
-///
-/// Le piège de toute mesure de rendu : une scène mal cadrée, un triangle pris
-/// de dos, et on chronomètre un tampon qu'on remplit de noir. Le chiffre est
-/// alors excellent et ne veut rien dire. Le seuil est volontairement bas — il
-/// ne juge pas le cadrage, il attrape le zéro.
-fn exige_couverture(pixels: &[u8], quoi: &str, part: f64) {
-    let peints = pixels
-        .chunks_exact(BYTES_PER_PIXEL)
-        .filter(|p| p[..3] != [0, 0, 0])
-        .count();
-    let total = (WIDTH * HEIGHT) as f64;
-    assert!(
-        peints as f64 >= total * part,
-        "{quoi} : {peints} pixels peints sur {total}, la mesure ne porte sur rien"
-    );
 }
 
 /// Écrit une ligne de résultat : le coût par image, puis le coût par pixel.
@@ -621,13 +591,13 @@ fn main() {
     // code vectoriel.
     for (chemin, simd) in chemins() {
         let mut context = contexte(simd);
-        let duree = mesure(|| {
+        let duree = mesure(IMAGES, || {
             plein_cadre_uni(&mut context);
             context
                 .frame_end(black_box(&mut pixels), WIDTH)
                 .expect("image rendue");
         });
-        exige_couverture(&pixels, "plein cadre, uni", 0.95);
+        exige(&pixels, "plein cadre, uni", &Image::Peinte(0.95));
         ligne(&format!("plein cadre, uni — {chemin}"), duree);
     }
 
@@ -637,7 +607,7 @@ fn main() {
     ] {
         for (chemin, simd) in chemins() {
             let mut context = contexte(simd);
-            let duree = mesure(|| {
+            let duree = mesure(IMAGES, || {
                 plein_cadre(&mut context, &texture, filtre, 256.0);
                 context
                     .frame_end(black_box(&mut pixels), WIDTH)
@@ -645,7 +615,7 @@ fn main() {
             });
             // Plein cadre veut dire plein cadre : sous 95 %, le quadrilatère est
             // mal placé et ce n'est plus la boucle de pixels qu'on chronomètre.
-            exige_couverture(&pixels, nom, 0.95);
+            exige(&pixels, nom, &Image::Peinte(0.95));
             ligne(&format!("{nom} — {chemin}"), duree);
         }
     }
@@ -680,13 +650,13 @@ fn main() {
     ] {
         for (chemin, simd) in chemins() {
             let mut context = contexte(simd);
-            let duree = mesure(|| {
+            let duree = mesure(IMAGES, || {
                 plein_cadre(&mut context, source, Filter::Dither, uv_max);
                 context
                     .frame_end(black_box(&mut pixels), WIDTH)
                     .expect("image rendue");
             });
-            exige_couverture(&pixels, nom, 0.95);
+            exige(&pixels, nom, &Image::Peinte(0.95));
             ligne(&format!("{nom} — {chemin}"), duree);
         }
     }
@@ -712,14 +682,14 @@ fn main() {
     // distinguer ce noir-là d'une scène mal cadrée.
     for (chemin, simd) in chemins() {
         let mut context = contexte(simd);
-        let duree = mesure(|| {
+        let duree = mesure(IMAGES, || {
             lumiere(&mut context, 8.0);
             plein_cadre_uni(&mut context);
             context
                 .frame_end(black_box(&mut pixels), WIDTH)
                 .expect("image rendue");
         });
-        exige_couverture(&pixels, "segments, rampe seule", 0.95);
+        exige(&pixels, "segments, rampe seule", &Image::Peinte(0.95));
         ligne(&format!("segments, rampe seule — {chemin}"), duree);
     }
 
@@ -728,14 +698,14 @@ fn main() {
     // rampe, même division de perspective.
     for (chemin, simd) in chemins() {
         let mut context = contexte(simd);
-        let duree = mesure(|| {
+        let duree = mesure(IMAGES, || {
             lumiere(&mut context, 8.0);
             plein_cadre(&mut context, &texture, Filter::Dither, 256.0);
             context
                 .frame_end(black_box(&mut pixels), WIDTH)
                 .expect("image rendue");
         });
-        exige_couverture(&pixels, "segments, texture et rampe", 0.95);
+        exige(&pixels, "segments, texture et rampe", &Image::Peinte(0.95));
         ligne(&format!("segments, texture et rampe — {chemin}"), duree);
     }
 
@@ -747,13 +717,17 @@ fn main() {
     let atlas = std::sync::Arc::new(damier(16));
     for (chemin, simd) in chemins() {
         let mut context = contexte(simd);
-        let duree = mesure(|| {
+        let duree = mesure(IMAGES, || {
             plein_cadre_lightmap(&mut context, &texture, &atlas);
             context
                 .frame_end(black_box(&mut pixels), WIDTH)
                 .expect("image rendue");
         });
-        exige_couverture(&pixels, "segments, texture et lightmap", 0.95);
+        exige(
+            &pixels,
+            "segments, texture et lightmap",
+            &Image::Peinte(0.95),
+        );
         ligne(&format!("segments, texture et lightmap — {chemin}"), duree);
     }
 
@@ -763,13 +737,13 @@ fn main() {
     // Un gain qui n'apparaîtrait que sur le premier ne serait pas un gain.
     for (chemin, simd) in chemins() {
         let mut context = contexte(simd);
-        let duree = mesure(|| {
+        let duree = mesure(IMAGES, || {
             scene_chargee(&mut context, &texture);
             context
                 .frame_end(black_box(&mut pixels), WIDTH)
                 .expect("image rendue");
         });
-        exige_couverture(&pixels, "scene", 0.5);
+        exige(&pixels, "scene", &Image::Peinte(0.5));
         ligne(&format!("scene, 600 triangles — {chemin}"), duree);
     }
 }
