@@ -38,6 +38,13 @@ harness = false
 name = "chargement"
 harness = false
 
+# Séparé des trois précédents, qui mesurent du remplissage ou un chargement.
+# Celui-ci ne mesure ni l'un ni l'autre : le coût d'une vérification d'entrée,
+# par différence entre deux chemins publics qui soumettent la même géométrie.
+[[bench]]
+name = "soumission"
+harness = false
+
 [lints]
 workspace = true
 
