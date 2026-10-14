@@ -63,22 +63,6 @@ publié, et explique les conventions du dépôt à qui y contribue.
 
 ## [Non publié]
 
-### Ajouté
-
-- **Un banc du parcours du tableau de sommets**, `benches/soumission.rs` : la
-  vérification que la 1.1.0 a étendue au tableau entier coûte quatre dixièmes de
-  nanoseconde par sommet, sept microsecondes pour seize mille — cent fois sous
-  une image.
-
-***
-
-### Added
-
-- **A benchmark for the vertex array scan**, `benches/soumission.rs`: the check
-  that 1.1.0 extended to the whole array costs four tenths of a nanosecond per
-  vertex, seven microseconds for sixteen thousand — a hundred times below one
-  frame.
-
 ## [1.1.0] — 2026-10-10 — Le chemin Rust rattrape la frontière
 
 **`SCG_ABI_VERSION` reste à 1, aucune signature publiée ne change et le format

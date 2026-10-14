@@ -80,11 +80,15 @@
 
 use core::hint::black_box;
 use core::time::Duration;
-use std::time::Instant;
 
 use screengine::{
     Affine3, Argument, BYTES_PER_PIXEL, Color, Config, Context, Error, Triangle, Vec3,
 };
+
+#[path = "harnais/mod.rs"]
+mod harnais;
+
+use harnais::{Image, exige, mesure};
 
 /// La résolution interne de référence du projet.
 const WIDTH: u32 = 640;
@@ -123,37 +127,6 @@ const DEMI_LARGEUR: f32 = 11.5;
 /// que l'image peut porter.
 const GRAND_TABLEAU: usize = 16_384;
 
-/// Le plus court temps observé sur `TOURS` répétitions.
-///
-/// Deux tours à blanc d'abord : la première soumission d'un processus paie le
-/// cache d'instructions et les défauts de page du tampon.
-fn mesure(mut tour: impl FnMut()) -> Duration {
-    tour();
-    tour();
-
-    let mut court = Duration::MAX;
-    for _ in 0..TOURS {
-        let debut = Instant::now();
-        tour();
-        court = court.min(debut.elapsed());
-    }
-    court
-}
-
-/// Ce que l'image d'un cas doit porter, vérifié à chaque fois.
-///
-/// **C'est le témoin du banc.** Une mesure de soumission se chronomètre très
-/// bien sur une image que rien n'atteint, et le chiffre est alors flatteur et
-/// faux. Les deux attentes se trompent dans des sens opposés : un cas qui se
-/// croit vide et peint mesure du remplissage, un cas qui se croit plein et ne
-/// peint rien ne mesure qu'un rejet.
-enum Image {
-    /// Rien n'est peint : les triangles sont rejetés avant le remplissage.
-    Vide,
-    /// Au moins cette part de l'image est peinte.
-    Peinte(f64),
-}
-
 /// Le contexte, son tampon et la largeur de ligne qui vont ensemble.
 ///
 /// Créés une fois et repris par tous les cas d'une même résolution : recréer un
@@ -166,8 +139,6 @@ struct Banc {
     pixels: Vec<u8>,
     /// La largeur de ligne en pixels, égale à la largeur.
     stride: u32,
-    /// Les pixels de l'image, pour la part qu'exige le témoin.
-    surface: f64,
 }
 
 impl Banc {
@@ -187,31 +158,6 @@ impl Banc {
             pixels: vec![0u8; width as usize * height as usize * BYTES_PER_PIXEL],
             context,
             stride: width,
-            surface: f64::from(width) * f64::from(height),
-        }
-    }
-
-    /// Combien de pixels l'image porte, hors fond.
-    fn peints(&self) -> usize {
-        self.pixels
-            .chunks_exact(BYTES_PER_PIXEL)
-            .filter(|p| p[..3] != [0, 0, 0])
-            .count()
-    }
-
-    /// Vérifie que l'image rendue est bien celle que le cas annonce.
-    fn exige(&self, quoi: &str, attendu: &Image) {
-        let peints = self.peints();
-        let total = self.surface;
-        match attendu {
-            Image::Vide => assert_eq!(
-                peints, 0,
-                "{quoi} : {peints} pixels peints, la mesure porte sur du remplissage"
-            ),
-            Image::Peinte(part) => assert!(
-                peints as f64 >= total * part,
-                "{quoi} : {peints} pixels peints sur {total}, la mesure ne porte sur rien"
-            ),
         }
     }
 }
@@ -343,19 +289,19 @@ fn cas(quoi: &str, banc: &mut Banc, sommets: &[Vec3], triangles: &[Triangle], at
         triangles.len()
     );
 
-    let tranche = mesure(|| {
+    let tranche = mesure(TOURS, || {
         par_tranche(banc, sommets, triangles);
         rendre(banc);
     });
-    banc.exige(quoi, &attendu);
+    exige(&banc.pixels, quoi, &attendu);
 
-    let lecteur = mesure(|| {
+    let lecteur = mesure(TOURS, || {
         par_lecteur(banc, sommets, triangles);
         rendre(banc);
     });
-    banc.exige(quoi, &attendu);
+    exige(&banc.pixels, quoi, &attendu);
 
-    let repete = mesure(|| {
+    let repete = mesure(TOURS, || {
         par_tranche(banc, sommets, triangles);
         rendre(banc);
     });

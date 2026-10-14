@@ -88,11 +88,15 @@
 
 use core::hint::black_box;
 use core::time::Duration;
-use std::time::Instant;
 
 use screengine::{
     Affine3, BYTES_PER_PIXEL, Camera, Config, Context, SimdPath, Texture, Vec3, World,
 };
+
+#[path = "harnais/mod.rs"]
+mod harnais;
+
+use harnais::{Image, exige, mesure, peints};
 
 /// Largeur de référence.
 const WIDTH: u32 = 640;
@@ -108,23 +112,6 @@ const COULOIR: &[u8] = include_bytes!("../hosts/couloir.world");
 
 /// Le décor à quatre cellules, où la traversée a quelque chose à éliminer.
 const SALLES: &[u8] = include_bytes!("../hosts/salles.world");
-
-/// Le plus court temps observé sur `IMAGES` répétitions.
-///
-/// Deux tours à blanc d'abord : la première image paie le cache d'instructions
-/// et les défauts de page du tampon.
-fn mesure(mut tour: impl FnMut()) -> Duration {
-    tour();
-    tour();
-
-    let mut court = Duration::MAX;
-    for _ in 0..IMAGES {
-        let debut = Instant::now();
-        tour();
-        court = court.min(debut.elapsed());
-    }
-    court
-}
 
 /// Écrit une ligne de résultat.
 ///
@@ -162,18 +149,6 @@ fn scene() -> (Context, Vec<u8>, std::sync::Arc<Texture>) {
     (context, pixels, std::sync::Arc::new(texture()))
 }
 
-/// Combien de pixels l'image porte, hors fond.
-///
-/// **Toute mesure d'image passe par là.** Sans ce contrôle, une régression qui
-/// viderait l'image se lirait comme un gain — et c'est exactement le risque qu'une
-/// élimination introduit : elle est d'autant plus rapide qu'elle retire trop.
-fn peints(pixels: &[u8]) -> usize {
-    pixels
-        .chunks_exact(BYTES_PER_PIXEL)
-        .filter(|p| p[..3] != [0, 0, 0])
-        .count()
-}
-
 /// Joue les mesures dans l'ordre et écrit leur tableau.
 ///
 /// Le minimum et non la moyenne : une durée n'a qu'une borne basse vraie, tout
@@ -183,13 +158,13 @@ fn main() {
 
     ligne(
         "chargement du couloir",
-        mesure(|| {
+        mesure(IMAGES, || {
             World::load(black_box(COULOIR)).expect("carte valide");
         }),
     );
     ligne(
         "chargement des salles",
-        mesure(|| {
+        mesure(IMAGES, || {
             World::load(black_box(SALLES)).expect("carte valide");
         }),
     );
@@ -212,7 +187,7 @@ fn main() {
             })
             .expect("caméra valide");
 
-        let brute = mesure(|| {
+        let brute = mesure(IMAGES, || {
             context
                 .submit_world(Affine3::IDENTITY, &world, |_| Some(&texture))
                 .expect("capacité");
@@ -220,14 +195,11 @@ fn main() {
                 .frame_end(black_box(&mut pixels), WIDTH)
                 .expect("image rendue");
         });
+        exige(&pixels, &format!("{nom} brut"), &Image::Peinte(0.5));
         let tout = peints(&pixels);
-        assert!(
-            tout as f64 >= f64::from(WIDTH * HEIGHT) * 0.5,
-            "{nom} brut : {tout} pixels peints, la mesure ne porte sur rien"
-        );
 
         let cell = world.locate(position);
-        let visible = mesure(|| {
+        let visible = mesure(IMAGES, || {
             context
                 .submit_world_visible(Affine3::IDENTITY, &world, cell, None, |_| Some(&texture))
                 .expect("capacité");
@@ -272,7 +244,7 @@ fn main() {
             continue;
         }
         context.set_simd(path).expect("chemin disponible");
-        let duree = mesure(|| {
+        let duree = mesure(IMAGES, || {
             context
                 .submit_world_visible(Affine3::IDENTITY, &world, cell, None, |_| Some(&texture))
                 .expect("capacité");
@@ -280,11 +252,7 @@ fn main() {
                 .frame_end(black_box(&mut pixels), WIDTH)
                 .expect("image rendue");
         });
-        let tout = peints(&pixels);
-        assert!(
-            tout as f64 >= f64::from(WIDTH * HEIGHT) * 0.5,
-            "salles {chemin} : {tout} pixels peints, la mesure ne porte sur rien"
-        );
+        exige(&pixels, &format!("salles {chemin}"), &Image::Peinte(0.5));
         ligne(&format!("salles traverse — {chemin}"), duree);
     }
 }

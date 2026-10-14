@@ -102,10 +102,13 @@
 //! pas sur le moteur.
 
 use core::hint::black_box;
-use core::time::Duration;
-use std::time::Instant;
 
 use screengine::World;
+
+#[path = "harnais/mod.rs"]
+mod harnais;
+
+use harnais::mesure;
 
 /// Répétitions par cas.
 ///
@@ -322,20 +325,6 @@ fn carte(cellules: u32, segments: u32) -> Vec<u8> {
     bytes
 }
 
-/// Le plus court temps observé sur [`TOURS`] répétitions.
-fn mesure(mut tour: impl FnMut()) -> Duration {
-    tour();
-    tour();
-
-    let mut court = Duration::MAX;
-    for _ in 0..TOURS {
-        let debut = Instant::now();
-        tour();
-        court = court.min(debut.elapsed());
-    }
-    court
-}
-
 /// Mesure un cas et écrit sa ligne, durée totale puis coût par cellule.
 ///
 /// **Le coût par cellule est la colonne qui informe**, pas la durée : c'est elle
@@ -354,7 +343,7 @@ fn cas(cellules: u32, segments: u32) {
     // côtés sont des portails et ne comptent pas comme surfaces.
     let surfaces = 2 * segments + 2;
 
-    let duree = mesure(|| {
+    let duree = mesure(TOURS, || {
         World::load(black_box(&bytes)).expect("carte valide");
     });
     let ms = duree.as_secs_f64() * 1e3;
