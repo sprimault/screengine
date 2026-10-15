@@ -7,7 +7,9 @@
 //! des réglages en [`Config`], si : c'est le seul endroit où un réglage peut
 //! partir à zéro sans que rien ne rougisse.
 
-use super::{Play, Scale, load_png, load_png_icon};
+use std::sync::atomic::{AtomicBool, Ordering};
+
+use super::{Error, Play, Scale, load_png, load_png_icon};
 
 /// Chaque item du noyau que ce crate promet à plat est joignable sans
 /// `screengine::`.
@@ -134,6 +136,36 @@ fn les_bornes_d_une_icone_ne_sont_pas_celles_d_une_texture() {
     // L'autre bout du domaine propre à l'icône : au-delà de 256, c'est le
     // compositeur qui réduirait, et moins bien qu'un outil d'image.
     assert!(load_png_icon(&png_uni(512, 512)).is_err(), "trop grande");
+}
+
+/// Le puits reçoit l'erreur que la boucle lui passerait.
+///
+/// **Ce que ce cas garde**, et c'est la raison d'être du réglage : qu'une
+/// erreur levée par la boucle ait toujours quelque part où aller, le lancement
+/// sur wasm ne rendant jamais la main. Il passe par le champ que `fail` lit,
+/// donc un réglage qui n'arriverait pas jusque-là le fait rougir.
+///
+/// **Ce qu'il ne prouve pas** : que le défaut *écrive*. Ni la sortie d'erreur ni
+/// la console d'un navigateur ne se relisent depuis un test, et prétendre le
+/// contraire vaudrait moins que de l'écrire ici.
+#[test]
+fn le_puits_recoit_l_erreur() {
+    static VU: AtomicBool = AtomicBool::new(false);
+
+    /// Un puits qui note son passage, faute de pouvoir rendre quoi que ce soit :
+    /// la signature d'un puits ne rend rien, et c'est voulu — il est appelé
+    /// quand il n'y a plus de retour à remplir.
+    fn temoin(_: &Error) {
+        VU.store(true, Ordering::Relaxed);
+    }
+
+    let play = Play::new().on_error(temoin);
+    (play.on_error)(&Error::Setting("essai"));
+
+    assert!(
+        VU.load(Ordering::Relaxed),
+        "le puits réglé n'a pas été appelé"
+    );
 }
 
 /// Un PNG RGBA d'une seule couleur, écrit pour le test.

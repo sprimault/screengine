@@ -190,6 +190,22 @@ là que l'horloge se sépare : `ControlFlow::WaitUntil` y prend un
 d'accueil déclare donc `web-time`, qui réexporte celui de `std` partout
 ailleurs.
 
+**Le lancement s'y sépare aussi, et il décide de la forme publique.** Un
+navigateur ne peut pas bloquer le fil qui l'appelle : `spawn_app` prend la
+boucle et rend la main avant qu'elle tourne, là où `run_app` ne rend la main
+qu'à la fermeture. Deux conséquences qu'un hôte Rust lit dans la signature : les
+bornes `'static` sur l'état et les trois rappels, sur **toutes** les cibles pour
+qu'il n'y ait qu'une forme ; et un `run` qui ne rapporte que ce qui se refuse
+avant la fenêtre, ce que la boucle lève ensuite partant au puits d'erreur réglé
+sur `Play`. Le défaut de ce puits écrit le message — sortie d'erreur en natif,
+console du navigateur sur wasm.
+
+**À vérifier** : l'ouverture du canvas, la capture du pointeur et le rythme
+d'animation dans un navigateur. La compilation et le lancement sont tenus par la
+boucle ci-dessus ; ce qu'on voit à l'écran ne l'est par aucun contrôle, et le
+réveil y passe par la classe `setTimeout`, que les navigateurs brident en onglet
+inactif.
+
 **À vérifier** : l'ouverture d'une fenêtre sur un appareil ARM. Ce que la boucle
 prouve est que l'étage d'accueil compile, jamais qu'un compositeur l'accepte — et
 l'exécution ci-dessus ne couvre que le noyau et la frontière, qui n'ouvrent
@@ -289,6 +305,14 @@ toutes les autres cibles.
 - **Pas de `wasm-bindgen`.** Il fabriquerait une seconde frontière, propre à
   JavaScript, à côté de l'ABI C : deux contrats à maintenir, et un hôte web qui
   n'éprouverait plus celui que les autres utilisent.
+
+  **Cette clause porte sur ce que la bibliothèque exporte, et sur elle seule.**
+  `screengine.wasm` s'instancie sans aucun import, et c'est une propriété de
+  **ce module**, non une règle du dépôt : l'étage d'accueil, qui consomme l'API
+  Rust du noyau et n'exporte rien de lui, appelle `web-sys` sur cette cible pour
+  les services que le navigateur ne donne pas autrement — la console, où part
+  son puits d'erreur. Rien n'y traverse une frontière ; un intégrateur qui lie
+  la bibliothèque n'embarque pas une ligne de tout cela.
 - **Le module est compilé avec `simd128`, et cela fixe un plancher.** Les
   instructions vectorielles sont dans le binaire, donc un navigateur qui ne
   porte pas ce jeu **ne charge pas le module** : sa validation échoue avant la

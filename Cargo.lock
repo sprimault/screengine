@@ -1171,6 +1171,8 @@ dependencies = [
  "png",
  "screengine",
  "softbuffer",
+ "wasm-bindgen",
+ "web-sys",
  "web-time",
  "winit",
 ]
