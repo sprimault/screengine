@@ -28,7 +28,7 @@ benches/            mesures du noyau
 crates/
   screengine-ffi/           src/, tests/
   screengine-lib/           src/, build.rs
-  screengine-play/          src/, examples/, assets/
+  screengine-play/          src/, examples/, assets/, web/
   screengine-conformance/   src/, references/, tests/
 ```
 

@@ -28,7 +28,8 @@ Sans lui, un clone se construit dans `target/`.
 | `cbindgen` | `0.29.0`, épinglé | un générateur : une autre version produit un autre header, et `make header-verif` échouerait sur un dépôt propre |
 | `cargo-deny` | `0.19.4`, épinglé | ses règles changent de sens d'une version à l'autre ; en deçà de 0.19.1, il ne lit pas les scores CVSS 4.0 de la base d'avis |
 | `cargo-audit` | la dernière | il lit des avis publiés en continu ; l'épingler figerait ce qu'il sait lire |
-| Node | 22, celui des images d'intégration continue | exécute l'hôte wasm de `make test` et sert sa page ; aucun paquet npm. Ce n'est pas un plancher que le code impose — il n'emploie que des modules ES et le préfixe `node:`, tous deux bien antérieurs — mais la version sur laquelle les tests tournent réellement |
+| `wasm-bindgen-cli` | **exactement** la version du crate que le `Cargo.lock` résout, épinglée | la glue JavaScript de l'étage d'accueil sur wasm, que `winit` et `softbuffer` imposent. Un écart de correctif suffit à l'arrêter, le schéma qu'il lit dans le module changeant d'une version à l'autre : il se resynchronise à chaque montée qui touche `wasm-bindgen`, et c'est le seul outil dont la version n'est pas un choix. La bibliothèque publiée, elle, s'en passe |
+| Node | 22, celui des images d'intégration continue | exécute l'hôte wasm de `make test`, sert sa page et celle de l'étage d'accueil ; aucun paquet npm. Ce n'est pas un plancher que le code impose — il n'emploie que des modules ES et le préfixe `node:`, tous deux bien antérieurs — mais la version sur laquelle les tests tournent réellement |
 | Go | 1.24 au minimum, celui du `go.mod` de l'hôte | l'hôte Go de `make test`, avec un compilateur C pour cgo — MinGW-w64 sous Windows, `cc` ailleurs. Aucun module tiers |
 | NDK, SDK Android | NDK r29, build-tools 36.0.0, `android-36`, épinglés dans `hosts/android/Makefile` | l'hôte Android ; r28 au minimum pour les pages de 16 Ko. Fournis par `hosts/android/Dockerfile` |
 | JDK | 17 | `javac` et les outils du SDK |
@@ -200,11 +201,36 @@ avant la fenêtre, ce que la boucle lève ensuite partant au puits d'erreur rég
 sur `Play`. Le défaut de ce puits écrit le message — sortie d'erreur en natif,
 console du navigateur sur wasm.
 
-**À vérifier** : l'ouverture du canvas, la capture du pointeur et le rythme
-d'animation dans un navigateur. La compilation et le lancement sont tenus par la
-boucle ci-dessus ; ce qu'on voit à l'écran ne l'est par aucun contrôle, et le
-réveil y passe par la classe `setTimeout`, que les navigateurs brident en onglet
-inactif.
+**Le canvas, enfin, ne s'insère pas tout seul.** winit le crée et laisse
+l'appelant le placer ; softbuffer, lui, le retrouve en interrogeant le document
+par l'attribut que winit y a posé. Hors du document, la création de surface
+échoue donc sur « No canvas found with the given id », et l'étage d'accueil
+demande l'insertion pour que le défaut rende une image. La page ne porte aucun
+canvas à elle.
+
+**Deux pièges de feuille de style, et la documentation de winit les nomme** : ni
+`transform`, ni `border`, ni `padding` sur le canvas — `Resized`, `inner_size`
+et les événements de pointeur ne les prennent pas en compte, et l'image se
+décale de ce que la feuille ajoute sans que rien ne le signale. Le centrage se
+porte donc sur un conteneur.
+
+**`make play-web` construit l'exemple et sert la page** sur
+`http://127.0.0.1:8081/` : `cargo build --example`, puis `wasm-bindgen --target
+web`, puis le serveur sans dépendance de l'hôte web, repris tel quel.
+`PLAY_EXEMPLE` choisit l'exemple, `hello` par défaut parce qu'il ne lit aucun
+fichier. **La glue est ce que winit et softbuffer imposent** : eux passent par
+`wasm-bindgen`, là où `screengine.wasm` n'a aucun import et s'en dispense — voir
+la clause ci-dessus, qui dit pourquoi les deux ne se contredisent pas.
+
+**Vu dans un navigateur le 2026-10-15** : canvas inséré, image rendue, 1 280 ×
+720 pixels physiques affichés à la taille que le facteur de périphérique impose,
+aucun message de console.
+
+**À vérifier** : le rythme d'animation et la capture du pointeur. Le réveil
+passe là-bas par la classe `setTimeout`, que les navigateurs brident en onglet
+inactif ; et le verrouillage de pointeur exige un geste de l'utilisateur, si
+bien qu'une capture demandée à l'ouverture échoue jusqu'au premier clic — sans
+erreur, l'étage d'accueil la rapportant comme « non capturé ».
 
 **À vérifier** : l'ouverture d'une fenêtre sur un appareil ARM. Ce que la boucle
 prouve est que l'étage d'accueil compile, jamais qu'un compositeur l'accepte — et

@@ -58,9 +58,10 @@ jobs:
           rustup toolchain install stable --profile minimal --component rustfmt,clippy
           rustup default stable
 
-      # cbindgen et cargo-deny se compilent depuis les sources : plusieurs
-      # minutes à chaque exécution sans cache. La clé suit le Makefile, qui porte
-      # les versions épinglées : une version relevée invalide le cache.
+      # cbindgen, cargo-deny et wasm-bindgen-cli se compilent depuis les
+      # sources : plusieurs minutes à chaque exécution sans cache. La clé suit le
+      # Makefile, qui porte les versions épinglées : une version relevée invalide
+      # le cache.
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
