@@ -22,6 +22,11 @@ publish.workspace = true
 # il reçoit un bloc de texels et rien d'autre. Un hôte écrit contre l'ABI C
 # décode avec ce qu'il a — libpng, `Image` d'Android, `createImageBitmap` du
 # navigateur —, et c'est le même travail que fait ce crate pour le chemin Rust.
+#
+# `web-time` est déjà tiré par winit ; il est déclaré ici parce que
+# `ControlFlow::WaitUntil` prend son `Instant` et non celui de `std` dès que la
+# cible est wasm. L'emprunter à winit sans le nommer ferait dépendre la
+# compilation de l'arbre de quelqu'un d'autre.
 [dependencies]
 png = "0.18.1"
 screengine.workspace = true
@@ -31,6 +36,7 @@ softbuffer = { version = "0.4.8", default-features = false, features = [
     "wayland",
     "wayland-dlopen",
 ] }
+web-time = "1.1.0"
 winit = { version = "0.30.13", default-features = false, features = [
     "rwh_06",
     "x11",
