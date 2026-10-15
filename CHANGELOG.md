@@ -63,6 +63,30 @@ publié, et explique les conventions du dépôt à qui y contribue.
 
 ## [Non publié]
 
+### Ajouté
+
+- **L'étage d'accueil tourne dans un navigateur**, et `make play-web` construit
+  un exemple pour wasm puis sert sa page.
+
+### Modifié
+
+- **Les rappels de `run` prennent une borne `'static`**, et une erreur levée par
+  la boucle part au puits de `Play::on_error` plutôt qu'au retour de `run`.
+
+***
+
+### Added
+
+- **The host layer runs inside a browser**, and `make play-web` builds an
+  example for wasm then serves its page.
+
+### Changed
+
+- **The `run` callbacks now take a `'static` bound**, and an error raised by the
+  loop goes to the `Play::on_error` sink rather than `run`'s return value.
+
+***
+
 ## [1.1.0] — 2026-10-10 — Le chemin Rust rattrape la frontière
 
 **`SCG_ABI_VERSION` reste à 1, aucune signature publiée ne change et le format

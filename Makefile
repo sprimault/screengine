@@ -1089,6 +1089,33 @@ demo-cpp: lib
 web: lib-wasm
 	$(MAKE) -C hosts/web serve
 
+# L'exemple de l'étage d'accueil que la page lance, et où elle se construit.
+# `hello` par défaut parce qu'il ne lit aucun fichier : le chargement par le
+# réseau est un sujet à lui, et un défaut qui rend une image n'a pas à
+# l'attendre. Les autres se demandent par PLAY_EXEMPLE.
+PLAY_EXEMPLE ?= hello
+PLAY_WEB     := $(SORTIE)/play-web
+
+# La glue JavaScript que winit et softbuffer imposent sur cette cible : eux
+# passent par wasm-bindgen, là où `screengine.wasm` n'a aucun import et s'en
+# dispense. C'est la seule raison pour laquelle cet outil entre dans le dépôt,
+# et la clause de `docs/construction.md` dit pourquoi elle ne contredit pas le
+# « pas de wasm-bindgen » de la bibliothèque.
+play-wasm:
+	cargo build -p screengine-play --example $(PLAY_EXEMPLE) \
+	  --target $(CIBLE_WASM) --release
+	wasm-bindgen --target web --no-typescript --out-dir $(PLAY_WEB) \
+	  $(TARGET_DIR)/$(CIBLE_WASM)/release/examples/$(PLAY_EXEMPLE).wasm
+	cp crates/screengine-play/web/index.html $(PLAY_WEB)/
+
+# Le serveur est celui de l'hôte web, repris tel quel : sans dépendance, il
+# prend un répertoire et un port. Une seconde copie pour cette page-ci serait
+# le même fichier à deux endroits, et le projet sait ce que ça coûte.
+play-web: play-wasm
+	node hosts/web/serve.js $(PLAY_WEB) $(PLAY_PORT)
+
+PLAY_PORT ?= 8081
+
 host-android: lib-android
 	$(MAKE) -C hosts/android apk
 
@@ -1109,6 +1136,12 @@ CBINDGEN_VERSION   ?= 0.29.0
 # scores CVSS 4.0 de la base d'avis et échouent sur toute la base, et 0.19.4
 # corrige la lecture des avis sous Windows.
 CARGO_DENY_VERSION ?= 0.19.4
+# wasm-bindgen-cli doit porter **exactement** la version du crate compilé, celle
+# que le Cargo.lock résout : un écart de correctif suffit à l'arrêter, le format
+# du schéma qu'il lit dans le module changeant d'une version à l'autre. Il se
+# resynchronise donc à chaque montée qui touche wasm-bindgen, et c'est le seul
+# outil de cette liste dont la version n'est pas un choix.
+WASM_BINDGEN_VERSION ?= 0.2.128
 
 # print-<VARIABLE> écrit la valeur d'une variable et rien d'autre, pour que
 # l'intégration continue lise l'épinglage plutôt que de le recopier.
@@ -1122,5 +1155,7 @@ tools:
 	# avis, et son intérêt est de connaître les derniers. L'épingler figerait
 	# ce qu'il sait lire des avis publiés depuis.
 	cargo install cargo-audit --locked $(CARGO_INSTALL_FLAGS)
+	cargo install wasm-bindgen-cli --version $(WASM_BINDGEN_VERSION) --locked \
+	  $(CARGO_INSTALL_FLAGS)
 	rustup target add $(CIBLE_NOSTD) $(CIBLE_WASM) $(CIBLE_WASI) $(CIBLES_ANDROID) \
 	  $(CIBLE_X86) $(CIBLES_LINUX_ARM)

@@ -1,0 +1,85 @@
+<!doctype html>
+<!--
+  Copyright 2026 Stéphane Primault <sprimault@users.noreply.github.com>
+  SPDX-License-Identifier: MIT OR Apache-2.0
+
+  La page qui lance un exemple de l'étage d'accueil dans un navigateur.
+
+  Elle ne contient aucun canvas : c'est winit qui le crée et l'insère, et lui
+  donner le nôtre demanderait de le retrouver depuis Rust pour le même
+  résultat. La page n'a donc qu'à charger le module et à le laisser faire.
+
+  Rien ici ne parle du moteur : `hosts/web/` reste l'hôte qui éprouve l'ABI, et
+  c'est lui le patron qu'on copie pour intégrer. Celle-ci montre l'autre chemin,
+  celui d'un jeu écrit en Rust.
+-->
+<html lang="fr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Screengine — étage d'accueil</title>
+    <style>
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: #101014;
+        color: #c8c8d0;
+        font: 14px/1.5 system-ui, sans-serif;
+      }
+
+      /* Ni `transform`, ni `border`, ni `padding` sur le canvas : la
+         documentation de winit les écarte nommément, parce que ni `Resized`,
+         ni `inner_size`, ni les événements de pointeur ne les prennent en
+         compte — l'image se décale alors de ce que la feuille de style ajoute,
+         et rien ne le signale. Le centrage est donc porté par `body`, et le
+         canvas ne reçoit que ce qui ne déplace pas ses bords. */
+      canvas {
+        display: block;
+        background: #000;
+        image-rendering: pixelated;
+      }
+
+      #erreur {
+        position: fixed;
+        inset: auto 0 0 0;
+        margin: 0;
+        padding: 12px 16px;
+        background: #3a1016;
+        color: #ffd9de;
+        font-family: ui-monospace, monospace;
+        white-space: pre-wrap;
+      }
+
+      #erreur:empty {
+        display: none;
+      }
+    </style>
+  </head>
+  <body>
+    <pre id="erreur"></pre>
+    <script type="module">
+      // Le nom du module est celui de l'exemple, que la cible de construction
+      // passe à wasm-bindgen : la page sert donc n'importe lequel sans changer
+      // de ligne, par son paramètre de requête.
+      const exemple =
+        new URLSearchParams(location.search).get("exemple") ?? "hello";
+
+      const erreur = document.getElementById("erreur");
+
+      // Ce qui échoue avant l'image — un module absent, un `wasm-bindgen` d'une
+      // autre version que le crate — ne laisse aucune trace visible : la page
+      // reste noire et la console est le seul endroit où regarder. On l'écrit
+      // donc dans la page aussi, puisque c'est elle qu'on a sous les yeux.
+      try {
+        const module = await import(`./${exemple}.js`);
+        await module.default();
+      } catch (cause) {
+        erreur.textContent = `${exemple} : ${cause}`;
+        throw cause;
+      }
+    </script>
+  </body>
+</html>

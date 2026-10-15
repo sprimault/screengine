@@ -220,6 +220,19 @@ where
             .with_title(self.play.title.clone())
             .with_window_icon(self.play.icon.as_ref().and_then(to_winit_icon))
             .with_inner_size(PhysicalSize::new(size.0, size.1));
+
+        // winit crée bien le canvas, mais ne l'insère pas dans la page : c'est
+        // son défaut, et il laisse à l'appelant le soin de le placer. Or
+        // softbuffer retrouve le canvas en interrogeant le document par
+        // l'attribut que winit y a posé — hors du document, la création de
+        // surface échoue sur « No canvas found with the given id ». Insérer est
+        // donc la seule façon d'avoir un défaut qui rende une image.
+        #[cfg(target_arch = "wasm32")]
+        let attributes = {
+            use winit::platform::web::WindowAttributesExtWebSys;
+
+            attributes.with_append(true)
+        };
         let window = Rc::new(
             event_loop
                 .create_window(attributes)
