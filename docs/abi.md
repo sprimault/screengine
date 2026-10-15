@@ -508,6 +508,14 @@ Arrêté :
   distincts. Aucun autre appel sur le contexte n'est permis pendant ce temps.
   Chaque tuile écrit un rectangle disjoint du tampon de l'hôte : le partage du
   tampon entre threads est sûr par construction.
+- **Sur wasm, cette exception ne sert à rien** : une liaison JavaScript rend ses
+  tuiles l'une après l'autre, sur un seul thread. Ce n'est pas une clause du
+  moteur mais une limite de la plateforme, et rien du contrat ne change pour
+  autant — la numérotation des tuiles, leur rectangle et l'indépendance du
+  résultat restent ce qu'ils sont, et une liaison qui boucle sur les index
+  obtient la même image qu'un hôte qui les répartit. Ce que la plateforme
+  refuse, et ce que le fil unique coûte, sont dans
+  [`construction.md`](construction.md), « wasm ».
 - **L'image ne dépend ni de la taille des tuiles, ni du nombre de threads, ni de
   l'ordre dans lequel les tuiles sont rendues.**
 

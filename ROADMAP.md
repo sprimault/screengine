@@ -415,9 +415,10 @@ texturée, sa lightmap comprise.
 **Seul AVX2 y va par huit pixels, et son avance vient de son `gather`**, non de
 sa largeur : un quart sur le cas dominant, qui lit cinq texels par pixel, un
 dixième là où il en lit un. Les trois autres n'en ont pas, et partagent donc la
-même forme à quatre voies. Le gain de NEON et de `simd128` n'est pas mesuré —
-aucune des deux cibles n'a de machine de référence dans ce dépôt —, seule leur
-justesse l'est.
+même forme à quatre voies. **Le gain de `simd128` a été mesuré depuis** — 43 %
+du temps du chemin scalaire sur un décor traversé, par `make bench-wasi` : il
+n'y fallait pas de machine, la cible WASI exécutant le noyau. Celui de NEON
+reste inconnu, faute d'appareil de référence, et seule sa justesse est établie.
 
 ---
 
