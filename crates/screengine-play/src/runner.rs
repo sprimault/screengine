@@ -89,12 +89,15 @@ struct Runner<S, U, R, O> {
     input: Input,
     index: u64,
     last_wake: Option<Instant>,
-    failure: Option<Error>,
     /// Vrai quand le curseur est réellement capturé par la fenêtre.
     captured: bool,
 }
 
-/// Lance la boucle, et rend la première erreur qui l'a arrêtée.
+/// Ouvre la boucle, et rend ce qui a été refusé avant toute fenêtre.
+///
+/// Ce que la boucle lève ensuite part au puits de `play` : voir
+/// [`Play::on_error`](crate::Play::on_error) pour la raison, qui est le
+/// lancement sur wasm.
 pub(crate) fn run<S, U, R, O>(
     play: Play,
     context: Context,
@@ -104,10 +107,16 @@ pub(crate) fn run<S, U, R, O>(
     output: O,
 ) -> Result<(), Error>
 where
-    U: FnMut(&mut S, &mut Tick<'_>),
-    R: FnMut(&mut S, &mut Context),
-    O: FnMut(&mut S, &mut Output<'_>),
+    S: 'static,
+    U: FnMut(&mut S, &mut Tick<'_>) + 'static,
+    R: FnMut(&mut S, &mut Context) + 'static,
+    O: FnMut(&mut S, &mut Output<'_>) + 'static,
 {
+    // Pris avant que `play` entre dans le runner, et seulement là où quelque
+    // chose le lira : sur wasm le lancement emporte le runner, et c'est la
+    // boucle elle-même qui appellera le puits par `fail`.
+    #[cfg(not(target_arch = "wasm32"))]
+    let on_error = play.on_error;
     let event_loop = EventLoop::new().map_err(Error::EventLoop)?;
     let graphics = softbuffer::Context::new(event_loop.owned_display_handle())?;
 
@@ -118,7 +127,7 @@ where
     // s'interdit de son côté.
     let config = context.config();
     let ceiling = config.max_width as usize * config.max_height as usize * BYTES_PER_PIXEL;
-    let mut runner = Runner {
+    let runner = Runner {
         pixels: vec![0; ceiling],
         scaler: Scaler::new(play.scale, width, height),
         clock: Clock::new(play.rate),
@@ -133,12 +142,32 @@ where
         input: Input::default(),
         index: 0,
         last_wake: None,
-        failure: None,
         captured: false,
     };
 
-    event_loop.run_app(&mut runner).map_err(Error::EventLoop)?;
-    runner.failure.map_or(Ok(()), Err)
+    // La boucle ne se lance pas de la même façon des deux côtés, et ce n'est pas
+    // un réglage : un navigateur ne peut pas bloquer le fil qui l'appelle, donc
+    // `spawn_app` prend le runner et rend la main tout de suite. C'est de là que
+    // viennent les bornes `'static`, et c'est pourquoi le puits reçoit ce que la
+    // boucle lève — y compris, en natif, l'arrêt de la boucle elle-même, dont le
+    // retour n'existe pas là-bas.
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        // `run_app` emprunte en exclusif là où `spawn_app` prend : le `mut` ne
+        // vaut que de ce côté, et il est ici plutôt que sur la construction pour
+        // qu'aucune cible ne le porte sans l'employer.
+        let mut app = runner;
+        if let Err(error) = event_loop.run_app(&mut app) {
+            on_error(&Error::EventLoop(error));
+        }
+    }
+    #[cfg(target_arch = "wasm32")]
+    {
+        use winit::platform::web::EventLoopExtWebSys;
+
+        event_loop.spawn_app(runner);
+    }
+    Ok(())
 }
 
 impl<S, U, R, O> Runner<S, U, R, O>
@@ -147,9 +176,14 @@ where
     R: FnMut(&mut S, &mut Context),
     O: FnMut(&mut S, &mut Output<'_>),
 {
-    /// Retient l'erreur et arrête la boucle : `run` la rendra.
+    /// Passe l'erreur au puits et arrête la boucle.
+    ///
+    /// Au puits et non dans un champ que `run` relirait : sur wasm le lancement
+    /// rend la main avant que la boucle tourne, et ce champ ne serait jamais
+    /// relu. Un seul chemin sur toutes les cibles plutôt qu'un retour ici et un
+    /// puits là-bas.
     fn fail(&mut self, event_loop: &ActiveEventLoop, error: Error) {
-        self.failure.get_or_insert(error);
+        (self.play.on_error)(&error);
         event_loop.exit();
     }
 

@@ -126,6 +126,9 @@ pub struct Play {
     /// L'icône de la fenêtre, absente par défaut — le système pose alors la
     /// sienne, et un exemple qui n'en veut pas n'a rien à écrire.
     icon: Option<Icon>,
+    /// Où part une erreur que la boucle lève. Un pointeur de fonction, pour que
+    /// ces réglages restent `Clone` et `Debug`.
+    on_error: fn(&Error),
 }
 
 impl Default for Play {
@@ -148,6 +151,7 @@ impl Play {
             rate: 60,
             exit_on_escape: true,
             icon: None,
+            on_error: error::report,
         }
     }
 
@@ -248,6 +252,26 @@ impl Play {
         Ok(self)
     }
 
+    /// Où part une erreur que la boucle lève, au lieu d'être rendue.
+    ///
+    /// **Ce n'est pas un doublon du `Result` de [`run`](Self::run)**, qui ne
+    /// porte que les refus antérieurs à la fenêtre. Sur wasm, le lancement rend
+    /// la main avant que la boucle tourne : une erreur levée ensuite n'a plus
+    /// aucun retour où aller, et c'est pour qu'elle ait le même chemin partout
+    /// que ce réglage existe sur toutes les cibles.
+    ///
+    /// Le défaut écrit le message — sortie d'erreur en natif, console du
+    /// navigateur sur wasm — et ne l'avale jamais : l'avaler le perdrait sur la
+    /// seule cible où l'appelant n'a aucun autre moyen de le voir.
+    ///
+    /// Un pointeur de fonction et non une fermeture : une erreur de boucle
+    /// arrive quand la fenêtre est déjà partie, donc il n'y a pas d'état à
+    /// capturer, et ces réglages gardent `Clone`.
+    pub fn on_error(mut self, sink: fn(&Error)) -> Self {
+        self.on_error = sink;
+        self
+    }
+
     /// Ouvre la fenêtre et fait tourner la boucle jusqu'à sa fermeture.
     ///
     /// `update` s'exécute à pas fixe et reçoit les entrées ; `render` s'exécute
@@ -259,8 +283,9 @@ impl Play {
     /// rendus avant qu'aucune fenêtre ne s'ouvre.
     pub fn run<S, U, R>(self, state: S, update: U, render: R) -> Result<(), Error>
     where
-        U: FnMut(&mut S, &mut Tick<'_>),
-        R: FnMut(&mut S, &mut Context),
+        S: 'static,
+        U: FnMut(&mut S, &mut Tick<'_>) + 'static,
+        R: FnMut(&mut S, &mut Context) + 'static,
     {
         self.run_with_output(state, update, render, |_, _| {})
     }
@@ -283,9 +308,10 @@ impl Play {
         output: O,
     ) -> Result<(), Error>
     where
-        U: FnMut(&mut S, &mut Tick<'_>),
-        R: FnMut(&mut S, &mut Context),
-        O: FnMut(&mut S, &mut Output<'_>),
+        S: 'static,
+        U: FnMut(&mut S, &mut Tick<'_>) + 'static,
+        R: FnMut(&mut S, &mut Context) + 'static,
+        O: FnMut(&mut S, &mut Output<'_>) + 'static,
     {
         if self.rate == 0 {
             return Err(Error::Setting("tick rate must be at least 1"));

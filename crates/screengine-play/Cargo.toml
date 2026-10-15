@@ -44,6 +44,18 @@ winit = { version = "0.30.13", default-features = false, features = [
     "wayland-dlopen",
 ] }
 
+# Sur wasm seulement, et pour le seul puits d'erreur par défaut : rien n'y mène
+# la sortie d'erreur à la console du navigateur, et c'est la cible où ce chemin
+# est le seul, `run` n'ayant plus de retour à remplir après le lancement. Les
+# deux crates sont déjà dans le `Cargo.lock`, tirés par winit sur cette cible.
+#
+# Ils ne contredisent pas la clause « pas de wasm-bindgen » de
+# `docs/construction.md` : celle-ci porte sur ce que la bibliothèque **exporte**
+# vers JavaScript, à côté de l'ABI C. Ici rien n'est exporté, c'est un appel.
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen = "0.2.128"
+web-sys = { version = "0.3.105", features = ["console"] }
+
 [lints]
 workspace = true
 

@@ -7,9 +7,14 @@ use std::fmt;
 
 /// Une erreur de l'étage d'accueil.
 ///
-/// Rendue par `run`, jamais levée en panique : une boucle événementielle qui
-/// panique ne laisse à l'appelant qu'une pile, là où une erreur lui laisse le
-/// choix.
+/// Jamais levée en panique : une boucle événementielle qui panique ne laisse à
+/// l'appelant qu'une pile, là où une erreur lui laisse le choix.
+///
+/// **Deux chemins, et lequel dépend du moment** : ce qui se refuse avant la
+/// fenêtre est rendu par `run` ; ce que la boucle lève ensuite part au puits de
+/// [`Play::on_error`](crate::Play::on_error), parce que le lancement sur wasm
+/// rend la main avant que la boucle tourne et qu'il n'y a alors plus de retour
+/// à remplir.
 #[derive(Debug)]
 #[non_exhaustive]
 pub enum Error {
@@ -40,6 +45,21 @@ pub enum Error {
     /// une puissance de deux — rend `Engine` : c'est la contrainte du moteur
     /// qui parle, pas le format.
     Png(png::DecodingError),
+}
+
+/// Écrit le message d'une erreur là où la plateforme le montre.
+///
+/// Le défaut de [`Play::on_error`](crate::Play::on_error). Sur wasm il passe par
+/// la console du navigateur : rien n'y mène la sortie d'erreur, et c'est la
+/// cible où ce chemin est le seul — le lancement ayant rendu la main avant que
+/// la boucle tourne, `run` n'a plus de retour à remplir.
+pub(crate) fn report(error: &Error) {
+    #[cfg(not(target_arch = "wasm32"))]
+    eprintln!("screengine-play: {error}");
+    #[cfg(target_arch = "wasm32")]
+    web_sys::console::error_1(&wasm_bindgen::JsValue::from_str(&format!(
+        "screengine-play: {error}"
+    )));
 }
 
 impl fmt::Display for Error {
