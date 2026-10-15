@@ -123,7 +123,7 @@ android_build = for cible in $(CIBLES_ANDROID); do \
 -include makefile.local
 
 .PHONY: build lib lib-wasm lib-android run example web test native-libs fmt fmt-fix lint lint-doc-tests \
-        lint-android-versions etat-verif nostd test-arm test-linux-arm test-wasi msrv bench stubs \
+        lint-android-versions etat-verif nostd test-arm test-linux-arm test-wasi msrv bench bench-wasi stubs \
         conform conform-arm conform-linux-arm conform-wasi conform-x86 conform-update conform-images mesh header header-verif audit deny doc doc-verif hosts host-c host-cpp host-web host-go \
         host-android demo-c demo-cpp clean tools
 
@@ -878,8 +878,19 @@ WASI_FLAGS = -C debug-assertions=on
 # Ce que chaque cible wasm exécute, sur le modèle des cibles ARM.
 wasi_run_test    = cargo test -p screengine --release --target $(CIBLE_WASI) -- --nocapture
 wasi_run_conform = cargo run -p screengine-conformance --release --target $(CIBLE_WASI) -- --check
+wasi_run_bench   = cargo bench -p screengine --target $(CIBLE_WASI)
 
-$(addsuffix -wasi,test conform): %-wasi:
+# **Le banc est la seule cible wasm sans assertions de debug**, et c'est ce qui
+# le rend comparable au relevé natif : les douze `debug_assert!` du noyau, dont
+# cinq dans le rasteriseur, se paient à chaque pixel. Les garder ici ne
+# mesurerait pas le moteur qu'on publie, et l'ecart ne se verrait pas dans la
+# sortie — c'est le genre de reglage qui fait conclure a une cible lente.
+#
+# Il reste hors de la liste fixe pour la raison qui y laisse `bench` : une duree
+# n'est pas un controle.
+bench-wasi: CARGO_TARGET_WASM32_WASIP1_RUSTFLAGS = $(WASM_FEATURES)
+
+$(addsuffix -wasi,test conform bench): %-wasi:
 	@if ! command -v node >/dev/null 2>&1; then \
 	  reason="node introuvable"; \
 	else \

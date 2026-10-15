@@ -85,6 +85,36 @@
 //! segments font moins de quatre pixels. Ni l'un ni l'autre n'a la forme d'un
 //! décor, qui porte de grandes surfaces vues de biais — et c'est cette forme-là
 //! qui décide si une variante rapporte quelque chose à un hôte.
+//!
+//! # Sur wasm, par `make bench-wasi` — le 2026-10-14
+//!
+//! ```text
+//! couloir — brut                1.282 ms
+//! salles — traverse             1.611 ms
+//! salles traverse — scalaire    2.921 ms
+//! salles traverse — simd128     1.676 ms
+//! ```
+//!
+//! **`simd128` rend 43 % du temps du scalaire wasm**, et c'est le premier
+//! chiffre que le dépôt ait sur cette variante : la feuille de route annonçait
+//! son gain comme non mesuré, faute de machine de référence. Il n'en fallait
+//! pas — la cible WASI exécute le noyau, et le code vectoriel y est celui du
+//! module publié.
+//!
+//! **Et le décor traversé y coûte 1,6 ms**, soit 1,7 fois le meilleur chemin
+//! natif ci-dessus : un dixième du budget d'une image à soixante hertz, sur un
+//! seul thread. C'est ce chiffre qui a fait écarter le rendu par tuiles en
+//! parallèle dans un navigateur — voir `docs/construction.md`, « wasm ».
+//!
+//! **Ce que ce relevé ne mesure pas** : la présentation du canvas, que WASI
+//! n'a pas. Un navigateur y ajoute une expansion plein cadre et une recopie
+//! vers la mémoire du moteur JavaScript, à chaque image.
+//!
+//! **`make bench-wasi` est la seule cible wasm sans assertions de debug**, et
+//! ce n'est pas un détail de confort : avec elles, la même ligne donne 2,326 ms
+//! au lieu de 1,676, soit 44 % de plus. Mesuré dans les deux sens le même jour,
+//! parce qu'un réglage qu'on croit posé et qui ne l'est pas ne se voit nulle
+//! part dans la sortie.
 
 use core::hint::black_box;
 use core::time::Duration;

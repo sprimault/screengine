@@ -134,7 +134,7 @@ l'exécution par `scg_abi_version`.
 | Linux x64 | `x86_64-unknown-linux-gnu` | `.so`, `.a` | gcc ou clang | `hosts/c`, `hosts/cpp`, `hosts/go`, conformance | CI |
 | Linux x86 | `i686-unknown-linux-gnu` | `.so`, `.a` | gcc-multilib | aucun | CI, au tag seulement |
 | Navigateur | `wasm32-unknown-unknown` | `.wasm` | cible rustup, Node | `hosts/web` | CI, `make test-wasm` sous Linux et Windows |
-| wasm WASI | `wasm32-wasip1` | `.wasm` exécutable | cible rustup, Node | aucun | CI, `make test-wasi` et `make conform-wasi`, pour le noyau |
+| wasm WASI | `wasm32-wasip1` | `.wasm` exécutable | cible rustup, Node | aucun | CI, `make test-wasi` et `make conform-wasi`, pour le noyau ; `make bench-wasi` le mesure, hors contrôle |
 | Android arm64 | `aarch64-linux-android` | `.so`, `.a` | NDK, `qemu-user` | `hosts/android` | CI, `make test-android` sous Linux, sous `qemu-user` ; `make test-arm` et `make conform-arm` pour le noyau |
 | Android armv7 | `armv7-linux-androideabi` | `.so`, `.a` | NDK, `qemu-user` | `hosts/android` | CI, `make test-android` sous Linux, sous `qemu-user` ; `make test-arm` et `make conform-arm` pour le noyau |
 | Android x64 | `x86_64-linux-android` | `.so`, `.a` | NDK, SDK, émulateur | `hosts/android` | CI, `make test-android` sous Linux, sur émulateur par JNI |
@@ -295,6 +295,27 @@ toutes les autres cibles.
   devient un besoin, mais elle double un artefact de la matrice et des archives
   pour une population à qui un moteur logiciel ne rendrait de toute façon pas
   une image fluide.
+- **Le rendu y est mono-fil, et c'est assumé.** L'ABI permet de rendre des
+  tuiles d'index distincts depuis des threads distincts ; un navigateur ne le
+  donne pas. Un thread wasm réclame une mémoire linéaire partagée, donc une
+  bibliothèque standard reconstruite — ce que seule une chaîne instable fait,
+  et une cible qui n'existe qu'en nightly n'est pas une cible — et une page
+  isolée par ses en-têtes d'origine, sans lesquels le module ne s'instancie pas
+  du tout. S'y ajouterait une recopie du tampon entier à chaque présentation,
+  une mémoire partagée ne pouvant pas adosser l'image que le canvas affiche.
+
+  **La mesure est ce qui clôt la question, et elle est dans
+  `benches/carte.rs`** : le décor des salles coûte là-bas un dixième du budget
+  d'une image à soixante hertz, si bien qu'une accélération parfaite sur quatre
+  threads gagnerait une milliseconde sur seize.
+
+  Écarté : plusieurs instances indépendantes du module, une par worker, qui
+  n'exigeraient ni chaîne instable ni page isolée. L'ABI ne le permet pas —
+  `scg_frame_end` rend les tuiles que l'hôte n'a pas rendues, si bien qu'un
+  worker qui ne rendrait que les siennes rendrait aussi toutes les autres en
+  clôturant. Il y faudrait une fonction de plus, et elle devrait nommer son
+  sous-ensemble explicitement pour ne pas rouvrir ce que cette clause-là ferme :
+  l'image trouée qu'on rend sans le dire.
 - **`scg_buffer_alloc` est obligatoire**, et toute vue sur la mémoire se recrée
   après chaque appel : voir [`abi.md`](abi.md), « Ce qu'un auteur de liaison doit
   savoir ».
@@ -332,6 +353,14 @@ toutes les autres cibles.
   tournait : `make lint` compile pour `wasm32-unknown-unknown` sans rien
   exécuter, et `make test-wasm` éprouve la bibliothèque à travers l'ABI, pas le
   noyau.
+
+  **`make bench-wasi` y mesure**, par le même lanceur, et c'est ce qui a donné
+  au dépôt son premier chiffre sur `simd128` : le relevé vit dans le module de
+  documentation de `benches/carte.rs`, comme les autres. Elle est **la seule
+  cible wasm sans assertions de debug** — avec elles, le décor traversé coûte
+  44 % de plus, et ce qu'on mesurerait ne serait pas le moteur publié. Hors de
+  la liste d'avant-publication, pour la raison qui y laisse `make bench` : une
+  durée n'est pas un contrôle.
 
   **La cible n'est pas celle qu'on publie**, et c'est WASI qui fait la
   différence : `wasm32-unknown-unknown` n'a ni arguments, ni sortie standard, ni
