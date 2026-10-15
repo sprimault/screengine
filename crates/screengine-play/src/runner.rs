@@ -5,10 +5,14 @@
 
 use std::num::NonZeroU32;
 use std::rc::Rc;
-use std::time::Instant;
 
 use screengine::{BYTES_PER_PIXEL, Context};
 use softbuffer::Surface;
+// Celui de `std` panique sur wasm, faute d'horloge monotone, et c'est de toute
+// façon celui-ci que `ControlFlow::WaitUntil` attend là-bas. Ailleurs, le crate
+// réexporte `std::time::Instant` : le type est le même, et il n'y a pas deux
+// chemins de temps à tenir.
+use web_time::Instant;
 use winit::application::ApplicationHandler;
 use winit::dpi::PhysicalSize;
 use winit::event::{DeviceEvent, DeviceId, ElementState, WindowEvent};

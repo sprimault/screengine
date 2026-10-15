@@ -639,12 +639,15 @@ etat-verif:
 # listes finiraient par diverger, et c'est la cible absente de l'une qui
 # porterait le défaut.
 CIBLES_CROISEES = $(CIBLE_WASM) $(CIBLES_ANDROID) $(CIBLE_X86) $(CIBLES_LINUX_ARM)
+CIBLES_PLAY = $(CIBLES_LINUX_ARM) $(CIBLE_WASM)
 
-# **L'étage d'accueil entre dans la boucle, mais sur les deux cibles Linux ARM
-# seulement**, et c'est ce que son portage demande : un Raspberry Pi est la seule
-# machine de cette liste où quelqu'un lancerait une fenêtre. Sur les autres, la
-# question ne se pose pas — wasm et Android passent par d'autres chemins de
-# `winit`, et `i686-pc-windows-msvc` ne porte aucun hôte.
+# **L'étage d'accueil a sa propre liste**, plus courte que celle ci-dessus : les
+# deux cibles Linux ARM, où un Raspberry Pi est la seule machine de la liste sur
+# laquelle quelqu'un lancerait une fenêtre, et **wasm**, où `winit` et
+# `softbuffer` prennent leur chemin navigateur — celui qu'aucune autre cible ne
+# compile, et où une horloge de `std` ne tient pas. Android et
+# `i686-pc-windows-msvc` en restent dehors : le premier passe par un troisième
+# chemin de `winit` que rien n'appelle ici, le second ne porte aucun hôte.
 #
 # **En `--lib`, donc sans éditer de liens et sans rien installer** : X11, Wayland
 # et xkbcommon sont chargés par `dlopen`, et seule l'exécution les exige.
@@ -660,7 +663,7 @@ lint: lint-doc-tests lint-android-versions etat-verif
 	for cible in $(CIBLES_CROISEES); do \
 	  cargo clippy -p screengine -p screengine-ffi --lib --target $$cible -- -D warnings || exit 1; \
 	done
-	for cible in $(CIBLES_LINUX_ARM); do \
+	for cible in $(CIBLES_PLAY); do \
 	  cargo clippy -p screengine-play --lib --target $$cible -- -D warnings || exit 1; \
 	done
 

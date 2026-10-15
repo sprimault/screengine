@@ -40,8 +40,8 @@ Les versions sont épinglées dans le `Makefile` et nulle part ailleurs.
 `make lint` passe aussi clippy sur toutes celles-là **sauf la cible sans `std`**,
 là où un `cfg` propre à une plateforme ne serait vérifié par rien d'autre ; celle
 sans `std` est couverte par `make nostd`, qui la compile. Il y ajoute
-`screengine-play` sur les deux cibles Linux ARM, et nulle part ailleurs. Il
-entraîne en outre **trois** contrôles qui ne sont pas clippy : la documentation
+`screengine-play` sur les deux cibles Linux ARM et sur wasm, et nulle part
+ailleurs. Il entraîne en outre **trois** contrôles qui ne sont pas clippy : la documentation
 des fonctions de test, que `missing_docs` ne voit pas, la concordance des
 versions d'outillage Android, et celle de l'état annoncé avec la version du
 paquet. L'intégration continue appelle `make tools`, qui installe les outils aux
@@ -178,11 +178,17 @@ installer.
 
 **`screengine-play` entre dans la boucle de `make lint`** sur ces deux cibles, en
 `--lib` : X11, Wayland et xkbcommon passant par `dlopen`, la compilation n'exige
-aucune bibliothèque système. C'est la seule paire de cibles où il y entre — un
-Raspberry Pi est la seule machine de la matrice où quelqu'un ouvrirait une
-fenêtre. Il reste hors de `make msrv`, qui ne répond que du noyau et de la
-frontière : le plancher de `winit`, de `softbuffer` et de `png` n'est pas sous le
-contrôle du projet.
+aucune bibliothèque système. Un Raspberry Pi est la seule machine de la matrice
+où quelqu'un ouvrirait une fenêtre sur ce jeu d'instructions. Il reste hors de
+`make msrv`, qui ne répond que du noyau et de la frontière : le plancher de
+`winit`, de `softbuffer` et de `png` n'est pas sous le contrôle du projet.
+
+**La troisième cible de cette boucle est wasm**, où `winit` et `softbuffer`
+prennent leur chemin navigateur — celui qu'aucune autre cible ne compile. C'est
+là que l'horloge se sépare : `ControlFlow::WaitUntil` y prend un
+`web_time::Instant`, et celui de `std` panique faute d'horloge monotone. L'étage
+d'accueil déclare donc `web-time`, qui réexporte celui de `std` partout
+ailleurs.
 
 **À vérifier** : l'ouverture d'une fenêtre sur un appareil ARM. Ce que la boucle
 prouve est que l'étage d'accueil compile, jamais qu'un compositeur l'accepte — et
