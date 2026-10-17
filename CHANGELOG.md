@@ -67,20 +67,21 @@ publié, et explique les conventions du dépôt à qui y contribue.
 
 - **L'étage d'accueil tourne dans un navigateur**, et `make play-web` construit
   un exemple pour wasm puis sert sa page.
-- **`Play::stats` affiche ce qu'une image coûte** dans le titre de la fenêtre :
-  soumission, remplissage et écran, moyennés chaque seconde.
+- **`Play::stats` affiche ce qu'une image coûte** — soumission, remplissage et
+  écran, moyennés chaque seconde — dans le titre de la fenêtre, et dans la page
+  sur le web, où un onglet tronque son titre.
+- **`Tick::frame_time` rend ces mêmes durées au jeu**, pour sa propre interface.
+- **`fetch` lit un fichier par le réseau sur wasm**, et `report` est désormais
+  public : un exemple y charge ses planches avant la boucle plutôt que de les
+  porter dans son module, qui tombe de 3,3 Mo à 780 Ko.
 
 ### Modifié
 
 - **Les rappels de `run` prennent une borne `'static`**, et une erreur levée par
   la boucle part au puits de `Play::on_error` plutôt qu'au retour de `run`.
-
 - **L'image se pose directement sur le canvas dans un navigateur**, sans passer
   par la présentation de `softbuffer` : `couloir` y passe de 29 à 60 images par
   seconde.
-- **`fetch` lit un fichier par le réseau sur wasm**, et `report` est désormais
-  public : un exemple y charge ses planches avant la boucle plutôt que de les
-  porter dans son module, qui tombe de 3,3 Mo à 780 Ko.
 
 ### Corrigé
 
@@ -93,19 +94,21 @@ publié, et explique les conventions du dépôt à qui y contribue.
 
 - **The host layer runs inside a browser**, and `make play-web` builds an
   example for wasm then serves its page.
-- **`Play::stats` shows what a frame costs** in the window title: submission,
-  fill and screen, averaged every second.
+- **`Play::stats` shows what a frame costs** — submission, fill and screen,
+  averaged every second — in the window title, and in the page on the web, where
+  a tab truncates its title.
+- **`Tick::frame_time` returns those same durations to the game**, for its own
+  interface.
+- **`fetch` reads a file over the network on wasm**, and `report` is now public:
+  an example loads its sheets before the loop instead of carrying them in its
+  module, which drops from 3.3 MB to 780 KB.
 
 ### Changed
 
 - **The `run` callbacks now take a `'static` bound**, and an error raised by the
   loop goes to the `Play::on_error` sink rather than `run`'s return value.
-
 - **The frame is drawn straight onto the canvas inside a browser**, bypassing
   `softbuffer`'s presentation: `couloir` goes from 29 to 60 frames per second.
-- **`fetch` reads a file over the network on wasm**, and `report` is now public:
-  an example loads its sheets before the loop instead of carrying them in its
-  module, which drops from 3.3 MB to 780 KB.
 
 ### Fixed
 
