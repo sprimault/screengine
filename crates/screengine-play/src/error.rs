@@ -39,6 +39,14 @@ pub enum Error {
     Window(winit::error::OsError),
     /// La surface de la fenêtre a refusé une opération.
     Surface(softbuffer::SoftBufferError),
+    /// Le canvas du navigateur a refusé une opération : contexte de dessin,
+    /// construction de l'image ou dépôt des pixels.
+    ///
+    /// Propre à wasm, où l'étage d'accueil pose lui-même l'image — la
+    /// présentation de `softbuffer` y reconstruit son tampon à chaque image.
+    /// Le message est celui que le navigateur a rendu.
+    #[cfg(target_arch = "wasm32")]
+    Canvas(String),
     /// Un PNG passé à [`load_png`](crate::load_png) est illisible.
     ///
     /// Celui qui se décode mais que le moteur refuse — un côté qui n'est pas
@@ -82,6 +90,8 @@ impl fmt::Display for Error {
             Self::EventLoop(e) => write!(f, "event loop: {e}"),
             Self::Window(e) => write!(f, "window creation: {e}"),
             Self::Surface(e) => write!(f, "window surface: {e}"),
+            #[cfg(target_arch = "wasm32")]
+            Self::Canvas(e) => write!(f, "canvas: {e}"),
             Self::Png(e) => write!(f, "png decoding: {e}"),
         }
     }
@@ -95,6 +105,10 @@ impl std::error::Error for Error {
             Self::Window(e) => Some(e),
             Self::Surface(e) => Some(e),
             Self::Png(e) => Some(e),
+            // Le canvas rend un `JsValue` et non une erreur Rust : ce qu'il a
+            // dit est déjà dans le message, et il n'y a pas de source à chaîner.
+            #[cfg(target_arch = "wasm32")]
+            Self::Canvas(_) => None,
             Self::Setting(_) | Self::ScaleTooLarge { .. } => None,
         }
     }

@@ -214,6 +214,14 @@ personne ne lit, et le titre du document reste celui de la page. L'étage
 d'accueil le porte donc lui-même sur cette cible — sans quoi un compteur écrit
 par `Tick::set_title` n'apparaîtrait nulle part.
 
+**Et l'image ne passe pas par la présentation de `softbuffer`.** Celle-ci
+reconstruit un tampon de plusieurs mégaoctets, **pixel par pixel à chaque
+image**, pour refaire du RGBA que l'ABI garantit déjà dans cet ordre : vingt
+millisecondes mesurées là où le moteur en prend treize. L'étage d'accueil pose
+donc l'image lui-même, par un `ImageData` et un tampon réutilisé. `softbuffer`
+reste partout ailleurs, et garde ici son tampon comme cible de la mise à
+l'échelle — laquelle ne coûte, elle, qu'un demi-millième de seconde.
+
 **Deux pièges de feuille de style, et la documentation de winit les nomme** : ni
 `transform`, ni `border`, ni `padding` sur le canvas — `Resized`, `inner_size`
 et les événements de pointeur ne les prennent pas en compte, et l'image se
@@ -239,12 +247,18 @@ comme « non capturé ». Le réveil, lui, passe par la classe `setTimeout`, que
 navigateurs brident en onglet inactif.
 
 **Mais ce n'est pas le réveil qui borne le rythme**, contrairement à ce que
-cette page a annoncé : `couloir` rend vingt-neuf images par seconde en 640×360
-remonté d'un facteur deux, dont 1,1 ms de soumission, 12,8 ms de remplissage et
-21,2 ms d'écran. **La mise à l'échelle et la présentation coûtent donc plus que
-le moteur.** C'est `Play::stats` qui le dit, et il a fallu lui pour le savoir :
-une sonde posée depuis la console d'un navigateur mesure son propre instrument,
-et celle-ci avait rendu un coût par image presque double.
+cette page a annoncé. `couloir` rendait vingt-neuf images par seconde en 640×360
+remonté d'un facteur deux, dont **21 ms d'écran contre 13 de remplissage** : la
+présentation coûtait plus que le moteur. Elle ne passe plus par `softbuffer` —
+voir ci-dessous —, l'écran retombe à 1,5 ms, et l'exemple atteint les **soixante
+images par seconde** de l'écran.
+
+C'est `Play::stats` qui l'a dit, et il a fallu lui : une sonde posée depuis la
+console d'un navigateur mesure son propre instrument, et celle-ci avait rendu un
+coût par image presque double. Corollaire pour qui mesurera après : **la cadence
+ne se lit pas sur une fenêtre qui n'est pas au premier plan**, où le
+rafraîchissement est bridé jusqu'à une image par seconde — les durées de
+travail, elles, restent justes.
 
 **À vérifier** : l'ouverture d'une fenêtre sur un appareil ARM. Ce que la boucle
 prouve est que l'étage d'accueil compile, jamais qu'un compositeur l'accepte — et

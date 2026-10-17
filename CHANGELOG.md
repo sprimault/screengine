@@ -75,6 +75,10 @@ publié, et explique les conventions du dépôt à qui y contribue.
 - **Les rappels de `run` prennent une borne `'static`**, et une erreur levée par
   la boucle part au puits de `Play::on_error` plutôt qu'au retour de `run`.
 
+- **L'image se pose directement sur le canvas dans un navigateur**, sans passer
+  par la présentation de `softbuffer` : `couloir` y passe de 29 à 60 images par
+  seconde.
+
 ### Corrigé
 
 - **Le titre d'une fenêtre se voit désormais dans un navigateur**, où `winit`
@@ -93,6 +97,9 @@ publié, et explique les conventions du dépôt à qui y contribue.
 
 - **The `run` callbacks now take a `'static` bound**, and an error raised by the
   loop goes to the `Play::on_error` sink rather than `run`'s return value.
+
+- **The frame is drawn straight onto the canvas inside a browser**, bypassing
+  `softbuffer`'s presentation: `couloir` goes from 29 to 60 frames per second.
 
 ### Fixed
 

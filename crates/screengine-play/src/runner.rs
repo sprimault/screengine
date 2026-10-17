@@ -37,6 +37,79 @@ struct Display {
     surface: Surface<OwnedDisplayHandle, Rc<Window>>,
     /// Faux quand la fenêtre est minimisée ou masquée : rien n'est rendu ni joué.
     visible: bool,
+    /// Le contexte de dessin du canvas, par lequel l'image est posée.
+    ///
+    /// **La présentation de `softbuffer` n'est pas empruntée sur cette cible.**
+    /// Elle reconstruit un tampon de plusieurs mégaoctets, pixel par pixel, à
+    /// chaque image — vingt millisecondes mesurées sur un décor que le moteur
+    /// remplit en douze. Son tampon, lui, reste la cible de la mise à l'échelle.
+    #[cfg(target_arch = "wasm32")]
+    context: web_sys::CanvasRenderingContext2d,
+}
+
+/// Le contexte de dessin du canvas que `winit` a créé pour la fenêtre.
+#[cfg(target_arch = "wasm32")]
+fn canvas_context(window: &Window) -> Result<web_sys::CanvasRenderingContext2d, Error> {
+    use wasm_bindgen::JsCast;
+    use winit::platform::web::WindowExtWebSys;
+
+    let canvas = window
+        .canvas()
+        .ok_or_else(|| Error::Canvas(String::from("no canvas on this window")))?;
+    canvas
+        .get_context("2d")
+        .map_err(|cause| Error::Canvas(format!("{cause:?}")))?
+        .ok_or_else(|| Error::Canvas(String::from("no 2d context")))?
+        .dyn_into()
+        .map_err(|_| Error::Canvas(String::from("not a 2d context")))
+}
+
+/// Convertit le tampon de la mise à l'échelle en RGBA, dans un tampon réutilisé.
+///
+/// `softbuffer` range ses pixels en `0x00RRGGBB` quand le canvas attend quatre
+/// octets dans l'ordre R, G, B, A — celui que le moteur produit déjà, et que
+/// l'ABI garantit pour cette raison. **C'est tout ce qui reste du détour**, et
+/// il disparaîtrait si la mise à l'échelle écrivait des octets ; la mesure dira
+/// si cela vaut d'être fait.
+///
+/// **Compilée sur toutes les cibles bien qu'appelée sur une seule**, pour que
+/// `cargo test` la couvre : un décalage d'un canal ne se verrait autrement que
+/// dans un navigateur, et la doctrine de test du projet ne laisse pas une
+/// conversion sans cas.
+// `allow` et non `expect` : hors wasm, la fonction est morte pour la
+// bibliothèque et vivante pour ses tests, si bien qu'une attente serait tantôt
+// satisfaite tantôt non selon ce que la passe compile. Il se retire le jour où
+// la mise à l'échelle écrit des octets, qui supprimera cette conversion.
+#[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
+fn to_rgba(scaled: &[u32], frame: &mut Vec<u8>) {
+    // N'alloue qu'à la première image, et à chaque changement de taille de
+    // fenêtre : la capacité acquise reste.
+    frame.resize(scaled.len() * 4, 0);
+    for (pixel, out) in scaled.iter().zip(frame.chunks_exact_mut(4)) {
+        out[0] = (pixel >> 16) as u8;
+        out[1] = (pixel >> 8) as u8;
+        out[2] = *pixel as u8;
+        out[3] = 255;
+    }
+}
+
+/// Pose l'image sur le canvas.
+#[cfg(target_arch = "wasm32")]
+fn put_frame(
+    context: &web_sys::CanvasRenderingContext2d,
+    frame: &[u8],
+    width: u32,
+    height: u32,
+) -> Result<(), Error> {
+    let image = web_sys::ImageData::new_with_u8_clamped_array_and_sh(
+        wasm_bindgen::Clamped(frame),
+        width,
+        height,
+    )
+    .map_err(|cause| Error::Canvas(format!("{cause:?}")))?;
+    context
+        .put_image_data(&image, 0.0, 0.0)
+        .map_err(|cause| Error::Canvas(format!("{cause:?}")))
 }
 
 /// Capture le curseur ou le relâche ; rend ce qui a été obtenu.
@@ -202,8 +275,14 @@ impl Stats {
             return None;
         }
         let frames = self.frames;
+        // Rapportées à la durée réelle de la fenêtre, et non affichées telles
+        // quelles : celle-ci dure un peu plus d'une seconde — le relevé se prend
+        // à la fin d'une image, pas à l'instant pile —, et le compte brut
+        // annonçait soixante-deux images par seconde sur un écran qui en montre
+        // soixante.
+        let per_second = u128::from(frames) * 1_000_000 / now.duration_since(since).as_micros();
         let line = format!(
-            "{frames} img/s · soumission {} · remplissage {} · écran {} ms",
+            "{per_second} img/s · soumission {} · remplissage {} · écran {} ms",
             millis(self.submit / frames),
             millis(self.fill / frames),
             millis(self.screen / frames),
@@ -232,6 +311,9 @@ struct Runner<S, U, R, O> {
     /// Vrai quand le curseur est réellement capturé par la fenêtre.
     captured: bool,
     stats: Stats,
+    /// L'image en RGBA que le canvas reçoit, gardée d'une image à l'autre.
+    #[cfg(target_arch = "wasm32")]
+    frame: Vec<u8>,
     /// Le titre que le jeu a posé, gardé pour le réécrire sous le relevé
     /// suivant : sans lui, une mesure qui se rafraîchit effacerait ce que le
     /// jeu venait d'écrire.
@@ -293,6 +375,8 @@ where
         last_wake: None,
         captured: false,
         stats: Stats::default(),
+        #[cfg(target_arch = "wasm32")]
+        frame: Vec::new(),
         measured: None,
     };
 
@@ -394,11 +478,15 @@ where
         // resterait.
         set_window_title(&window, &self.play.title, None);
         let surface = Surface::new(&self.graphics, Rc::clone(&window))?;
+        #[cfg(target_arch = "wasm32")]
+        let context = canvas_context(&window)?;
 
         let mut display = Display {
             window,
             surface,
             visible: true,
+            #[cfg(target_arch = "wasm32")]
+            context,
         };
         let inner = display.window.inner_size();
         self.resize(&mut display, inner)?;
@@ -473,7 +561,18 @@ where
 
         let mut buffer = display.surface.buffer_mut()?;
         self.scaler.blit(&self.pixels, &mut buffer);
+        #[cfg(not(target_arch = "wasm32"))]
         buffer.present()?;
+        #[cfg(target_arch = "wasm32")]
+        {
+            // Le tampon n'est pas présenté : son contenu vient d'être recopié,
+            // et c'est `present` que ce chemin remplace. Rien ne reste à
+            // défaire — il ne porte pas de `Drop`, et son emprunt s'arrête à la
+            // ligne ci-dessus.
+            to_rgba(&buffer, &mut self.frame);
+            let (width, height) = self.scaler.target();
+            put_frame(&display.context, &self.frame, width, height)?;
+        }
 
         let presented = Instant::now();
         if self.play.stats {
