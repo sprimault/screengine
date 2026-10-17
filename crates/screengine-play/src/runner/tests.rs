@@ -63,6 +63,20 @@ fn la_moyenne_sort_a_la_seconde_et_divise_par_les_images() {
     );
 }
 
+/// La cadence est rapportée à la durée réelle de la fenêtre, qui dépasse la
+/// seconde : le compte brut annonçait soixante-deux images par seconde sur un
+/// écran qui en montre soixante.
+#[test]
+fn la_cadence_se_rapporte_a_la_duree_reelle() {
+    let mut stats = Stats::default();
+    let start = Instant::now();
+    for _ in 0..3 {
+        stats.record(ms(1), ms(1), ms(1), start);
+    }
+    let line = stats.take(start + ms(1500));
+    assert_eq!(line.as_deref().and_then(|l| l.split(' ').next()), Some("2"));
+}
+
 /// Le relevé rendu remet le compteur à zéro : sans cela, la seconde suivante
 /// moyennerait sur toutes les précédentes et le chiffre se figerait peu à peu.
 #[test]
@@ -72,6 +86,36 @@ fn le_releve_repart_de_zero() {
     stats.record(ms(10), ms(10), ms(10), start);
     assert!(stats.take(start + STATS_WINDOW).is_some());
     assert_eq!(stats.take(start + STATS_WINDOW * 4), None);
+}
+
+/// L'ordre des canaux, qui est tout ce qui peut être faux sans se voir ailleurs
+/// que dans un navigateur : `softbuffer` range `0x00RRGGBB`, le canvas attend
+/// R, G, B, A. Un décalage d'un canal échange les rouges et les bleus, ce que
+/// l'ABI décrit nommément comme le défaut classique de cette frontière.
+#[test]
+fn la_conversion_pour_le_canvas_garde_l_ordre_des_canaux() {
+    let mut frame = Vec::new();
+    to_rgba(&[0x00_11_22_33, 0x00_FF_00_00], &mut frame);
+    assert_eq!(frame, [0x11, 0x22, 0x33, 255, 0xFF, 0x00, 0x00, 255]);
+}
+
+/// L'alpha est écrit à 255 et non recopié : `softbuffer` laisse son octet de
+/// poids fort à zéro, et un canvas composite réellement ce canal — l'image
+/// serait entièrement transparente.
+#[test]
+fn la_conversion_force_l_alpha() {
+    let mut frame = Vec::new();
+    to_rgba(&[0x00_40_50_60], &mut frame);
+    assert_eq!(frame[3], 255);
+}
+
+/// Le tampon se réemploie d'une image à l'autre : il est dimensionné sur ce
+/// qu'on lui donne, sans traîner ce qu'une fenêtre plus grande y avait laissé.
+#[test]
+fn la_conversion_redimensionne_son_tampon() {
+    let mut frame = vec![7; 64];
+    to_rgba(&[0x00_01_02_03], &mut frame);
+    assert_eq!(frame.len(), 4);
 }
 
 /// Une fenêtre sans image ne rend rien plutôt que de diviser par zéro. C'est le

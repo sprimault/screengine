@@ -137,6 +137,16 @@ impl Scaler {
         (self.source.0 as u32, self.source.1 as u32)
     }
 
+    /// La taille de la fenêtre pour laquelle la disposition est calculée, en
+    /// pixels, qui est aussi celle du tampon que [`Scaler::blit`] remplit.
+    ///
+    /// Propre à wasm, seule cible où l'étage d'accueil pose l'image lui-même et
+    /// doit donc en donner les dimensions au canvas.
+    #[cfg(target_arch = "wasm32")]
+    pub(crate) fn target(&self) -> (u32, u32) {
+        (self.target.0 as u32, self.target.1 as u32)
+    }
+
     /// Change la résolution interne, la fenêtre restant celle qu'on a.
     ///
     /// Le moteur peut en changer entre deux images, et toute la disposition en
