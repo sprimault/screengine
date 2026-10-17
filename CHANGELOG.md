@@ -63,6 +63,8 @@ publié, et explique les conventions du dépôt à qui y contribue.
 
 ## [Non publié]
 
+## [1.2.0] — 2026-10-17 — Le chemin Rust dans un navigateur
+
 ### Ajouté
 
 - **L'étage d'accueil tourne dans un navigateur**, et `make play-web` construit
