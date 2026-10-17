@@ -494,6 +494,7 @@ fn main() -> Result<(), screengine_play::Error> {
         .title("Screengine — carte chargée")
         .icon(include_bytes!("../assets/icone.png"))?
         .resolution(RESOLUTION.0, RESOLUTION.1)
+        .stats(true)
         .run_with_output(
             scene,
             |scene, tick| {

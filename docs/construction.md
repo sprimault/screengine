@@ -208,6 +208,12 @@ par l'attribut que winit y a posé. Hors du document, la création de surface
 demande l'insertion pour que le défaut rende une image. La page ne porte aucun
 canvas à elle.
 
+**Le titre ne s'y pose pas tout seul non plus**, et c'est le même motif que le
+canvas : winit l'écrit dans l'attribut `alt` du canvas, du texte alternatif que
+personne ne lit, et le titre du document reste celui de la page. L'étage
+d'accueil le porte donc lui-même sur cette cible — sans quoi un compteur écrit
+par `Tick::set_title` n'apparaîtrait nulle part.
+
 **Deux pièges de feuille de style, et la documentation de winit les nomme** : ni
 `transform`, ni `border`, ni `padding` sur le canvas — `Resized`, `inner_size`
 et les événements de pointeur ne les prennent pas en compte, et l'image se
@@ -226,11 +232,19 @@ la clause ci-dessus, qui dit pourquoi les deux ne se contredisent pas.
 720 pixels physiques affichés à la taille que le facteur de périphérique impose,
 aucun message de console.
 
-**À vérifier** : le rythme d'animation et la capture du pointeur. Le réveil
-passe là-bas par la classe `setTimeout`, que les navigateurs brident en onglet
-inactif ; et le verrouillage de pointeur exige un geste de l'utilisateur, si
-bien qu'une capture demandée à l'ouverture échoue jusqu'au premier clic — sans
-erreur, l'étage d'accueil la rapportant comme « non capturé ».
+**Vus le 2026-10-17** : la capture du pointeur et le rythme. Le verrouillage
+exige un geste de l'utilisateur, si bien qu'une capture demandée à l'ouverture
+échoue jusqu'au premier clic — sans erreur, l'étage d'accueil la rapportant
+comme « non capturé ». Le réveil, lui, passe par la classe `setTimeout`, que les
+navigateurs brident en onglet inactif.
+
+**Mais ce n'est pas le réveil qui borne le rythme**, contrairement à ce que
+cette page a annoncé : `couloir` rend vingt-neuf images par seconde en 640×360
+remonté d'un facteur deux, dont 1,1 ms de soumission, 12,8 ms de remplissage et
+21,2 ms d'écran. **La mise à l'échelle et la présentation coûtent donc plus que
+le moteur.** C'est `Play::stats` qui le dit, et il a fallu lui pour le savoir :
+une sonde posée depuis la console d'un navigateur mesure son propre instrument,
+et celle-ci avait rendu un coût par image presque double.
 
 **À vérifier** : l'ouverture d'une fenêtre sur un appareil ARM. Ce que la boucle
 prouve est que l'étage d'accueil compile, jamais qu'un compositeur l'accepte — et

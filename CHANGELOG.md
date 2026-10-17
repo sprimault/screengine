@@ -67,11 +67,18 @@ publié, et explique les conventions du dépôt à qui y contribue.
 
 - **L'étage d'accueil tourne dans un navigateur**, et `make play-web` construit
   un exemple pour wasm puis sert sa page.
+- **`Play::stats` affiche ce qu'une image coûte** dans le titre de la fenêtre :
+  soumission, remplissage et écran, moyennés chaque seconde.
 
 ### Modifié
 
 - **Les rappels de `run` prennent une borne `'static`**, et une erreur levée par
   la boucle part au puits de `Play::on_error` plutôt qu'au retour de `run`.
+
+### Corrigé
+
+- **Le titre d'une fenêtre se voit désormais dans un navigateur**, où `winit`
+  l'écrit dans l'attribut `alt` du canvas.
 
 ***
 
@@ -79,11 +86,18 @@ publié, et explique les conventions du dépôt à qui y contribue.
 
 - **The host layer runs inside a browser**, and `make play-web` builds an
   example for wasm then serves its page.
+- **`Play::stats` shows what a frame costs** in the window title: submission,
+  fill and screen, averaged every second.
 
 ### Changed
 
 - **The `run` callbacks now take a `'static` bound**, and an error raised by the
   loop goes to the `Play::on_error` sink rather than `run`'s return value.
+
+### Fixed
+
+- **A window title is now visible inside a browser**, where `winit` writes it to
+  the canvas `alt` attribute.
 
 ***
 
