@@ -123,6 +123,9 @@ pub struct Play {
     scale: Scale,
     rate: u32,
     exit_on_escape: bool,
+    /// Ajouter au titre ce qu'une image coûte. Faux par défaut : le titre
+    /// appartient au jeu.
+    stats: bool,
     /// L'icône de la fenêtre, absente par défaut — le système pose alors la
     /// sienne, et un exemple qui n'en veut pas n'a rien à écrire.
     icon: Option<Icon>,
@@ -150,6 +153,7 @@ impl Play {
             scale: Scale::Integer,
             rate: 60,
             exit_on_escape: true,
+            stats: false,
             icon: None,
             on_error: error::report,
         }
@@ -231,6 +235,31 @@ impl Play {
     /// Fermer la fenêtre sur Échap, ce que fait le défaut.
     pub fn exit_on_escape(mut self, exit: bool) -> Self {
         self.exit_on_escape = exit;
+        self
+    }
+
+    /// Ajoute au titre de la fenêtre ce qu'une image coûte, moyenné sur la
+    /// seconde écoulée.
+    ///
+    /// **Trois durées et non une**, parce qu'un total ne dit pas où part le
+    /// temps et qu'on n'optimise pas ce qu'on n'a pas localisé : la
+    /// **soumission**, que le jeu passe à transformer et à découper sa scène ;
+    /// le **remplissage**, que le moteur passe dans ses tuiles ; et l'**écran**,
+    /// qui porte le dessin de l'hôte, la mise à l'échelle et la présentation.
+    /// Une fenêtre agrandie d'un facteur de trop et un décor trop lourd se
+    /// ressemblent sur un compteur d'images par seconde, et se distinguent ici
+    /// du premier coup d'œil.
+    ///
+    /// Faux par défaut : le titre appartient au jeu, et un jeu publié n'y veut
+    /// pas de chiffres. Quand il est vrai, celui que le jeu pose reste, et le
+    /// relevé s'y ajoute.
+    ///
+    /// **Ce n'est pas une mesure de référence.** Elle tourne dans le profil que
+    /// l'exemple a été construit avec, sur une machine qui fait autre chose ;
+    /// ce qui se compare d'une version à l'autre est `make bench`, dont les
+    /// chiffres vivent dans `benches/`.
+    pub fn stats(mut self, stats: bool) -> Self {
+        self.stats = stats;
         self
     }
 

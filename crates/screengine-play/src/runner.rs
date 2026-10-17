@@ -5,6 +5,7 @@
 
 use std::num::NonZeroU32;
 use std::rc::Rc;
+use std::time::Duration;
 
 use screengine::{BYTES_PER_PIXEL, Context};
 use softbuffer::Surface;
@@ -73,6 +74,145 @@ fn to_winit_icon(icon: &Icon) -> Option<WinitIcon> {
     WinitIcon::from_rgba(icon.rgba.clone(), icon.width, icon.height).ok()
 }
 
+/// La période du relevé affiché.
+const STATS_WINDOW: Duration = Duration::from_secs(1);
+
+/// Une durée en millisecondes, au dixième.
+///
+/// Par les microsecondes entières plutôt que par `{:.1}` sur un flottant : ce
+/// qui se lit dans une barre de titre française porte une virgule décimale, et
+/// la passer par un `replace` après coup serait écrire le nombre deux fois.
+fn millis(duration: Duration) -> String {
+    let tenths = (duration.as_micros() + 50) / 100;
+    format!("{},{}", tenths / 10, tenths % 10)
+}
+
+/// Le titre que porte la fenêtre : celui du jeu, puis le relevé s'il y en a un.
+///
+/// Le jeu garde le sien en entier — c'est lui qui porte les commandes, et une
+/// mesure n'a pas à les chasser.
+fn window_title(title: &str, stats: Option<&str>) -> String {
+    match stats {
+        Some(stats) => format!("{title} · {stats}"),
+        None => title.to_owned(),
+    }
+}
+
+/// Pose le titre du jeu et son relevé, chacun là où on le lit.
+///
+/// **Sur le web, `winit` écrit le titre dans l'attribut `alt` du canvas** — du
+/// texte alternatif que personne ne regarde —, et le titre du document reste
+/// celui de la page. L'étage d'accueil l'y porte donc lui-même, comme il insère
+/// déjà le canvas que `winit` crée sans le placer.
+fn set_window_title(window: &Window, title: &str, stats: Option<&str>) {
+    let full = window_title(title, stats);
+    window.set_title(&full);
+    #[cfg(target_arch = "wasm32")]
+    if let Some(document) = web_sys::window().and_then(|window| window.document()) {
+        document.set_title(&full);
+        if let Some(stats) = stats {
+            show_web_stats(&document, stats);
+        }
+    }
+}
+
+/// Écrit le relevé dans la page, au-dessus du canvas.
+///
+/// **Un onglet ne montre que les premières lettres de son titre**, si bien que
+/// le relevé y est coupé avant son premier chiffre : sur cette cible, le titre
+/// ne suffit pas, et c'est pourtant celle que ce relevé sert d'abord.
+///
+/// L'élément est créé au premier relevé puis réutilisé. Une page qui en fournit
+/// un sous le même identifiant garde le sien, **style compris** : c'est ainsi
+/// qu'un jeu le place où il veut sans que l'étage d'accueil ait un réglage de
+/// plus.
+#[cfg(target_arch = "wasm32")]
+fn show_web_stats(document: &web_sys::Document, line: &str) {
+    /// L'identifiant de l'élément, qu'une page peut poser elle-même.
+    const ID: &str = "screengine-stats";
+
+    let element = match document.get_element_by_id(ID) {
+        Some(element) => element,
+        None => {
+            let Ok(element) = document.create_element("div") else {
+                return;
+            };
+            element.set_id(ID);
+            // Le style est posé ici et non laissé à la page : celle d'un jeu ne
+            // connaît pas cet identifiant, et un relevé invisible ne vaut pas
+            // mieux qu'un relevé absent. Hors du flux, pour ne pas déplacer le
+            // canvas que la page a centré.
+            let _ = element.set_attribute(
+                "style",
+                "position:fixed;top:0;left:0;right:0;padding:4px 8px;\
+                 font:13px/1.4 ui-monospace,monospace;color:#c8c8d0;\
+                 background:#101014;text-align:center",
+            );
+            let Some(body) = document.body() else {
+                return;
+            };
+            if body
+                .insert_before(&element, body.first_child().as_ref())
+                .is_err()
+            {
+                return;
+            }
+            element
+        }
+    };
+    element.set_text_content(Some(line));
+}
+
+/// Ce que les images d'une seconde ont coûté, phase par phase.
+///
+/// Moyenné sur une seconde et non affiché par image : un chiffre qui change
+/// soixante fois par seconde ne se lit pas, et la moyenne absorbe l'image
+/// isolée qu'un ramasse-miettes de navigateur ou un autre processus a allongée.
+#[derive(Default)]
+struct Stats {
+    /// Ce que le jeu a passé à soumettre sa scène.
+    submit: Duration,
+    /// Ce que le moteur a passé à remplir ses tuiles.
+    fill: Duration,
+    /// Le dessin de l'hôte, la mise à l'échelle et la présentation.
+    screen: Duration,
+    frames: u32,
+    /// Le début de la fenêtre de mesure, posé par la première image.
+    since: Option<Instant>,
+}
+
+impl Stats {
+    /// Retient ce qu'une image vient de coûter.
+    fn record(&mut self, submit: Duration, fill: Duration, screen: Duration, now: Instant) {
+        self.submit += submit;
+        self.fill += fill;
+        self.screen += screen;
+        self.frames += 1;
+        self.since.get_or_insert(now);
+    }
+
+    /// Rend le relevé quand la période est écoulée, et repart de zéro.
+    ///
+    /// La moyenne ne divise jamais par zéro : `since` et `frames` sont posés par
+    /// le même appel, donc le premier ne vaut `Some` qu'à partir de la première
+    /// image comptée.
+    fn take(&mut self, now: Instant) -> Option<String> {
+        let since = self.since?;
+        if now.duration_since(since) < STATS_WINDOW {
+            return None;
+        }
+        let frames = self.frames;
+        let line = format!(
+            "{frames} img/s · soumission {} · remplissage {} · écran {} ms",
+            millis(self.submit / frames),
+            millis(self.fill / frames),
+            millis(self.screen / frames),
+        );
+        *self = Self::default();
+        Some(line)
+    }
+}
+
 /// L'état de la boucle, et ce que l'appelant lui a confié.
 struct Runner<S, U, R, O> {
     play: Play,
@@ -91,6 +231,14 @@ struct Runner<S, U, R, O> {
     last_wake: Option<Instant>,
     /// Vrai quand le curseur est réellement capturé par la fenêtre.
     captured: bool,
+    stats: Stats,
+    /// Le titre que le jeu a posé, gardé pour le réécrire sous le relevé
+    /// suivant : sans lui, une mesure qui se rafraîchit effacerait ce que le
+    /// jeu venait d'écrire.
+    title: String,
+    /// Le dernier relevé composé, absent tant qu'une seconde ne s'est pas
+    /// écoulée.
+    measured: Option<String>,
 }
 
 /// Ouvre la boucle, et rend ce qui a été refusé avant toute fenêtre.
@@ -131,6 +279,7 @@ where
         pixels: vec![0; ceiling],
         scaler: Scaler::new(play.scale, width, height),
         clock: Clock::new(play.rate),
+        title: play.title.clone(),
         play,
         context,
         state,
@@ -143,6 +292,8 @@ where
         index: 0,
         last_wake: None,
         captured: false,
+        stats: Stats::default(),
+        measured: None,
     };
 
     // La boucle ne se lance pas de la même façon des deux côtés, et ce n'est pas
@@ -238,6 +389,10 @@ where
                 .create_window(attributes)
                 .map_err(Error::Window)?,
         );
+        // Le titre d'ouverture, que les attributs ci-dessus ne portent que pour
+        // une vraie barre de titre : sur le web, c'est celui de la page qui
+        // resterait.
+        set_window_title(&window, &self.play.title, None);
         let surface = Surface::new(&self.graphics, Rc::clone(&window))?;
 
         let mut display = Display {
@@ -284,8 +439,15 @@ where
     }
 
     /// Fait rendre le moteur, puis recopie son image dans la fenêtre.
+    ///
+    /// Les quatre lectures d'horloge sont prises même quand aucun relevé ne les
+    /// affiche : elles ne se mesurent pas à côté d'une image, et les rendre
+    /// conditionnelles couperait cette fonction en deux chemins pour en
+    /// économiser le millième.
     fn redraw(&mut self, display: &mut Display) -> Result<(), Error> {
+        let opened = Instant::now();
         (self.render)(&mut self.state, &mut self.context);
+        let submitted = Instant::now();
         // Le jeu a pu changer la résolution interne dans `render` : toute la
         // disposition de la fenêtre en dépend, et la laisser derrière
         // afficherait l'image nouvelle à la géométrie de l'ancienne.
@@ -294,6 +456,7 @@ where
             self.scaler.set_source(width, height);
         }
         self.context.frame_end(&mut self.pixels, width)?;
+        let filled = Instant::now();
 
         // **L'hôte écrit par-dessus l'image finie, avant la recopie.** C'est le
         // pendant exact de ce qu'un hôte C fait après `scg_frame_end`, et le seul
@@ -311,6 +474,20 @@ where
         let mut buffer = display.surface.buffer_mut()?;
         self.scaler.blit(&self.pixels, &mut buffer);
         buffer.present()?;
+
+        let presented = Instant::now();
+        if self.play.stats {
+            self.stats.record(
+                submitted - opened,
+                filled - submitted,
+                presented - filled,
+                presented,
+            );
+            if let Some(line) = self.stats.take(presented) {
+                self.measured = Some(line);
+                set_window_title(&display.window, &self.title, self.measured.as_deref());
+            }
+        }
         Ok(())
     }
 }
@@ -433,8 +610,9 @@ where
             if let Some(capture) = tick.capture {
                 self.captured = grab_cursor(&display.window, capture);
             }
-            if let Some(title) = &tick.title {
-                display.window.set_title(title);
+            if let Some(title) = tick.title.take() {
+                self.title = title;
+                set_window_title(&display.window, &self.title, self.measured.as_deref());
             }
             if let Some(icon) = &tick.icon {
                 display.window.set_window_icon(to_winit_icon(icon));
@@ -453,3 +631,6 @@ where
         event_loop.set_control_flow(ControlFlow::WaitUntil(now + self.clock.until_next()));
     }
 }
+
+#[cfg(test)]
+mod tests;

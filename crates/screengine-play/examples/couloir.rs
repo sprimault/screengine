@@ -1236,7 +1236,7 @@ fn main() -> Result<(), screengine_play::Error> {
     // L'indication vit dans la barre de titre et non dans la console : c'est
     // là qu'on la cherche quand on ne sait plus comment récupérer sa souris,
     // et elle y reste visible pendant que le curseur est pris.
-    Play::new().title(title(world.filter)).run(
+    Play::new().title(title(world.filter)).stats(true).run(
         world,
         |world, tick| {
             // Le curseur n'est **pas** pris au démarrage, et c'est délibéré :
