@@ -32,6 +32,10 @@
 mod camera;
 mod clock;
 mod error;
+/// Le chargement par le réseau, que seul un navigateur impose : ailleurs, un
+/// exemple intègre ses planches dans son binaire.
+#[cfg(target_arch = "wasm32")]
+pub mod fetch;
 mod input;
 mod output;
 mod runner;
@@ -42,6 +46,11 @@ mod texture;
 
 pub use camera::FreeCamera;
 pub use error::Error;
+// Public parce qu'un jeu qui charge **avant** la boucle n'a pas encore de
+// `Play` où loger son puits : sur wasm, `main` rend la main au navigateur et
+// l'échec d'un chargement n'a aucun retour à remplir. C'est le même puits que
+// celui de `Play::on_error` par défaut, et non un second chemin.
+pub use error::report;
 pub use input::Input;
 pub use output::Output;
 pub use scale::Scale;

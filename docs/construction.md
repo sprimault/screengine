@@ -232,7 +232,18 @@ porte donc sur un conteneur.
 `http://127.0.0.1:8081/` : `cargo build --example`, puis `wasm-bindgen --target
 web`, puis le serveur sans dépendance de l'hôte web, repris tel quel.
 `PLAY_EXEMPLE` choisit l'exemple, `hello` par défaut parce qu'il ne lit aucun
-fichier. **La glue est ce que winit et softbuffer imposent** : eux passent par
+fichier. La cible dépose aussi `crates/screengine-play/assets/` à côté de la
+page : c'est là que les exemples vont chercher leurs planches sur cette cible.
+
+**Un exemple n'intègre pas ses planches dans son module wasm**, et c'est la
+seule différence de chargement entre les deux cibles. `include_bytes!` vaut
+pourtant ici comme ailleurs — mais un navigateur **télécharge et compile** le
+module avant la première image, et `couloir` y pesait trois mégaoctets et demi
+contre 780 kilo-octets sans elles. Les planches arrivent donc par `fetch`,
+avant que la boucle démarre : le chargement reste un appel nommé, et aucune
+n'est décodée en cours d'image. Le volume téléchargé, lui, ne change pas — ce
+sont les mêmes octets, mais le navigateur n'en compile plus que le cinquième et
+met les autres en cache pour l'exemple suivant. **La glue est ce que winit et softbuffer imposent** : eux passent par
 `wasm-bindgen`, là où `screengine.wasm` n'a aucun import et s'en dispense — voir
 la clause ci-dessus, qui dit pourquoi les deux ne se contredisent pas.
 

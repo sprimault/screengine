@@ -47,6 +47,13 @@ pub enum Error {
     /// Le message est celui que le navigateur a rendu.
     #[cfg(target_arch = "wasm32")]
     Canvas(String),
+    /// Un fichier n'a pas pu être lu par le réseau : réseau en défaut, réponse
+    /// d'erreur, ou corps illisible.
+    ///
+    /// Propre à wasm, où un exemple va chercher ses planches à côté de la page
+    /// au lieu de les porter dans son module.
+    #[cfg(target_arch = "wasm32")]
+    Fetch(String),
     /// Un PNG passé à [`load_png`](crate::load_png) est illisible.
     ///
     /// Celui qui se décode mais que le moteur refuse — un côté qui n'est pas
@@ -61,7 +68,7 @@ pub enum Error {
 /// la console du navigateur : rien n'y mène la sortie d'erreur, et c'est la
 /// cible où ce chemin est le seul — le lancement ayant rendu la main avant que
 /// la boucle tourne, `run` n'a plus de retour à remplir.
-pub(crate) fn report(error: &Error) {
+pub fn report(error: &Error) {
     #[cfg(not(target_arch = "wasm32"))]
     eprintln!("screengine-play: {error}");
     #[cfg(target_arch = "wasm32")]
@@ -92,6 +99,8 @@ impl fmt::Display for Error {
             Self::Surface(e) => write!(f, "window surface: {e}"),
             #[cfg(target_arch = "wasm32")]
             Self::Canvas(e) => write!(f, "canvas: {e}"),
+            #[cfg(target_arch = "wasm32")]
+            Self::Fetch(e) => write!(f, "fetch: {e}"),
             Self::Png(e) => write!(f, "png decoding: {e}"),
         }
     }
@@ -108,7 +117,7 @@ impl std::error::Error for Error {
             // Le canvas rend un `JsValue` et non une erreur Rust : ce qu'il a
             // dit est déjà dans le message, et il n'y a pas de source à chaîner.
             #[cfg(target_arch = "wasm32")]
-            Self::Canvas(_) => None,
+            Self::Canvas(_) | Self::Fetch(_) => None,
             Self::Setting(_) | Self::ScaleTooLarge { .. } => None,
         }
     }

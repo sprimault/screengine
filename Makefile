@@ -1107,6 +1107,7 @@ play-wasm:
 	wasm-bindgen --target web --no-typescript --out-dir $(PLAY_WEB) \
 	  $(TARGET_DIR)/$(CIBLE_WASM)/release/examples/$(PLAY_EXEMPLE).wasm
 	cp crates/screengine-play/web/index.html $(PLAY_WEB)/
+	cp -R crates/screengine-play/assets $(PLAY_WEB)/
 
 # Le serveur est celui de l'hôte web, repris tel quel : sans dépendance, il
 # prend un répertoire et un port. Une seconde copie pour cette page-ci serait
