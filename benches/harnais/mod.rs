@@ -54,6 +54,33 @@ pub fn mesure(tours: u32, mut tour: impl FnMut()) -> Duration {
     court
 }
 
+/// Les plus courts temps observés pour deux phases d'un même tour.
+///
+/// **Deux chronomètres dans le tour, et non deux mesures séparées**, parce que
+/// certaines phases ne s'isolent pas : la soumission d'une image ne se
+/// chronomètre pas sans la clore, faute de quoi la liste de dessin ne se vide
+/// pas et la capacité déborde au tour suivant. Le tour rend donc ce qu'il a
+/// relevé lui-même.
+///
+/// **Le minimum phase par phase**, et non le couple du meilleur tour : chacune
+/// a sa borne basse vraie, et rien n'oblige les deux à tomber ensemble. Leur
+/// somme est donc une borne basse, jamais un tour qui a existé — la lire comme
+/// le coût d'une image serait la lire de travers.
+pub fn mesure_deux(
+    tours: u32,
+    mut tour: impl FnMut() -> (Duration, Duration),
+) -> (Duration, Duration) {
+    tour();
+    tour();
+
+    let mut courts = (Duration::MAX, Duration::MAX);
+    for _ in 0..tours {
+        let (premiere, seconde) = tour();
+        courts = (courts.0.min(premiere), courts.1.min(seconde));
+    }
+    courts
+}
+
 /// Combien de pixels d'un tampon portent autre chose que le fond.
 ///
 /// Le fond est le noir, qu'aucune scène de banc n'emploie comme couleur. Sort du

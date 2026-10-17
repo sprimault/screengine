@@ -71,6 +71,32 @@
 //! de threads ne sont écrits nulle part. Ce qu'ils donnent est un ordre de
 //! grandeur du coût réel sur appareil, et rien d'autre.
 //!
+//! # Soumission et remplissage, séparés — le 2026-10-17
+//!
+//! ```text
+//! couloir — soumission           0.005 ms
+//! couloir — remplissage          0.773 ms
+//! salles  — soumission           0.009 ms
+//! salles  — remplissage          0.878 ms
+//! ```
+//!
+//! **La soumission pèse moins d'un pour cent de l'image**, et c'est le résultat
+//! du lot : ce que le moteur passe à transformer, découper et préparer une carte
+//! entière ne compte pas devant ce qu'il passe à remplir ses tuiles. La part ne
+//! se lisait jusqu'ici que par différence entre le chemin brut et le chemin
+//! traversé, ce qui mêlait deux variations — ce qui est **soumis** et ce qu'il
+//! reste à **remplir** — et ne donnait qu'une fourchette large.
+//!
+//! Ce qu'il faut en retenir : **optimiser la soumission ne rapporterait rien**,
+//! sur les deux décors du dépôt. La question était restée ouverte depuis que le
+//! parallélisme dans un navigateur a été écarté, où elle décidait d'un plafond ;
+//! elle est close, et dans le sens qui arrangeait cette décision-là.
+//!
+//! **La somme des deux n'est pas le temps d'une image.** Chaque phase rend son
+//! propre minimum, pris sur des tours qui peuvent différer, et les deux
+//! chronomètres coûtent eux-mêmes quelques microsecondes : la somme est une
+//! borne basse, jamais un tour qui a existé.
+//!
 //! # Le décor par chemin de remplissage — depuis le 2026-10-08
 //!
 //! ```text
@@ -118,6 +144,7 @@
 
 use core::hint::black_box;
 use core::time::Duration;
+use std::time::Instant;
 
 use screengine::{
     Affine3, BYTES_PER_PIXEL, Camera, Config, Context, SimdPath, Texture, Vec3, World,
@@ -126,7 +153,7 @@ use screengine::{
 #[path = "harnais/mod.rs"]
 mod harnais;
 
-use harnais::{Image, exige, mesure, peints};
+use harnais::{Image, exige, mesure, mesure_deux, peints};
 
 /// Largeur de référence.
 const WIDTH: u32 = 640;
@@ -246,8 +273,30 @@ fn main() {
             "{nom} : la traversée ne peint pas la même image que le chemin brut"
         );
 
+        // **Les deux phases d'une image, séparées.** Jusqu'ici la part de
+        // soumission ne se lisait que par différence entre les deux chemins
+        // ci-dessus, ce qui ne donne qu'une fourchette : la traversée change ce
+        // qu'elle soumet **et** ce qu'il reste à remplir, si bien que l'écart
+        // mêle les deux. Mesurée directement, elle dit laquelle des deux
+        // optimiser — et c'est la seule grandeur du pipeline qu'aucun banc
+        // n'isolait.
+        let (soumission, remplissage) = mesure_deux(IMAGES, || {
+            let debut = Instant::now();
+            context
+                .submit_world_visible(Affine3::IDENTITY, &world, cell, None, |_| Some(&texture))
+                .expect("capacité");
+            let soumis = Instant::now();
+            context
+                .frame_end(black_box(&mut pixels), WIDTH)
+                .expect("image rendue");
+            (soumis - debut, soumis.elapsed())
+        });
+        exige(&pixels, &format!("{nom} phases"), &Image::Peinte(0.5));
+
         ligne(&alloc_nom(nom, "brut"), brute);
         ligne(&alloc_nom(nom, "traverse"), visible);
+        ligne(&alloc_nom(nom, "soumission"), soumission);
+        ligne(&alloc_nom(nom, "remplissage"), remplissage);
     }
 
     // **Le décor traversé, par chemin de remplissage**, et c'est la seule mesure

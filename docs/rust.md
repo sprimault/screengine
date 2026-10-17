@@ -48,7 +48,10 @@ aucune dépendance.
 
 **Un fichier par chemin qu'une étape va changer**, et non un fichier qui grossit.
 `carte.rs` mesure le chargement d'une carte, sa soumission par image et **ce que
-la traversée par portails coûte ou rapporte** face au chemin brut ; il intègre
+la traversée par portails coûte ou rapporte** face au chemin brut ; il sépare en
+outre les **deux phases** d'une image, soumission et remplissage, qu'aucune
+mesure n'isolait — la différence entre deux chemins de traversée mêlait ce qui
+est soumis à ce qu'il reste à remplir ; il intègre
 `hosts/couloir.world` et `hosts/salles.world` par `include_bytes!`, le noyau
 n'ouvrant aucun fichier et un bench qui encoderait sa propre carte ne mesurant
 qu'un encodeur écrit pour lui. Le couloir y reste alors que les hôtes ne le
