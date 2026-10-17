@@ -90,7 +90,7 @@ leurs dans le noyau. Et la frontière C exige `std` et `unsafe`, que le noyau re
 | `screengine` | le noyau : maths, pipeline, rasteriseur, formats, monde | non | aucune | chemins SIMD seulement |
 | `screengine-ffi` | la frontière C, en rlib | oui | `screengine` | oui |
 | `screengine-lib` | les bibliothèques publiées, `cdylib` + `staticlib`, sous le nom `screengine` | oui | `screengine-ffi` | non |
-| `screengine-play` | étage d'accueil : fenêtre, entrées, boucle à pas fixe, mise à l'échelle, décodage PNG | oui | `winit`, `softbuffer`, `png`, `web-time`, et `web-sys` et `wasm-bindgen` sur wasm seulement | non |
+| `screengine-play` | étage d'accueil : fenêtre, entrées, boucle à pas fixe, mise à l'échelle, décodage PNG | oui | `winit`, `softbuffer`, `png`, `web-time`, et sur wasm seulement `web-sys`, `wasm-bindgen`, `wasm-bindgen-futures` et `js-sys` | non |
 | `screengine-conformance` | scènes de référence, empreintes | oui | `screengine` | l'allocateur qui compte, dans son test seulement |
 
 **Un crate se crée pour une contrainte de compilation, jamais pour ranger.** Les

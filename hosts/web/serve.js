@@ -30,6 +30,7 @@ const TYPES = {
   ".wasm": "application/wasm",
   ".mesh": "application/octet-stream",
   ".world": "application/octet-stream",
+  ".png": "image/png",
 };
 
 /** Le répertoire servi, et rien au-dessus. */

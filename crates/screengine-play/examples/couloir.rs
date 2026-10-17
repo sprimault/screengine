@@ -1194,28 +1194,110 @@ fn title(filter: Filter) -> &'static str {
     }
 }
 
+/// Les planches que l'exemple affiche, décodées avant que la boucle démarre.
+///
+/// **Groupées parce qu'elles arrivent par deux chemins** : intégrées au binaire
+/// en natif, lues par le réseau dans un navigateur. Les porter une à une
+/// jusqu'à la boucle demanderait d'écrire la liste deux fois.
+struct Planches {
+    /// Le mur, et le plafond.
+    stone: Arc<Texture>,
+    /// Le sol.
+    cobble: Arc<Texture>,
+    /// Ce qu'on voit par les ouvertures du plafond.
+    sky: Arc<Texture>,
+    /// Les caisses.
+    plate: Arc<Texture>,
+    /// L'arme au repos.
+    hands: Arc<Texture>,
+    /// L'arme au tir.
+    firing: Arc<Texture>,
+    /// La planche de marche du démon.
+    demon: Arc<Texture>,
+}
+
+/// Les planches intégrées au binaire, qui est ce qu'un exécutable porte.
+///
+/// **Masquées pour les trois dernières** : sans ce format l'alpha est ignoré,
+/// le quadrilatère entier se dessine, et les texels que le détourage avait
+/// vidés reparaissent avec leur couleur — la flamme effacée du canon en tête.
+/// Le format se déclare au chargement parce que c'est là que la chaîne de
+/// mipmaps se construit.
+#[cfg(not(target_arch = "wasm32"))]
+fn planches() -> Result<Planches, screengine_play::Error> {
+    Ok(Planches {
+        stone: Arc::new(load_png(include_bytes!("../assets/mur-mousse.png"))?),
+        cobble: Arc::new(load_png(include_bytes!("../assets/sol-pave-mousse.png"))?),
+        sky: Arc::new(load_png(include_bytes!("../assets/ciel-jour.png"))?),
+        plate: Arc::new(load_png(include_bytes!("../assets/malle-rouillee.png"))?),
+        hands: Arc::new(load_png_masked(include_bytes!(
+            "../assets/mains-repos.png"
+        ))?),
+        firing: Arc::new(load_png_masked(include_bytes!("../assets/mains-tir.png"))?),
+        demon: Arc::new(load_png_masked(include_bytes!(
+            "../assets/demon-marche.png"
+        ))?),
+    })
+}
+
+/// Les mêmes planches, lues à côté de la page.
+///
+/// **Elles ne sont pas dans le module**, qui pesait trois mégaoctets et demi
+/// avec elles : le navigateur devait tout télécharger **et compiler** avant la
+/// première image. Le chargement reste un appel nommé, terminé avant que la
+/// boucle démarre — une planche décodée à la première image serait une
+/// allocation en cours d'image, ce que le moteur s'interdit de son côté.
+#[cfg(target_arch = "wasm32")]
+async fn planches() -> Result<Planches, screengine_play::Error> {
+    use screengine_play::fetch::fetch;
+
+    Ok(Planches {
+        stone: Arc::new(load_png(&fetch("assets/mur-mousse.png").await?)?),
+        cobble: Arc::new(load_png(&fetch("assets/sol-pave-mousse.png").await?)?),
+        sky: Arc::new(load_png(&fetch("assets/ciel-jour.png").await?)?),
+        plate: Arc::new(load_png(&fetch("assets/malle-rouillee.png").await?)?),
+        hands: Arc::new(load_png_masked(&fetch("assets/mains-repos.png").await?)?),
+        firing: Arc::new(load_png_masked(&fetch("assets/mains-tir.png").await?)?),
+        demon: Arc::new(load_png_masked(&fetch("assets/demon-marche.png").await?)?),
+    })
+}
+
 /// Ouvre la fenêtre et parcourt le couloir.
+///
+/// **Le lancement n'a pas la même forme des deux côtés**, et c'est le navigateur
+/// qui l'impose : il ne peut pas attendre que `main` revienne, donc celui-ci
+/// rend la main et la boucle part de la future, une fois les planches lues. Ce
+/// que cette future lève n'a plus aucun retour à remplir : il part au puits.
 fn main() -> Result<(), screengine_play::Error> {
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        jouer(planches()?)
+    }
+    #[cfg(target_arch = "wasm32")]
+    {
+        wasm_bindgen_futures::spawn_local(async {
+            if let Err(error) = async { jouer(planches().await?) }.await {
+                screengine_play::report(&error);
+            }
+        });
+        Ok(())
+    }
+}
+
+/// Parcourt le couloir, ses planches en main.
+fn jouer(planches: Planches) -> Result<(), screengine_play::Error> {
+    let Planches {
+        stone,
+        cobble,
+        sky,
+        plate,
+        hands,
+        firing,
+        demon,
+    } = planches;
     let decor = corridor()?;
-    let stone = Arc::new(load_png(include_bytes!("../assets/mur-mousse.png"))?);
-    let cobble = Arc::new(load_png(include_bytes!("../assets/sol-pave-mousse.png"))?);
-    let sky = Arc::new(load_png(include_bytes!("../assets/ciel-jour.png"))?);
-    let plate = Arc::new(load_png(include_bytes!("../assets/malle-rouillee.png"))?);
-    // **Masquées, comme le démon** : sans ce format l'alpha est ignoré, le
-    // quadrilatère entier se dessine, et les texels que le détourage avait
-    // vidés reparaissent avec leur couleur — la flamme effacée du canon en
-    // tête.
+    // Engendrée et non chargée : un disque dégradé n'a pas de planche à lire.
     let shadow = Arc::new(shadow_texture(64));
-    let hands = Arc::new(load_png_masked(include_bytes!(
-        "../assets/mains-repos.png"
-    ))?);
-    let firing = Arc::new(load_png_masked(include_bytes!("../assets/mains-tir.png"))?);
-    // La planche de marche, **chargée en masqué** : c'est le format qui fait
-    // que les texels d'alpha nul ne s'écrivent pas, et il se déclare au
-    // chargement parce que c'est là que la chaîne de mipmaps se construit.
-    let demon = Arc::new(load_png_masked(include_bytes!(
-        "../assets/demon-marche.png"
-    ))?);
     let world = World {
         camera: FreeCamera::new(Vec3::new(0.0, 0.0, 1.6)),
         filter: Filter::Dither,

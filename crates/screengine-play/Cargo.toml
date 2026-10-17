@@ -54,6 +54,12 @@ winit = { version = "0.30.13", default-features = false, features = [
 # vers JavaScript, à côté de l'ABI C. Ici rien n'est exporté, c'est un appel.
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen = "0.2.128"
+# Épinglé au correctif près, et non `"0.4"` : la 0.4.79 exige
+# `wasm-bindgen 0.2.129`, et une montée silencieuse désaccorderait
+# `WASM_BINDGEN_VERSION` du `Makefile`, qui doit porter exactement la version du
+# crate compilé.
+wasm-bindgen-futures = "0.4.78"
+js-sys = "0.3.105"
 web-sys = { version = "0.3.105", features = [
   "CanvasRenderingContext2d",
   "console",
@@ -63,6 +69,7 @@ web-sys = { version = "0.3.105", features = [
   "HtmlElement",
   "ImageData",
   "Node",
+  "Response",
   "Window",
 ] }
 
