@@ -9,7 +9,7 @@
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use super::{Error, Play, Scale, load_png, load_png_icon};
+use super::{Error, Input, Play, Scale, Tick, load_png, load_png_icon};
 
 /// Chaque item du noyau que ce crate promet à plat est joignable sans
 /// `screengine::`.
@@ -166,6 +166,18 @@ fn le_puits_recoit_l_erreur() {
         VU.load(Ordering::Relaxed),
         "le puits réglé n'a pas été appelé"
     );
+}
+
+/// Avant la première image, il n'y a pas de durée à lire — et c'est la clause
+/// qu'un jeu doit traiter, puisque son premier pas tombe avant toute image.
+///
+/// **Le cas présent ne se teste pas ici** : seule la boucle pose ces durées, et
+/// elle exige une fenêtre. Ce qui le couvre est la lecture du relevé affiché,
+/// qui vient du même endroit.
+#[test]
+fn aucune_duree_avant_la_premiere_image() {
+    let input = Input::default();
+    assert_eq!(Tick::for_test(&input, 1.0, false).frame_time(), None);
 }
 
 /// Un PNG RGBA d'une seule couleur, écrit pour le test.

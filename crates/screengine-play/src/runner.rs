@@ -25,7 +25,7 @@ use crate::clock::Clock;
 use crate::input::Input;
 use crate::scale::{Scale, Scaler};
 use crate::texture::Icon;
-use crate::{DEFAULT_WINDOW_FACTOR, Error, Output, Play, Tick};
+use crate::{DEFAULT_WINDOW_FACTOR, Error, FrameTime, Output, Play, Tick};
 
 /// La fenêtre et sa surface, qui vivent et meurent ensemble.
 ///
@@ -311,6 +311,12 @@ struct Runner<S, U, R, O> {
     /// Vrai quand le curseur est réellement capturé par la fenêtre.
     captured: bool,
     stats: Stats,
+    /// Ce que la dernière image a coûté, que le pas suivant lit par son `Tick`.
+    ///
+    /// Tenu à part du relevé, qui moyenne sur une seconde et se vide : ce sont
+    /// deux grandeurs différentes, et les confondre donnerait au jeu une valeur
+    /// qui change une fois par seconde au lieu d'une fois par image.
+    frame_time: Option<FrameTime>,
     /// L'image en RGBA que le canvas reçoit, gardée d'une image à l'autre.
     #[cfg(target_arch = "wasm32")]
     frame: Vec<u8>,
@@ -375,6 +381,7 @@ where
         last_wake: None,
         captured: false,
         stats: Stats::default(),
+        frame_time: None,
         #[cfg(target_arch = "wasm32")]
         frame: Vec::new(),
         measured: None,
@@ -575,6 +582,15 @@ where
         }
 
         let presented = Instant::now();
+        // Posées quoi que vaille `stats` : le relevé affiché est un service de
+        // l'étage d'accueil, ces durées sont ce que l'ABI donne déjà à un hôte
+        // C. Les conditionner reviendrait à faire dépendre une capacité d'un
+        // réglage d'affichage.
+        self.frame_time = Some(FrameTime {
+            submit: submitted - opened,
+            fill: filled - submitted,
+            screen: presented - filled,
+        });
         if self.play.stats {
             self.stats.record(
                 submitted - opened,
@@ -698,6 +714,7 @@ where
                 input: &self.input,
                 index: self.index,
                 dt: self.clock.step_seconds(),
+                frame: self.frame_time,
                 exit: false,
                 captured: self.captured,
                 capture: None,

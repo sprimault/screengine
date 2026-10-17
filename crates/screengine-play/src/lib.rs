@@ -385,12 +385,36 @@ impl Play {
     }
 }
 
+/// Ce qu'une image a coûté, phase par phase.
+///
+/// **Des valeurs rendues au jeu, et non un affichage.** [`Play::stats`] pose un
+/// relevé moyenné là où on le lit — barre de titre, ou page dans un
+/// navigateur —, ce qui ne sert pas un jeu qui dessine sa propre interface. Un
+/// hôte qui passe par l'ABI C a déjà ces durées, puisque c'est lui qui appelle
+/// le début d'image, les tuiles et la fin ; ce chemin-ci les lui rendait.
+///
+/// **Ce sont les durées de la dernière image rendue, jamais une moyenne.** Un
+/// jeu qui en veut une la fait sur ce qu'il reçoit ; celle du relevé est
+/// calculée autrement, sur une seconde, et les deux ne se confondent pas.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FrameTime {
+    /// Ce que le jeu a passé à soumettre sa scène : transformation, découpe et
+    /// préparation des triangles.
+    pub submit: std::time::Duration,
+    /// Ce que le moteur a passé à remplir ses tuiles.
+    pub fill: std::time::Duration,
+    /// Le dessin de l'hôte par-dessus l'image, la mise à l'échelle et la
+    /// présentation.
+    pub screen: std::time::Duration,
+}
+
 /// Ce que reçoit un pas de mise à jour.
 #[derive(Debug)]
 pub struct Tick<'a> {
     input: &'a Input,
     index: u64,
     dt: f32,
+    frame: Option<FrameTime>,
     exit: bool,
     captured: bool,
     capture: Option<bool>,
@@ -411,6 +435,9 @@ impl<'a> Tick<'a> {
             input,
             index: 0,
             dt,
+            // Absent, qui est l'état avant la première image : seule la boucle
+            // en pose un, et elle exige une fenêtre.
+            frame: None,
             exit: false,
             captured,
             capture: None,
@@ -436,6 +463,34 @@ impl<'a> Tick<'a> {
     /// La durée d'un pas, en secondes. Constante pour toute la session.
     pub fn dt(&self) -> f32 {
         self.dt
+    }
+
+    /// Ce que la dernière image a coûté, absent tant qu'aucune n'a été rendue.
+    ///
+    /// **La dernière image, donc la précédente** : un pas de mise à jour vient
+    /// avant l'image qu'il provoque, et ce qu'on lit ici a été mesuré au tour
+    /// d'avant. Sur une scène qui change peu d'une image à l'autre, c'est sans
+    /// conséquence ; sur un pas qui vient de charger un décor, le chiffre décrit
+    /// encore l'ancien.
+    ///
+    /// Plusieurs pas peuvent se jouer pour une seule image quand la machine
+    /// prend du retard : ils lisent alors tous la même valeur.
+    ///
+    /// ```no_run
+    /// use screengine_play::{Play, Tick};
+    ///
+    /// let _ = Play::new().run(
+    ///     0u32,
+    ///     |affichee: &mut u32, tick: &mut Tick<'_>| {
+    ///         if let Some(frame) = tick.frame_time() {
+    ///             *affichee = (frame.submit + frame.fill + frame.screen).as_millis() as u32;
+    ///         }
+    ///     },
+    ///     |_, _| {},
+    /// );
+    /// ```
+    pub fn frame_time(&self) -> Option<FrameTime> {
+        self.frame
     }
 
     /// Demande la fermeture après ce pas.
