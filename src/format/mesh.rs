@@ -129,11 +129,15 @@ pub struct Mesh {
     groups: Vec<Group>,
     /// Les noms d'emplacements de texture, dans l'ordre du fichier.
     names: Vec<String>,
-    /// Les deux coins de la boîte englobante, calculée au chargement.
-    // Aucune élimination ne la lit encore : la soumission dessine tous les
-    // groupes, et c'est la traversée par portails qui aura de quoi s'en servir.
-    #[allow(dead_code)]
-    bounds: [Vec3; 2],
+    /// Les deux coins de la boîte englobante de chaque trame, calculés au
+    /// chargement.
+    ///
+    /// Une par trame, et calculées ici plutôt que sur appel : un hôte qui
+    /// interroge à chaque image paierait sinon un parcours des sommets, là où
+    /// vingt-quatre octets par trame ne se discutent pas. Aucune élimination ne
+    /// les lit — la soumission dessine tous les groupes —, c'est la traversée par
+    /// portails qui aura de quoi s'en servir.
+    bounds: Vec<[Vec3; 2]>,
 }
 
 impl Mesh {
@@ -161,7 +165,16 @@ impl Mesh {
                 v,
             });
         }
-        let bounds = bounds(&vertices);
+        // Une boîte par trame, chacune sur sa tranche de poses. Un maillage sans
+        // sommet a tout de même sa trame, et sa boîte est nulle : sans elle,
+        // l'appelant aurait deux absences à distinguer pour un fichier légitime.
+        let mut bounds = reserved(frames as usize)?;
+        for frame in 0..frames as usize {
+            let start = frame * vertices.len();
+            let frame = &poses[start..start + vertices.len()];
+            bounds.push(enclose(frame.iter().map(|pose| pose.position)));
+        }
+
         Ok(Self {
             vertices,
             poses,
@@ -180,6 +193,23 @@ impl Mesh {
     /// d'essayer.
     pub fn frame_count(&self) -> u32 {
         self.frames
+    }
+
+    /// Les deux coins de la boîte englobante d'une trame, bas puis haut, ou
+    /// `None` au-delà de la dernière.
+    ///
+    /// **Par trame, parce qu'aucune boîte unique ne dit la vérité.** Un maillage
+    /// statique n'en a qu'une et la question ne se pose pas ; un maillage animé
+    /// déborde de la boîte de sa première trame, et l'enveloppe de toutes les
+    /// trames couvre ce qu'aucune ne remplit. L'hôte sait laquelle il veut, et
+    /// c'est dans ce sens que la dérivation marche : la seconde s'obtient de
+    /// celles-ci avec `frame_count`, l'inverse non.
+    ///
+    /// **Dans le repère du maillage**, une pose n'étant pas connue d'ici. Le
+    /// centre et les demi-étendues qu'un balayage attend sont à une somme et une
+    /// différence : `(bas + haut) / 2` et `(haut - bas) / 2`.
+    pub fn bounds(&self, frame: u32) -> Option<[Vec3; 2]> {
+        self.bounds.get(frame as usize).copied()
     }
 
     /// Les poses d'une trame, ou `None` au-delà de la dernière.
@@ -426,22 +456,21 @@ fn unique_ids(groups: &[Group]) -> Result<()> {
     Ok(())
 }
 
-/// Les deux coins de la boîte englobante des sommets, nuls si le maillage est
-/// vide.
+/// Les deux coins de la boîte englobante de positions, nuls s'il n'y en a
+/// aucune.
 ///
 /// Par comparaison et non par `f32::min` : celui-ci ne spécifie pas le signe
 /// qu'il rend de `min(-0.0, 0.0)`, et deux cibles donneraient deux boîtes pour
 /// le même maillage. Les coordonnées étant finies — le curseur l'a garanti —,
 /// une comparaison suffit et rend les mêmes bits partout.
-fn bounds(vertices: &[VertexUv]) -> [Vec3; 2] {
-    let Some(first) = vertices.first() else {
+fn enclose(mut positions: impl Iterator<Item = Vec3>) -> [Vec3; 2] {
+    let Some(first) = positions.next() else {
         return [Vec3::ZERO; 2];
     };
 
-    let mut low = first.position;
-    let mut high = first.position;
-    for vertex in &vertices[1..] {
-        let p = vertex.position;
+    let mut low = first;
+    let mut high = first;
+    for p in positions {
         if p.x < low.x {
             low.x = p.x;
         }

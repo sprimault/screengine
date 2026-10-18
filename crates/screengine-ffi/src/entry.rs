@@ -63,6 +63,17 @@ impl AbiError {
         message: "slot beyond those the resource declares",
     };
 
+    /// Une trame au-delà de celles qu'un maillage porte.
+    ///
+    /// Distincte de [`Self::WORLD_INDEX`] par son message seul : un hôte qui
+    /// lisait une carte et un hôte qui lit un maillage ne cherchent pas le même
+    /// compte, et les renvoyer tous deux vers « ce que la carte déclare » en
+    /// enverrait un vérifier un fichier qu'il n'a pas ouvert.
+    pub(crate) const FRAME_INDEX: Self = Self {
+        code: SCG_ERR_INVALID_ARGUMENT,
+        message: "frame beyond those the mesh declares",
+    };
+
     /// Un index au-delà de ce que la carte porte.
     ///
     /// Une faute dans l'appel et non dans le contenu : le fichier est bon, c'est

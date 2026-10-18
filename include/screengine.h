@@ -1695,6 +1695,32 @@ int32_t scg_submit_mesh_frame(struct ScgContext *ctx,
 // writable `uint32_t`.
 int32_t scg_mesh_frame_count(const struct ScgMesh *mesh, uint32_t *out);
 
+// Writes a frame's bounding box to `out`: three floats of the low corner, then
+// three of the high one, in the mesh's own space — a pose is not known here.
+// The centre and half-extents a sweep takes are one sum and one difference
+// away.
+//
+// Six floats and not a structure, for the reason `scg_world_entity_pose`
+// gives: a box has no published layout to reuse, and inventing one would
+// freeze it forever for one accessor.
+//
+// **Per frame, because no single box is true.** A static mesh has one and the
+// question does not arise; an animated mesh leaves the box of its first frame,
+// while the envelope of every frame covers what none of them fills. Only this
+// direction derives: the envelope comes from these boxes and
+// `scg_mesh_frame_count`, never the other way.
+//
+// **This is not a collision test, and there is none against a posed mesh.** A
+// sweep tests a surface's polygon with the edges a map carries classified, and
+// a mesh has neither. What this gives is the extent its author wrote, so a host
+// stops guessing it.
+//
+// # Safety
+//
+// `mesh` must be a live handle from `scg_mesh_load`, and `out` must cover six
+// writable floats.
+int32_t scg_mesh_bounds(const struct ScgMesh *mesh, uint32_t frame, float *out);
+
 // Loads a map from a block of bytes.
 //
 // Same contract as `scg_mesh_load`, and deliberately so: two resources loaded

@@ -1630,6 +1630,48 @@ pub unsafe extern "C" fn scg_mesh_frame_count(mesh: *const ScgMesh, out: *mut u3
     unsafe { mesh_count(mesh, out, Mesh::frame_count) }
 }
 
+/// Writes a frame's bounding box to `out`: three floats of the low corner, then
+/// three of the high one, in the mesh's own space — a pose is not known here.
+/// The centre and half-extents a sweep takes are one sum and one difference
+/// away.
+///
+/// Six floats and not a structure, for the reason `scg_world_entity_pose`
+/// gives: a box has no published layout to reuse, and inventing one would
+/// freeze it forever for one accessor.
+///
+/// **Per frame, because no single box is true.** A static mesh has one and the
+/// question does not arise; an animated mesh leaves the box of its first frame,
+/// while the envelope of every frame covers what none of them fills. Only this
+/// direction derives: the envelope comes from these boxes and
+/// `scg_mesh_frame_count`, never the other way.
+///
+/// **This is not a collision test, and there is none against a posed mesh.** A
+/// sweep tests a surface's polygon with the edges a map carries classified, and
+/// a mesh has neither. What this gives is the extent its author wrote, so a host
+/// stops guessing it.
+///
+/// # Safety
+///
+/// `mesh` must be a live handle from `scg_mesh_load`, and `out` must cover six
+/// writable floats.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn scg_mesh_bounds(mesh: *const ScgMesh, frame: u32, out: *mut f32) -> i32 {
+    entry::without_context(|| {
+        if out.is_null() {
+            return Err(AbiError::NULL);
+        }
+        // SAFETY: précondition de la fonction — le pointeur est nul ou vise un
+        // handle vivant.
+        let mesh = unsafe { mesh.as_ref() }.ok_or(AbiError::NULL)?;
+        let [low, high] = mesh.inner.bounds(frame).ok_or(AbiError::FRAME_INDEX)?;
+        let corners = [low.x, low.y, low.z, high.x, high.y, high.z];
+        // SAFETY: précondition de la fonction — `out` couvre six flottants
+        // inscriptibles, et le tableau source ne le recouvre pas.
+        unsafe { ptr::copy_nonoverlapping(corners.as_ptr(), out, corners.len()) };
+        Ok(())
+    })
+}
+
 /// Le corps commun des accesseurs scalaires d'un maillage.
 ///
 /// # Safety

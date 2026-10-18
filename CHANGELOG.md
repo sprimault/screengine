@@ -63,6 +63,20 @@ publié, et explique les conventions du dépôt à qui y contribue.
 
 ## [Non publié]
 
+### Ajouté
+
+- **`scg_mesh_bounds` et `Mesh::bounds` rendent la boîte englobante d'une
+  trame**, bas puis haut, dans le repère du maillage : l'étendue qu'un hôte
+  réécrivait à la main pour tout maillage qu'il pose.
+
+***
+
+### Added
+
+- **`scg_mesh_bounds` and `Mesh::bounds` return a frame's bounding box**, low
+  then high corner, in the mesh's own space: the extent a host rewrote by hand
+  for every mesh it places.
+
 ## [1.4.0] — 2026-10-18 — Le plafond vient des écrans
 
 ### Ajouté
