@@ -33,6 +33,12 @@ func main() {
 	check(uint32(C.scg_abi_version()) == C.SCG_ABI_VERSION,
 		"la bibliothèque liée est celle du header")
 
+	// Hors des empreintes, parce que cette fonction ne dessine pas : elle est le
+	// seul point d'entrée à recevoir un tableau de flottants de longueur
+	// variable, et c'est le chemin qu'un langage qui déplace ses objets doit
+	// éprouver.
+	checkLightmapFault()
+
 	edge, edgeOK := renderEdge()
 	textured, texturedOK := renderTextured(C.SCG_FILTER_DITHER)
 	bilinear, bilinearOK := renderTextured(C.SCG_FILTER_BILINEAR)

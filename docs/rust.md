@@ -2204,6 +2204,14 @@ mesure : un compteur, une empreinte, une durée.
   adresse prise sur un objet Go cessant d'être valide sans prévenir. C et C++ ne
   déplacent rien, JavaScript et Java ne passent jamais de pointeur. Même règle
   de saut.
+
+  **Il éprouve en outre le seul tableau de flottants de longueur variable de
+  l'ABI**, celui des coins de `scg_lightmap_fault` : partout ailleurs un tableau
+  de flottants est de taille fixe, ou bien un tableau de structures. C'est donc
+  le chemin le plus exposé pour ce langage, et le diagnostic s'y appelle hors des
+  empreintes — la fonction ne dessine pas. L'hôte wasm l'appelle aussi, pour la
+  raison symétrique : il doit écrire ces flottants dans la mémoire linéaire par
+  `scg_buffer_alloc`, ce qu'aucune longueur variable ne lui avait demandé.
 - **Les cibles `test-*` ont une forme commune** dans le `Makefile` : chaque
   hôte fournit `why-not`, `all` et `run`, et la règle compare son empreinte à
   celle du chemin Rust. `make test SANS=android` retire un hôte, par une
