@@ -422,7 +422,20 @@ reste inconnu, faute d'appareil de référence, et seule sa justesse est établi
 
 ---
 
-## Hors périmètre v1
+## Hors périmètre
+
+**Ce que le projet ne fait pas, et à quelle condition chaque ligne se rouvre.**
+Le titre disait « hors périmètre v1 » : tant que le projet était en `0.x`, cela
+se lisait « pas avant la 1.0.0 », et depuis le gel le même mot se lit « pas avant
+un majeur » — ce que deux de ces lignes contredisent, puisqu'elles portent leur
+propre condition. Ce qui se rouvre prend un mineur, par la clause rappelée en
+tête de ce fichier.
+
+**Trois lignes portent une condition** : l'ombre d'un objet mobile, la collision
+contre un maillage posé, iOS et macOS. Les cinq autres sont fermées par un
+invariant ou par la définition du projet, jamais par un budget — aucune mesure ne
+les déplacera. Deux d'entre elles ouvrent cependant une porte voisine, qui n'est
+pas la leur, et le disent à leur ligne.
 
 - Éclairage dynamique par pixel, ombres portées : les lightmaps et quelques
   lumières dynamiques suffisent à la classe visée, et tiennent sur téléphone.
@@ -441,8 +454,13 @@ reste inconnu, faute d'appareil de référence, et seule sa justesse est établi
   ombres, en basse résolution, sur les **seuls objets mobiles**, coûterait
   environ une milliseconde : c'est ce que faisaient les moteurs de la toute fin
   de cette époque. Le décor garderait ses lightmaps, meilleures et déjà payées.
-  À trancher quand il y aura un objet mobile à ombrer, pas avant : dimensionner
-  pour des objets qui n'existent pas revient à choisir une résolution au hasard.
+
+  **Ce qui manque n'est plus l'objet.** L'étape 6 en a donné un — une créature
+  animée, avec la tache modulée qui la suit au sol —, donc l'échelle est connue
+  et le dimensionnement n'est plus arbitraire, ce que cette ligne a longtemps
+  donné comme sa raison d'attendre. **Se rouvre sur une insuffisance observée** :
+  tant que la tache posée convainc, la passe ne gagne rien, et cela se regarde
+  plutôt que se raisonne.
 - **La collision contre autre chose que la géométrie d'une carte.** Un maillage
   posé — une caisse, un poteau, une étagère — n'a pas de portail, donc pas
   d'adjacence : rien de ce que l'étape 7 apprend à traverser ne s'applique à lui,
@@ -454,14 +472,39 @@ reste inconnu, faute d'appareil de référence, et seule sa justesse est établi
   maillage et sa matrice, et elle aurait trois questions à trancher que l'étape 7
   n'éclaire pas : la transformation de la géométrie vers le monde, le test contre
   son enveloppe, et ce qu'un maillage **animé entre deux trames** doit arrêter.
+
+  **Aucune demande n'est à attendre** : l'exemple `carte` teste déjà ses caisses
+  lui-même, contre une demi-cote écrite à la main. Ce qui tient la ligne dehors
+  est la deuxième clause du balayage — il teste le **polygone** d'une surface et
+  jamais sa triangulation, chaque arête interne deviendrait un prisme et une
+  normale de contact qui n'existe pas. Une carte porte des polygones et des
+  arêtes classées au chargement ; un maillage n'a ni l'un ni l'autre, donc le
+  balayer contre ses triangles ferait accrocher une boîte sur une face plane.
+  **La question n'est donc pas qui teste, c'est contre quoi** : une enveloppe
+  déclarée par l'auteur et chargée avec le maillage, ou un format qui gagne ce
+  que les cartes ont déjà. La troisième question ci-dessus vient après celle-là.
 - Post-traitement plein écran : FXAA, bloom, tout ce qui lit les pixels voisins.
+  **Fermée par la tuile et non par le coût** : elle ne voit pas au-delà de son
+  bord, et la marge qu'il faudrait lui donner serait payée par toutes les scènes,
+  y compris celles qui n'en veulent pas.
 - Modèles animés par squelette : les trames interpolées suffisent à la classe
-  visée.
+  visée. **Et le format en paierait le prix** : des poids par sommet, donc un
+  `version_format` de plus et la migration de tous les maillages existants.
 - Son, entrées, réseau **dans le moteur**. Ce n'est pas un moteur de jeu. L'étage
   d'accueil et les hôtes de démonstration de l'étape 4 ont leur fenêtre, leurs
   entrées et leur boucle : c'est là qu'elles vivent, et le noyau n'en connaît
-  aucune.
-- Un éditeur livré. L'étape 8 fournit de quoi en écrire un, pas un produit.
-- iOS et macOS avant que le reste soit stable : ils exigent un runner macOS et
-  un cycle de retour lent depuis un poste Windows.
-- Rendu GPU. Ce serait un autre projet, pas une étape de celui-ci.
+  aucune. **Fermée par l'invariant, et pour le noyau seulement** : du son dans
+  l'étage d'accueil serait du comportement, de la même famille que la fenêtre
+  qu'il porte déjà, et cette ligne n'en dit rien.
+- Un éditeur livré. L'étape 8 fournit de quoi en écrire un, pas un produit, et
+  **l'éditeur vit dans un hôte** : la ligne est fermée par définition. Ce que
+  cette étape a nommément écarté — le tampon d'identifiants, l'épaisseur de trait
+  et le pointillé — s'ajoute en revanche par une fonction de plus si un éditeur
+  le réclame, sans reprendre ce qui est publié ; les raisons sont dans
+  `docs/abi.md`.
+- iOS et macOS. **Le runner macOS est le seul obstacle**, avec le cycle de retour
+  lent qu'il impose depuis un poste Windows, et rien ne le contourne : un
+  conteneur ne fournit pas de chaîne Apple. La clause qui subordonnait cette
+  ligne à la stabilité du reste est périmée, les dix étapes étant livrées.
+- Rendu GPU. **Fermée pour de bon** : ce serait un autre projet, pas une version
+  de celui-ci.
