@@ -128,6 +128,39 @@ pub const SCG_LIGHTMAP_READY: u32 = 1;
 /// because editing will produce it, and a published state does not change meaning.
 pub const SCG_LIGHTMAP_STALE: u32 = 2;
 
+/// The lightmap frame would be accepted: no fault.
+///
+/// Zero for the absence, as `surface_id` and `cell_id` already use it. The rule
+/// that refuses a zero covers a mode **passed** to a call, never a value the
+/// engine writes back.
+pub const SCG_LIGHTMAP_FAULT_NONE: u32 = 0;
+
+/// An axis of zero or non-finite length: no direction, so no reciprocal, and
+/// baking would divide by zero.
+pub const SCG_LIGHTMAP_FAULT_DEGENERATE_AXIS: u32 = 1;
+
+/// The origin does not land on a node of its own grid, measured from world zero.
+///
+/// Two grids of the same pitch would otherwise stay out of phase.
+pub const SCG_LIGHTMAP_FAULT_ORIGIN_OFF_GRID: u32 = 2;
+
+/// The two axes are not orthogonal, which would need the inverse of an arbitrary
+/// 2×2 matrix, hence a division per luxel.
+pub const SCG_LIGHTMAP_FAULT_SKEWED_AXES: u32 = 3;
+
+/// An axis leaves the plane of the surface, so the luxel grid does not cover what
+/// it lights.
+pub const SCG_LIGHTMAP_FAULT_AXIS_OFF_PLANE: u32 = 4;
+
+/// The surface spans too many luxels on one side, and its atlas would not fit.
+///
+/// The only one of the five that depends on the corners as much as on the frame,
+/// and the only one a generator could get wrong without reproducing a tolerance:
+/// the span is measured by dot product, never divided by the squared length of
+/// the axis, and a copy that divides is neutral on a unit axis and wrong
+/// everywhere else.
+pub const SCG_LIGHTMAP_FAULT_EXTENT_TOO_LARGE: u32 = 5;
+
 /// How deep portal traversal follows a line of sight.
 ///
 /// Exposed so a host can tell why an image came back incomplete. It is a constant

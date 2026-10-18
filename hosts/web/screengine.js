@@ -89,6 +89,24 @@ export const SCG_TRAVERSAL_CELLS = 4096;
 /** Le plus grand côté de l'atlas de lightmaps d'une cellule, en luxels. */
 export const SCG_MAX_LIGHTMAP_SIZE = 1024;
 
+/** Le repère de lightmap passerait : aucune faute. */
+export const SCG_LIGHTMAP_FAULT_NONE = 0;
+
+/** Un axe de longueur nulle ou non finie : pas de direction, pas de réciproque. */
+export const SCG_LIGHTMAP_FAULT_DEGENERATE_AXIS = 1;
+
+/** L'origine ne tombe pas sur un nœud de sa propre grille. */
+export const SCG_LIGHTMAP_FAULT_ORIGIN_OFF_GRID = 2;
+
+/** Les deux axes ne sont pas orthogonaux. */
+export const SCG_LIGHTMAP_FAULT_SKEWED_AXES = 3;
+
+/** Un axe sort du plan de la surface. */
+export const SCG_LIGHTMAP_FAULT_AXIS_OFF_PLANE = 4;
+
+/** La surface couvre trop de luxels sur un côté : son atlas ne tiendrait pas. */
+export const SCG_LIGHTMAP_FAULT_EXTENT_TOO_LARGE = 5;
+
 /** Nombre de lumières dynamiques qu'une scène porte au plus. */
 export const SCG_MAX_LIGHTS = 8;
 
@@ -309,6 +327,7 @@ export const EXPORTS = [
   "scg_lighting_state",
   "scg_lighting_save",
   "scg_lighting_restore",
+  "scg_lightmap_fault",
 ];
 
 /** Une cellule n'a pas encore de lightmap. */

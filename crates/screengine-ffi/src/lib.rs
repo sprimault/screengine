@@ -31,8 +31,9 @@ use std::slice;
 use std::sync::Arc;
 
 use screengine::{
-    Argument, Context, DepthMode, Error as CoreError, Lightmap, Lightmaps, Mesh, SpriteOrientation,
-    Surfaces, Texture, Vec3, VertexUv, VertexUv2, Visibility, World,
+    Argument, Context, DepthMode, Error as CoreError, Lightmap, LightmapFault, Lightmaps, Mesh,
+    SpriteOrientation, Surfaces, Texture, Vec3, VertexUv, VertexUv2, Visibility, World,
+    lightmap_fault,
 };
 
 use entry::AbiError;
@@ -48,13 +49,20 @@ pub use scene::{
     ScgSprite, ScgSweepHit, ScgTextureDesc, ScgTriangle, ScgVertex, ScgVertexUv, ScgVertexUv2,
     ScgVertexUvN,
 };
+// Les bornes d'entrée ont rejoint cette liste après coup : `cbindgen` lit la
+// source de `status`, donc le header les portait déjà, mais rien ne les nommait
+// depuis l'extérieur du crate — pas même un test de la frontière.
 pub use status::{
     SCG_ERR_FAULTED, SCG_ERR_INVALID_ARGUMENT, SCG_ERR_INVALID_FORMAT, SCG_ERR_INVALID_STATE,
     SCG_ERR_NULL, SCG_ERR_OUT_OF_MEMORY, SCG_ERR_PANIC, SCG_ERR_POISONED, SCG_ERR_UNKNOWN_RESOURCE,
-    SCG_ERR_UNSUPPORTED_FORMAT_VERSION, SCG_LIGHTMAP_ABSENT, SCG_LIGHTMAP_READY,
-    SCG_LIGHTMAP_STALE, SCG_MAX_LIGHTMAP_SIZE, SCG_OK, SCG_STATUS_INCOMPLETE, SCG_STATUS_NO_CELL,
-    SCG_STATUS_NO_GAP, SCG_STATUS_START_SOLID, SCG_SWEEP_CELLS, SCG_TRAVERSAL_CELLS,
-    SCG_TRAVERSAL_DEPTH,
+    SCG_ERR_UNSUPPORTED_FORMAT_VERSION, SCG_LIGHTMAP_ABSENT, SCG_LIGHTMAP_FAULT_AXIS_OFF_PLANE,
+    SCG_LIGHTMAP_FAULT_DEGENERATE_AXIS, SCG_LIGHTMAP_FAULT_EXTENT_TOO_LARGE,
+    SCG_LIGHTMAP_FAULT_NONE, SCG_LIGHTMAP_FAULT_ORIGIN_OFF_GRID, SCG_LIGHTMAP_FAULT_SKEWED_AXES,
+    SCG_LIGHTMAP_READY, SCG_LIGHTMAP_STALE, SCG_LINE_CAPACITY, SCG_MAX_LIGHTMAP_SIZE,
+    SCG_MAX_LIGHTS, SCG_MAX_OVERBRIGHT, SCG_MAX_RESOLUTION, SCG_MAX_TEXEL_COORD,
+    SCG_MAX_TEXTURE_SIZE, SCG_OK, SCG_STATUS_INCOMPLETE, SCG_STATUS_NO_CELL, SCG_STATUS_NO_GAP,
+    SCG_STATUS_START_SOLID, SCG_SWEEP_CELLS, SCG_TRAVERSAL_CELLS, SCG_TRAVERSAL_DEPTH,
+    SCG_TRIANGLE_CAPACITY,
 };
 pub use texture::ScgTexture;
 pub use world::{ScgLighting, ScgWorld};
@@ -2221,6 +2229,82 @@ pub unsafe extern "C" fn scg_lighting_restore(
 pub unsafe extern "C" fn scg_world_cell_count(world: *const ScgWorld, out: *mut u32) -> i32 {
     // SAFETY: mêmes préconditions que les autres comptes de la carte.
     unsafe { world_count(world, out, World::cell_count) }
+}
+
+/// Writes to `out` what would make this lightmap frame be refused, or
+/// `SCG_LIGHTMAP_FAULT_NONE`.
+///
+/// **The loader's own predicate, not a second writing of it.** Loading calls the
+/// same code, so the two cannot drift. That is why it is exposed at all: a map
+/// generator had to reimplement it — tolerance and Newell sum included — to find
+/// which surface a map was refused for, and that copy would have gone silently
+/// wrong the day a value moved.
+///
+/// **It takes no map handle, and that is the point**: a map that was refused
+/// never produced one. A host passes the frame and corners it wrote itself, from
+/// its own data, which is all it has left at that moment.
+///
+/// The five clauses are tested in the order loading refuses them, and the first
+/// one met is the one reported. `corners` holds `corner_count` triples of
+/// `float`, and **three corners are the minimum**: the fifth clause depends on
+/// them, and below three it is wrong in both directions — no corner at all makes
+/// the span come out of an empty set, inventing a fault on a sound frame, while
+/// one or two keep it under the bound and would hide a real one.
+///
+/// # Safety
+///
+/// `origin`, `u` and `v` must each point to three readable `float`s, `corners`
+/// must point to `corner_count` readable triples, and `out` must point to a
+/// writable `uint32_t`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn scg_lightmap_fault(
+    origin: *const f32,
+    u: *const f32,
+    v: *const f32,
+    corners: *const f32,
+    corner_count: u32,
+    out: *mut u32,
+) -> i32 {
+    entry::without_context(|| -> Result<(), AbiError> {
+        if out.is_null() || corners.is_null() {
+            return Err(AbiError::NULL);
+        }
+        if corner_count < 3 {
+            return Err(AbiError::CORNER_COUNT);
+        }
+        // SAFETY: précondition de la fonction — trois flottants lisibles.
+        let origin = unsafe { read_point(origin) }?;
+        // SAFETY: idem.
+        let axis_u = unsafe { read_point(u) }?;
+        // SAFETY: idem.
+        let axis_v = unsafe { read_point(v) }?;
+
+        // **Les coins se recopient, et c'est permis ici** : un appel nommé a le
+        // droit d'allouer, et celui-ci n'est pas dans une image. Ce qui ne se
+        // fait pas est de réinterpréter la tranche de flottants en tranche de
+        // `Vec3` — la disposition du noyau ne nous appartient pas. Le lecteur
+        // par point porte en outre le refus du non fini, que le noyau suppose
+        // écarté : sa documentation dit qu'au-delà une faute est rendue, mais
+        // pas laquelle.
+        let mut points = Vec::with_capacity(corner_count as usize);
+        for index in 0..corner_count as usize {
+            // SAFETY: précondition — `corner_count` triplets lisibles d'affilée.
+            points.push(unsafe { read_point(corners.add(index * 3)) }?);
+        }
+
+        let code = match lightmap_fault(origin, axis_u, axis_v, &points) {
+            None => status::SCG_LIGHTMAP_FAULT_NONE,
+            Some(LightmapFault::DegenerateAxis) => status::SCG_LIGHTMAP_FAULT_DEGENERATE_AXIS,
+            Some(LightmapFault::OriginOffGrid) => status::SCG_LIGHTMAP_FAULT_ORIGIN_OFF_GRID,
+            Some(LightmapFault::SkewedAxes) => status::SCG_LIGHTMAP_FAULT_SKEWED_AXES,
+            Some(LightmapFault::AxisOffPlane) => status::SCG_LIGHTMAP_FAULT_AXIS_OFF_PLANE,
+            Some(LightmapFault::ExtentTooLarge) => status::SCG_LIGHTMAP_FAULT_EXTENT_TOO_LARGE,
+        };
+
+        // SAFETY: précondition — `out` vise un `uint32_t` inscriptible.
+        unsafe { out.write(code) };
+        Ok(())
+    })
 }
 
 /// Writes the stable identifier of the cell at `index` to `out`.
