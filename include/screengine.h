@@ -278,6 +278,52 @@
 // error then names the map rather than one cell of it.
 #define SCG_MAX_LIGHTMAP_SIZE 1024
 
+// The greatest number of dynamic lights one scene may carry.
+//
+// A ninth light refuses the whole call rather than being dropped in silence: a
+// host that places nine must know which one is missing, and there is no answer
+// to that question. It cannot be configured — attenuation is computed per vertex
+// at submission, so each extra light is one more pass over every vertex
+// submitted, and a phone core's budget is what fixes the bound.
+#define SCG_MAX_LIGHTS 8
+
+// The greatest overbright shift `scg_set_overbright` accepts.
+//
+// Zero leaves a texel untouched under full light; one and two double and
+// quadruple the combined value, with saturation. Any other value is rejected.
+#define SCG_MAX_OVERBRIGHT 2
+
+// The greatest absolute texture or lightmap coordinate a vertex may carry.
+//
+// An integer, although the coordinates themselves are `float`: the value is
+// exact in both, and a host compares its own mapping against it rather than
+// having a batch refused whole. Beyond it, or non-finite, one coordinate
+// refuses the entire batch.
+#define SCG_MAX_TEXEL_COORD 16384
+
+// The greatest side of a texture, in texels.
+//
+// Both sides are powers of two, independently of each other, from 1 up to this
+// bound: that is what lets coordinate wrapping be a mask, with no division and
+// no comparison per texel.
+#define SCG_MAX_TEXTURE_SIZE 2048
+
+// The greatest internal resolution a context may be created with.
+//
+// The worst cases of the engine's fixed-point formats are computed on this
+// bound, so a `max_width` or `max_height` beyond it fails creation rather than
+// overflowing in silence.
+#define SCG_MAX_RESOLUTION 2048
+
+// The triangle capacity a zero `max_triangles` asks for.
+//
+// It counts triangles **prepared**, not submitted: clipping turns one submitted
+// triangle into up to six.
+#define SCG_TRIANGLE_CAPACITY 16384
+
+// The drawing-primitive capacity a zero `max_lines` asks for.
+#define SCG_LINE_CAPACITY 4096
+
 // The block is not a data file this library can read.
 //
 // The fault is in the content, not in the call: report it to the user as a bad

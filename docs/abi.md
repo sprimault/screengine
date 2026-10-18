@@ -198,12 +198,38 @@ suite au fil de l'eau, qui rend illisible la catégorie d'un code — précisém
 ce dont une liaison a besoin pour traiter celui qu'elle ne connaît pas.
 
 **La valeur d'une borne est un réglage ; ce qu'elle rend quand on l'atteint est
-un contrat.** Clause générale, qui vaut pour les cinq bornes publiées —
-`SCG_TRAVERSAL_DEPTH`, `SCG_TRAVERSAL_CELLS`, `SCG_SWEEP_CELLS`,
-`SCG_MAX_LIGHTMAP_SIZE`, le plafond de lumières. Un intégrateur qui en lit une
-veut d'abord savoir ce qu'il reçoit à la limite, et cela seul décide de ce qu'il
-écrit : un statut qu'il ignore, une erreur qu'il rapporte, un résultat tronqué
-qu'il retente autrement.
+un contrat.** Clause générale, qui vaut pour les quatre bornes que le moteur
+oppose à un appel en cours de route — `SCG_TRAVERSAL_DEPTH`,
+`SCG_TRAVERSAL_CELLS`, `SCG_SWEEP_CELLS`, `SCG_MAX_LIGHTMAP_SIZE`. Un
+intégrateur qui en lit une veut d'abord savoir ce qu'il reçoit à la limite, et
+cela seul décide de ce qu'il écrit : un statut qu'il ignore, une erreur qu'il
+rapporte, un résultat tronqué qu'il retente autrement.
+
+**Sept autres sont des bornes d'entrée**, celles qu'un hôte respecte *avant*
+d'appeler, et ce qu'elles rendent au dépassement est toujours le même —
+`SCG_ERR_INVALID_ARGUMENT`, sur l'appel qui déborde et jamais plus tard :
+`SCG_MAX_LIGHTS`, `SCG_MAX_OVERBRIGHT`, `SCG_MAX_TEXEL_COORD`,
+`SCG_MAX_TEXTURE_SIZE`, `SCG_MAX_RESOLUTION`, et les deux capacités qu'un `0`
+de configuration demande, `SCG_TRIANGLE_CAPACITY` et `SCG_LINE_CAPACITY`.
+
+**Elles n'ont longtemps vécu qu'en prose ici**, et la clause ci-dessus comptait
+« cinq bornes publiées » en n'en nommant que quatre : le plafond de lumières
+était annoncé publié sans exister dans le header. Une liaison sans préprocesseur
+recopiait donc à la main exactement ce que ce document lui dit de ne pas
+recopier, et le chemin Rust, lui, les publiait toutes — ce que la règle des deux
+chemins interdit.
+
+**Deux bornes du noyau restent dehors**, et c'est écrit pour qu'on ne les y
+remette pas par symétrie : les quatre octets par pixel, que le format du tampon
+de sortie porte déjà en propres termes, et les deux tailles de tuile, dont une
+constante ne dirait rien que son nom ne dise déjà — un `SCG_TILE_SIZE_32`
+vaudrait 32. `make lint` compte les onze autres et nomme celle qui manquerait.
+
+Écartée : `SCG_MAX_TEXEL_COORD` en constante flottante, qui aurait été la
+première du header. La valeur est entière et exactement représentable des deux
+côtés ; un entier se compare sans promotion surprenante ; et le contrôle de
+concordance de la liaison JavaScript ne lit que des entiers, si bien qu'une
+constante flottante y serait passée sans être vue.
 
 La distinction porte aussi sur ce qui se vérifie. **Le comportement à la limite
 se teste avant que la valeur soit mesurée**, avec une géométrie faite pour
@@ -1043,12 +1069,13 @@ Huit fonctions ajoutées, trois structures nouvelles, aucune constante :
   **Un rayon nul est refusé et non ignoré** : il n'éclaire rien et ferait
   diviser par zéro. **`NaN` se teste nommément**, avant les comparaisons de
   bornes, qui sont fausses dans les deux sens et le laisseraient passer.
-- **Le plafond de huit lumières est une constante du moteur**, et il ne se
-  configure pas. L'atténuation se calcule par sommet, à la soumission : chaque
-  lumière de plus est un parcours de plus sur chaque sommet soumis, et c'est le
-  budget d'un cœur de téléphone qui fixe la borne. Une neuvième lumière refuse
-  l'appel entier plutôt que d'être ignorée en silence — un hôte qui en place
-  neuf doit savoir laquelle manque, et il n'y a pas de réponse à cette question.
+- **Le plafond de huit lumières est une constante du moteur**, `SCG_MAX_LIGHTS`,
+  et il ne se configure pas. L'atténuation se calcule par sommet, à la
+  soumission : chaque lumière de plus est un parcours de plus sur chaque sommet
+  soumis, et c'est le budget d'un cœur de téléphone qui fixe la borne. Une
+  neuvième lumière refuse l'appel entier plutôt que d'être ignorée en silence —
+  un hôte qui en place neuf doit savoir laquelle manque, et il n'y a pas de
+  réponse à cette question.
 - **Le brouillard ne demande pas à l'hôte d'effacer avec sa couleur.** Il
   s'applique pendant la recopie d'une tuile, où la profondeur est déjà sous la
   main, et un pixel qu'aucun triangle n'a peint est infiniment lointain : le

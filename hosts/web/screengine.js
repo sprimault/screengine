@@ -89,6 +89,33 @@ export const SCG_TRAVERSAL_CELLS = 4096;
 /** Le plus grand côté de l'atlas de lightmaps d'une cellule, en luxels. */
 export const SCG_MAX_LIGHTMAP_SIZE = 1024;
 
+/** Nombre de lumières dynamiques qu'une scène porte au plus. */
+export const SCG_MAX_LIGHTS = 8;
+
+/** Le plus grand décalage de sur-éclairement que le contexte accepte. */
+export const SCG_MAX_OVERBRIGHT = 2;
+
+/**
+ * La plus grande coordonnée de texture ou de lightmap, en valeur absolue.
+ *
+ * Un entier, là où la coordonnée elle-même est un flottant : la valeur est
+ * exacte dans les deux, et un hôte y compare son plaquage plutôt que de voir
+ * un lot refusé en entier.
+ */
+export const SCG_MAX_TEXEL_COORD = 16384;
+
+/** Le plus grand côté d'une texture, en texels. */
+export const SCG_MAX_TEXTURE_SIZE = 2048;
+
+/** La plus grande résolution interne qu'un contexte peut recevoir. */
+export const SCG_MAX_RESOLUTION = 2048;
+
+/** La capacité de triangles qu'un `max_triangles` nul demande. */
+export const SCG_TRIANGLE_CAPACITY = 16384;
+
+/** La capacité de primitives de tracé qu'un `max_lines` nul demande. */
+export const SCG_LINE_CAPACITY = 4096;
+
 /** Le bloc n'est pas un fichier de données lisible : la faute est dans le contenu. */
 export const SCG_ERR_INVALID_FORMAT = -101;
 
