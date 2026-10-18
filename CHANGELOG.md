@@ -74,6 +74,9 @@ publié, et explique les conventions du dépôt à qui y contribue.
   `Play::max_resolution`.
 - **Le contrat dit qui choisit la résolution maximale d'un contexte**, et
   comment la calculer : un budget d'image, que la cote de l'écran ne donne pas.
+- **`scg_world_sweep_brute` et `scg_world_pick_brute` refont la requête contre
+  toutes les cellules, sans traversée** : c'est l'oracle qu'un intégrateur
+  n'avait pas pour éprouver la traversée sur son propre décor.
 
 ***
 
@@ -88,6 +91,9 @@ publié, et explique les conventions du dépôt à qui y contribue.
   `Play::max_resolution`.
 - **The contract now says who picks a context's maximum resolution**, and how to
   work it out: an image budget, which the screen's size does not provide.
+- **`scg_world_sweep_brute` and `scg_world_pick_brute` redo the query against
+  every cell, without traversal**: the oracle an integrator had no way to run
+  against traversal on their own map.
 
 ## [1.2.0] — 2026-10-17 — Le chemin Rust dans un navigateur
 

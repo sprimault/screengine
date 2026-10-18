@@ -658,3 +658,228 @@ fn la_portee_se_lit_et_le_statut_lui_repond() {
     // SAFETY: handle vivant, détruit une seule fois.
     unsafe { scg_world_destroy(world) };
 }
+
+/// Les deux cotes d'un résultat, motif de bits par motif de bits.
+///
+/// L'égalité des deux chemins est une égalité **de bits** et non de valeurs :
+/// `-0,0 == 0,0` est vrai, et un résultat qui porterait l'un pour l'autre
+/// passerait un test écrit sur des comparaisons. C'est la même exigence que
+/// celle de l'empreinte de conformance, appliquée à un seul appel.
+fn same_bits(left: &ScgSweepHit, right: &ScgSweepHit) -> bool {
+    left.fraction.to_bits() == right.fraction.to_bits()
+        && left
+            .normal
+            .iter()
+            .map(|v| v.to_bits())
+            .eq(right.normal.iter().map(|v| v.to_bits()))
+        && left
+            .point
+            .iter()
+            .map(|v| v.to_bits())
+            .eq(right.point.iter().map(|v| v.to_bits()))
+        && left.surface_id == right.surface_id
+        && left.cell_id == right.cell_id
+}
+
+/// L'oracle du balayage rend les mêmes bits que la traversée, et n'a aucune
+/// cellule à recevoir.
+///
+/// **C'est la raison d'être de ce point d'entrée** : sur une carte bien formée
+/// les deux chemins doivent rendre exactement le même résultat, et c'est la
+/// seule comparaison qui attrape une fenêtre de traversée trop étroite. Un
+/// intégrateur ne pouvait pas la faire — l'oracle n'existait que pour un
+/// appelant Rust.
+///
+/// Le second appel est celui qui distingue les deux : `from_cell` à zéro fait
+/// rendre `SCG_STATUS_NO_CELL` au chemin traversé, là où le brut n'a pas de
+/// cellule à connaître et trouve le sol quand même.
+#[test]
+fn l_oracle_du_balayage_rend_les_memes_bits_et_ignore_la_cellule() {
+    let world = load();
+    let half = [0.3f32, 0.3, 0.9];
+    let from = [2.0f32, 2.0, 1.0];
+    let to = [2.0f32, 2.0, -1.0];
+
+    let mut traversed = dirty_hit();
+    // SAFETY: handle vivant, pointeurs locaux, sortie inscriptible.
+    let code = unsafe {
+        scg_world_sweep(
+            world,
+            7,
+            half.as_ptr(),
+            from.as_ptr(),
+            to.as_ptr(),
+            &mut traversed,
+        )
+    };
+    assert_eq!(code, SCG_OK, "{}", last_error());
+
+    let mut brute = dirty_hit();
+    // SAFETY: idem, sans cellule de départ.
+    let code = unsafe {
+        scg_world_sweep_brute(world, half.as_ptr(), from.as_ptr(), to.as_ptr(), &mut brute)
+    };
+    assert_eq!(code, SCG_OK, "{}", last_error());
+    assert!(
+        same_bits(&traversed, &brute),
+        "fraction {} contre {}, surface {} contre {}",
+        traversed.fraction,
+        brute.fraction,
+        traversed.surface_id,
+        brute.surface_id
+    );
+    assert!(brute.surface_id != 0, "le sol doit arrêter la boîte");
+
+    // Sans cellule, les deux chemins divergent — et c'est tout ce qui les
+    // distingue sur cette carte.
+    let mut nowhere = dirty_hit();
+    // SAFETY: idem.
+    let code = unsafe {
+        scg_world_sweep(
+            world,
+            0,
+            half.as_ptr(),
+            from.as_ptr(),
+            to.as_ptr(),
+            &mut nowhere,
+        )
+    };
+    assert_eq!(code, SCG_STATUS_NO_CELL);
+    assert_eq!(nowhere.surface_id, 0);
+
+    // SAFETY: handle vivant, la carte est détruite après le dernier appel.
+    unsafe { scg_world_destroy(world) };
+}
+
+/// L'oracle du balayage refuse ce que le balayage refuse, par les mêmes lecteurs.
+///
+/// Les refus ne se dupliquent pas : ce sont `read_extents` et `read_point` qui
+/// les portent, et ce test est là pour que l'enveloppe de ce point d'entrée ne
+/// puisse pas les contourner — un pointeur nul oublié y serait un déréférencement.
+#[test]
+fn l_oracle_du_balayage_refuse_ce_qu_il_doit_refuser() {
+    let world = load();
+    let half = [0.3f32, 0.3, 0.9];
+    let from = [2.0f32, 2.0, 1.0];
+    let to = [2.0f32, 2.0, -1.0];
+    let mut hit = dirty_hit();
+
+    // SAFETY: la sortie est nulle, ce que l'appel doit refuser avant tout.
+    let code = unsafe {
+        scg_world_sweep_brute(
+            world,
+            half.as_ptr(),
+            from.as_ptr(),
+            to.as_ptr(),
+            ptr::null_mut(),
+        )
+    };
+    assert_eq!(code, SCG_ERR_NULL);
+
+    // SAFETY: la carte est nulle.
+    let code = unsafe {
+        scg_world_sweep_brute(
+            ptr::null(),
+            half.as_ptr(),
+            from.as_ptr(),
+            to.as_ptr(),
+            &mut hit,
+        )
+    };
+    assert_eq!(code, SCG_ERR_NULL);
+
+    // SAFETY: une demi-étendue négative est une faute d'appel.
+    let code = unsafe {
+        scg_world_sweep_brute(
+            world,
+            [-1.0f32, 0.0, 0.0].as_ptr(),
+            from.as_ptr(),
+            to.as_ptr(),
+            &mut hit,
+        )
+    };
+    assert_eq!(code, SCG_ERR_INVALID_ARGUMENT);
+
+    // SAFETY: une position non finie aussi, et `NaN` se teste nommément.
+    let code = unsafe {
+        scg_world_sweep_brute(
+            world,
+            half.as_ptr(),
+            [f32::NAN, 0.0, 0.0].as_ptr(),
+            to.as_ptr(),
+            &mut hit,
+        )
+    };
+    assert_eq!(code, SCG_ERR_INVALID_ARGUMENT);
+
+    // SAFETY: handle vivant.
+    unsafe { scg_world_destroy(world) };
+}
+
+/// L'oracle de l'interrogation rend les mêmes bits que le rayon traversé, et
+/// refuse le même filtre.
+///
+/// Le filtre est la seule chose que ce point d'entrée ajoute au balayage brut, et
+/// `SCG_PICK_ALL` est ce qu'une sélection d'éditeur emploie : une valeur inconnue
+/// s'y refuse plutôt que de se rabattre sur le défaut, sans quoi une liaison
+/// écrite contre une version ultérieure recevrait une image de scène qu'elle n'a
+/// pas demandée.
+#[test]
+fn l_oracle_de_l_interrogation_rend_les_memes_bits_et_refuse_son_filtre() {
+    let world = load();
+    let from = [2.0f32, 2.0, 1.0];
+    let to = [2.0f32, 2.0, -1.0];
+
+    let mut traversed = dirty_hit();
+    // SAFETY: handle vivant, pointeurs locaux, sortie inscriptible.
+    let code = unsafe {
+        scg_world_pick(
+            world,
+            7,
+            from.as_ptr(),
+            to.as_ptr(),
+            SCG_PICK_SOLID,
+            &mut traversed,
+        )
+    };
+    assert_eq!(code, SCG_OK, "{}", last_error());
+
+    let mut brute = dirty_hit();
+    // SAFETY: idem, sans cellule de départ.
+    let code = unsafe {
+        scg_world_pick_brute(
+            world,
+            from.as_ptr(),
+            to.as_ptr(),
+            SCG_PICK_SOLID,
+            &mut brute,
+        )
+    };
+    assert_eq!(code, SCG_OK, "{}", last_error());
+    assert!(
+        same_bits(&traversed, &brute),
+        "fraction {} contre {}",
+        traversed.fraction,
+        brute.fraction
+    );
+
+    // Un filtre inconnu se refuse, et le message le nomme.
+    // SAFETY: idem.
+    let code = unsafe { scg_world_pick_brute(world, from.as_ptr(), to.as_ptr(), 0, &mut brute) };
+    assert_eq!(code, SCG_ERR_INVALID_ARGUMENT);
+
+    // SAFETY: la sortie est nulle.
+    let code = unsafe {
+        scg_world_pick_brute(
+            world,
+            from.as_ptr(),
+            to.as_ptr(),
+            SCG_PICK_ALL,
+            ptr::null_mut(),
+        )
+    };
+    assert_eq!(code, SCG_ERR_NULL);
+
+    // SAFETY: handle vivant.
+    unsafe { scg_world_destroy(world) };
+}

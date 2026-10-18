@@ -2058,6 +2058,34 @@ int32_t scg_world_sweep(const struct ScgWorld *world,
                         const float *to,
                         struct ScgSweepHit *out);
 
+// Writes to `out` the same sweep, against **every** cell and without traversal.
+//
+// **Half of an oracle, not a production path.** On a well-formed map this and
+// `scg_world_sweep` return the same bits, and that equality is the only check
+// that catches a traversal window grown too narrow — an integrator who suspects
+// one compares the two on their own map, which is what this project's
+// conformance suite does on every run.
+//
+// It takes **no starting cell**, and that is what makes it a reference: knowing
+// none, it cannot pick the wrong one. So it never returns `SCG_STATUS_NO_CELL`,
+// and never `SCG_STATUS_INCOMPLETE` either — examining every cell, it has no
+// budget to exhaust. `SCG_STATUS_START_SOLID` and `SCG_STATUS_NO_GAP` keep the
+// meaning and the order they have on `scg_world_sweep`.
+//
+// **It costs every surface of every cell**, where traversal stops at the first
+// contact: calling it once per frame on a large map is not what it is for.
+//
+// # Safety
+//
+// `world` must be a live handle from `scg_world_load`, `half_extents`, `from`
+// and `to` must each point to three readable `float`s, and `out` must point to a
+// writable `ScgSweepHit`.
+int32_t scg_world_sweep_brute(const struct ScgWorld *world,
+                              const float *half_extents,
+                              const float *from,
+                              const float *to,
+                              struct ScgSweepHit *out);
+
 // Writes to `out` how much a sweep grows a box of these half extents.
 //
 // **The residual gap a host cannot guess.** A sweep places the box just short of
@@ -2168,6 +2196,33 @@ int32_t scg_world_pick(const struct ScgWorld *world,
                        const float *to,
                        uint32_t filter,
                        struct ScgSweepHit *out);
+
+// Writes to `out` the same ray, against **every** cell and without traversal.
+//
+// **The other half of the oracle**, and the counterpart of
+// `scg_world_sweep_brute` for picking: on a well-formed map this and
+// `scg_world_pick` return the same bits, and that equality is what catches a
+// traversal window grown too narrow.
+//
+// It takes **no starting cell**, so it never returns `SCG_STATUS_NO_CELL`, nor
+// `SCG_STATUS_INCOMPLETE` — examining every cell, it has no budget to exhaust.
+// `SCG_STATUS_START_SOLID` is therefore the only status it reports: a ray is
+// never grown, so `SCG_STATUS_NO_GAP` is as out of reach here as it is on
+// `scg_world_pick`.
+//
+// `filter` takes the same two values and is refused the same way, and the cost
+// is every surface of every cell — not a path to call once per frame.
+//
+// # Safety
+//
+// `world` must be a live handle from `scg_world_load`, `from` and `to` must each
+// point to three readable `float`s, and `out` must point to a writable
+// `ScgSweepHit`.
+int32_t scg_world_pick_brute(const struct ScgWorld *world,
+                             const float *from,
+                             const float *to,
+                             uint32_t filter,
+                             struct ScgSweepHit *out);
 
 // Writes the material of a surface to `out`, by its stable identifier.
 //
