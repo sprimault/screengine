@@ -465,6 +465,33 @@ dans la mémoire linéaire après le trap, sans rappeler le module.
   tient sur la pile de l'appel qui la rend. Changer de résolution sous le
   maximum n'alloue rien ; au-delà, c'est une erreur. La mémoire qui dépend de la scène — textures, mipmaps, lightmaps —
   appartient aux ressources, pas au contexte.
+
+  **Qui choisit ces deux valeurs : l'hôte, et c'est un budget d'image, jamais
+  une propriété de l'écran.** Le moteur ne peut pas le faire pour lui — il n'a
+  ni fenêtre, ni écran, ni horloge —, et c'est la raison pour laquelle ces
+  champs sont en entrée. Le nombre de pixels décide du temps de remplissage, et
+  la résolution d'un écran ne dit rien de ce qu'un rendu logiciel y tient : un
+  écran de 3840 par 2160 ne signifie pas que 2048 par 1152 s'y remplissent
+  soixante fois par seconde. Sur téléphone, le rendu ne se fait jamais à la
+  résolution de l'écran.
+
+  **L'écran n'est d'ailleurs pas une valeur unique** : une machine en porte
+  plusieurs, de résolutions différentes, et une fenêtre passe de l'un à l'autre.
+  Un maximum dimensionné sur « l'écran principal » serait faux dès le premier
+  déplacement, et prendre le plus grand de tous revient à choisir un nombre.
+
+  Ce que ce maximum coûte, pour que le choix soit éclairé : côté moteur, la
+  répartition par tuile, dimensionnée sur le nombre de tuiles de cette
+  résolution ; côté hôte, le tampon de sortie qu'il doit prévoir pour la plus
+  grande résolution qu'il emploiera. Un hôte qui veut pouvoir monter règle donc
+  large une fois, puis descend et remonte sans que rien ne s'alloue.
+
+  Écartée : une fonction qui relèverait ce maximum en cours de route. Elle ne
+  violerait aucun invariant, étant un appel nommé hors image, mais elle rendrait
+  mutable un maximum publié immuable, imposerait une réallocation en pleine
+  partie — deux tampons vivants à la fois — et n'achèterait rien qu'un maximum
+  réglé large ne donne déjà. Le cas qui la réclamerait, changer d'écran, est un
+  cas de bureau : là précisément où la mémoire ne compte pas.
 - **Tampon de sortie.** Appartient à l'hôte. Le moteur y écrit pendant
   `scg_frame_tile` et `scg_frame_end`, et n'en garde aucune référence au retour
   de chaque appel.
