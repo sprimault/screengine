@@ -124,6 +124,7 @@ pub struct Play {
     resolution: (u32, u32),
     /// Le plafond des changements de résolution, ou la résolution d'ouverture.
     max_resolution: Option<(u32, u32)>,
+    ceiling_from_screens: bool,
     tile_size: u32,
     /// Les deux budgets d'une image, `0` valant chacun le défaut du moteur.
     /// Séparés comme le noyau les sépare : une ligne n'est pas un triangle.
@@ -156,6 +157,7 @@ impl Play {
             title: String::from("Screengine"),
             resolution: DEFAULT_RESOLUTION,
             max_resolution: None,
+            ceiling_from_screens: false,
             tile_size: 64,
             max_triangles: 0,
             max_lines: 0,
@@ -197,6 +199,56 @@ impl Play {
     /// [`Context::set_resolution`]: screengine::Context::set_resolution
     pub fn max_resolution(mut self, width: u32, height: u32) -> Self {
         self.max_resolution = Some((width, height));
+        self
+    }
+
+    /// Prend pour plafond l'enveloppe des écrans de la machine, bornée par
+    /// [`MAX_RESOLUTION`].
+    ///
+    /// **Ce qu'un jeu ne peut pas calculer lui-même** : les écrans ne sont
+    /// lisibles qu'une fois la boucle lancée, donc après le moment où le plafond
+    /// se règle. Sans cela, il ne reste qu'à prendre la borne du moteur — un
+    /// tampon de sortie de seize mégaoctets et demi là où un écran de 1920 par
+    /// 1080 en demande huit.
+    ///
+    /// **Le plafond décide de la mémoire, jamais de l'image** : une fenêtre ne
+    /// dépasse pas l'écran qui la porte, et le facteur d'agrandissement n'est
+    /// touché qu'au-delà du double de la cote du plafond. Ce réglage ne déplace
+    /// donc pas un pixel.
+    ///
+    /// **Il ne descend jamais sous la résolution d'ouverture**, et retombe sur
+    /// [`MAX_RESOLUTION`] quand la plateforme ne nomme aucun écran — ce que
+    /// Wayland et le web font. Il remplace un appel à
+    /// [`max_resolution`](Self::max_resolution), le dernier des deux appelés
+    /// gagnant.
+    ///
+    /// **Son prix est une création de contexte de plus**, au lancement : le
+    /// contexte naît sur la résolution d'ouverture comme pour tout autre jeu,
+    /// puis se refait une fois les écrans connus, avant la première image. Un
+    /// jeu qui n'appelle pas ce réglage ne paie rien.
+    ///
+    /// ```no_run
+    /// use screengine_play::{Play, Tick};
+    ///
+    /// // Suivre la fenêtre sans écrire de cote en clair : le plafond vient des
+    /// // écrans, et `Tick::window` dit ce qu'il faut remplir.
+    /// let _ = Play::new()
+    ///     .resolution(640, 360)
+    ///     .max_resolution_from_screens()
+    ///     .run(
+    ///         (640u32, 360u32),
+    ///         |voulue: &mut (u32, u32), tick: &mut Tick<'_>| {
+    ///             let (w, h) = tick.window();
+    ///             *voulue = (w / 2, h / 2);
+    ///         },
+    ///         |_, _| {},
+    ///     );
+    /// ```
+    ///
+    /// [`MAX_RESOLUTION`]: screengine::MAX_RESOLUTION
+    pub fn max_resolution_from_screens(mut self) -> Self {
+        self.max_resolution = None;
+        self.ceiling_from_screens = true;
         self
     }
 

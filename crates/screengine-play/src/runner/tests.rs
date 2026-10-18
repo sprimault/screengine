@@ -125,3 +125,51 @@ fn sans_image_il_n_y_a_pas_de_releve() {
     let mut stats = Stats::default();
     assert_eq!(stats.take(Instant::now() + STATS_WINDOW * 10), None);
 }
+
+/// Le plafond tiré des écrans, dans les quatre régimes qui décident.
+///
+/// **C'est tout ce qui peut être faux sans se voir** : la lecture des écrans
+/// demande une boucle active, et le plafond ne déplace aucun pixel — un calcul
+/// faux ne se verrait donc ni à l'image, ni dans une empreinte, mais seulement
+/// en mémoire, ou par une hausse refusée plus tard sur l'autre écran.
+///
+/// Le deuxième cas est celui qui porte la décision : **le plus grand des
+/// écrans**, axe par axe. Avec le plus petit, une fenêtre portée sur le grand
+/// ne pourrait plus monter, et un plafond ne se relève pas.
+#[test]
+fn le_plafond_suit_l_enveloppe_des_ecrans() {
+    let opening = (640, 360);
+
+    // Un seul écran, sous la borne du moteur : c'est lui qui décide.
+    assert_eq!(screen_ceiling(&[(1920, 1080)], opening), (1920, 1080));
+
+    // Trois écrans, dont deux formats : chaque axe prend son maximum, même venu
+    // d'écrans différents — la hauteur de 1440 vient du premier, et elle serait
+    // perdue si l'on prenait le plus petit.
+    //
+    // **La borne du moteur mord sur un axe seulement** : 2560 passe à 2048, la
+    // hauteur reste entière. C'est le cas d'un poste réel en 2560 × 1600, dont le
+    // plafond informé vaut 2048 × 1600.
+    assert_eq!(
+        screen_ceiling(&[(2560, 1440), (1920, 1200), (1280, 720)], opening),
+        (MAX_RESOLUTION, 1440)
+    );
+
+    // Au-delà de la borne du moteur, c'est elle qui plafonne — un écran 4K ne
+    // fait pas rendre une image de 3840 pixels de large.
+    assert_eq!(
+        screen_ceiling(&[(3840, 2160)], opening),
+        (MAX_RESOLUTION, MAX_RESOLUTION)
+    );
+
+    // Aucun écran nommé — Wayland, le web : la borne du moteur, parce qu'une
+    // hausse refusée coûte plus qu'un tampon trop grand.
+    assert_eq!(
+        screen_ceiling(&[], opening),
+        (MAX_RESOLUTION, MAX_RESOLUTION)
+    );
+
+    // Un écran plus petit que la résolution d'ouverture : celle-ci gagne, un
+    // contexte devant pouvoir rendre ce qu'on lui a demandé d'ouvrir.
+    assert_eq!(screen_ceiling(&[(320, 200)], opening), opening);
+}
