@@ -199,3 +199,67 @@ func renderEdge() (uint64, bool) {
 
 	return fingerprint(image, width, height, stride), code == C.SCG_OK
 }
+
+// Éprouve le diagnostic d'un repère de lightmap, qui est le seul point d'entrée
+// à recevoir un tableau de flottants de **longueur variable**.
+//
+// **C'est ce que cet hôte éprouve que les autres n'éprouvent pas**, et c'est le
+// chemin le plus exposé de toute l'ABI pour un langage qui déplace ses objets :
+// partout ailleurs un tableau de flottants est de taille fixe, ou bien un
+// tableau de structures. Les coins viennent donc de `calloc` comme le reste —
+// une tranche Go aurait pu bouger entre l'écriture et l'appel, et la règle du
+// langage l'interdit de toute façon.
+//
+// Aucune empreinte ici : la fonction ne dessine pas. Ce qui se vérifie est le
+// verdict, et qu'il dépende bien des coins reçus — le dernier cas ne change que
+// leur étendue.
+func checkLightmapFault() {
+	// Quatre coins, trois flottants chacun, hors du tas Go.
+	corners := alloc(4 * 3 * 4)
+	defer release(corners)
+	origin := alloc(3 * 4)
+	defer release(origin)
+	axisU := alloc(3 * 4)
+	defer release(axisU)
+	axisV := alloc(3 * 4)
+	defer release(axisV)
+
+	writeVec3(origin, 0, 0, 0)
+	writeVec3(axisU, 1, 0, 0)
+	writeVec3(axisV, 0, 1, 0)
+
+	square := func(side float32) *C.float {
+		floats := unsafe.Slice((*C.float)(corners), 12)
+		pairs := [4][2]float32{{0, 0}, {side, 0}, {side, side}, {0, side}}
+		for i, pair := range pairs {
+			floats[i*3] = C.float(pair[0])
+			floats[i*3+1] = C.float(pair[1])
+			floats[i*3+2] = 0
+		}
+		return (*C.float)(corners)
+	}
+
+	var fault C.uint32_t = 999
+	code := C.scg_lightmap_fault(
+		(*C.float)(origin), (*C.float)(axisU), (*C.float)(axisV),
+		square(1.0), 4, &fault,
+	)
+	check(code == C.SCG_OK && fault == C.SCG_LIGHTMAP_FAULT_NONE,
+		"un repère unitaire ne porte aucune faute")
+
+	// Moins de trois coins se refuse : le verdict ne décrirait rien.
+	code = C.scg_lightmap_fault(
+		(*C.float)(origin), (*C.float)(axisU), (*C.float)(axisV),
+		square(1.0), 2, &fault,
+	)
+	check(code == C.SCG_ERR_INVALID_ARGUMENT, "deux coins ne suffisent pas à juger")
+
+	// Les mêmes axes, un carré de trois cents unités : seule l'étendue change,
+	// donc un appel qui ne lirait pas les coins rendrait encore « aucune faute ».
+	code = C.scg_lightmap_fault(
+		(*C.float)(origin), (*C.float)(axisU), (*C.float)(axisV),
+		square(300.0), 4, &fault,
+	)
+	check(code == C.SCG_OK && fault == C.SCG_LIGHTMAP_FAULT_EXTENT_TOO_LARGE,
+		"une surface trop vaste porte la faute d'étendue")
+}

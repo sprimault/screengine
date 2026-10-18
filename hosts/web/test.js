@@ -1789,6 +1789,69 @@ function renderSweeps(engine, worldBytes, list) {
   return engine.hashBytes(digest);
 }
 
+/**
+ * Le diagnostic d'un repère de lightmap, seul point d'entrée de l'ABI à recevoir
+ * un tableau de flottants de **longueur variable**.
+ *
+ * **C'est ce que cette liaison éprouve en propre** : partout ailleurs un tableau
+ * de flottants est de taille fixe, ou bien un tableau de structures. Les coins
+ * s'écrivent donc dans la mémoire linéaire par `scg_buffer_alloc`, et
+ * `writeVertices` suffit — un coin est un triplet, exactement comme un sommet.
+ *
+ * Aucune empreinte : la fonction ne dessine pas. Ce qui se vérifie est le
+ * verdict, et qu'il dépende bien des coins reçus — le dernier cas ne change que
+ * leur étendue, et un appel qui ne les lirait pas rendrait encore « aucune
+ * faute ».
+ *
+ * @param {Screengine} engine le module instancié
+ */
+function checkLightmapFault(engine) {
+  const e = engine.exports;
+  // Trois triplets pour le repère — origine, axe u, axe v —, puis les coins.
+  const frame = engine.alloc(3 * scg.VERTEX_SIZE);
+  const corners = engine.alloc(4 * scg.VERTEX_SIZE);
+  const out = engine.alloc(4);
+
+  engine.writeVertices(frame, [
+    [0, 0, 0],
+    [1, 0, 0],
+    [0, 1, 0],
+  ]);
+  const origin = frame;
+  const axisU = frame + scg.VERTEX_SIZE;
+  const axisV = frame + 2 * scg.VERTEX_SIZE;
+  const square = (side) =>
+    engine.writeVertices(corners, [
+      [0, 0, 0],
+      [side, 0, 0],
+      [side, side, 0],
+      [0, side, 0],
+    ]);
+
+  square(1);
+  check(
+    e.scg_lightmap_fault(origin, axisU, axisV, corners, 4, out) === scg.SCG_OK &&
+      engine.readU32(out) === scg.SCG_LIGHTMAP_FAULT_NONE,
+    "un repère unitaire ne porte aucune faute",
+  );
+
+  check(
+    e.scg_lightmap_fault(origin, axisU, axisV, corners, 2, out) === scg.SCG_ERR_INVALID_ARGUMENT,
+    "deux coins ne suffisent pas à juger",
+  );
+
+  square(300);
+  check(
+    e.scg_lightmap_fault(origin, axisU, axisV, corners, 4, out) === scg.SCG_OK &&
+      engine.readU32(out) === scg.SCG_LIGHTMAP_FAULT_EXTENT_TOO_LARGE,
+    "une surface trop vaste porte la faute d'étendue",
+  );
+
+  engine.free(frame, 3 * scg.VERTEX_SIZE);
+  engine.free(corners, 4 * scg.VERTEX_SIZE);
+  engine.free(out, 4);
+}
+
 /** La taille d'un enregistrement de la liste : neuf flottants. */
 const SWEEP_RECORD = 36;
 
@@ -2046,6 +2109,7 @@ async function main() {
   checkExportList(header);
   checkRefusals(engine);
   checkBuffers(engine);
+  checkLightmapFault(engine);
   const hash = render(engine);
   if (hash !== null) {
     checkTiles(engine, hash);
