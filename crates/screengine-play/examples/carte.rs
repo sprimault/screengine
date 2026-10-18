@@ -116,19 +116,35 @@ const ESCAPE: f32 = 64.0;
 /// `2,0` et le sol à zéro, ce qui laisse le corps entre `0,1` et `1,9`.
 const EYE_ABOVE: f32 = 1.0;
 
-/// La demi-étendue de la boîte qui entoure une caisse.
+/// La demi-étendue de la boîte qui entoure une caisse posée.
 ///
 /// **Le maillage n'est pas dans le décor, donc le balayage ne le voit pas** : une
 /// caisse est un obstacle que l'exemple porte lui-même, et c'est la répartition
 /// que l'étape veut montrer. Le moteur arrête sur la géométrie de cellule ;
 /// l'hôte décide de ce qui n'en est pas.
 ///
-/// Le maillage fait deux unités de côté et [`CRATE_SCALE`] le réduit de moitié,
-/// d'où une demi-étendue d'une demi-unité. La rotation n'entre pas dans le
-/// calcul : une boîte alignée qui enveloppe toutes les orientations est la
-/// réponse la plus simple, et elle déborde d'un cinquième d'unité dans les
-/// diagonales — ce qu'on ne sent pas en jouant.
-const CRATE_HALF: f32 = 0.5 * core::f32::consts::SQRT_2;
+/// **La cote, elle, vient du fichier** : le maillage porte la boîte de chacune de
+/// ses trames, et l'exemple n'a plus à la réécrire — une caisse plus grande dans
+/// le dépôt déplacerait la collision avec elle. [`CRATE_SCALE`] la réduit comme
+/// la matrice de modèle le fait du dessin.
+///
+/// La rotation, en revanche, n'entre pas dans le calcul : une boîte alignée qui
+/// enveloppe toutes les orientations est la réponse la plus simple, d'où le
+/// facteur √2 dans le plan et rien en hauteur. Elle déborde d'un cinquième
+/// d'unité dans les diagonales, ce qu'on ne sent pas en jouant.
+///
+/// **C'est aussi la boîte que le calque dessine et que le curseur désigne**, sans
+/// la marge du corps que `around_crate` y ajoute : ce qu'on voit est ce qu'on
+/// pointe — on ne voit pas son propre volume.
+fn crate_half(mesh: &Mesh) -> Vec3 {
+    let [low, high] = mesh.bounds(0).expect("un maillage a au moins une trame");
+    let half = (high - low) * (0.5 * CRATE_SCALE);
+    Vec3::new(
+        half.x * core::f32::consts::SQRT_2,
+        half.y * core::f32::consts::SQRT_2,
+        half.z,
+    )
+}
 
 /// La matrice d'une caisse : une rotation autour du zénith mise à l'échelle,
 /// puis une translation.
@@ -182,7 +198,7 @@ fn stopped(scene: &Scene, from: Vec3, to: Vec3) -> Vec3 {
     };
 
     for &(x, y, _) in &CRATES {
-        end = around_crate(Vec3::new(x, y, CRATE_Z), from, end);
+        end = around_crate(Vec3::new(x, y, CRATE_Z), scene.crate_half, from, end);
     }
     end
 }
@@ -193,11 +209,11 @@ fn stopped(scene: &Scene, from: Vec3, to: Vec3) -> Vec3 {
 /// plus courte de ce qu'un hôte fait pour un obstacle qui n'est pas du décor, et
 /// elle tient en vingt lignes parce qu'on ne demande ni le point de contact ni la
 /// normale — seulement de ne pas entrer.
-fn around_crate(centre: Vec3, from: Vec3, to: Vec3) -> Vec3 {
+fn around_crate(centre: Vec3, crate_half: Vec3, from: Vec3, to: Vec3) -> Vec3 {
     let half = Vec3::new(
-        CRATE_HALF + BODY_HALF.x,
-        CRATE_HALF + BODY_HALF.y,
-        CRATE_SCALE + BODY_HALF.z,
+        crate_half.x + BODY_HALF.x,
+        crate_half.y + BODY_HALF.y,
+        crate_half.z + BODY_HALF.z,
     );
     let inside = |p: Vec3| {
         (p.x - centre.x).abs() < half.x
@@ -250,14 +266,6 @@ const PICK_REACH: f32 = 40.0;
 
 /// La longueur des branches de la croix qui marque le point touché.
 const MARK: f32 = 0.25;
-
-/// Les demi-étendues de la boîte d'une caisse.
-///
-/// **Celles de [`CRATE_HALF`] et [`CRATE_SCALE`], sans la marge du corps** : ce
-/// que le calque dessine est ce que le curseur désigne, à l'unité près. La boîte
-/// que `around_crate` teste est celle-là dilatée du corps du joueur, qui est une
-/// autre question — on ne voit pas son propre volume.
-const CRATE_BOX: Vec3 = Vec3::new(CRATE_HALF, CRATE_HALF, CRATE_SCALE);
 
 /// Le gris froid des boîtes au repos.
 const GUIDE: Color = Color::new(0x50, 0x70, 0xA0, 0xFF);
@@ -369,7 +377,7 @@ fn aimed(scene: &Scene, pixel: (u32, u32)) -> Option<Aim> {
 
     for (rank, &(x, y, _)) in CRATES.iter().enumerate() {
         let centre = Vec3::new(x, y, CRATE_Z);
-        if let Some(entry) = ray_box(from, span, centre, CRATE_BOX)
+        if let Some(entry) = ray_box(from, span, centre, scene.crate_half)
             && best.as_ref().is_none_or(|(closest, _)| entry < *closest)
         {
             best = Some((entry, Aim::Crate(rank)));
@@ -416,6 +424,8 @@ struct Scene {
     world: World,
     /// Le maillage posé trois fois.
     crate_mesh: Mesh,
+    /// Sa demi-étendue dans le décor, lue une fois du maillage.
+    crate_half: Vec3,
     /// Une texture par matériau de la carte, dans l'ordre qu'elle déclare.
     materials: Vec<Arc<Texture>>,
     /// La texture des caisses, sur leurs deux emplacements.
@@ -476,10 +486,13 @@ fn main() -> Result<(), screengine_play::Error> {
     }
 
     let cell = world.locate(START);
+    let crate_mesh = Mesh::load(CAISSE).expect("maillage du dépôt valide");
+    let half = crate_half(&crate_mesh);
     let scene = Scene {
         camera: FreeCamera::new(START),
         world,
-        crate_mesh: Mesh::load(CAISSE).expect("maillage du dépôt valide"),
+        crate_mesh,
+        crate_half: half,
         materials,
         crate_texture: Arc::new(load_png(MALLE)?),
         lightmaps,
@@ -691,14 +704,14 @@ fn overlay(scene: &Scene, context: &mut screengine_play::screengine::Context) {
         if picked == Some(rank) {
             continue;
         }
-        let lines = box_lines(Vec3::new(x, y, CRATE_Z), CRATE_BOX, GUIDE);
+        let lines = box_lines(Vec3::new(x, y, CRATE_Z), scene.crate_half, GUIDE);
         let _ = context.submit_lines(Affine3::IDENTITY, &lines, DepthMode::Tested);
     }
 
     match scene.aim {
         Some(Aim::Crate(rank)) => {
             let (x, y, _) = CRATES[rank];
-            let lines = box_lines(Vec3::new(x, y, CRATE_Z), CRATE_BOX, PICKED);
+            let lines = box_lines(Vec3::new(x, y, CRATE_Z), scene.crate_half, PICKED);
             let _ = context.submit_lines(Affine3::IDENTITY, &lines, DepthMode::Tested);
         }
         // Une croix posée sur la surface, plus le fil d'aplomb jusqu'au sol.

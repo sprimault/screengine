@@ -80,7 +80,11 @@ fn un_maillage_vide_est_legitime() {
     let mesh = Mesh::load(&file(&[], &[], &[], &[])).unwrap();
     assert_eq!(mesh.triangle_count(), 0);
     assert_eq!(mesh.texture_count(), 0);
-    assert_eq!(mesh.bounds, [Vec3::ZERO; 2], "aucun sommet, aucune boîte");
+    assert_eq!(
+        mesh.bounds(0),
+        Some([Vec3::ZERO; 2]),
+        "aucun sommet, mais une trame, et sa boîte est nulle"
+    );
 }
 
 /// Un genre de fichier autre qu'un maillage est refusé par le conteneur.
@@ -331,16 +335,40 @@ fn la_boite_englobante_est_exacte_et_signee() {
     vertices.extend_from_slice(&vertex(1.0, -0.0, 5.0, 0.0, 0.0));
     let mesh = Mesh::load(&file(&[], &[], &[], &vertices)).unwrap();
 
-    assert_eq!(mesh.bounds[0], Vec3::new(-0.0, -0.0, -3.0));
-    assert_eq!(mesh.bounds[1], Vec3::new(1.0, 2.0, 5.0));
+    let [low, high] = mesh.bounds(0).expect("un maillage a au moins une trame");
+    assert_eq!(low, Vec3::new(-0.0, -0.0, -3.0));
+    assert_eq!(high, Vec3::new(1.0, 2.0, 5.0));
     assert!(
-        mesh.bounds[0].x.is_sign_negative(),
+        low.x.is_sign_negative(),
         "le zéro du fichier garde son signe"
     );
     assert!(
-        mesh.bounds[1].y.is_sign_positive(),
+        high.y.is_sign_positive(),
         "le maximum garde le zéro positif"
     );
+}
+
+/// Chaque trame porte sa propre boîte, et non celle de la première.
+///
+/// Le cas est un maillage dont la seconde trame s'étire en `z` : une boîte
+/// calculée une fois sur la première tranche de poses passerait tous les autres
+/// essais, puisqu'un maillage statique n'a qu'une trame et que les deux boîtes y
+/// sont la même.
+#[test]
+fn chaque_trame_a_sa_boite() {
+    let normal = [0.0, 0.0, 1.0];
+    let mut poses = pose_bytes([0.0; 3], normal);
+    poses.extend_from_slice(&pose_bytes([1.0, 1.0, 1.0], normal));
+    poses.extend_from_slice(&pose_bytes([0.0; 3], normal));
+    poses.extend_from_slice(&pose_bytes([1.0, 1.0, 4.0], normal));
+    let uvs = vec![0u8; 2 * VERTEX_LEN];
+
+    let mesh = Mesh::load(&sections(&frames_bytes(2, &poses), &[], &[], &[], &uvs)).unwrap();
+
+    assert_eq!(mesh.frame_count(), 2);
+    assert_eq!(mesh.bounds(0), Some([Vec3::ZERO, Vec3::new(1.0, 1.0, 1.0)]));
+    assert_eq!(mesh.bounds(1), Some([Vec3::ZERO, Vec3::new(1.0, 1.0, 4.0)]));
+    assert_eq!(mesh.bounds(2), None, "au-delà de la dernière trame");
 }
 
 /// Un maillage tronqué à n'importe laquelle de ses longueurs est refusé, sans
@@ -412,7 +440,8 @@ fn un_maillage_de_milliers_de_triangles_se_charge() {
     let mesh = Mesh::load(&bytes).unwrap();
     assert_eq!(mesh.triangle_count(), COUNT);
     assert_eq!(mesh.vertices.len(), COUNT as usize);
-    assert_eq!(mesh.bounds[1].x, (COUNT - 1) as f32);
+    let [_, high] = mesh.bounds(0).expect("un maillage a au moins une trame");
+    assert_eq!(high.x, (COUNT - 1) as f32);
 }
 
 /// Un nom vide est légitime : le fichier nomme un emplacement, il ne promet pas

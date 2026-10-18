@@ -17,8 +17,10 @@ trames, le texel transparent et la surface modulée, le balayage d'une boîte
 contre les cellules d'une carte, et ce qu'un éditeur réclame : le tracé de lignes
 et de points, et l'interrogation par le rayon, le choix du jeu d'instructions
 qui remplit les triangles, les deux chemins bruts contre lesquels la collision
-et l'interrogation se valident, et le diagnostic d'un repère de lightmap refusé. **Le contrat du tracé a été figé ci-dessous avant son
-premier remplissage**, comme ceux des étapes 4 à 7 l'ont été. Chaque décision
+et l'interrogation se valident, le diagnostic d'un repère de lightmap refusé et
+l'étendue d'un maillage, trame par trame. **Le contrat du tracé a été figé
+ci-dessous avant son premier remplissage**, comme ceux des étapes 4 à 7 l'ont
+été. Chaque décision
 garde ci-dessous l'option écartée et pourquoi. **Plus aucun point n'est marqué
 À trancher** : le dernier était la dépréciation, fermée au gel de l'ABI — rien
 de publié n'est jamais retiré.
@@ -1603,11 +1605,14 @@ attendait un générateur écrit en C, en Go ou en JavaScript.
 
 ### Étape 6
 
-**Cinq fonctions, deux structures, quatre constantes, aucun code d'erreur
+**Six fonctions, deux structures, quatre constantes, aucun code d'erreur
 nouveau et aucun statut.** Aucune signature publiée, aucune structure, aucune
 précondition ne bouge : `SCG_ABI_VERSION` reste à **1**.
 
-**Les cinq fonctions sont exposées.** Le contrat s'est figé d'un bloc avant son
+La sixième fonction est arrivée après la publication de l'étape — voir
+« L'étendue d'un maillage », en fin de section.
+
+**Les six fonctions sont exposées.** Le contrat s'est figé d'un bloc avant son
 premier appelant, pour la raison dite en tête de document, et le code l'a
 rattrapé lot par lot. Ce qui change pour un hôte, en revanche, c'est
 `version_format` du maillage, qui passe à **2**, et les maillages de version 1
@@ -1633,6 +1638,7 @@ int32_t scg_submit_shaded(ScgContext *ctx, const ScgMat4 *model,
 
 /* les maillages animés */
 int32_t scg_mesh_frame_count(const ScgMesh *mesh, uint32_t *out);
+int32_t scg_mesh_bounds(const ScgMesh *mesh, uint32_t frame, float *out);
 int32_t scg_submit_mesh_frame(ScgContext *ctx, const ScgMat4 *model,
                               const ScgMesh *mesh,
                               const ScgTexture *const *textures,
@@ -1888,6 +1894,36 @@ règle se devinait jusqu'à présent sans être énoncée.
   sienne serait la direction de vue, si bien que l'éclairage d'un sprite immobile
   changerait quand le joueur en fait le tour. Il garde l'atténuation par la
   distance seule.
+
+#### L'étendue d'un maillage
+
+`scg_mesh_bounds` rend les deux coins de la boîte englobante d'une trame, bas
+puis haut, dans le repère du maillage. Ajoutée après la publication de l'étape,
+sur un constat simple : l'étendue que l'auteur du décor a écrite était chargée,
+calculée, puis gardée pour le moteur seul, si bien que tout hôte qui pose un
+maillage la réécrivait à la main.
+
+- **Par trame, parce qu'aucune boîte unique ne dit la vérité.** Un maillage
+  statique n'en a qu'une ; un maillage animé déborde de la boîte de sa première
+  trame, et l'enveloppe de toutes les trames couvre ce qu'aucune ne remplit. La
+  dérivation ne marche que dans ce sens : l'enveloppe s'obtient de ces boîtes
+  avec `scg_mesh_frame_count`, l'inverse non.
+- **Six flottants et non une structure**, pour la raison de
+  `scg_world_entity_pose` : une boîte n'a aucune disposition publiée à reprendre,
+  et en inventer une la figerait pour toujours au service d'un accesseur.
+- **Dans le repère du maillage, jamais dans celui du monde.** Une pose n'est pas
+  connue de l'appel, et une boîte axiale ne reste pas axiale sous une rotation :
+  l'hôte qui pose transforme les huit coins et borne, ou dilate, et c'est sa
+  règle. Le centre et les demi-étendues qu'un balayage attend sont à une somme et
+  une différence.
+- **Ce n'est pas un test de collision, et il n'en existe aucun contre un maillage
+  posé.** Le balayage teste le **polygone** d'une surface avec les arêtes qu'une
+  carte porte classées, et un maillage n'a ni l'un ni l'autre : le balayer contre
+  ses triangles ferait accrocher une boîte sur une face plane, ce que la
+  deuxième clause de l'étape 7 interdit. Ce que cette fonction donne est une
+  donnée, pas une règle — voir `ROADMAP.md`, « Hors périmètre ».
+- **Une trame au-delà de la dernière est refusée** par
+  `SCG_ERR_INVALID_ARGUMENT`, et rien n'est écrit dans le tableau de sortie.
 
 ### Étape 7
 
@@ -2316,6 +2352,10 @@ chemins — elle emploie l'oracle à chaque passage.
 de la géométrie de cellule — un maillage posé, une caisse, un poteau — n'a pas de
 portail, donc pas d'adjacence, et rien de ce que cette étape apprend à traverser
 ne s'applique à lui. Il se teste chez l'hôte, qui l'a placé et connaît sa pose.
+
+**Ce que l'hôte n'a plus à deviner est son étendue** : `scg_mesh_bounds` rend la
+boîte que l'auteur du maillage a écrite, par trame — voir « L'étendue d'un
+maillage », étape 6. La règle reste la sienne, la cote vient du fichier.
 
 Voir `ROADMAP.md`, « Hors périmètre », où cette ligne porte la condition qui la
 rouvrirait.

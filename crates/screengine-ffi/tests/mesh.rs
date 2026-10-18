@@ -272,6 +272,64 @@ fn refuse_un_pointeur_nul_aux_accesseurs() {
     }
 }
 
+/// Le même triangle sur deux trames, la seconde étirée en `z`.
+///
+/// Deux trames et non une : avec une seule, un accesseur qui rendrait toujours
+/// la première boîte passerait, et c'est précisément ce qu'on veut voir rougir.
+fn two_frame_mesh() -> Vec<u8> {
+    let mut poses = 2u32.to_le_bytes().to_vec();
+    let mut uvs = Vec::new();
+    for z in [-2.0f32, 3.0] {
+        for (x, y) in [(0.0f32, 0.0f32), (1.0, 0.0), (0.0, 1.0)] {
+            for value in [x, y, z, 0.0, 0.0, 1.0] {
+                poses.extend_from_slice(&value.to_le_bytes());
+            }
+        }
+    }
+    for _ in 0..3 {
+        for value in [0.0f32, 0.0] {
+            uvs.extend_from_slice(&value.to_le_bytes());
+        }
+    }
+
+    mesh_bytes(&[(*b"FRMS", poses), (*b"VTXS", uvs)], b"MESH", 2)
+}
+
+/// Les deux coins d'une trame franchissent la frontière, et chaque trame rend
+/// les siens.
+///
+/// Le refus d'une trame inexistante est vérifié avec le tableau de sortie : rien
+/// n'y est écrit sur un chemin d'erreur, ce que toute l'ABI tient.
+#[test]
+fn lit_la_boite_englobante_de_chaque_trame() {
+    let mesh = load(&two_frame_mesh());
+    let mut corners = [0.0f32; 6];
+
+    // SAFETY: handle vivant, et le tableau couvre les six flottants annoncés.
+    let refus = unsafe {
+        assert_eq!(scg_mesh_bounds(mesh, 0, corners.as_mut_ptr()), SCG_OK);
+        assert_eq!(corners, [0.0, 0.0, -2.0, 1.0, 1.0, -2.0]);
+
+        assert_eq!(scg_mesh_bounds(mesh, 1, corners.as_mut_ptr()), SCG_OK);
+        assert_eq!(corners, [0.0, 0.0, 3.0, 1.0, 1.0, 3.0]);
+
+        let code = scg_mesh_bounds(mesh, 2, corners.as_mut_ptr());
+        let message = last_error();
+        assert_eq!(corners, [0.0, 0.0, 3.0, 1.0, 1.0, 3.0], "rien n'est écrit");
+
+        assert_eq!(scg_mesh_bounds(mesh, 0, ptr::null_mut()), SCG_ERR_NULL);
+        assert_eq!(
+            scg_mesh_bounds(ptr::null(), 0, corners.as_mut_ptr()),
+            SCG_ERR_NULL
+        );
+        scg_mesh_destroy(mesh);
+        (code, message)
+    };
+
+    assert_eq!(refus.0, SCG_ERR_INVALID_ARGUMENT);
+    assert_eq!(refus.1, "frame beyond those the mesh declares");
+}
+
 /// Lit un nom d'emplacement en deux temps, comme le ferait un hôte.
 fn slot_name(mesh: *const ScgMesh, slot: u32) -> String {
     let mut len = usize::MAX;
