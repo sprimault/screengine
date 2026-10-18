@@ -63,6 +63,20 @@ publié, et explique les conventions du dépôt à qui y contribue.
 
 ## [Non publié]
 
+### Ajouté
+
+- **Les sept bornes d'entrée sont dans le header** — lumières, sur-éclairement,
+  coordonnée de texel, côté de texture, résolution interne et les deux capacités
+  par défaut —, là où une liaison les recopiait à la main.
+
+***
+
+### Added
+
+- **The seven input bounds are now in the header** — lights, overbright, texel
+  coordinate, texture side, internal resolution and the two default capacities —
+  where a binding had to copy them by hand.
+
 ## [1.2.0] — 2026-10-17 — Le chemin Rust dans un navigateur
 
 ### Ajouté

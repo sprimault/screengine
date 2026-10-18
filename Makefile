@@ -586,6 +586,25 @@ ETAT_MOTIF = ersion [0-9]+\.[0-9]+\.[0-9]+
 # annoncer l'état doit être vu, et c'est ce chiffre qui le fait voir.
 ETAT_ANNONCES = 4
 
+# Les bornes publiques du noyau doivent toutes avoir leur constante d'ABI, et
+# c'est la façade de `src/lib.rs` qui en fait foi : tous les modules du noyau sont
+# privés, donc ses `pub use` *sont* sa surface publique.
+#
+# Deux restent dehors, et chacune pour une raison qui n'est pas « on a oublié » :
+# `BYTES_PER_PIXEL`, que la documentation du tampon de sortie porte déjà en
+# propres termes — « quatre octets par pixel » —, et `TILE_SIZES`, un tableau de
+# deux valeurs dont une constante ne dirait rien que son nom ne dise déjà, un
+# `SCG_TILE_SIZE_32` valant 32.
+BORNES_HORS = BYTES_PER_PIXEL TILE_SIZES
+
+# Combien de bornes le header doit publier, et **c'est un contrôle, pas un
+# réglage** : treize dans la façade du noyau, moins les deux ci-dessus. Un écart
+# dans les deux sens est un échec — une borne qui entre dans la façade sans entrer
+# dans le header est exactement l'oubli que cette cible existe pour voir, et
+# **sept des onze y ont manqué depuis l'étape 3**, dont une que `docs/abi.md`
+# annonçait pourtant publiée.
+BORNES_EXPOSEES = 11
+
 # La cible vérifie en outre que **le majeur n'est jamais inférieur à
 # `SCG_ABI_VERSION`**, ce que `CHANGELOG.md` arrête : un incrément de la seconde
 # impose le premier.
@@ -629,6 +648,41 @@ etat-verif:
 	fi; \
 	echo "etat-verif : $$(echo "$$lignes" | wc -l | tr -d ' ') annonce(s) a $$version, section en cours presente, majeur $$majeur pour une ABI $$abi"
 
+# L'exhaustivité que rien ne gardait, et il faut dire ce que les deux contrôles
+# voisins couvrent pour voir le trou : les assertions de `screengine-ffi` tiennent
+# la **valeur** d'une borne déjà exposée, et le test de l'hôte web tient ce que le
+# header publie face à ce que JavaScript recopie. Aucun des deux ne peut voir une
+# borne du noyau qui n'a **aucune** constante d'ABI — elle n'a alors ni assertion
+# ni ligne à comparer, donc rien à faire rougir. C'est par là que sept bornes sont
+# restées en prose, et que le contrat a pu annoncer « cinq bornes publiees » en
+# n'en nommant que quatre.
+#
+# Elle ne depend pas de `git` : un glob des deux fichiers suffit, et elle tourne
+# donc aussi dans un arbre sans `.git` — celui que `verif-evo` envoie.
+bornes-verif:
+	@bornes=$$(sed -n '/^pub use /,/;/p' src/lib.rs \
+	  | grep -oE "[A-Z][A-Z0-9_]{2,}( as [A-Z][A-Z0-9_]{2,})?" \
+	  | sed 's/.* as //' | sort -u); \
+	if [ -z "$$bornes" ]; then \
+	  echo "bornes-verif : aucune borne reconnue dans src/lib.rs"; exit 1; \
+	fi; \
+	manquantes=""; compte=0; \
+	for borne in $$bornes; do \
+	  case " $(BORNES_HORS) " in *" $$borne "*) continue;; esac; \
+	  if grep -qE "^#define SCG_$$borne " include/screengine.h; then \
+	    compte=$$((compte + 1)); \
+	  else \
+	    manquantes="$$manquantes $$borne"; \
+	  fi; \
+	done; \
+	if [ -n "$$manquantes" ]; then \
+	  echo "bornes-verif : borne(s) du noyau sans constante d'ABI :$$manquantes"; exit 1; \
+	fi; \
+	if [ "$$compte" != "$(BORNES_EXPOSEES)" ]; then \
+	  echo "bornes-verif : $$compte borne(s) exposee(s), $(BORNES_EXPOSEES) attendue(s)"; exit 1; \
+	fi; \
+	echo "bornes-verif : $$compte bornes du noyau publiees par le header"
+
 # Les cibles qu'un contrôle traverse au-delà de celle du poste, et le seul
 # endroit où du code propre à une autre architecture se compile ici : `neon.rs`
 # sur `aarch64`, les chemins wasm, et la largeur de pointeur de `i686`. En
@@ -658,7 +712,7 @@ CIBLES_PLAY = $(CIBLES_LINUX_ARM) $(CIBLE_WASM)
 # leur plancher n'est pas sous notre contrôle, et l'y faire entrer donnerait une
 # contrainte qu'une montée de dépendance casserait sans qu'on puisse rien.
 
-lint: lint-doc-tests lint-android-versions etat-verif
+lint: lint-doc-tests lint-android-versions etat-verif bornes-verif
 	cargo clippy --workspace --all-targets --all-features -- -D warnings
 	for cible in $(CIBLES_CROISEES); do \
 	  cargo clippy -p screengine -p screengine-ffi --lib --target $$cible -- -D warnings || exit 1; \

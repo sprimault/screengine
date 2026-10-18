@@ -150,6 +150,52 @@ pub const SCG_TRAVERSAL_CELLS: u32 = 4096;
 /// error then names the map rather than one cell of it.
 pub const SCG_MAX_LIGHTMAP_SIZE: u32 = 1024;
 
+/// The greatest number of dynamic lights one scene may carry.
+///
+/// A ninth light refuses the whole call rather than being dropped in silence: a
+/// host that places nine must know which one is missing, and there is no answer
+/// to that question. It cannot be configured — attenuation is computed per vertex
+/// at submission, so each extra light is one more pass over every vertex
+/// submitted, and a phone core's budget is what fixes the bound.
+pub const SCG_MAX_LIGHTS: u32 = 8;
+
+/// The greatest overbright shift `scg_set_overbright` accepts.
+///
+/// Zero leaves a texel untouched under full light; one and two double and
+/// quadruple the combined value, with saturation. Any other value is rejected.
+pub const SCG_MAX_OVERBRIGHT: u32 = 2;
+
+/// The greatest absolute texture or lightmap coordinate a vertex may carry.
+///
+/// An integer, although the coordinates themselves are `float`: the value is
+/// exact in both, and a host compares its own mapping against it rather than
+/// having a batch refused whole. Beyond it, or non-finite, one coordinate
+/// refuses the entire batch.
+pub const SCG_MAX_TEXEL_COORD: u32 = 16_384;
+
+/// The greatest side of a texture, in texels.
+///
+/// Both sides are powers of two, independently of each other, from 1 up to this
+/// bound: that is what lets coordinate wrapping be a mask, with no division and
+/// no comparison per texel.
+pub const SCG_MAX_TEXTURE_SIZE: u32 = 2048;
+
+/// The greatest internal resolution a context may be created with.
+///
+/// The worst cases of the engine's fixed-point formats are computed on this
+/// bound, so a `max_width` or `max_height` beyond it fails creation rather than
+/// overflowing in silence.
+pub const SCG_MAX_RESOLUTION: u32 = 2048;
+
+/// The triangle capacity a zero `max_triangles` asks for.
+///
+/// It counts triangles **prepared**, not submitted: clipping turns one submitted
+/// triangle into up to six.
+pub const SCG_TRIANGLE_CAPACITY: u32 = 16_384;
+
+/// The drawing-primitive capacity a zero `max_lines` asks for.
+pub const SCG_LINE_CAPACITY: u32 = 4096;
+
 // **Ces valeurs sont écrites en littéral, et concordent par assertion.**
 // `cbindgen` analyse la source syntaxiquement et n'interroge jamais `rustc` : une
 // constante définie depuis un chemin du noyau n'entre pas dans le header, elle y
@@ -163,6 +209,23 @@ const _: () = assert!(SCG_MAX_LIGHTMAP_SIZE == screengine::MAX_LIGHTMAP_SIZE);
 // sa valeur sans que rien ne refuse la compilation, et le header aurait publié
 // l'ancienne.
 const _: () = assert!(SCG_SWEEP_CELLS as usize == screengine::SWEEP_CELLS);
+
+// **Les sept suivantes ne vivaient qu'en prose dans `docs/abi.md`.** Le chemin
+// Rust les publie toutes — le noyau, puis la liste plate de l'étage d'accueil —
+// et la frontière en exposait quatre : un hôte C recopiait les autres à la main,
+// ce que le contrat désigne pourtant comme le mode de panne à éviter. Ce sont des
+// bornes d'entrée, celles qu'un hôte doit respecter *avant* d'appeler, là où les
+// quatre d'au-dessus disent ce qu'il reçoit quand il les atteint.
+const _: () = assert!(SCG_MAX_LIGHTS as usize == screengine::MAX_LIGHTS);
+const _: () = assert!(SCG_MAX_OVERBRIGHT == screengine::MAX_OVERBRIGHT);
+const _: () = assert!(SCG_MAX_TEXTURE_SIZE == screengine::MAX_TEXTURE_SIZE);
+const _: () = assert!(SCG_MAX_RESOLUTION == screengine::MAX_RESOLUTION);
+const _: () = assert!(SCG_TRIANGLE_CAPACITY as usize == screengine::TRIANGLE_CAPACITY);
+const _: () = assert!(SCG_LINE_CAPACITY as usize == screengine::LINE_CAPACITY);
+// La seule dont le noyau porte un `f32`, et le cast dit ce qu'un commentaire
+// dirait moins bien : la borne est entière des deux côtés, exactement
+// représentable, et c'est pourquoi le header la publie en entier.
+const _: () = assert!(SCG_MAX_TEXEL_COORD as f32 == screengine::MAX_TEXEL_COORD);
 
 /// The block is not a data file this library can read.
 ///
