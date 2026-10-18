@@ -63,6 +63,8 @@ publié, et explique les conventions du dépôt à qui y contribue.
 
 ## [Non publié]
 
+## [1.5.0] — 2026-10-18 — L'étendue vient du maillage
+
 ### Ajouté
 
 - **`scg_mesh_bounds` et `Mesh::bounds` rendent la boîte englobante d'une
