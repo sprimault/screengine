@@ -63,6 +63,22 @@ publié, et explique les conventions du dépôt à qui y contribue.
 
 ## [Non publié]
 
+### Ajouté
+
+- **`Play::max_resolution_from_screens` prend pour plafond l'enveloppe des
+  écrans**, bornée par `MAX_RESOLUTION` : un jeu ne pouvait pas la calculer, les
+  écrans n'étant lisibles qu'après le lancement de la boucle. Le plafond décide
+  de la mémoire, jamais de l'image.
+
+***
+
+### Added
+
+- **`Play::max_resolution_from_screens` takes the screens' envelope as its
+  ceiling**, bounded by `MAX_RESOLUTION`: a game could not work it out, screens
+  being readable only once the loop runs. The ceiling decides memory, never the
+  image.
+
 ## [1.3.0] — 2026-10-18 — La frontière rattrape le chemin Rust
 
 ### Ajouté

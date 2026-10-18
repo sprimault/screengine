@@ -7,7 +7,7 @@ use std::num::NonZeroU32;
 use std::rc::Rc;
 use std::time::Duration;
 
-use screengine::{BYTES_PER_PIXEL, Context};
+use screengine::{BYTES_PER_PIXEL, Context, MAX_RESOLUTION};
 use softbuffer::Surface;
 // Celui de `std` panique sur wasm, faute d'horloge monotone, et c'est de toute
 // façon celui-ci que `ControlFlow::WaitUntil` attend là-bas. Ailleurs, le crate
@@ -26,6 +26,35 @@ use crate::input::Input;
 use crate::scale::{Scale, Scaler};
 use crate::texture::Icon;
 use crate::{DEFAULT_WINDOW_FACTOR, Error, FrameTime, Output, Play, Tick};
+
+/// Le plafond de résolution que l'enveloppe des écrans justifie.
+///
+/// **Le plus grand des écrans et non le plus petit**, et par axe : la fenêtre
+/// peut naître sur n'importe lequel, et l'hôte ne choisit pas lequel. Prendre le
+/// plus petit ferait refuser une hausse dès qu'on porte la fenêtre sur le grand
+/// — et le plafond, une fois le contexte créé, ne se relève plus.
+///
+/// **Une liste vide rend la borne du moteur.** C'est ce que donnent les
+/// plateformes qui ne nomment pas leurs écrans, et il vaut mieux y payer la
+/// mémoire que de refuser une hausse : l'image est la même dans les deux cas.
+///
+/// Jamais sous la résolution d'ouverture, qu'un contexte doit pouvoir rendre.
+fn screen_ceiling(screens: &[(u32, u32)], opening: (u32, u32)) -> (u32, u32) {
+    let mut width = 0;
+    let mut height = 0;
+    for &(screen_width, screen_height) in screens {
+        width = width.max(screen_width);
+        height = height.max(screen_height);
+    }
+    if width == 0 || height == 0 {
+        width = MAX_RESOLUTION;
+        height = MAX_RESOLUTION;
+    }
+    (
+        width.min(MAX_RESOLUTION).max(opening.0),
+        height.min(MAX_RESOLUTION).max(opening.1),
+    )
+}
 
 /// La fenêtre et sa surface, qui vivent et meurent ensemble.
 ///
@@ -429,6 +458,42 @@ where
         event_loop.exit();
     }
 
+    /// Refait le contexte sur l'enveloppe des écrans, une seule fois.
+    ///
+    /// **Le drapeau se baisse avant tout le reste**, parce que `resumed` revient
+    /// — Android suspend et reprend —, et qu'un contexte refait à chaque reprise
+    /// jetterait l'état que le jeu y a réglé.
+    ///
+    /// Rien n'est refait quand le plafond tombe juste sur celui qu'on a déjà :
+    /// c'est le cas d'un écran dont la cote dépasse la borne du moteur, où les
+    /// deux valent `MAX_RESOLUTION`.
+    fn refit_ceiling(&mut self, event_loop: &ActiveEventLoop) -> Result<(), Error> {
+        self.play.ceiling_from_screens = false;
+
+        let screens: Vec<(u32, u32)> = event_loop
+            .available_monitors()
+            .map(|monitor| {
+                let size = monitor.size();
+                (size.width, size.height)
+            })
+            .collect();
+        let (width, height) = screen_ceiling(&screens, self.context.resolution());
+
+        let mut config = self.context.config();
+        if (config.max_width, config.max_height) == (width, height) {
+            return Ok(());
+        }
+        config.max_width = width;
+        config.max_height = height;
+
+        // L'ancien contexte n'a rien rendu et ne porte aucun réglage du jeu : le
+        // remplacer avant la première image ne perd rien. Le tampon suit, lui
+        // qui est dimensionné sur le plafond et non sur la résolution courante.
+        self.context = Context::new(config)?;
+        self.pixels = vec![0; width as usize * height as usize * BYTES_PER_PIXEL];
+        Ok(())
+    }
+
     /// Ouvre la fenêtre à la résolution interne multipliée par le facteur
     /// d'ouverture, et sa surface.
     fn open(&mut self, event_loop: &ActiveEventLoop) -> Result<Display, Error> {
@@ -616,6 +681,16 @@ where
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         if self.display.is_some() {
             return;
+        }
+        // **Le seul endroit où les écrans sont lisibles**, et il est après la
+        // création du contexte : `available_monitors` vit sur la boucle active.
+        // Le jeu qui demande ce plafond paie donc un contexte refait, une fois,
+        // avant la première image — un appel nommé, où allouer est permis.
+        if self.play.ceiling_from_screens {
+            if let Err(error) = self.refit_ceiling(event_loop) {
+                self.fail(event_loop, error);
+                return;
+            }
         }
         match self.open(event_loop) {
             Ok(display) => self.display = Some(display),
