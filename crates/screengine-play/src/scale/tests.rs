@@ -149,6 +149,36 @@ fn une_fenetre_plus_petite_que_l_image_ne_panique_pas() {
     assert!(out.iter().all(|p| *p <= 0x00FF_FFFF));
 }
 
+/// Les deux cotes qu'un jeu lit par `Tick::window` et `Tick::viewport`, dans
+/// les trois régimes de disposition.
+///
+/// C'est le seul endroit où elles se vérifient sans fenêtre, et ce test est la
+/// raison d'être de la paire : dans les deux régimes de repli, le quotient de
+/// l'étendue par la résolution interne **ne tombe pas rond**, si bien qu'un
+/// facteur entier rendu à sa place aurait valu zéro ou menti. Un jeu qui
+/// dimensionne sa résolution sur la fenêtre lirait alors une échelle qui n'est
+/// pas celle qu'il voit.
+#[test]
+fn les_deux_cotes_suivent_le_regime_de_disposition() {
+    // Facteur entier : l'étendue est un multiple de la source, et la fenêtre
+    // garde la bande que le centrage laisse.
+    let (entier, _) = render(Scale::Integer, 3, 2, 7, 5);
+    assert_eq!(entier.target(), (7, 5));
+    assert_eq!(entier.extent(), (6, 4));
+
+    // Fenêtre plus petite que l'image : aucun facteur entier ne tient, et
+    // l'étendue colle à l'axe le plus contraint en gardant les proportions.
+    let (replie, _) = render(Scale::Integer, 8, 4, 5, 5);
+    assert_eq!(replie.target(), (5, 5));
+    assert_eq!(replie.extent(), (5, 2));
+
+    // Remplissage qui ne tombe pas juste : l'image remplit un axe entier, et
+    // c'est encore l'étendue qui le dit — pas un facteur.
+    let (rempli, _) = render(Scale::Fill, 3, 2, 7, 5);
+    assert_eq!(rempli.target(), (7, 5));
+    assert_eq!(rempli.extent(), (7, 4));
+}
+
 /// La souris se ramène à la résolution interne, et vaut `None` dans les
 /// bandes : un clic dans le noir ne doit pas viser le bord de l'image.
 #[test]

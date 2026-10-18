@@ -186,8 +186,13 @@ impl Play {
     ///
     /// Le moteur dimensionne à la création tout ce qu'une image consomme, sur
     /// ce plafond : le relever coûte de la mémoire une fois, et c'est ce qui
-    /// permet ensuite de baisser puis de remonter sans jamais allouer. Un jeu
-    /// qui n'en veut pas ne perd rien — il peut toujours descendre.
+    /// permet ensuite de baisser puis de remonter sans jamais allouer.
+    ///
+    /// **Un jeu qui veut faire suivre sa résolution à sa fenêtre le règle ici**,
+    /// et c'est le seul moment où il peut : sans lui le plafond est la résolution
+    /// d'ouverture, donc toute hausse demandée ensuite est refusée. Celui qui ne
+    /// descend jamais que sous son ouverture n'en a pas besoin. Voir
+    /// [`Tick::window`], qui est ce qu'on lit pour décider.
     ///
     /// [`Context::set_resolution`]: screengine::Context::set_resolution
     pub fn max_resolution(mut self, width: u32, height: u32) -> Self {
@@ -415,6 +420,8 @@ pub struct Tick<'a> {
     index: u64,
     dt: f32,
     frame: Option<FrameTime>,
+    window: (u32, u32),
+    viewport: (u32, u32),
     exit: bool,
     captured: bool,
     capture: Option<bool>,
@@ -438,6 +445,11 @@ impl<'a> Tick<'a> {
             // Absent, qui est l'état avant la première image : seule la boucle
             // en pose un, et elle exige une fenêtre.
             frame: None,
+            // Facteur un, image collée à la fenêtre : les deux cotes sont
+            // neutres pour ce qu'un pas fabriqué sert à éprouver, et le calcul
+            // qui les produit se teste sur le `Scaler`, où il vit.
+            window: (640, 360),
+            viewport: (640, 360),
             exit: false,
             captured,
             capture: None,
@@ -491,6 +503,64 @@ impl<'a> Tick<'a> {
     /// ```
     pub fn frame_time(&self) -> Option<FrameTime> {
         self.frame
+    }
+
+    /// La fenêtre, en pixels physiques — le canvas sur wasm.
+    ///
+    /// C'est ce qu'un jeu lit pour faire suivre sa résolution interne à une
+    /// fenêtre qu'on maximise ou qu'on porte sur un autre écran : il la compare
+    /// d'un pas à l'autre, garde sa décision dans son état, et appelle
+    /// [`Context::set_resolution`] dans son rappel de **rendu**, seul des trois à
+    /// recevoir le contexte.
+    ///
+    /// **Monter exige un plafond réglé à la création.** Sans
+    /// [`Play::max_resolution`], le plafond *est* la résolution d'ouverture, et
+    /// toute hausse est refusée : un jeu qui veut suivre sa fenêtre le règle une
+    /// fois sur ce qu'il acceptera au plus — le moteur dimensionne dessus et
+    /// n'allouera plus rien ensuite —, puis descend et remonte librement.
+    ///
+    /// ```no_run
+    /// use screengine_play::{Context, Play, Tick};
+    ///
+    /// let _ = Play::new()
+    ///     .resolution(640, 360)
+    ///     // Sans ce plafond, la hausse plus bas serait refusée.
+    ///     .max_resolution(1280, 720)
+    ///     .run(
+    ///         (640u32, 360u32),
+    ///         |voulue: &mut (u32, u32), tick: &mut Tick<'_>| {
+    ///             let (w, h) = tick.window();
+    ///             *voulue = ((w / 2).clamp(320, 1280), (h / 2).clamp(180, 720));
+    ///         },
+    ///         |voulue: &mut (u32, u32), ctx: &mut Context| {
+    ///             if ctx.resolution() != *voulue {
+    ///                 let _ = ctx.set_resolution(voulue.0, voulue.1);
+    ///             }
+    ///         },
+    ///     );
+    /// ```
+    ///
+    /// [`Context::set_resolution`]: screengine::Context::set_resolution
+    /// [`Play::max_resolution`]: Play::max_resolution
+    pub fn window(&self) -> (u32, u32) {
+        self.window
+    }
+
+    /// Ce que l'image occupe dans cette fenêtre, en pixels physiques.
+    ///
+    /// Le facteur appliqué est le quotient de cette cote par la résolution
+    /// interne, exact quand la mise à l'échelle est entière ; la différence avec
+    /// [`window`](Self::window) est la bande que le centrage laisse de part et
+    /// d'autre, et les deux sont égales quand l'image remplit la fenêtre.
+    ///
+    /// **Deux cotes plutôt qu'un facteur, parce qu'il n'est pas toujours
+    /// entier** : une fenêtre plus petite que l'image, ou un [`Scale::Fill`] qui
+    /// ne tombe pas juste, collent l'image à l'axe le plus contraint, et aucun
+    /// entier ne décrit alors l'agrandissement.
+    ///
+    /// [`Scale::Fill`]: Scale::Fill
+    pub fn viewport(&self) -> (u32, u32) {
+        self.viewport
     }
 
     /// Demande la fermeture après ce pas.
