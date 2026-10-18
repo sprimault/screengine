@@ -77,6 +77,9 @@ publié, et explique les conventions du dépôt à qui y contribue.
 - **`scg_world_sweep_brute` et `scg_world_pick_brute` refont la requête contre
   toutes les cellules, sans traversée** : c'est l'oracle qu'un intégrateur
   n'avait pas pour éprouver la traversée sur son propre décor.
+- **`scg_lightmap_fault` dit pourquoi un repère de lightmap est refusé**, par le
+  prédicat du chargeur lui-même : un générateur n'a plus à le réimplémenter pour
+  retrouver la surface fautive.
 
 ***
 
@@ -94,6 +97,9 @@ publié, et explique les conventions du dépôt à qui y contribue.
 - **`scg_world_sweep_brute` and `scg_world_pick_brute` redo the query against
   every cell, without traversal**: the oracle an integrator had no way to run
   against traversal on their own map.
+- **`scg_lightmap_fault` says why a lightmap frame is refused**, through the
+  loader's own predicate: a generator no longer has to reimplement it to find
+  the offending surface.
 
 ## [1.2.0] — 2026-10-17 — Le chemin Rust dans un navigateur
 

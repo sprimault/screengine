@@ -16,8 +16,8 @@ lightmaps, cache compris, les quadrilatères orientés, les maillages entre deux
 trames, le texel transparent et la surface modulée, le balayage d'une boîte
 contre les cellules d'une carte, et ce qu'un éditeur réclame : le tracé de lignes
 et de points, et l'interrogation par le rayon, le choix du jeu d'instructions
-qui remplit les triangles, et les deux chemins bruts contre lesquels la
-collision et l'interrogation se valident. **Le contrat du tracé a été figé ci-dessous avant son
+qui remplit les triangles, les deux chemins bruts contre lesquels la collision
+et l'interrogation se valident, et le diagnostic d'un repère de lightmap refusé. **Le contrat du tracé a été figé ci-dessous avant son
 premier remplissage**, comme ceux des étapes 4 à 7 l'ont été. Chaque décision
 garde ci-dessous l'option écartée et pourquoi. **Plus aucun point n'est marqué
 À trancher** : le dernier était la dépréciation, fermée au gel de l'ABI — rien
@@ -1319,9 +1319,12 @@ Arrêté :
 
 ### Étape 5
 
-**Treize fonctions, un type opaque, huit constantes, aucun code d'erreur
+**Quatorze fonctions, un type opaque, quatorze constantes, aucun code d'erreur
 nouveau et deux statuts.** Aucune signature publiée, aucune structure, aucune
 précondition ne bouge : `SCG_ABI_VERSION` reste à **1**.
+
+La quatorzième fonction et six des constantes sont arrivées après la publication
+de l'étape — voir « Le diagnostic d'un repère refusé », en fin de section.
 
 La traversée et le calcul des lightmaps sont deux chantiers indépendants — le
 second a besoin des cellules, pas de la traversée — et ils sont exposés ensemble
@@ -1563,6 +1566,40 @@ pas dans le second.
   L'empreinte l'attrape, mais la clause est écrite pour qu'un hôte qui ne
   recalcule que la cellule éditée comprenne pourquoi sa voisine passe à
   « périmée » : la lumière qui passait par la porte était calculée là-bas.
+
+#### Le diagnostic d'un repère refusé
+
+`scg_lightmap_fault` dit laquelle des cinq clauses du repère de lightmap ferait
+refuser une surface, ou `SCG_LIGHTMAP_FAULT_NONE`. Ajoutée après la publication
+de l'étape, sur le constat du même audit que l'oracle : le prédicat existait pour
+un appelant Rust, et l'ABI n'en donnait aucun.
+
+**Elle ne prend aucun handle, et c'est ce qui la rend utile** : une carte refusée
+n'en a jamais produit. L'hôte passe le repère et les coins qu'il a lui-même
+écrits — tout ce qui lui reste à cet instant —, et c'est pourquoi elle ne peut pas
+vivre sur `ScgWorld`.
+
+**C'est le prédicat du chargeur, pas une seconde écriture.** Le chargement appelle
+le même code, si bien que les deux ne peuvent pas diverger, et c'est sa raison
+d'être : un générateur de cartes avait dû le réimplémenter — tolérance et somme de
+Newell comprises — pour retrouver la surface qu'une carte faisait refuser, et sa
+copie serait devenue fausse au premier changement de valeur. Le même piège
+attendait un générateur écrit en C, en Go ou en JavaScript.
+
+- **Les cinq clauses se testent dans l'ordre où le chargement les refuse**, et la
+  première rencontrée est celle qui est rendue : cet ordre fait partie du contrat.
+- **Trois coins au minimum**, faute de quoi `SCG_ERR_INVALID_ARGUMENT`. La
+  cinquième clause dépend des coins autant que du repère, et en deçà de trois elle
+  se trompe **dans les deux sens** : sans aucun coin, les extrema portent sur un
+  ensemble vide et l'étendue sort absurde — une faute inventée à un repère sain —,
+  tandis qu'un ou deux la laissent sous la borne et cacheraient celle d'un vrai
+  polygone.
+- **Les coins doivent être finis**, et c'est la frontière qui le vérifie : le
+  noyau les suppose tels, et au-delà de ce domaine il rend bien une faute, mais
+  laquelle n'est pas spécifié.
+- **Zéro vaut « aucune faute »**, et ce n'est pas une entorse à la règle qui
+  refuse un zéro : celle-ci porte sur un mode **passé** à un appel, jamais sur une
+  valeur que le moteur écrit — `surface_id` et `cell_id` l'emploient déjà ainsi.
 
 ### Étape 6
 

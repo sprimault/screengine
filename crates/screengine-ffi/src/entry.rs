@@ -196,6 +196,25 @@ impl AbiError {
         message: "pick filter must be SCG_PICK_SOLID or SCG_PICK_ALL",
     };
 
+    /// Moins de trois coins pour juger un repère de lightmap.
+    ///
+    /// Un polygone n'en a pas moins, et le refus vaut mieux qu'un verdict qui ne
+    /// décrit rien : la cinquième clause dépend des coins autant que du repère,
+    /// et en deçà de trois elle se trompe **dans les deux sens**. Sans aucun
+    /// coin, les extrema portent sur un ensemble vide et l'étendue sort absurde
+    /// — une faute inventée à un repère sain, vu en cassant le test de cette
+    /// fonction. Avec un ou deux, l'étendue d'un point ou d'un segment reste
+    /// sous la borne, et la faute d'un vrai polygone passerait inaperçue.
+    ///
+    /// Un refus de la frontière et non du noyau : `Argument` n'est pas
+    /// `non_exhaustive`, donc une variante de plus y casserait tout `match`
+    /// exhaustif d'un appelant Rust — une rupture, pour un contrôle qui vit de
+    /// toute façon ici, là où le tableau brut est visible.
+    pub(crate) const CORNER_COUNT: Self = Self {
+        code: SCG_ERR_INVALID_ARGUMENT,
+        message: "lightmap frame diagnosis needs at least three corners",
+    };
+
     /// Le niveau de filtrage demandé n'existe pas dans cette bibliothèque.
     ///
     /// Refusé plutôt que rabattu sur le défaut, et c'est ce qui rend l'ajout

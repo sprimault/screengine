@@ -256,6 +256,39 @@
 // because editing will produce it, and a published state does not change meaning.
 #define SCG_LIGHTMAP_STALE 2
 
+// The lightmap frame would be accepted: no fault.
+//
+// Zero for the absence, as `surface_id` and `cell_id` already use it. The rule
+// that refuses a zero covers a mode **passed** to a call, never a value the
+// engine writes back.
+#define SCG_LIGHTMAP_FAULT_NONE 0
+
+// An axis of zero or non-finite length: no direction, so no reciprocal, and
+// baking would divide by zero.
+#define SCG_LIGHTMAP_FAULT_DEGENERATE_AXIS 1
+
+// The origin does not land on a node of its own grid, measured from world zero.
+//
+// Two grids of the same pitch would otherwise stay out of phase.
+#define SCG_LIGHTMAP_FAULT_ORIGIN_OFF_GRID 2
+
+// The two axes are not orthogonal, which would need the inverse of an arbitrary
+// 2×2 matrix, hence a division per luxel.
+#define SCG_LIGHTMAP_FAULT_SKEWED_AXES 3
+
+// An axis leaves the plane of the surface, so the luxel grid does not cover what
+// it lights.
+#define SCG_LIGHTMAP_FAULT_AXIS_OFF_PLANE 4
+
+// The surface spans too many luxels on one side, and its atlas would not fit.
+//
+// The only one of the five that depends on the corners as much as on the frame,
+// and the only one a generator could get wrong without reproducing a tolerance:
+// the span is measured by dot product, never divided by the squared length of
+// the axis, and a copy that divides is neutral on a unit axis and wrong
+// everywhere else.
+#define SCG_LIGHTMAP_FAULT_EXTENT_TOO_LARGE 5
+
 // How deep portal traversal follows a line of sight.
 //
 // Exposed so a host can tell why an image came back incomplete. It is a constant
@@ -1867,6 +1900,38 @@ int32_t scg_lighting_restore(struct ScgLighting *lighting,
 // `world` must be a live handle from `scg_world_load`, and `out` must point to a
 // writable `uint32_t`.
 int32_t scg_world_cell_count(const struct ScgWorld *world, uint32_t *out);
+
+// Writes to `out` what would make this lightmap frame be refused, or
+// `SCG_LIGHTMAP_FAULT_NONE`.
+//
+// **The loader's own predicate, not a second writing of it.** Loading calls the
+// same code, so the two cannot drift. That is why it is exposed at all: a map
+// generator had to reimplement it — tolerance and Newell sum included — to find
+// which surface a map was refused for, and that copy would have gone silently
+// wrong the day a value moved.
+//
+// **It takes no map handle, and that is the point**: a map that was refused
+// never produced one. A host passes the frame and corners it wrote itself, from
+// its own data, which is all it has left at that moment.
+//
+// The five clauses are tested in the order loading refuses them, and the first
+// one met is the one reported. `corners` holds `corner_count` triples of
+// `float`, and **three corners are the minimum**: the fifth clause depends on
+// them, and below three it is wrong in both directions — no corner at all makes
+// the span come out of an empty set, inventing a fault on a sound frame, while
+// one or two keep it under the bound and would hide a real one.
+//
+// # Safety
+//
+// `origin`, `u` and `v` must each point to three readable `float`s, `corners`
+// must point to `corner_count` readable triples, and `out` must point to a
+// writable `uint32_t`.
+int32_t scg_lightmap_fault(const float *origin,
+                           const float *u,
+                           const float *v,
+                           const float *corners,
+                           uint32_t corner_count,
+                           uint32_t *out);
 
 // Writes the stable identifier of the cell at `index` to `out`.
 //

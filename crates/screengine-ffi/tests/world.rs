@@ -1216,3 +1216,143 @@ fn modifier_une_carte_c_est_la_recharger() {
         scg_world_destroy(avant);
     }
 }
+
+/// Le diagnostic d'un repère de lightmap nomme la clause, et lit vraiment ses
+/// coins.
+///
+/// **Il ne prend aucun handle, et c'est ce qui le rend utile** : une carte
+/// refusée n'en a jamais produit. L'hôte passe le repère et les coins qu'il a
+/// lui-même écrits, ce qui est tout ce qui lui reste à ce moment-là.
+///
+/// Le dernier cas est celui qui compte : l'étendue est la seule des cinq clauses
+/// à dépendre des coins autant que du repère. **Vérifié en cassant** — un appel
+/// qui passe un tableau vide au noyau fait sortir l'étendue d'un ensemble de
+/// coins vide, donc rend `EXTENT_TOO_LARGE` partout, et c'est le **premier** cas
+/// de ce test qui tombe alors, pas le dernier. C'est aussi ce qui justifie le
+/// refus en deçà de trois coins : le verdict ne décrit plus rien.
+#[test]
+fn le_diagnostic_de_repere_nomme_la_clause() {
+    let origin = [0.0f32, 0.0, 0.0];
+    let u = [1.0f32, 0.0, 0.0];
+    let v = [0.0f32, 1.0, 0.0];
+    // Un carré d'une unité de côté, dans le plan du repère : rien à refuser.
+    let square = [
+        0.0f32, 0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0, 1.0, 0.0,
+    ];
+    let mut fault = 999u32;
+
+    // SAFETY: trois flottants par repère, quatre triplets de coins, sortie
+    // inscriptible.
+    let code = unsafe {
+        scg_lightmap_fault(
+            origin.as_ptr(),
+            u.as_ptr(),
+            v.as_ptr(),
+            square.as_ptr(),
+            4,
+            &mut fault,
+        )
+    };
+    assert_eq!(code, SCG_OK, "{}", last_error());
+    assert_eq!(fault, SCG_LIGHTMAP_FAULT_NONE);
+
+    // Un axe nul n'a pas de direction : première clause, et la première
+    // rencontrée est celle qui est rendue.
+    // SAFETY: idem.
+    let code = unsafe {
+        scg_lightmap_fault(
+            origin.as_ptr(),
+            [0.0f32; 3].as_ptr(),
+            v.as_ptr(),
+            square.as_ptr(),
+            4,
+            &mut fault,
+        )
+    };
+    assert_eq!(code, SCG_OK);
+    assert_eq!(fault, SCG_LIGHTMAP_FAULT_DEGENERATE_AXIS);
+
+    // Deux axes colinéaires ne sont pas orthogonaux.
+    // SAFETY: idem.
+    let code = unsafe {
+        scg_lightmap_fault(
+            origin.as_ptr(),
+            u.as_ptr(),
+            u.as_ptr(),
+            square.as_ptr(),
+            4,
+            &mut fault,
+        )
+    };
+    assert_eq!(code, SCG_OK);
+    assert_eq!(fault, SCG_LIGHTMAP_FAULT_SKEWED_AXES);
+
+    // Moins de trois coins se refuse, plutôt que de juger un repère dont
+    // l'étendue n'aurait été vue par personne.
+    // SAFETY: idem, deux coins annoncés sur quatre présents.
+    let code = unsafe {
+        scg_lightmap_fault(
+            origin.as_ptr(),
+            u.as_ptr(),
+            v.as_ptr(),
+            square.as_ptr(),
+            2,
+            &mut fault,
+        )
+    };
+    assert_eq!(code, SCG_ERR_INVALID_ARGUMENT);
+    assert!(
+        last_error().contains("three corners"),
+        "message : {}",
+        last_error()
+    );
+
+    // Un coin non fini est une faute d'appel, et non une clause : le noyau
+    // suppose ses coins finis, c'est la frontière qui le garantit.
+    let infinite = [0.0f32, 0.0, 0.0, 1.0, 0.0, 0.0, f32::INFINITY, 1.0, 0.0];
+    // SAFETY: trois triplets lisibles.
+    let code = unsafe {
+        scg_lightmap_fault(
+            origin.as_ptr(),
+            u.as_ptr(),
+            v.as_ptr(),
+            infinite.as_ptr(),
+            3,
+            &mut fault,
+        )
+    };
+    assert_eq!(code, SCG_ERR_INVALID_ARGUMENT);
+
+    // SAFETY: la sortie est nulle.
+    let code = unsafe {
+        scg_lightmap_fault(
+            origin.as_ptr(),
+            u.as_ptr(),
+            v.as_ptr(),
+            square.as_ptr(),
+            4,
+            ptr::null_mut(),
+        )
+    };
+    assert_eq!(code, SCG_ERR_NULL);
+
+    // **Le cas qui prouve que les coins sont lus** : les mêmes axes, un carré de
+    // trois cents unités de côté, donc trois cents luxels — au-delà de ce qu'un
+    // atlas de cellule peut ranger.
+    let huge = [
+        0.0f32, 0.0, 0.0, 300.0, 0.0, 0.0, 300.0, 300.0, 0.0, 0.0, 300.0, 0.0,
+    ];
+    // SAFETY: quatre triplets lisibles.
+    let code = unsafe {
+        scg_lightmap_fault(
+            origin.as_ptr(),
+            u.as_ptr(),
+            v.as_ptr(),
+            huge.as_ptr(),
+            4,
+            &mut fault,
+        )
+    };
+    assert_eq!(code, SCG_OK);
+    assert_eq!(fault, SCG_LIGHTMAP_FAULT_EXTENT_TOO_LARGE);
+}
