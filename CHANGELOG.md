@@ -68,6 +68,10 @@ publié, et explique les conventions du dépôt à qui y contribue.
 - **Les sept bornes d'entrée sont dans le header** — lumières, sur-éclairement,
   coordonnée de texel, côté de texture, résolution interne et les deux capacités
   par défaut —, là où une liaison les recopiait à la main.
+- **`Tick::window` et `Tick::viewport` rendent la fenêtre et la zone que l'image
+  y occupe** : c'est ce qu'un jeu lit pour faire suivre sa résolution interne à
+  une fenêtre qu'on maximise. Monter exige un plafond réglé à la création, par
+  `Play::max_resolution`.
 
 ***
 
@@ -76,6 +80,10 @@ publié, et explique les conventions du dépôt à qui y contribue.
 - **The seven input bounds are now in the header** — lights, overbright, texel
   coordinate, texture side, internal resolution and the two default capacities —
   where a binding had to copy them by hand.
+- **`Tick::window` and `Tick::viewport` return the window and the area the image
+  occupies in it**: what a game reads to make its internal resolution follow a
+  window being maximised. Raising it needs a ceiling set at creation, through
+  `Play::max_resolution`.
 
 ## [1.2.0] — 2026-10-17 — Le chemin Rust dans un navigateur
 

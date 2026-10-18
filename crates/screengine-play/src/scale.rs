@@ -140,11 +140,25 @@ impl Scaler {
     /// La taille de la fenêtre pour laquelle la disposition est calculée, en
     /// pixels, qui est aussi celle du tampon que [`Scaler::blit`] remplit.
     ///
-    /// Propre à wasm, seule cible où l'étage d'accueil pose l'image lui-même et
-    /// doit donc en donner les dimensions au canvas.
-    #[cfg(target_arch = "wasm32")]
+    /// Sur toutes les cibles depuis qu'un jeu la lit par [`Tick::window`] : sur
+    /// wasm elle donne en plus ses dimensions au canvas, l'étage d'accueil y
+    /// posant l'image lui-même.
+    ///
+    /// [`Tick::window`]: crate::Tick::window
     pub(crate) fn target(&self) -> (u32, u32) {
         (self.target.0 as u32, self.target.1 as u32)
+    }
+
+    /// Ce que l'image occupe vraiment dans la fenêtre, en pixels.
+    ///
+    /// Jamais plus que la fenêtre ; ce qui reste est la bande que le centrage
+    /// laisse de part et d'autre. **C'est la seule des deux cotes qui suive le
+    /// régime choisi** — un facteur entier la rend multiple de la résolution
+    /// interne, un repli la fait coller à l'axe le plus contraint —, et c'est
+    /// pourquoi un jeu qui veut le facteur la divise plutôt que de recevoir un
+    /// entier qui n'existe pas dans le second cas.
+    pub(crate) fn extent(&self) -> (u32, u32) {
+        (self.extent.0 as u32, self.extent.1 as u32)
     }
 
     /// Change la résolution interne, la fenêtre restant celle qu'on a.

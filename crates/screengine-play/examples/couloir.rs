@@ -152,6 +152,29 @@ const WALK_HALF: Vec3 = Vec3::new(0.4, 0.4, 0.65);
 /// l'autre par cette constante, et rien d'autre ne les relie.
 const EYE_ABOVE: f32 = 0.75;
 
+/// La résolution interne d'ouverture, remontée d'un facteur deux par la fenêtre.
+const BASE_RESOLUTION: (u32, u32) = (640, 360);
+
+/// Ce que la résolution interne ne dépasse pas, quelle que soit la fenêtre.
+///
+/// **Le coût d'une image est en pixels**, et un rendu logiciel à la résolution
+/// d'un écran actuel ne tiendrait pas la cadence : maximisée sur un écran 4K,
+/// cette scène rendrait neuf fois les pixels de son ouverture. C'est donc le
+/// **facteur d'agrandissement** qui monte quand la fenêtre grandit, jamais la
+/// résolution interne au-delà de ce plafond — l'image remplit la fenêtre dans
+/// les deux cas, et seul le grain change.
+///
+/// L'arbitrage appartient au jeu, et le moteur ne le fait pour personne : il ne
+/// sait pas ce qu'une image a le droit de coûter ici.
+const RESOLUTION_CEILING: (u32, u32) = (960, 540);
+
+/// Ce sous quoi elle ne descend pas, une fenêtre pouvant être réduite à rien.
+///
+/// Sous cette cote l'image est plus grande que la fenêtre, et la mise à
+/// l'échelle retombe sur son repli : c'est voulu, et mieux qu'une image de
+/// quelques pixels de côté.
+const RESOLUTION_FLOOR: (u32, u32) = (320, 180);
+
 /// Ce qui arrête un marcheur, ici : le couloir et les caisses, sans le moteur.
 ///
 /// **Aucun décor chargé, donc aucun balayage.** La géométrie d'ici est écrite en
@@ -972,6 +995,14 @@ struct World {
     flash: f32,
     /// L'ennemi qui arpente le couloir.
     demon: Demon,
+    /// La résolution interne que la fenêtre réclame, relue à chaque pas.
+    ///
+    /// La moitié de la fenêtre, bornée par les deux cotes ci-dessus : le facteur
+    /// deux est ce qui garde le grain de l'époque visée, et la borner est ce qui
+    /// garde une image payable. Elle vit dans l'état parce que c'est le pas qui
+    /// la lit et le rendu qui l'applique — seul des deux rappels à recevoir le
+    /// contexte.
+    wanted: (u32, u32),
 }
 
 /// Combien de temps l'éclair de bouche reste à l'écran, en secondes.
@@ -1310,6 +1341,7 @@ fn jouer(planches: Planches) -> Result<(), screengine_play::Error> {
             x: DEMON_START,
             heading: 1.0,
         },
+        wanted: BASE_RESOLUTION,
     };
     // Le tampon des lumières vit hors de la boucle et se vide par `clear` :
     // l'hôte n'est tenu par aucun invariant du noyau, mais réallouer douze
@@ -1318,7 +1350,16 @@ fn jouer(planches: Planches) -> Result<(), screengine_play::Error> {
     // L'indication vit dans la barre de titre et non dans la console : c'est
     // là qu'on la cherche quand on ne sait plus comment récupérer sa souris,
     // et elle y reste visible pendant que le curseur est pris.
-    Play::new().title(title(world.filter)).stats(true).run(
+    // **Sans ce plafond, la résolution ne pourrait que descendre** : il vaut
+    // celui de l'ouverture, et toute hausse serait refusée. C'est le seul moment
+    // où il se règle, et le moteur dimensionne dessus une fois pour n'allouer
+    // plus rien ensuite.
+    let play = Play::new()
+        .title(title(world.filter))
+        .stats(true)
+        .resolution(BASE_RESOLUTION.0, BASE_RESOLUTION.1)
+        .max_resolution(RESOLUTION_CEILING.0, RESOLUTION_CEILING.1);
+    play.run(
         world,
         |world, tick| {
             // Le curseur n'est **pas** pris au démarrage, et c'est délibéré :
@@ -1339,6 +1380,31 @@ fn jouer(planches: Planches) -> Result<(), screengine_play::Error> {
                 };
                 tick.set_title(title(world.filter));
             }
+            // **La résolution interne suit la fenêtre**, à facteur deux : c'est
+            // ce qui supprime les bandes noires quand on maximise, et ce qui
+            // rend l'image nette sur un écran qu'on change en cours de partie.
+            // Lue ici, appliquée au rendu.
+            //
+            // À aspect égal, le cadrage ne bouge pas d'un pixel : le champ est
+            // vertical et constant, et la mise à l'échelle garde les
+            // proportions. Ce qu'on gagne est la finesse, pas de la vue.
+            // **Le plus petit facteur entier qui ramène la fenêtre sous le
+            // plafond**, et non un facteur fixe : celui-ci laissait des bandes
+            // dès que l'écran dépasse ce que le plafond permet — vu sur un
+            // 2560 × 1600, où une division par deux rabattue sur le plafond
+            // ramenait le facteur à deux et l'image à 1920 × 1080 au centre.
+            // Avec le facteur calculé, il ne reste que le reste de la division
+            // entière, soit moins de trois pixels de bande.
+            let (window_width, window_height) = tick.window();
+            let factor = window_width
+                .div_ceil(RESOLUTION_CEILING.0)
+                .max(window_height.div_ceil(RESOLUTION_CEILING.1))
+                .max(1);
+            world.wanted = (
+                (window_width / factor).max(RESOLUTION_FLOOR.0),
+                (window_height / factor).max(RESOLUTION_FLOOR.1),
+            );
+
             // L'index du pas et non un temps cumulé : c'est lui qui rejoue une
             // partie à l'identique, et le battement du néon doit en être.
             world.time = tick.index() as f32 * tick.dt();
@@ -1381,6 +1447,15 @@ fn jouer(planches: Planches) -> Result<(), screengine_play::Error> {
             world.demon.update(tick.dt());
         },
         move |world, context| {
+            // **La résolution que le pas a choisie, avant toute soumission** :
+            // la projection en dépend, et un changement demandé après le
+            // premier triangle retenu serait refusé de toute façon. Le bornage
+            // du pas garantit qu'elle tient sous le plafond, donc le refus ne
+            // peut venir que d'une dimension nulle, qu'il ne produit pas.
+            if context.resolution() != world.wanted {
+                let _ = context.set_resolution(world.wanted.0, world.wanted.1);
+            }
+
             // Un refus ne peut venir que de la capacité, que cette scène
             // n'approche pas ; le laisser passer vaut mieux qu'arrêter la
             // boucle sur une image manquante.

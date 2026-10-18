@@ -715,6 +715,11 @@ where
                 index: self.index,
                 dt: self.clock.step_seconds(),
                 frame: self.frame_time,
+                // La disposition que la dernière image a servie : le pas qui la
+                // lit décide de la résolution que le rappel de rendu demandera,
+                // et c'est `redraw` qui la reprend juste après.
+                window: self.scaler.target(),
+                viewport: self.scaler.extent(),
                 exit: false,
                 captured: self.captured,
                 capture: None,

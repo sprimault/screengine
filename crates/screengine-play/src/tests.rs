@@ -180,6 +180,22 @@ fn aucune_duree_avant_la_premiere_image() {
     assert_eq!(Tick::for_test(&input, 1.0, false).frame_time(), None);
 }
 
+/// Les deux cotes de disposition passent bien par le pas, et elles sont
+/// **toutes deux présentes dès le premier** — à la différence des durées, qui
+/// n'existent qu'après une image.
+///
+/// La valeur vient de la boucle et se vérifie sur le `Scaler`, où le calcul
+/// vit ; ce qui se teste ici est qu'un jeu les reçoive, et qu'aucune ne soit
+/// nulle au premier pas — une cote nulle y ferait diviser par zéro le jeu qui
+/// en tire son facteur.
+#[test]
+fn les_cotes_de_disposition_arrivent_au_premier_pas() {
+    let input = Input::default();
+    let tick = Tick::for_test(&input, 1.0, false);
+    assert_eq!(tick.window(), (640, 360));
+    assert_eq!(tick.viewport(), (640, 360));
+}
+
 /// Un PNG RGBA d'une seule couleur, écrit pour le test.
 ///
 /// Encodé ici plutôt que versionné : le projet écrit ses fichiers d'épreuve en
