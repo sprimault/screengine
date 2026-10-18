@@ -72,6 +72,8 @@ publié, et explique les conventions du dépôt à qui y contribue.
   y occupe** : c'est ce qu'un jeu lit pour faire suivre sa résolution interne à
   une fenêtre qu'on maximise. Monter exige un plafond réglé à la création, par
   `Play::max_resolution`.
+- **Le contrat dit qui choisit la résolution maximale d'un contexte**, et
+  comment la calculer : un budget d'image, que la cote de l'écran ne donne pas.
 
 ***
 
@@ -84,6 +86,8 @@ publié, et explique les conventions du dépôt à qui y contribue.
   occupies in it**: what a game reads to make its internal resolution follow a
   window being maximised. Raising it needs a ceiling set at creation, through
   `Play::max_resolution`.
+- **The contract now says who picks a context's maximum resolution**, and how to
+  work it out: an image budget, which the screen's size does not provide.
 
 ## [1.2.0] — 2026-10-17 — Le chemin Rust dans un navigateur
 
