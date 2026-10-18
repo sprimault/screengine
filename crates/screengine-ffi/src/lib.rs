@@ -2605,6 +2605,72 @@ pub unsafe extern "C" fn scg_world_sweep(
     })
 }
 
+/// Writes to `out` the same sweep, against **every** cell and without traversal.
+///
+/// **Half of an oracle, not a production path.** On a well-formed map this and
+/// `scg_world_sweep` return the same bits, and that equality is the only check
+/// that catches a traversal window grown too narrow — an integrator who suspects
+/// one compares the two on their own map, which is what this project's
+/// conformance suite does on every run.
+///
+/// It takes **no starting cell**, and that is what makes it a reference: knowing
+/// none, it cannot pick the wrong one. So it never returns `SCG_STATUS_NO_CELL`,
+/// and never `SCG_STATUS_INCOMPLETE` either — examining every cell, it has no
+/// budget to exhaust. `SCG_STATUS_START_SOLID` and `SCG_STATUS_NO_GAP` keep the
+/// meaning and the order they have on `scg_world_sweep`.
+///
+/// **It costs every surface of every cell**, where traversal stops at the first
+/// contact: calling it once per frame on a large map is not what it is for.
+///
+/// # Safety
+///
+/// `world` must be a live handle from `scg_world_load`, `half_extents`, `from`
+/// and `to` must each point to three readable `float`s, and `out` must point to a
+/// writable `ScgSweepHit`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn scg_world_sweep_brute(
+    world: *const ScgWorld,
+    half_extents: *const f32,
+    from: *const f32,
+    to: *const f32,
+    out: *mut ScgSweepHit,
+) -> i32 {
+    entry::without_context(|| -> Result<i32, AbiError> {
+        if out.is_null() {
+            return Err(AbiError::NULL);
+        }
+        // SAFETY: précondition de la fonction — le pointeur est nul ou vise un
+        // handle vivant.
+        let world = unsafe { world.as_ref() }.ok_or(AbiError::NULL)?;
+        // SAFETY: précondition de la fonction — trois flottants lisibles, et
+        // chacun doit être fini et positif ou nul.
+        let half = unsafe { read_extents(half_extents) }?;
+        // SAFETY: précondition de la fonction — trois flottants lisibles.
+        let start = unsafe { read_point(from) }?;
+        // SAFETY: idem.
+        let end = unsafe { read_point(to) }?;
+
+        // **Aucune cellule à connaître, donc aucune à manquer**, et c'est tout
+        // ce qui distingue cet appel du précédent : il n'y a ni cellule nulle à
+        // traiter avant le noyau, ni identifiant inconnu à refuser, ni budget de
+        // cellules à épuiser. Les deux statuts qui restent sont ceux qui
+        // décrivent la boîte, non la région examinée.
+        let hit = world.inner.sweep_brute(half, start, end);
+
+        // SAFETY: précondition — `out` vise une `ScgSweepHit` inscriptible, et
+        // rien n'y a été écrit avant ce point.
+        unsafe { out.write(ScgSweepHit::from_core(&hit)) };
+
+        Ok(if hit.start_solid {
+            status::SCG_STATUS_START_SOLID
+        } else if hit.no_gap {
+            status::SCG_STATUS_NO_GAP
+        } else {
+            status::SCG_OK
+        })
+    })
+}
+
 /// Writes to `out` how much a sweep grows a box of these half extents.
 ///
 /// **The residual gap a host cannot guess.** A sweep places the box just short of
@@ -2790,6 +2856,70 @@ pub unsafe extern "C" fn scg_world_pick(
             status::SCG_STATUS_START_SOLID
         } else if hit.incomplete {
             status::SCG_STATUS_INCOMPLETE
+        } else {
+            status::SCG_OK
+        })
+    })
+}
+
+/// Writes to `out` the same ray, against **every** cell and without traversal.
+///
+/// **The other half of the oracle**, and the counterpart of
+/// `scg_world_sweep_brute` for picking: on a well-formed map this and
+/// `scg_world_pick` return the same bits, and that equality is what catches a
+/// traversal window grown too narrow.
+///
+/// It takes **no starting cell**, so it never returns `SCG_STATUS_NO_CELL`, nor
+/// `SCG_STATUS_INCOMPLETE` — examining every cell, it has no budget to exhaust.
+/// `SCG_STATUS_START_SOLID` is therefore the only status it reports: a ray is
+/// never grown, so `SCG_STATUS_NO_GAP` is as out of reach here as it is on
+/// `scg_world_pick`.
+///
+/// `filter` takes the same two values and is refused the same way, and the cost
+/// is every surface of every cell — not a path to call once per frame.
+///
+/// # Safety
+///
+/// `world` must be a live handle from `scg_world_load`, `from` and `to` must each
+/// point to three readable `float`s, and `out` must point to a writable
+/// `ScgSweepHit`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn scg_world_pick_brute(
+    world: *const ScgWorld,
+    from: *const f32,
+    to: *const f32,
+    filter: u32,
+    out: *mut ScgSweepHit,
+) -> i32 {
+    // Annoté comme les trois autres : sans cela l'inférence choisit `()`.
+    entry::without_context(|| -> Result<i32, AbiError> {
+        if out.is_null() {
+            return Err(AbiError::NULL);
+        }
+        let surfaces = match filter {
+            SCG_PICK_SOLID => Surfaces::Solid,
+            SCG_PICK_ALL => Surfaces::All,
+            _ => return Err(AbiError::PICK_FILTER),
+        };
+        // SAFETY: précondition de la fonction — le pointeur est nul ou vise un
+        // handle vivant.
+        let world = unsafe { world.as_ref() }.ok_or(AbiError::NULL)?;
+        // SAFETY: précondition de la fonction — trois flottants lisibles.
+        let start = unsafe { read_point(from) }?;
+        // SAFETY: idem.
+        let end = unsafe { read_point(to) }?;
+
+        // Le rayon brut, sans cellule de départ : voir `scg_world_sweep_brute`
+        // pour ce que cette absence retire — ici elle laisse le seul statut qui
+        // décrive le point de départ et non la région examinée.
+        let hit = world.inner.pick_brute(start, end, surfaces);
+
+        // SAFETY: précondition — `out` vise une `ScgSweepHit` inscriptible, et
+        // rien n'y a été écrit avant ce point.
+        unsafe { out.write(ScgSweepHit::from_core(&hit)) };
+
+        Ok(if hit.start_solid {
+            status::SCG_STATUS_START_SOLID
         } else {
             status::SCG_OK
         })

@@ -15,8 +15,9 @@ traversée par portails avec le suivi de la cellule de la caméra et le calcul d
 lightmaps, cache compris, les quadrilatères orientés, les maillages entre deux
 trames, le texel transparent et la surface modulée, le balayage d'une boîte
 contre les cellules d'une carte, et ce qu'un éditeur réclame : le tracé de lignes
-et de points, et l'interrogation par le rayon, et le choix du jeu d'instructions
-qui remplit les triangles. **Le contrat du tracé a été figé ci-dessous avant son
+et de points, et l'interrogation par le rayon, le choix du jeu d'instructions
+qui remplit les triangles, et les deux chemins bruts contre lesquels la
+collision et l'interrogation se valident. **Le contrat du tracé a été figé ci-dessous avant son
 premier remplissage**, comme ceux des étapes 4 à 7 l'ont été. Chaque décision
 garde ci-dessous l'option écartée et pourquoi. **Plus aucun point n'est marqué
 À trancher** : le dernier était la dépréciation, fermée au gel de l'ABI — rien
@@ -1853,10 +1854,11 @@ règle se devinait jusqu'à présent sans être énoncée.
 
 ### Étape 7
 
-**Quatre fonctions, une structure, une constante et deux statuts** — les deux
-dernières, `scg_sweep_skin` puis `scg_sweep_reach`, ajoutées après la publication
-de l'étape sur le constat d'un intégrateur, comme `scg_world_light_id` l'avait été
-à l'étape 4. Le second statut, `SCG_STATUS_NO_GAP`, est arrivé avec la seconde. Aucune signature
+**Cinq fonctions, une structure, une constante et deux statuts** — les trois
+dernières, `scg_sweep_skin`, `scg_sweep_reach` puis `scg_world_sweep_brute`,
+ajoutées après la publication de l'étape, les deux premières sur le constat d'un
+intégrateur et la troisième sur un audit de cette surface, comme
+`scg_world_light_id` l'avait été à l'étape 4. Le second statut, `SCG_STATUS_NO_GAP`, est arrivé avec la seconde. Aucune signature
 publiée, aucune structure, aucune précondition ne bouge : `SCG_ABI_VERSION` reste
 à **1**, et `version_format` non plus — le bit « non solide » d'une surface est
 défini et accepté par le chargeur depuis l'étape 4, il reçoit ici son premier
@@ -2234,6 +2236,43 @@ l'étape 8, et le risque est assumé : elle pourra s'y retrouver seule d'une
 famille qui aura une autre forme. La règle le couvre — on ajoute des fonctions,
 on n'en change pas.
 
+#### L'oracle : le balayage et le rayon bruts
+
+`scg_world_sweep_brute` et `scg_world_pick_brute` refont la même requête contre
+**toutes** les cellules, sans traversée. Ajoutées après la publication des
+étapes 7 et 8, sur le constat d'un audit de cette surface : le chemin brut
+existait pour un appelant Rust, et l'ABI n'en donnait aucun.
+
+**C'est la moitié d'un oracle, et le pendant exact de ce que le rendu a déjà.**
+`scg_submit_world` reste non dépréciée parce que la traversée se valide contre
+elle, et cette égalité est « le seul contrôle qui attrape une fenêtre trop
+étroite ». La collision et l'interrogation ont la même propriété sans avoir eu la
+même fonction : un intégrateur qui soupçonnait une traversée fautive sur son
+décor ne pouvait pas distinguer « la fenêtre est trop étroite » de « ma carte est
+mal formée ». Les deux défauts de cette famille que le projet a corrigés — une
+cellule au volume de signe faux, un portail à la normale inversée — ont été
+trouvés par cette comparaison, du côté Rust.
+
+- **Aucune cellule de départ**, et c'est ce qui en fait une référence : n'en
+  connaissant aucune, le chemin brut ne peut pas se tromper de cellule.
+- **Jamais `SCG_STATUS_NO_CELL`**, faute de cellule en entrée, **ni
+  `SCG_STATUS_INCOMPLETE`**, faute de budget — ils examinent tout.
+  `SCG_STATUS_START_SOLID` garde son sens et son rang ; `SCG_STATUS_NO_GAP`
+  reste propre au balayage, la dilatation d'un rayon étant nulle.
+- **Le coût est toutes les surfaces de toutes les cellules**, là où la traversée
+  s'arrête au premier contact. Ce n'est pas un chemin d'image, et le contrat le
+  dit plutôt que de laisser un intégrateur le découvrir sur un grand décor.
+- **Aucune structure, aucune constante, aucun statut nouveau** : elles
+  remplissent le `ScgSweepHit` de l'étape 7 et prennent le filtre de l'étape 8.
+  `SCG_ABI_VERSION` reste à **1**.
+
+**Aucune scène d'hôte ne les décrit**, et c'est écrit pour qu'on ne le prenne pas
+pour un oubli : une scène commune aux cinq hôtes entre pour un chemin d'ABI que
+les autres n'empruntent pas, or la structure, le filtre et les statuts le sont
+déjà par les scènes de collision et de sélection. Ce sont les tests de la
+frontière qui les éprouvent, et la conformance qui tient l'égalité des deux
+chemins — elle emploie l'oracle à chaque passage.
+
 #### Ce que l'étape ne fait pas
 
 **Elle ne balaie que contre les cellules d'une carte.** Un obstacle qui n'est pas
@@ -2245,10 +2284,14 @@ Voir `ROADMAP.md`, « Hors périmètre v1 ».
 
 ### Étape 8
 
-**Trois fonctions, deux structures, quatre constantes, un champ réservé employé,
+**Quatre fonctions, deux structures, quatre constantes, un champ réservé employé,
 aucun code d'erreur nouveau et aucun statut nouveau.** Aucune signature publiée,
 aucune structure, aucune précondition ne bouge : `SCG_ABI_VERSION` reste à **1**,
 et `version_format` non plus.
+
+La quatrième est `scg_world_pick_brute`, ajoutée après la publication de l'étape
+et décrite avec son jumeau à l'étape 7, section « L'oracle » : les deux chemins
+bruts ne se séparent pas, et deux descriptions de la même paire divergeraient.
 
 Le contrat est figé avant le premier tracé, pour la raison dite en tête de
 document — et pour une seconde, propre à cette étape : la **règle de sortie du
