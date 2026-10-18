@@ -60,7 +60,7 @@ The wasm module requires `simd128`: it does not instantiate on a browser without
 that feature.
 
 - [`ROADMAP.md`](ROADMAP.md) — the steps, which are cleared, and what is out of
-  scope for v1 (French)
+  scope, each line with what would reopen it (French)
 - [`CHANGELOG.md`](CHANGELOG.md) — what each version brought, dated
 - [`docs/abi.md`](docs/abi.md) — the C boundary contract, which is authoritative
   (French; the generated header carries the essentials in English)

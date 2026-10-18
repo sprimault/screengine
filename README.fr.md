@@ -62,7 +62,7 @@ Le module wasm exige `simd128` : il ne s'instancie pas sur un navigateur qui ne
 le porte pas.
 
 - [`ROADMAP.md`](ROADMAP.md) — les étapes, celles qui sont franchies et ce qui
-  est hors périmètre v1
+  est hors périmètre, chaque ligne avec ce qui la rouvrirait
 - [`CHANGELOG.md`](CHANGELOG.md) — ce que chaque version a apporté, daté
 - [`docs/abi.md`](docs/abi.md) — le contrat de la frontière C, qui fait foi
 - [`docs/construction.md`](docs/construction.md) — cibles, matrice de

@@ -142,15 +142,18 @@ l'exécution par `scg_abi_version`.
 | Linux arm64 | `aarch64-unknown-linux-gnu` | `.rlib` du noyau, de la frontière et de l'étage d'accueil | cible rustup, `gcc-aarch64-linux-gnu`, `qemu-user` | `screengine-play`, compilé et non exécuté | CI, `make test-linux-arm` et `make conform-linux-arm` sous `qemu-user` ; `make lint` et `make msrv` |
 | Linux armv7 | `armv7-unknown-linux-gnueabihf` | `.rlib` du noyau, de la frontière et de l'étage d'accueil | cible rustup, `gcc-arm-linux-gnueabihf`, `qemu-user` | `screengine-play`, compilé et non exécuté | CI, `make test-linux-arm` et `make conform-linux-arm` sous `qemu-user` ; `make lint` et `make msrv` |
 | Sans `std` | `thumbv7em-none-eabihf` | `.rlib` du noyau seul | cible rustup | aucun | `make nostd`, CI |
-| iOS, macOS | — | — | — | — | hors périmètre v1 |
+| iOS, macOS | — | — | — | — | hors périmètre |
 
 **La cible sans `std` n'est pas une plateforme visée.** Elle existe parce qu'elle
 n'a pas de `std` du tout : un `use std::` glissé dans le noyau y échoue à la
 compilation, au lieu d'échouer au portage trois semaines plus tard. Elle est de
 plus 32 bits, et révèle au même moment une hypothèse sur la largeur de `usize`.
 
-**iOS et macOS attendent que le reste soit stable.** Ils exigent un runner macOS,
-et un cycle de retour lent depuis un poste Windows.
+**iOS et macOS attendent un runner macOS**, et le cycle de retour lent qu'il
+impose depuis un poste Windows pèse autant. Rien ne le contourne : un conteneur
+ne fournit pas de chaîne Apple. C'est le seul obstacle qui tienne encore — la
+clause d'attente que portait `ROADMAP.md` est périmée, les dix étapes étant
+livrées.
 
 **Les deux cibles Linux sur ARM s'exécutent sous `qemu-user`.** Elles ont le jeu
 d'instructions des ABI Android et une autre bibliothèque C — la glibc là où le

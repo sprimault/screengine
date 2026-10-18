@@ -2317,7 +2317,8 @@ de la géométrie de cellule — un maillage posé, une caisse, un poteau — n'
 portail, donc pas d'adjacence, et rien de ce que cette étape apprend à traverser
 ne s'applique à lui. Il se teste chez l'hôte, qui l'a placé et connaît sa pose.
 
-Voir `ROADMAP.md`, « Hors périmètre v1 ».
+Voir `ROADMAP.md`, « Hors périmètre », où cette ligne porte la condition qui la
+rouvrirait.
 
 ### Étape 8
 
