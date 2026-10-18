@@ -63,6 +63,8 @@ publié, et explique les conventions du dépôt à qui y contribue.
 
 ## [Non publié]
 
+## [1.3.0] — 2026-10-18 — La frontière rattrape le chemin Rust
+
 ### Ajouté
 
 - **Les sept bornes d'entrée sont dans le header** — lumières, sur-éclairement,
