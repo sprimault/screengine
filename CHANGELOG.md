@@ -63,6 +63,8 @@ publié, et explique les conventions du dépôt à qui y contribue.
 
 ## [Non publié]
 
+## [1.4.0] — 2026-10-18 — Le plafond vient des écrans
+
 ### Ajouté
 
 - **`Play::max_resolution_from_screens` prend pour plafond l'enveloppe des
