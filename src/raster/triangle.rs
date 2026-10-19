@@ -1710,18 +1710,18 @@ fn mip_level(triangle: &Prepared, planes: &[Plane; 2], u: i32, v: i32, reciproca
     // couteau.
     let numerator = |plane: &Plane, coord: i32, depth_step: i64| {
         let slope = plane.step_x(pixel) << (UV_BITS - GRADIENT_BITS);
-        slope - ((i64::from(coord).saturating_mul(depth_step)) >> UV_SHIFT)
+        slope.wrapping_sub((i64::from(coord).saturating_mul(depth_step)) >> UV_SHIFT)
     };
     let worst = [
         numerator(&planes[0], u, dx),
         numerator(&planes[1], v, dx),
         {
             let slope = planes[0].step_y(pixel) << (UV_BITS - GRADIENT_BITS);
-            slope - ((i64::from(u).saturating_mul(dy)) >> UV_SHIFT)
+            slope.wrapping_sub((i64::from(u).saturating_mul(dy)) >> UV_SHIFT)
         },
         {
             let slope = planes[1].step_y(pixel) << (UV_BITS - GRADIENT_BITS);
-            slope - ((i64::from(v).saturating_mul(dy)) >> UV_SHIFT)
+            slope.wrapping_sub((i64::from(v).saturating_mul(dy)) >> UV_SHIFT)
         },
     ]
     .into_iter()
