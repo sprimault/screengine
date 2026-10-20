@@ -222,8 +222,8 @@ jobs:
         run: make test-arm
 
       # Les mêmes scènes et les mêmes empreintes, sur une autre architecture.
-      # C'est le seul endroit où les vingt-neuf se comparent hors de x86 : les
-      # hôtes n'en portent que quatorze, par le seul chemin que leur machine
+      # C'est le seul endroit où toutes les scènes se comparent hors de x86 : les
+      # hôtes n'en portent qu'une partie, par le seul chemin que leur machine
       # résout.
       - name: Conformance sur ARM
         if: runner.os == 'Linux'

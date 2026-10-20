@@ -4,7 +4,7 @@
  *
  * Hôte C de démonstration : une fenêtre, un clavier, une boucle.
  *
- * **Ce que `main.c` ne montre pas.** L'hôte de conformance rend trois scènes
+ * **Ce que `main.c` ne montre pas.** L'hôte de conformance rend ses scènes
  * sans fenêtre et compare un nombre : c'est ce qu'il faut pour éprouver la
  * frontière, et c'est inutilisable comme point de départ. Celui-ci est le
  * point de départ — il charge un décor, l'affiche et s'y déplace, et il tient

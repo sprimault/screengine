@@ -70,8 +70,9 @@ struct Display {
     ///
     /// **La présentation de `softbuffer` n'est pas empruntée sur cette cible.**
     /// Elle reconstruit un tampon de plusieurs mégaoctets, pixel par pixel, à
-    /// chaque image — vingt millisecondes mesurées sur un décor que le moteur
-    /// remplit en douze. Son tampon, lui, reste la cible de la mise à l'échelle.
+    /// chaque image, et coûtait ainsi plus que le remplissage lui-même. La mesure
+    /// n'est écrite qu'une fois, dans `docs/construction.md`. Son tampon, lui,
+    /// reste la cible de la mise à l'échelle.
     #[cfg(target_arch = "wasm32")]
     context: web_sys::CanvasRenderingContext2d,
 }

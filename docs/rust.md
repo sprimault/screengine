@@ -2284,11 +2284,15 @@ mesure : un compteur, une empreinte, une durée.
   modification du remplissage, à toutes les résolutions internes prévues. C'est
   le défaut le plus coûteux du projet : invisible à l'arrêt, visible en
   mouvement.
-- **Chaque scène se rend en tuiles de 32, en tuiles de 64, en image entière, en
-  tuiles dans un ordre mélangé à graine fixe, en tuiles réparties sur plusieurs
-  threads, et dans un contexte redimensionné** — six empreintes, qui doivent
-  être identiques. Une couture de tuile ne se voit que dans une configuration :
-  sans ce contrôle, la conformance ne vaudrait que pour la sienne. L'image
+- **Chaque scène se rend plusieurs fois, et toutes les empreintes doivent être
+  identiques** : en tuiles de 32, en tuiles de 64, en image entière, en tuiles
+  dans un ordre mélangé à graine fixe, en tuiles réparties sur plusieurs
+  threads, dans un contexte redimensionné — et une fois par chemin de
+  remplissage, la passe scalaire venant en tête parce que c'est elle qui fournit
+  la référence. Une couture de tuile ne se voit que dans une configuration ; une
+  variante vectorielle fausse ne se voit que si on la force. Sans ces deux
+  familles, la conformance ne vaudrait que pour le découpage et le jeu
+  d'instructions de la machine qui l'a figée. L'image
   entière passe par l'API Rust du noyau, qui rend une région quelconque sans
   passer par la répartition ; l'ABI n'accepte que 32 et 64. Les tests du noyau
   font la même comparaison octet pour octet sur des scènes tirées au hasard, où

@@ -376,7 +376,7 @@ enum Mode {
     /// Même règle que le maillage. Le couloir est celui de la scène `carte`,
     /// ce qui évite d'inventer un décor par hôte.
     World(PathBuf),
-    /// Écrit le fichier du décor à quatre cellules.
+    /// Écrit le fichier du second décor, celui de la traversée.
     ///
     /// **Il s'ajoute au couloir, il ne le remplace pas.** Le couloir n'a que deux
     /// cellules dont tout est visible : c'est le cas où l'élimination ne peut que

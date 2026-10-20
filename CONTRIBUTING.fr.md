@@ -22,6 +22,10 @@ Rien de cela ne s'applique différemment à une contribution extérieure : même
 contrôles, mêmes règles de style. Seul le bilingue lui est épargné — voir
 « Langue ».
 
+Participer suppose d'accepter le
+[code de conduite](CODE_OF_CONDUCT.fr.md), qui dit par quel canal un
+signalement arrive.
+
 ## Avant d'écrire du code
 
 Ouvrir une issue d'abord, pour tout ce qui dépasse une correction. Le contrat de

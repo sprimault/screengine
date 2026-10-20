@@ -12,9 +12,9 @@
 //! qu'ils s'accordent, jamais que l'un d'eux est juste.
 //!
 //! **Les hôtes, eux, ne réécrivent pas la disposition** : ils lisent le fichier
-//! versionné que ce module engendre. Leur faire écrire ces octets dans quatre
-//! langages serait la même liste à quatre endroits, et ce qu'une liste recopiée
-//! coûte quand elle diverge est connu du projet.
+//! versionné que ce module engendre. Leur faire écrire ces octets dans chacun de
+//! leurs langages serait la même liste autant de fois, et ce qu'une liste
+//! recopiée coûte quand elle diverge est connu du projet.
 //!
 //! Ce que le fichier porte est fixé par `docs/rust.md`, section « Formats de
 //! fichier ».

@@ -1,7 +1,7 @@
 // Copyright 2026 Stéphane Primault <sprimault@users.noreply.github.com>
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
-//! Le décor de validation du balayage : trois cellules, neuf cas.
+//! Le décor de validation du balayage.
 //!
 //! **Une carte à part plutôt que des cas ajoutés à `salles.world`.** Celle-ci a
 //! pour métier de figer une image, et chaque cas de collision qu'on y ajouterait
@@ -10,7 +10,7 @@
 //! d'une boîte, un portail qui ne mène nulle part, une surface qui n'arrête rien.
 //! Les deux points de gel restent ainsi découplés.
 //!
-//! Les onze cas, et ce que chacun éprouve que les autres n'éprouvent pas :
+//! Chaque cas, et ce qu'il éprouve que les autres n'éprouvent pas :
 //!
 //! - **la cage d'escalier**, douze marches empilées : **douze concavités** et un
 //!   creux qui court sur deux étages, là où la cellule en U n'en referme qu'une.
