@@ -1999,17 +1999,6 @@ impl Context {
         Ok(())
     }
 
-    /// Soumet un triangle donné en espace de vue : découpe, projection,
-    /// préparation.
-    ///
-    /// **La découpe a lieu ici et non au début d'image**, parce que c'est la
-    /// seule place qui rende vraie la clause de capacité : un triangle découpé
-    /// en produit jusqu'à six, et le refus doit tomber sur l'appel qui déborde
-    /// plutôt que sur une image entière déjà soumise. La capacité compte donc
-    /// des triangles préparés, pas soumis.
-    ///
-    /// Un sommet qu'on ne peut pas projeter fait disparaître le triangle sans
-    /// erreur : c'est une donnée, pas un défaut du moteur.
     /// Soumet des lignes, dans le repère que `model` porte.
     ///
     /// **Le lot est accepté ou refusé en entier**, comme tout lot : une
@@ -2185,6 +2174,15 @@ impl Context {
     /// `texture` et `lit` sont des index dans la table du contexte, non des
     /// handles : la sentinelle d'absence et le bit de mode voyagent dedans, voir
     /// `docs/rust.md`.
+    ///
+    /// **La découpe a lieu ici et non au début d'image**, parce que c'est la
+    /// seule place qui rende vraie la clause de capacité : un triangle découpé
+    /// en produit jusqu'à six, et le refus doit tomber sur l'appel qui déborde
+    /// plutôt que sur une image entière déjà soumise. La capacité compte donc
+    /// des triangles préparés, pas soumis.
+    ///
+    /// Un sommet qu'on ne peut pas projeter fait disparaître le triangle sans
+    /// erreur : c'est une donnée, pas un défaut du moteur.
     fn submit_view(
         &mut self,
         view: [ClipSource; 3],

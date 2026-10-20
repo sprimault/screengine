@@ -175,16 +175,11 @@ impl Target for Scratch<'_> {
     /// Le seul puits du projet qui vectorise, parce qu'il est le seul à ranger
     /// sa couleur et sa profondeur en tableaux contigus.
     ///
-    /// **Ce que la variante calcule est la profondeur, et elle seule** : le test
-    /// et l'écriture restent ici, en Rust sûr, sur des indices que le type
-    /// borne. Porter aussi la comparaison et l'écriture masquée en SSE2 est
-    /// faisable et viendra peut-être ; cela demanderait de sortir les deux
-    /// tranches vers un module `unsafe`, et ce lot-ci pose d'abord les
-    /// conventions sur la partie qui n'y oblige pas.
-    ///
-    /// **Le tampon de profondeurs vit sur la pile de l'appel**, dimensionné pour
-    /// la plus longue ligne qu'une tuile puisse porter : aucune allocation par
-    /// image, ce que l'invariant exige.
+    /// **Tout le remplissage d'une ligne unie part dans la variante** — la
+    /// profondeur, le test strict et l'écriture masquée —, et ce qui reste ici
+    /// est le découpage des deux tranches puis le repli sur le scalaire quand
+    /// aucune variante ne répond. Ce que chaque jeu d'instructions garantit est
+    /// écrit sur [`simd::fill_flat_row`] et ne se redit pas ici.
     fn span(&mut self, span: Span) {
         // **Une surface modulée garde le chemin pixel par pixel.** Elle lit la
         // couleur déjà écrite pour la multiplier par canal, son test est non
