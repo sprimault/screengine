@@ -63,6 +63,12 @@ publié, et explique les conventions du dépôt à qui y contribue.
 
 ## [Non publié]
 
+### Ajouté
+
+- **Un code de conduite**, dans les deux langues comme les autres documents
+  d'accueil : le Contributor Covenant 2.1, dont les signalements passent par le
+  canal privé que `SECURITY.md` emploie déjà.
+
 ### Corrigé
 
 - **Le contrat promettait `SCG_ERR_INVALID_STATE` sur un calcul de lightmaps
@@ -79,8 +85,19 @@ publié, et explique les conventions du dépôt à qui y contribue.
 - **La clause de mémoire de l'hôte Go était fausse** : les structures d'appel
   restent en mémoire Go le temps de l'appel, et seul ce que le moteur retient ou
   remplit en volume passe par `calloc`.
+- **Une douzaine de chiffres annoncés dans la documentation étaient faux** :
+  cellules et lumières d'un décor, scènes de la conformance, contrôles entraînés
+  par le lint. Le chiffre est retiré partout où rien ne le vérifiait.
+- **Le coût de la présentation sur wasm était énoncé trois fois avec trois
+  valeurs** ; il ne l'est plus qu'une, là où la mesure est attribuée.
 
 ***
+
+### Added
+
+- **A code of conduct**, in both languages like the other welcome documents:
+  Contributor Covenant 2.1, with reports going through the private channel
+  `SECURITY.md` already uses.
 
 ### Fixed
 
@@ -97,6 +114,11 @@ publié, et explique les conventions du dépôt à qui y contribue.
 - **The Go host's memory clause was wrong**: call structures stay in Go memory
   for the duration of the call, and only what the engine keeps or fills in bulk
   goes through `calloc`.
+- **A dozen numbers stated in the documentation were wrong**: a scene's cells and
+  lights, the conformance scenes, the checks the lint pulls in. The number is now
+  gone wherever nothing verified it.
+- **The cost of presentation on wasm was stated three times with three values**;
+  it is now stated once, where the measurement is attributed.
 
 ## [1.6.0] — 2026-10-20 — Ce que la surface gardait pour elle
 

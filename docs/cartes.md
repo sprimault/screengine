@@ -501,8 +501,8 @@ travaillés de tout ce qui précède.
 | Fichier | Ce qu'il montre | Générateur |
 |---|---|---|
 | `hosts/couloir.world` | le cas le plus simple : deux tronçons de boîte appariés par un portail, les deux bouts ouverts restant des portails non appariés, donc des murs | `world_file.rs` |
-| `hosts/salles.world` | quatre cellules, une concave, un portail oblique, deux cellules superposées, trois lumières | `rooms_file.rs` |
-| `hosts/collision.world` | deux cellules, un portail apparié, un non apparié, une surface non solide, un passage à la largeur exacte d'une boîte | `collision_file.rs` |
+| `hosts/salles.world` | une cellule concave, un portail oblique, deux cellules superposées, deux tronçons de tunnel voûté, et une lampe par recoin qu'aucune autre n'atteint | `rooms_file.rs` |
+| `hosts/collision.world` | un portail apparié, un non apparié, une surface non solide, un passage à la largeur exacte d'une boîte, une rampe, une cage d'escalier, et une enfilade plus longue que `SCG_SWEEP_CELLS` | `collision_file.rs` |
 | `hosts/caisse.mesh` | un maillage à deux trames, deux groupes, deux emplacements | `mesh_file.rs` |
 
 Ce que les trois cartes écrivent de la même façon vit dans `map_bytes.rs` :

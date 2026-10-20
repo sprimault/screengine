@@ -10,7 +10,8 @@
 //! dépendre — elle garde sa propre valeur dans le tampon qu'elle passe et la
 //! relit sur un refus.
 //!
-//! **Quatre fonctions la tenaient par une assertion, trente-huit la portent.**
+//! **Une poignée de fonctions la tenaient par une assertion ; ce fichier la fait
+//! porter par toutes**, et le compte de `APPELS` est tenu avec elles.
 //! Les autres la tenaient par la forme de leur corps — valider d'abord, écrire
 //! en dernier —, ce qui est la bonne forme et ne prouve rien : elle se perd au
 //! premier point d'entrée écrit autrement, et le symptôme serait une liaison

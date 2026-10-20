@@ -64,7 +64,7 @@ comme nu — il accuse à tort plutôt que d'acquitter à tort. Ce qu'il ne peut
 voir reste écrit : un point d'entrée **manquant** ne se détecte pas
 mécaniquement, l'ABI n'exposant pas tout le noyau.
 
-**Les cinq portent la même garde, et elle n'est pas un ornement** : ce qu'un
+**Tous portent la même garde, et elle n'est pas un ornement** : ce qu'un
 contrôle cherche et ne trouve pas est un échec, jamais un succès. Deux motifs
 qui cessent de correspondre comparaient sinon la chaîne vide à elle-même, et la
 cible annonçait un succès en ne surveillant plus rien — c'est ce que
@@ -79,7 +79,7 @@ rougir ni `lint` ni `test`, et c'est ainsi qu'une constante est restée
 inatteignable une version entière. Elle est dans la liste d'avant-publication et
 dans le job de vérification, au même titre que `header-verif`.
 
-**`etat-verif`** est celui de ces cinq qui porte la concordance de l'état annoncé
+**`etat-verif`** est celui qui porte la concordance de l'état annoncé
 avec la version du `Cargo.toml`. Toute ligne d'un document versionné qui porte un numéro d'étape
 **et** une version du dépôt annonce l'état courant, et doit donc porter celle du
 paquet ; les datations — « Franchie, publiée en 0.4.0 », « ajoutée après la
@@ -243,8 +243,9 @@ par `Tick::set_title` n'apparaîtrait nulle part.
 
 **Et l'image ne passe pas par la présentation de `softbuffer`.** Celle-ci
 reconstruit un tampon de plusieurs mégaoctets, **pixel par pixel à chaque
-image**, pour refaire du RGBA que l'ABI garantit déjà dans cet ordre : vingt
-millisecondes mesurées là où le moteur en prend treize. L'étage d'accueil pose
+image**, pour refaire du RGBA que l'ABI garantit déjà dans cet ordre : elle
+coûtait plus que le remplissage, et c'est la mesure de `Play::stats` plus bas qui
+le dit — elle n'est écrite qu'à cet endroit. L'étage d'accueil pose
 donc l'image lui-même, par un `ImageData` et un tampon réutilisé. `softbuffer`
 reste partout ailleurs, et garde ici son tampon comme cible de la mise à
 l'échelle — laquelle ne coûte, elle, qu'un demi-millième de seconde.
@@ -288,7 +289,7 @@ navigateurs brident en onglet inactif.
 cette page a annoncé. `couloir` rendait vingt-neuf images par seconde en 640×360
 remonté d'un facteur deux, dont **21 ms d'écran contre 13 de remplissage** : la
 présentation coûtait plus que le moteur. Elle ne passe plus par `softbuffer` —
-voir ci-dessous —, l'écran retombe à 1,5 ms, et l'exemple atteint les **soixante
+voir plus haut —, l'écran retombe à 1,5 ms, et l'exemple atteint les **soixante
 images par seconde** de l'écran.
 
 C'est `Play::stats` qui l'a dit, et il a fallu lui : une sonde posée depuis la
@@ -856,7 +857,9 @@ l'ABI Android x86_64 restant couverte par son hôte sur émulateur.
 
 ## Publication
 
-- **Chaque étape franchie est publiée** : l'étape N porte la version `0.N.0`.
+- **Les dix étapes de la feuille de route sont livrées**, et la règle qui faisait
+  porter `0.N.0` à l'étape N est tombée avec le `0.x` : ce qu'un majeur, un mineur
+  et un correctif portent désormais est fixé par le préambule du `CHANGELOG`.
 - **La section du `CHANGELOG` est la condition de la publication.** Une section
   absente l'arrête ; les notes publiées sont celles qui ont été relues en pull
   request.

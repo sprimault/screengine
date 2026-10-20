@@ -22,6 +22,9 @@ and the way the rules are laid down follows from it.
 None of this applies differently to an outside contribution: same checks, same
 style rules. Only the bilingual rule is waived — see "Language".
 
+Taking part means agreeing to the
+[Code of Conduct](CODE_OF_CONDUCT.md), which says how a report is made.
+
 ## Before writing code
 
 Open an issue first for anything beyond a fix. The boundary contract is written

@@ -628,7 +628,7 @@ lint-enveloppes:
 	      total, gardes, total - gardes }' \
 	  crates/screengine-ffi/src/lib.rs crates/screengine-ffi/src/lib.rs crates/screengine-ffi/src/lib.rs
 
-# La concordance de l'état annoncé avec la version du paquet, troisième contrôle
+# La concordance de l'état annoncé avec la version du paquet, l'un des contrôles
 # que `lint` entraîne sans être clippy — comme la documentation des tests et les
 # versions d'outillage Android.
 #

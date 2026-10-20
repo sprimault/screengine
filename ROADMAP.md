@@ -427,8 +427,8 @@ reste inconnu, faute d'appareil de référence, et seule sa justesse est établi
 **Ce que le projet ne fait pas, et à quelle condition chaque ligne se rouvre.**
 Le titre disait « hors périmètre v1 » : tant que le projet était en `0.x`, cela
 se lisait « pas avant la 1.0.0 », et depuis le gel le même mot se lit « pas avant
-un majeur » — ce que deux de ces lignes contredisent, puisqu'elles portent leur
-propre condition. Ce qui se rouvre prend un mineur, par la clause rappelée en
+un majeur » — ce que contredisent celles de ces lignes qui portent leur propre
+condition, nommées juste après. Ce qui se rouvre prend un mineur, par la clause rappelée en
 tête de ce fichier.
 
 **Trois lignes portent une condition** : l'ombre d'un objet mobile, la collision
