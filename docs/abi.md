@@ -1957,7 +1957,9 @@ règle se devinait jusqu'à présent sans être énoncée.
   mobile n'a pas de lightmap, une lightmap se calculant par cellule. Trente-deux
   octets, décalages 0 à 28, identiques sur les quatre cibles, sans bourrage. Une
   structure nouvelle et une fonction nouvelle, ce que la règle d'extension
-  prévoit ; aucune structure publiée ne bouge.
+  prévoit ; aucune structure publiée ne bouge. **Ce sont les cinq hôtes qui
+  gardent ces décalages**, par la scène `normale` : leurs assertions statiques ne
+  tenaient que la taille, et un champ déplacé y passait.
 - **`scg_submit_shaded` est au chemin direct ce que la trame est au chemin
   maillage.** Le maillage animé porte ses normales dans le fichier et n'a besoin
   d'aucune structure ; celle-ci existe pour l'hôte qui anime lui-même, au titre

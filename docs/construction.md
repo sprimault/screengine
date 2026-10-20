@@ -185,7 +185,7 @@ NDK porte la bionic —, ce qui est précisément la question qu'elles réponden
 noyau n'emploie aucune des deux, mais la frontière passe par `std`.
 
 **`make test-linux-arm` exécute le noyau et la frontière**, `make
-conform-linux-arm` rejoue les vingt-neuf scènes contre les **mêmes** empreintes
+conform-linux-arm` rejoue les scènes contre les **mêmes** empreintes
 versionnées — la raison qui donne sa forme à `conform-arm` et à `conform-x86`.
 La frontière rend un test de moins sur armv7, et c'est attendu : celui du
 registre flottant n'existe que sur `aarch64`, les fonctionnalités ARM 32 bits
@@ -589,9 +589,9 @@ toutes les autres cibles.
 - **`make conform-arm` rejoue la conformance sur les mêmes deux ABI**, contre
   les **mêmes** empreintes versionnées, pour la raison qui donne sa forme à
   `make conform-x86` : des références propres à ARM ne diraient que « ARM est
-  reproductible avec lui-même ». C'est le seul endroit où les vingt-neuf scènes
-  se comparent hors de x86 — les hôtes n'en portent que quatorze, et par le seul
-  chemin de remplissage que leur machine résout.
+  reproductible avec lui-même ». C'est le seul endroit où **toutes** les scènes
+  se comparent hors de x86 — les hôtes n'en portent qu'une partie, et par le
+  seul chemin de remplissage que leur machine résout.
 
   Elle partage avec `make test-arm` sa détection d'outillage et son
   environnement d'exécution, dans une recette unique : deux copies de cette

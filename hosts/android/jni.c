@@ -1063,6 +1063,67 @@ static jint submit_lit(JNIEnv *env, jclass cls, jlong ctx, jfloatArray model,
 }
 
 /*
+ * scg_submit_shaded : mêmes tableaux que `submitTextured`, les sommets portant
+ * huit `float` au lieu de cinq — les trois derniers étant la normale.
+ *
+ * `texture` vaut zéro pour un lot uni, comme ailleurs : c'est la normale, et
+ * non l'habillage, qui sépare ce chemin des autres.
+ */
+static jint submit_shaded(JNIEnv *env, jclass cls, jlong ctx, jfloatArray model,
+                          jfloatArray vertices, jintArray indices, jbyteArray colors,
+                          jlong texture)
+{
+    (void)cls;
+    if (model == NULL || vertices == NULL || indices == NULL || colors == NULL) {
+        return SCG_ERR_NULL;
+    }
+
+    jsize floats = (*env)->GetArrayLength(env, vertices);
+    jsize index_count = (*env)->GetArrayLength(env, indices);
+    jsize channels = (*env)->GetArrayLength(env, colors);
+    if ((*env)->GetArrayLength(env, model) != 16 || floats % 8 != 0 || index_count % 3 != 0
+        || channels != index_count / 3 * 4) {
+        return SCG_ERR_INVALID_ARGUMENT;
+    }
+
+    uint32_t vertex_count = (uint32_t)(floats / 8);
+    uint32_t triangle_count = (uint32_t)(index_count / 3);
+    ScgMat4 matrix;
+    ScgVertexUvN *points = calloc(vertex_count ? vertex_count : 1, sizeof *points);
+    ScgTriangle *faces = calloc(triangle_count ? triangle_count : 1, sizeof *faces);
+    jint *raw_indices = calloc(index_count ? (size_t)index_count : 1, sizeof *raw_indices);
+    jbyte *raw_colors = calloc(channels ? (size_t)channels : 1, sizeof *raw_colors);
+    int32_t code = SCG_ERR_OUT_OF_MEMORY;
+
+    if (points != NULL && faces != NULL && raw_indices != NULL && raw_colors != NULL) {
+        (*env)->GetFloatArrayRegion(env, model, 0, 16, matrix.m);
+        /* `ScgVertexUvN` est exactement huit `float` contigus, ce que les
+         * assertions du header vérifient sur cette cible même. */
+        (*env)->GetFloatArrayRegion(env, vertices, 0, floats, (jfloat *)points);
+        (*env)->GetIntArrayRegion(env, indices, 0, index_count, raw_indices);
+        (*env)->GetByteArrayRegion(env, colors, 0, channels, raw_colors);
+
+        for (uint32_t i = 0; i < triangle_count; i++) {
+            faces[i].i0 = (uint32_t)raw_indices[i * 3];
+            faces[i].i1 = (uint32_t)raw_indices[i * 3 + 1];
+            faces[i].i2 = (uint32_t)raw_indices[i * 3 + 2];
+            faces[i].r = (uint8_t)raw_colors[i * 4];
+            faces[i].g = (uint8_t)raw_colors[i * 4 + 1];
+            faces[i].b = (uint8_t)raw_colors[i * 4 + 2];
+            faces[i].a = (uint8_t)raw_colors[i * 4 + 3];
+        }
+        code = scg_submit_shaded((ScgContext *)(intptr_t)ctx, &matrix, points, vertex_count,
+                                 faces, triangle_count, (ScgTexture *)(intptr_t)texture);
+    }
+
+    free(points);
+    free(faces);
+    free(raw_indices);
+    free(raw_colors);
+    return code;
+}
+
+/*
  * scg_submit_lines : six `float` par segment, une couleur par segment, et le
  * mode de profondeur.
  *
@@ -1376,6 +1437,7 @@ static const JNINativeMethod METHODS[] = {
     {"lightingDestroy", "(J)V", (void *)lighting_destroy},
     {"submitTextured", "(J[F[F[I[BJ)I", (void *)submit_textured},
     {"submitLit", "(J[F[F[I[BJJ)I", (void *)submit_lit},
+    {"submitShaded", "(J[F[F[I[BJ)I", (void *)submit_shaded},
     {"setResolution", "(JII)I", (void *)set_resolution},
     {"setFilter", "(JI)I", (void *)set_filter},
     {"setSimd", "(JI)I", (void *)set_simd},

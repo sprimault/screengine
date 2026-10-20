@@ -1737,6 +1737,33 @@ impl Context {
         self.submit_lot(model, count, texture, None, 0, read)
     }
 
+    /// Soumet un lot à normales par indices, la façade de
+    /// [`Context::submit_each_shaded`] sur deux tranches.
+    ///
+    /// Les sommets portent un second jeu de coordonnées que ce chemin ignore :
+    /// [`VertexUv2`] sert aussi aux lightmaps, et un type de plus pour la seule
+    /// normale obligerait l'appelant à recopier ses sommets pour passer d'un
+    /// éclairage à l'autre.
+    pub fn submit_shaded(
+        &mut self,
+        model: Affine3,
+        vertices: &[VertexUv2],
+        triangles: &[Triangle],
+        texture: Option<&Arc<Texture>>,
+    ) -> Result<()> {
+        finite_positions(vertices.iter().map(|v| v.position))?;
+        self.submit_each_shaded(model, triangles.len(), texture, |i| {
+            let triangle = triangles[i];
+            let mut corners = [VertexUv2::unlit(VertexUv::untextured(Vec3::ZERO)); 3];
+            for (corner, &index) in corners.iter_mut().zip(&triangle.indices) {
+                *corner = *vertices
+                    .get(index as usize)
+                    .ok_or(Error::InvalidArgument(Argument::VertexIndex))?;
+            }
+            Ok((corners, triangle.color))
+        })
+    }
+
     /// Soumet des quadrilatères que le moteur oriente sur la caméra.
     ///
     /// L'hôte donne un centre et deux demi-extensions ; le moteur construit le

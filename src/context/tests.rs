@@ -995,6 +995,53 @@ fn ahead_uv2(u: f32, v: f32, u2: f32, v2: f32) -> [VertexUv2; 3] {
     })
 }
 
+/// La façade indexée du chemin à normales refuse un indice hors borne, et ne
+/// laisse rien derrière elle.
+///
+/// Même clause que le chemin nu, et c'est bien là qu'elle se perd : une façade
+/// ajoutée après les autres résout ses indices pour son compte, donc rien ne lui
+/// impose de les vérifier — sauf ce cas.
+#[test]
+fn un_lot_a_normales_refuse_un_indice_hors_borne() {
+    let mut ctx = small();
+    let vertices = ahead_uv2(0.0, 0.0, 0.0, 0.0);
+    let triangles = [
+        one()[0],
+        Triangle {
+            indices: [0, 1, 3],
+            color: Color::new(0, 0, 0, 0xFF),
+        },
+    ];
+    assert_eq!(
+        ctx.submit_shaded(Affine3::IDENTITY, &vertices, &triangles, None),
+        Err(Error::InvalidArgument(Argument::VertexIndex))
+    );
+    assert_eq!(ctx.triangles.len(), 0);
+}
+
+/// Elle refuse une position non finie **qu'aucun triangle n'indexe**, comme ses
+/// sœurs indexées.
+///
+/// Un sommet référencé serait refusé de toute façon, plus bas et par le même
+/// code d'erreur : le cas ne vaut que posé sur un sommet inutilisé, seul écart
+/// réel entre la façade et la forme à fonction d'accès, qui ne reçoit jamais la
+/// tranche entière. Écrit d'abord sur un sommet référencé, il passait sans que
+/// la façade vérifie quoi que ce soit.
+#[test]
+fn un_lot_a_normales_refuse_une_position_non_finie_non_indexee() {
+    let mut ctx = small();
+    let mut vertices = ahead_uv2(0.0, 0.0, 0.0, 0.0).to_vec();
+    vertices.push(VertexUv2 {
+        position: Vec3::new(0.0, f32::NAN, 0.0),
+        ..vertices[0]
+    });
+    assert_eq!(
+        ctx.submit_shaded(Affine3::IDENTITY, &vertices, &one(), None),
+        Err(Error::InvalidArgument(Argument::VertexCoordinate))
+    );
+    assert_eq!(ctx.triangles.len(), 0);
+}
+
 /// Une lightmap unie et claire, pour les cas où seul le chemin compte.
 ///
 /// Pas tout à fait blanche : à 255 la combinaison rend le texel intact et une

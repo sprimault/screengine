@@ -223,6 +223,81 @@ public final class Test {
     }
 
     /**
+     * Rend les deux pans dont les normales viennent d'ici, ou {@code null} si
+     * le rendu a échoué.
+     *
+     * <p>Le seul chemin où cet hôte remplit {@code ScgVertexUvN} : ailleurs
+     * les normales viennent du fichier de maillage, donc aucun décalage de
+     * cette structure n'entrait dans une empreinte.
+     *
+     * <p>Les trois composantes de chaque normale sont non nulles et distinctes
+     * en valeur absolue : toute permutation change alors l'image, et c'est ce
+     * décalage que la scène éprouve. Elles ne sont pas unitaires, le moteur
+     * normalisant lui-même.
+     *
+     * @return l'empreinte, ou {@code null}
+     */
+    private static String renderShaded() {
+        long texture = Screengine.textureLoad(FLOOR_SIDE, FLOOR_SIDE, makeChecker(),
+                Screengine.TEXTURE_FORMAT_RGBA8);
+        check(texture != 0, "le damier des pans se charge");
+
+        long[] out = {0};
+        if (texture == 0 || Screengine.create(sceneConfig(), out) != Screengine.OK) {
+            check(false, "création du contexte à normales");
+            return null;
+        }
+
+        // Une lumière par pan, à égale distance des deux : c'est cette égalité
+        // qui fait que seule la normale peut les distinguer.
+        float[] poses = {
+            10.0f, -9.0f, 2.0f, 24.0f,
+            10.0f, 9.0f, 2.0f, 24.0f,
+        };
+        byte[] lightColors = {
+            (byte) 0xFF, (byte) 0xC0, (byte) 0x60,
+            (byte) 0x40, (byte) 0x80, (byte) 0xFF,
+        };
+        check(Screengine.setLights(out[0], poses, lightColors) == Screengine.OK,
+                "les deux lumières se règlent");
+
+        float[] model = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
+        // Huit flottants par sommet : la position, u et v en texels, puis la
+        // normale.
+        float[] left = {
+            12.0f, -1.0f, -3.0f, 12.0f * 4.0f, -1.0f * 4.0f, -4.0f, -1.0f, 2.0f,
+            14.0f, -9.0f, -3.0f, 14.0f * 4.0f, -9.0f * 4.0f, -4.0f, -1.0f, 2.0f,
+            17.0f, -9.0f, 3.0f, 17.0f * 4.0f, -9.0f * 4.0f, -4.0f, -1.0f, 2.0f,
+            15.0f, -1.0f, 3.0f, 15.0f * 4.0f, -1.0f * 4.0f, -4.0f, -1.0f, 2.0f,
+        };
+        float[] right = {
+            12.0f, 1.0f, -3.0f, 12.0f * 4.0f, 1.0f * 4.0f, -4.0f, 1.0f, 2.0f,
+            15.0f, 1.0f, 3.0f, 15.0f * 4.0f, 1.0f * 4.0f, -4.0f, 1.0f, 2.0f,
+            17.0f, 9.0f, 3.0f, 17.0f * 4.0f, 9.0f * 4.0f, -4.0f, 1.0f, 2.0f,
+            14.0f, 9.0f, -3.0f, 14.0f * 4.0f, 9.0f * 4.0f, -4.0f, 1.0f, 2.0f,
+        };
+        int[] indices = {0, 1, 2, 0, 2, 3};
+        byte[] colors = {
+            (byte) 0xFF, (byte) 0xFF, (byte) 0xFF, (byte) 0xFF,
+            (byte) 0xFF, (byte) 0xFF, (byte) 0xFF, (byte) 0xFF,
+        };
+        check(Screengine.submitShaded(out[0], model, left, indices, colors, texture)
+                == Screengine.OK, "le pan de gauche est accepté");
+        check(Screengine.submitShaded(out[0], model, right, indices, colors, texture)
+                == Screengine.OK, "le pan de droite est accepté");
+        Screengine.textureDestroy(texture);
+
+        int body = STRIDE * HEIGHT * Screengine.BYTES_PER_PIXEL;
+        ByteBuffer block = ByteBuffer.allocateDirect(body);
+        int code = Screengine.frameEnd(out[0], block, 0, STRIDE);
+        check(code == Screengine.OK, "l'image à normales se rend");
+
+        String hash = fingerprint(block, 0, STRIDE);
+        Screengine.destroy(out[0]);
+        return code == Screengine.OK ? hash : null;
+    }
+
+    /**
      * Rend la scène {@code gamma}, ou {@code null} si le rendu a échoué.
      *
      * <p>La même géométrie que {@code texture}, passée par la courbe de sortie.
@@ -1522,11 +1597,12 @@ public final class Test {
         String trace = renderTrace();
         String sweeps = renderSweeps(args[0] + "/collision.world", args[0] + "/collision.sweeps");
         String picks = renderPicks(args[0] + "/collision.world", args[0] + "/selection.picks");
+        String shaded = renderShaded();
 
         if (failures > 0 || hash == null || textured == null || bilinear == null
                 || graded == null || lit == null || overbright == null || fog == null
                 || lights == null || mesh == null || composite == null || rooms == null
-                || trace == null || sweeps == null || picks == null) {
+                || trace == null || sweeps == null || picks == null || shaded == null) {
             System.err.println(failures + " vérification(s) en échec");
             System.exit(1);
         }
@@ -1544,6 +1620,7 @@ public final class Test {
         System.out.println(trace);
         System.out.println(sweeps);
         System.out.println(picks);
+        System.out.println(shaded);
         System.exit(0);
     }
 }

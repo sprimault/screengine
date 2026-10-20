@@ -437,6 +437,115 @@ function renderLights(engine) {
 }
 
 /**
+ * Les deux lumières de la scène `normale`, une par pan et à égale distance des
+ * deux : c'est cette égalité qui fait que seule la normale peut les distinguer.
+ */
+const SHADED_LIGHTS = [
+  { position: [10.0, -9.0, 2.0], radius: 24.0, color: [0xff, 0xc0, 0x60] },
+  { position: [10.0, 9.0, 2.0], radius: 24.0, color: [0x40, 0x80, 0xff] },
+];
+
+/**
+ * Le pan de gauche et le pan de droite, avec leurs normales.
+ *
+ * Les trois composantes de chaque normale sont non nulles et distinctes en
+ * valeur absolue : toute permutation change alors l'image, et c'est ce décalage
+ * que la scène éprouve. Cette liaison est la seule à écrire la structure octet
+ * par octet, donc la seule à répondre de ses décalages.
+ */
+const SHADED_LEFT = [
+  [12.0, -1.0, -3.0, 12.0 * 4.0, -1.0 * 4.0, -4.0, -1.0, 2.0],
+  [14.0, -9.0, -3.0, 14.0 * 4.0, -9.0 * 4.0, -4.0, -1.0, 2.0],
+  [17.0, -9.0, 3.0, 17.0 * 4.0, -9.0 * 4.0, -4.0, -1.0, 2.0],
+  [15.0, -1.0, 3.0, 15.0 * 4.0, -1.0 * 4.0, -4.0, -1.0, 2.0],
+];
+
+const SHADED_RIGHT = [
+  [12.0, 1.0, -3.0, 12.0 * 4.0, 1.0 * 4.0, -4.0, 1.0, 2.0],
+  [15.0, 1.0, 3.0, 15.0 * 4.0, 1.0 * 4.0, -4.0, 1.0, 2.0],
+  [17.0, 9.0, 3.0, 17.0 * 4.0, 9.0 * 4.0, -4.0, 1.0, 2.0],
+  [14.0, 9.0, -3.0, 14.0 * 4.0, 9.0 * 4.0, -4.0, 1.0, 2.0],
+];
+
+/**
+ * Rend les deux pans dont les normales viennent d'ici, ou `null` en cas
+ * d'échec.
+ *
+ * Le seul chemin où cette liaison remplit `ScgVertexUvN` : ailleurs les
+ * normales viennent du fichier de maillage, donc aucun décalage de cette
+ * structure n'entrait dans une empreinte.
+ *
+ * @param {scg.Screengine} engine
+ * @returns {string | null}
+ */
+function renderShaded(engine) {
+  const e = engine.exports;
+  const texels = makeChecker();
+  const desc = engine.alloc(scg.TEXTURE_DESC_SIZE);
+  const block = engine.alloc(texels.length);
+  const out = engine.alloc(4);
+  const config = engine.alloc(scg.CONFIG_SIZE);
+
+  engine.writeTextureDesc(desc, FLOOR_SIDE, FLOOR_SIDE);
+  engine.bytes().set(texels, block);
+  const loaded = e.scg_texture_load(desc, block, texels.length, out);
+  check(loaded === scg.SCG_OK, "le damier des pans se charge");
+  const texture = engine.readU32(out);
+
+  engine.writeConfig(config, sceneConfig());
+  if (loaded < 0 || e.scg_create(config, out) < 0) {
+    check(false, "création du contexte à normales");
+    return null;
+  }
+  const ctx = engine.readU32(out);
+
+  const lights = engine.alloc(SHADED_LIGHTS.length * scg.LIGHT_SIZE);
+  engine.writeLights(lights, SHADED_LIGHTS);
+  check(
+    e.scg_set_lights(ctx, lights, SHADED_LIGHTS.length) === scg.SCG_OK,
+    "les deux lumières se règlent",
+  );
+
+  const model = engine.alloc(scg.MAT4_SIZE);
+  const triangles = engine.alloc(FLOOR_TRIANGLES.length * scg.TRIANGLE_SIZE);
+  engine.writeIdentity(model);
+  engine.writeTriangles(triangles, FLOOR_TRIANGLES);
+
+  let submitted = scg.SCG_OK;
+  for (const [pan, corners] of [
+    ["gauche", SHADED_LEFT],
+    ["droite", SHADED_RIGHT],
+  ]) {
+    if (submitted < 0) {
+      break;
+    }
+    const vertices = engine.alloc(corners.length * scg.VERTEX_UVN_SIZE);
+    engine.writeVerticesUvN(vertices, corners);
+    submitted = e.scg_submit_shaded(
+      ctx,
+      model,
+      vertices,
+      corners.length,
+      triangles,
+      FLOOR_TRIANGLES.length,
+      texture,
+    );
+    check(submitted === scg.SCG_OK, `le pan de ${pan} est accepté`);
+  }
+  e.scg_texture_destroy(texture);
+
+  const pixels = engine.alloc(STRIDE * HEIGHT * scg.BYTES_PER_PIXEL);
+  const code = e.scg_frame_end(ctx, pixels, STRIDE);
+  check(code === scg.SCG_OK, "l'image à normales se rend");
+  const hash = code === scg.SCG_OK
+    ? engine.fingerprint(pixels, WIDTH, HEIGHT, STRIDE)
+    : null;
+
+  e.scg_destroy(ctx);
+  return hash;
+}
+
+/**
  * Le sol de la scène `brouillard`, plus long que la rampe : sa moitié
  * lointaine se confond avec le fond, sa moitié proche garde son damier.
  */
@@ -2210,8 +2319,10 @@ async function main() {
   const collision = new Uint8Array(await readFile(collisionPath));
   const sweeps = renderSweeps(engine, collision, new Uint8Array(await readFile(sweepsPath)));
   const picks = renderPicks(engine, collision, new Uint8Array(await readFile(picksPath)));
+  const shaded = renderShaded(engine);
   if (
     failures > 0 ||
+    shaded === null ||
     picks === null ||
     sweeps === null ||
     trace === null ||
@@ -2232,7 +2343,7 @@ async function main() {
 
   process.stdout.write(
     `${hash}\n${textured}\n${bilinear}\n${graded}\n${lit}\n${overbright}\n${fog}\n${lights}\n` +
-      `${mesh}\n${composite}\n${rooms}\n${trace}\n${sweeps}\n${picks}\n`,
+      `${mesh}\n${composite}\n${rooms}\n${trace}\n${sweeps}\n${picks}\n${shaded}\n`,
   );
   return 0;
 }
