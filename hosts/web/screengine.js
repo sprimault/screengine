@@ -352,6 +352,16 @@ export const VERTEX_UV_SIZE = 20;
 /** Taille de `ScgVertexUv2` : la précédente, plus `u2` et `v2`. */
 export const VERTEX_UV2_SIZE = 28;
 
+/**
+ * Taille de `ScgVertexUvN` : `ScgVertexUv`, plus une normale à trois `float`.
+ *
+ * Elle étend la texturée et non la doublement texturée, un objet mobile n'ayant
+ * pas de lightmap. Déclarée ici alors que rien dans cette liaison ne la remplit
+ * encore : c'est `checkLayout` qui l'exige désormais, et l'exigence porte sur
+ * les quinze structures du header, pas sur celles que la page emploie.
+ */
+export const VERTEX_UVN_SIZE = 32;
+
 /** Taille de `ScgLight` : quatre `float`, puis trois canaux et un réservé. */
 export const LIGHT_SIZE = 20;
 
@@ -376,9 +386,10 @@ export const TRIANGLE_SIZE = 16;
  * Taille de `ScgSprite` : dix `float`, un angle, puis quatre canaux.
  *
  * Quarante-quatre octets, décalages 0 à 40, sans un octet de bourrage. C'est la
- * structure la plus longue que cette liaison écrive à la main, et la seule que
- * rien ne vérifie pour elle : les assertions statiques du header sont compilées
- * par les hôtes C et C++, jamais ici.
+ * structure la plus longue que cette liaison écrive à la main : les assertions
+ * statiques du header sont compilées par les hôtes C et C++, jamais ici, et
+ * `checkLayout` ne compare que la **taille** — un champ déplacé à somme
+ * constante resterait invisible de ce côté.
  */
 export const SPRITE_SIZE = 44;
 
@@ -386,8 +397,8 @@ export const SPRITE_SIZE = 44;
  * Taille de `ScgLine` : six `float` puis quatre canaux.
  *
  * Vingt-huit octets sans bourrage. Comme `ScgSprite`, elle est écrite ici champ
- * par champ et rien ne le vérifie pour la liaison : les assertions statiques du
- * header sont compilées par les hôtes C et C++, jamais par celui-ci.
+ * par champ, et sa taille seule est comparée au header : voir la clause de
+ * `SPRITE_SIZE`, qui dit ce que cela laisse passer.
  */
 export const LINE_SIZE = 28;
 
