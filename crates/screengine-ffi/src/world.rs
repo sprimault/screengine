@@ -33,8 +33,10 @@ pub struct ScgWorld {
 /// from alive, so the host may destroy the two in either order.
 ///
 /// **It belongs to no context**, like every resource: computing lightmaps is a
-/// named call that allocates, and nothing allows it between the start and the end
-/// of a frame.
+/// named call that allocates, and so is restoring a cache — neither is allowed
+/// between the start and the end of a frame. Belonging to no context is also why
+/// that is a precondition and not a refusal: there is no frame here to check
+/// against.
 pub struct ScgLighting {
     /// Les lightmaps calculées, côté noyau.
     pub(crate) inner: Lightmaps,

@@ -63,6 +63,20 @@ publié, et explique les conventions du dépôt à qui y contribue.
 
 ## [Non publié]
 
+### Corrigé
+
+- **Le contrat promettait `SCG_ERR_INVALID_STATE` sur un calcul de lightmaps
+  pendant une image**, qu'aucun code ne rend. Le calcul comme la reprise d'un
+  cache l'énoncent désormais en précondition.
+
+***
+
+### Fixed
+
+- **The contract promised `SCG_ERR_INVALID_STATE` for lightmaps computed during
+  a frame**, which no code returns. Computing and restoring a cache now state it
+  as a precondition.
+
 ## [1.6.0] — 2026-10-20 — Ce que la surface gardait pour elle
 
 ### Ajouté
