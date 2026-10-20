@@ -2173,6 +2173,14 @@ mesure : un compteur, une empreinte, une durée.
   invalides compris, et vérifient qu'aucune panique ne s'échappe. Ils restent du
   Rust appelé depuis du Rust : ni l'édition de liens, ni la disposition vue par
   un compilateur C, ni l'environnement flottant d'un vrai hôte n'y passent.
+
+  **L'un d'eux passe en revue tous les points d'entrée à paramètre de sortie**,
+  et c'est la seule forme qui ferme une clause énoncée de *toute* l'ABI : qu'un
+  refus n'écrit jamais ce paramètre. Elle ne tenait qu'à la forme des corps —
+  valider d'abord, écrire en dernier —, qui est la bonne forme et ne prouve
+  rien ; une liaison, elle, garde sa valeur dans le tampon qu'elle passe et la
+  relit sur un refus. Le cas compte ses appels, pour qu'un point d'entrée ajouté
+  sans sa ligne ne le laisse pas vert.
 - **L'hôte C, dans `make test-abi`**, franchit réellement la frontière : lié à la
   bibliothèque statique, sans fenêtre, il vérifie refus, sentinelles autour du
   tampon, alignement et registre flottant, puis compare ses empreintes à celles

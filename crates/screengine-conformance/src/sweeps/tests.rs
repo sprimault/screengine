@@ -60,13 +60,18 @@ fn la_plupart_des_departs_sont_dans_une_cellule() {
     );
 }
 
-/// La scène rencontre les trois états qu'un balayage peut rendre.
+/// La scène rencontre les quatre états qu'un balayage peut rendre.
 ///
 /// Un décor qui n'en produirait qu'un figerait une empreinte sans avoir éprouvé
-/// les deux autres — et le statut du départ solide est précisément celui qu'aucun
+/// les autres — et le statut du départ solide est précisément celui qu'aucun
 /// autre chemin du moteur ne rend.
+///
+/// **Le tronqué ne tient qu'à un balayage sur mille neuf cent vingt-deux**, celui
+/// de l'enfilade, et c'est pourquoi il est nommé ici : le trajet du treillis est
+/// trop court pour saturer, si bien que retirer ce cas-là retirerait le statut de
+/// l'empreinte sans que rien d'autre ne le dise.
 #[test]
-fn les_trois_etats_sont_rencontres() {
+fn les_quatre_etats_sont_rencontres() {
     let played = played();
     let libre = played
         .iter()
@@ -77,10 +82,57 @@ fn les_trois_etats_sont_rencontres() {
     let solide = played
         .iter()
         .any(|(_, hit)| hit.is_some_and(|h| h.start_solid));
+    let tronque = played
+        .iter()
+        .any(|(_, hit)| hit.is_some_and(|h| h.incomplete));
 
     assert!(libre, "aucun balayage libre");
     assert!(contact, "aucun contact franc");
     assert!(solide, "aucun départ dans le solide");
+    assert!(tronque, "aucun trajet ne sature le budget de cellules");
+}
+
+/// Ce qu'`agree` refuse d'un résultat tronqué, et qu'aucune donnée ne lui
+/// présente.
+///
+/// **La branche est bien atteinte** — le trajet de l'enfilade sature le budget, et
+/// c'est pour cela qu'il existe —, mais elle l'est par un résultat **conforme** :
+/// fraction sous un, point nul, cellule nulle. Un `Ok(())` rendu d'emblée sur tout
+/// tronqué passerait donc la conformance entière sans rien dire, et le contrôle
+/// serait indistinguable de son absence. Ce que la scène prouve est qu'il
+/// n'accuse pas à tort ; ce qu'il refuse ne se prouve qu'ici.
+///
+/// La force brute passée en second rend un déplacement libre, ce qu'elle rend
+/// toujours sur un trajet dégagé : la première assertion dit donc aussi que la
+/// comparaison des deux chemins n'entre pas en jeu sur un tronqué.
+#[test]
+fn un_tronque_incoherent_est_refuse() {
+    let slow = free(Vec3::ZERO);
+    let tronque = |fraction: f32, point: Vec3, cell: u32| {
+        let mut hit = free(Vec3::ZERO);
+        hit.incomplete = true;
+        hit.fraction = fraction;
+        hit.point = point;
+        hit.cell = cell;
+        hit
+    };
+
+    assert!(
+        agree(&tronque(0.5, Vec3::ZERO, 0), &slow).is_ok(),
+        "un tronqué cohérent passe, quoi que rende la force brute"
+    );
+    assert!(
+        agree(&tronque(1.0, Vec3::ZERO, 0), &slow).is_err(),
+        "une troncature qui rend le déplacement entier"
+    );
+    assert!(
+        agree(&tronque(0.5, Vec3::new(1.0, 0.0, 0.0), 0), &slow).is_err(),
+        "une troncature qui nomme un point de contact"
+    );
+    assert!(
+        agree(&tronque(0.5, Vec3::ZERO, 8), &slow).is_err(),
+        "une troncature qui nomme une cellule"
+    );
 }
 
 /// **La petite boîte circule dans le couloir, la grande n'y tient pas.**
