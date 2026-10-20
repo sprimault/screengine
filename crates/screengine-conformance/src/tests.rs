@@ -963,3 +963,56 @@ fn les_references_et_les_scenes_portent_les_memes_noms() {
         "scènes sans référence : {sans_reference:?}"
     );
 }
+
+/// Chaque chemin de remplissage que le noyau porte est forcé par une passe.
+///
+/// **Le contrôle est le `match` ci-dessous, pas les assertions** : il est
+/// exhaustif, donc une variante ajoutée à [`SimdPath`] ne compile plus tant
+/// qu'elle n'a pas sa ligne, et sa ligne ne peut nommer qu'une passe. Sans lui,
+/// une variante nouvelle compilerait, serait nommée par `simd_label` et ne
+/// serait jouée par aucune scène. Ce n'est pas une précaution : la
+/// documentation de [`Pass::Sse2`] raconte qu'en cassant son décalage, toutes
+/// les empreintes restaient conformes.
+///
+/// [`SimdPath::Auto`] est le seul chemin sans passe, et il n'en est pas un : il
+/// en désigne un, que `resolve` rend et que la ligne des passes affiche.
+///
+/// **Le compte est ce qui mord quand le `match` ne suffit pas** : une variante
+/// à qui l'on donnerait `None` pour faire taire le compilateur compilerait, et
+/// c'est lui qui tomberait alors.
+#[test]
+fn chaque_chemin_de_remplissage_est_force_par_une_passe() {
+    /// La passe qui force ce chemin, pour chacun de ceux qui en sont un.
+    fn passe_de(chemin: SimdPath) -> Option<Pass> {
+        match chemin {
+            SimdPath::Auto => None,
+            SimdPath::Scalar => Some(Pass::Scalar),
+            SimdPath::Sse2 => Some(Pass::Sse2),
+            SimdPath::Avx2 => Some(Pass::Avx2),
+            SimdPath::Neon => Some(Pass::Neon),
+            SimdPath::Simd128 => Some(Pass::Simd128),
+        }
+    }
+
+    let forcantes: Vec<Pass> = Pass::ALL
+        .into_iter()
+        .filter(|pass| pass.simd() != SimdPath::Auto)
+        .collect();
+
+    for pass in forcantes.iter().copied() {
+        assert_eq!(
+            passe_de(pass.simd()),
+            Some(pass),
+            "la passe « {} » force un chemin que la table ne lui rend pas",
+            pass.name()
+        );
+    }
+
+    assert_eq!(
+        forcantes.len(),
+        5,
+        "cinq chemins de remplissage sont forcés par une passe, {} le sont — \
+         une variante de SimdPath est arrivée sans la sienne",
+        forcantes.len()
+    );
+}

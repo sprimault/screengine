@@ -123,7 +123,7 @@ android_build = for cible in $(CIBLES_ANDROID); do \
 -include makefile.local
 
 .PHONY: build lib lib-wasm lib-android run example web test native-libs fmt fmt-fix lint lint-doc-tests \
-        lint-android-versions lint-wasm-bindgen etat-verif nostd test-arm test-linux-arm test-wasi msrv bench bench-wasi stubs \
+        lint-android-versions lint-wasm-bindgen lint-enveloppes etat-verif nostd test-arm test-linux-arm test-wasi msrv bench bench-wasi stubs \
         conform conform-arm conform-linux-arm conform-wasi conform-x86 conform-update conform-images mesh header header-verif audit deny doc doc-verif hosts host-c host-cpp host-web host-go \
         host-android demo-c demo-cpp clean tools
 
@@ -560,6 +560,66 @@ lint-wasm-bindgen:
 	fi; \
 	echo "lint-wasm-bindgen : $$resolu, epinglage et Cargo.lock concordants"
 
+# Les deux points d'entrée sans enveloppe, nommés parce que ce sont les seuls :
+# `scg_abi_version` rend une constante, `scg_last_error` un pointeur sur un
+# tampon déjà écrit. Aucun des deux n'alloue, ne calcule, ni ne porte de code de
+# retour où loger une panique, et `docs/abi.md` les compte en propres termes.
+ENTREES_HORS = scg_abi_version scg_last_error
+
+# Chaque point d'entrée passe par une enveloppe d'`entry::` : `catch_unwind`, la
+# traduction de l'erreur en code de retour, la mémorisation du message, et
+# l'environnement flottant fixé puis rendu à l'hôte.
+#
+# **Rien ne le vérifiait, et la distinction est ce qui rend ce contrôle
+# possible** : un point d'entrée **manquant** ne se détecte pas mécaniquement —
+# l'ABI n'expose pas tout le noyau, donc « cette fonction n'est pas exposée »
+# n'est pas un défaut en soi —, alors qu'une enveloppe manquante sur un point
+# d'entrée qui existe, si. Ce que coûte l'oubli est écrit ailleurs : il ne se
+# manifeste que le jour où quelque chose panique, chez quelqu'un d'autre, dans
+# un langage qui n'a pas de pile Rust à afficher.
+#
+# **Un point d'entrée sur cinq n'appelle pas l'enveloppe lui-même**, il délègue
+# à un utilitaire partagé — `mesh_count`, `world_count`, `world_value` — qui la
+# porte un niveau plus bas, et c'est voulu : la vérification du handle et celle
+# du pointeur de sortie n'existent qu'à un endroit. Le fichier est donc lu deux
+# fois pour relever les utilitaires enveloppants avant de juger les points
+# d'entrée, ce qui couvre **deux niveaux** de délégation. Un troisième niveau
+# serait annoncé comme nu, et c'est le bon sens du défaut : la cible accuse à
+# tort plutôt que d'acquitter à tort.
+lint-enveloppes:
+	@awk -v hors="$(ENTREES_HORS)" ' \
+	  FNR == 1 { passe++ } \
+	  passe < 3 { \
+	    if (/^(unsafe )?fn [a-z_0-9]+/) { \
+	      match($$0, /fn [a-z_0-9]+/); courant = substr($$0, RSTART + 3, RLENGTH - 3); next } \
+	    if (courant != "") { \
+	      if (/^}/) { courant = ""; next } \
+	      if (/^[[:space:]]*\/\//) { next } \
+	      if (/entry::/) { enveloppe[courant] = 1; next } \
+	      for (h in enveloppe) { if (index($$0, h "(")) { enveloppe[courant] = 1 } } } \
+	    next } \
+	  /extern "C" fn/ { \
+	    match($$0, /fn [a-z_0-9]+/); nom = substr($$0, RSTART + 3, RLENGTH - 3); \
+	    dedans = 1; vu = 0; total++; next } \
+	  dedans { \
+	    if (/^[[:space:]]*\/\//) { next } \
+	    if (/entry::/) { vu = 1 } \
+	    else { for (h in enveloppe) { if (index($$0, h "(")) { vu = 1 } } } \
+	    if (/^}/) { \
+	      dedans = 0; \
+	      if (vu) { gardes++ } \
+	      else if (index(" " hors " ", " " nom " ") == 0) { \
+	        print "lint-enveloppes : " nom " sans enveloppe entry::"; mauvais = 1 } } \
+	    next } \
+	  END { \
+	    if (total == 0) { \
+	      print "lint-enveloppes : aucun point d entree trouve, la recherche n a pas abouti"; \
+	      exit 1 } \
+	    if (mauvais) { exit 1 } \
+	    printf "lint-enveloppes : %d points d entree, %d enveloppes, %d exemption(s) nommee(s)\n", \
+	      total, gardes, total - gardes }' \
+	  crates/screengine-ffi/src/lib.rs crates/screengine-ffi/src/lib.rs crates/screengine-ffi/src/lib.rs
+
 # La concordance de l'état annoncé avec la version du paquet, troisième contrôle
 # que `lint` entraîne sans être clippy — comme la documentation des tests et les
 # versions d'outillage Android.
@@ -745,7 +805,7 @@ CIBLES_PLAY = $(CIBLES_LINUX_ARM) $(CIBLE_WASM)
 # leur plancher n'est pas sous notre contrôle, et l'y faire entrer donnerait une
 # contrainte qu'une montée de dépendance casserait sans qu'on puisse rien.
 
-lint: lint-doc-tests lint-android-versions lint-wasm-bindgen etat-verif bornes-verif
+lint: lint-doc-tests lint-android-versions lint-wasm-bindgen lint-enveloppes etat-verif bornes-verif
 	cargo clippy --workspace --all-targets --all-features -- -D warnings
 	for cible in $(CIBLES_CROISEES); do \
 	  cargo clippy -p screengine -p screengine-ffi --lib --target $$cible -- -D warnings || exit 1; \
