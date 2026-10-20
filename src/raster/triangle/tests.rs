@@ -1417,6 +1417,64 @@ fn le_niveau_de_mipmap_tient_compte_de_la_derivee_verticale() {
     );
 }
 
+/// Le niveau de mipmap enveloppe au lieu de paniquer, sur des pentes qu'une
+/// aire d'un sous-pixel produit.
+///
+/// Les quatre numérateurs du critère retranchent un terme à une pente que
+/// [`Plane::step_x`] déclare non bornée en propres termes. La soustraction doit
+/// donc être écrite enveloppante : laissée nue, elle panique sous
+/// `overflow-checks` — donc dans `make test` — là où la conformance, construite
+/// en release, enroule sans rien dire. C'est cette asymétrie de profil que le
+/// cas ferme, sans avoir à construire le triangle en lame de couteau qui y
+/// tombe.
+///
+/// **Ce qu'il ne départage pas** : `wrapping_sub` d'un `saturating_sub`. Les
+/// deux rendent un numérateur de l'ordre de 2⁶³, dont le produit par la
+/// réciproque sature, et le niveau plafonne pareil. Le cas prouve l'absence de
+/// panique et la valeur rendue, pas le choix entre les deux écritures.
+#[test]
+fn le_niveau_de_mipmap_enveloppe_au_lieu_de_paniquer() {
+    // Une aire d'un sous-pixel et des valeurs de sommet étalées sur 2³¹ : les
+    // deux gradients valent `(2⁴³ − 1) << GRADIENT_BITS`, donc la pente du
+    // critère — seize sous-pixels, puis l'échelle des coordonnées — tombe à
+    // 2²⁰ de `i64::MAX`.
+    let lame = Plane::new(
+        [
+            Point { x: 1, y: -1 },
+            Point { x: -4096, y: 4096 },
+            Point { x: 0, y: 0 },
+        ],
+        [1 << 31, -1, 0],
+        1,
+        2,
+    );
+    // Le terme retranché vaut `(coord · ∂D/∂x) >> UV_SHIFT`, soit −2²² avec la
+    // coordonnée ci-dessous : au-delà des 2²⁰ de marge, donc la soustraction
+    // franchit la borne.
+    let profondeur = Plane::new(
+        [
+            Point { x: 0, y: 0 },
+            Point { x: -1, y: 1 },
+            Point { x: 0, y: 0 },
+        ],
+        [1 << 18, 0, 0],
+        1,
+        2,
+    );
+
+    let mut triangle = sol_texture_fuyant(60.0, 96.0).0;
+    triangle.depth = profondeur;
+    triangle.uv = [lame, lame];
+
+    let coord = -(1 << 20);
+    let niveau = mip_level(&triangle, &triangle.uv, coord, coord, reciprocal(1 << 20));
+
+    // Le niveau plafonne, et c'est ce que `mip_level` annonce d'une saturation
+    // du produit : elle demanderait plus de 2¹² texels par pixel, soit un
+    // niveau qu'aucune chaîne ne porte.
+    assert_eq!(niveau, LEVEL_BIAS, "niveau hors de la chaine de mipmaps");
+}
+
 /// L'image ne dépend pas de la boîte englobante du triangle, tant qu'elle
 /// majore le span.
 ///

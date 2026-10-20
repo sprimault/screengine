@@ -63,6 +63,20 @@ publié, et explique les conventions du dépôt à qui y contribue.
 
 ## [Non publié]
 
+### Corrigé
+
+- **Le choix du niveau de mipmap enveloppe au lieu de paniquer** sur un triangle
+  dont l'aire se compte en sous-pixels, dans une bibliothèque construite avec
+  les contrôles de débordement d'entier.
+
+***
+
+### Fixed
+
+- **Mipmap level selection now wraps instead of panicking** on a triangle whose
+  area comes down to a few subpixels, in a library built with integer overflow
+  checks.
+
 ## [1.5.0] — 2026-10-18 — L'étendue vient du maillage
 
 ### Ajouté
