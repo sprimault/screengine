@@ -426,16 +426,24 @@ aux fonctions de bord.
   image n'est pas sa justesse mais son coût, et la virgule fixe après
   projection, qui ne laisse de toute façon aucun flottant arriver au pixel.
 - **La règle d'usage : `f32` dans le pipeline d'image, `f64` dans ce qui se
-  calcule hors image — cuisson et collision comprises.** La frontière est le
-  coût par pixel, pas un module : un calcul qui s'exécute une fois par luxel,
-  par requête ou par chargement n'a aucune raison de se priver de la précision
-  que le déterminisme lui accorde déjà, et un calcul qui s'exécute deux cent
-  mille fois par image en a toutes.
+  calcule hors image — la collision en est.** La frontière est le coût par
+  pixel, pas un module : un calcul qui s'exécute une fois par requête ou par
+  chargement n'a aucune raison de se priver de la précision que le déterminisme
+  lui accorde déjà, et un calcul qui s'exécute deux cent mille fois par image en
+  a toutes.
 
   **Énoncée par la frontière et non par une liste de modules**, parce qu'une
   liste serait périmée au module suivant, alors que la question « ce calcul
   a-t-il lieu par pixel ? » se pose telle quelle dans un module qui n'existe pas
   encore.
+
+  **La cuisson des lightmaps est hors de cette règle, et ce n'est pas un
+  oubli** : elle est entièrement en `f32`, alors qu'elle se calcule hors image
+  et par luxel. Ce qui fixe sa largeur est sa comparabilité avec l'éclairage
+  dynamique par sommet, qui reprend son ordre d'opérations : les deux ne
+  diffèrent aujourd'hui que de quelques ulp sur un mur sans obstacle — un écart
+  qu'on peut encore décider d'aligner —, et une cuisson en `f64` le rendrait
+  structurel en plus de déplacer toutes les empreintes portant une lightmap.
 
   Conséquence de vocabulaire, à connaître avant d'écrire : `Vec3` est en `f32` et
   sert le pipeline ; un calcul hors image qui enchaîne plus qu'une expression
