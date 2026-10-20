@@ -315,6 +315,20 @@ pub struct Context {
     textures_stale: AtomicBool,
 }
 
+/// Où en étaient les trois listes d'une image avant un lot.
+///
+/// Voir [`Context::mark`] et [`Context::rollback`], qui la prennent et la
+/// rendent ; elle ne sort pas du contexte.
+#[derive(Debug, Clone, Copy)]
+struct Mark {
+    /// Les triangles préparés déjà posés.
+    triangles: usize,
+    /// Les entrées de la table de textures de l'image.
+    textures: usize,
+    /// Les plans d'éclairage de l'annexe.
+    lighting: usize,
+}
+
 /// Un sommet porté en espace de vue, ses coordonnées de texture intactes.
 ///
 /// La transformation ne touche que la position ; `u` et `v` traversent sans
@@ -927,6 +941,40 @@ impl Context {
         }
     }
 
+    /// Les longueurs des trois listes qu'un lot allonge, prises avant de le
+    /// poser.
+    ///
+    /// **Un type et non trois variables locales.** La séquence vivait à huit
+    /// endroits — quatre prises, quatre rétablissements — pour une seule clause
+    /// du contrat, « un lot est accepté ou refusé en entier ». Une liste de plus
+    /// à marquer devait donc être ajoutée aux huit, et l'oubli ne casse aucune
+    /// compilation : il laisse un lot refusé à demi posé, défaut de la classe
+    /// « image fausse, aucune erreur ».
+    ///
+    /// Le tracé garde sa marque à lui, sur `segments` : cette liste n'est touchée
+    /// que par lui, et la joindre ici ferait un type dont aucun appelant ne
+    /// servirait tous les champs.
+    fn mark(&self) -> Mark {
+        Mark {
+            triangles: self.triangles.len(),
+            textures: self.textures.len(),
+            lighting: self.lighting.len(),
+        }
+    }
+
+    /// Ramène les trois listes à une marque, pour un lot refusé.
+    ///
+    /// Les trois ensemble, toujours : une seule laissée derrière désignerait des
+    /// triangles que les deux autres n'ont plus, et c'est le remplissage qui
+    /// irait lire une plage vide.
+    fn rollback(&mut self, mark: Mark) {
+        self.triangles.truncate(mark.triangles);
+        self.lighting.truncate(mark.lighting);
+        // La texture n'est retirée que si ce lot l'a ajoutée : déjà présente, la
+        // table n'a pas grandi et la troncature ne fait rien.
+        self.textures.truncate(mark.textures);
+    }
+
     /// Ce qu'un appel exclusif **hors image** règle avant de toucher à l'état.
     ///
     /// Les deux vidages d'une image close, dont l'un rend de la mémoire. Un
@@ -1176,8 +1224,7 @@ impl Context {
         // liste n'a plus. Le `truncate` du refus ne ferait alors rien, et un
         // maillage refusé resterait à moitié posé.
         self.settle();
-        let (mark, textures) = (self.triangles.len(), self.textures.len());
-        let lights = self.lighting.len();
+        let mark = self.mark();
 
         for group in mesh.groups() {
             let first = group.first_triangle as usize;
@@ -1195,9 +1242,7 @@ impl Context {
                 },
             );
             if result.is_err() {
-                self.triangles.truncate(mark);
-                self.lighting.truncate(lights);
-                self.textures.truncate(textures);
+                self.rollback(mark);
                 return result;
             }
         }
@@ -1372,14 +1417,11 @@ impl Context {
     {
         // Avant la marque, pour la raison écrite dans `submit_mesh_with`.
         self.settle();
-        let (mark, textures) = (self.triangles.len(), self.textures.len());
-        let lights = self.lighting.len();
+        let mark = self.mark();
 
         for (index, cell) in world.cells().iter().enumerate() {
             if let Err(error) = self.submit_cell(model, cell, index as u32, lighting, &texture) {
-                self.triangles.truncate(mark);
-                self.lighting.truncate(lights);
-                self.textures.truncate(textures);
+                self.rollback(mark);
                 return Err(error);
             }
         }
@@ -1532,11 +1574,10 @@ impl Context {
             &mut self.visits,
         );
 
-        let (mark, textures) = (self.triangles.len(), self.textures.len());
-        let lights = self.lighting.len();
+        let mark = self.mark();
         let cells = world.cells();
         // Ce que l'image porte déjà n'appartient à aucune cellule visitée.
-        self.visited_first = mark as u32;
+        self.visited_first = mark.triangles as u32;
 
         for rank in 0..self.visits.len() {
             let visit = self.visits[rank];
@@ -1545,10 +1586,8 @@ impl Context {
             self.visits[rank].first_triangle = self.triangles.len() as u32;
             let cell = &cells[visit.cell as usize];
             if let Err(error) = self.submit_cell(model, cell, visit.cell, lighting, &texture) {
-                self.triangles.truncate(mark);
-                self.lighting.truncate(lights);
-                self.textures.truncate(textures);
-                // **Les trois ensemble, ou le remplissage lit une liste
+                self.rollback(mark);
+                // **Les visites avec elles, ou le remplissage lit une liste
                 // vidée.** Une plage laissée derrière par une traversée
                 // précédente de la même image désignerait encore des triangles,
                 // et le curseur irait chercher leur fenêtre dans la liste que
@@ -1862,8 +1901,7 @@ impl Context {
         }
         finite_model(model)?;
         self.settle();
-        let (mark, textures) = (self.triangles.len(), self.textures.len());
-        let lights = self.lighting.len();
+        let mark = self.mark();
         let result = self
             .record_texture(texture)
             .and_then(|index| {
@@ -1886,12 +1924,8 @@ impl Context {
         // texture que plus rien ne référence, et le plafond ne se déduirait
         // plus du nombre de triangles préparés — il suffirait de soumettre des
         // lots invisibles pour le remplir.
-        if result.is_err() || self.triangles.len() == mark {
-            self.triangles.truncate(mark);
-            self.lighting.truncate(lights);
-            // La texture n'est retirée que si ce lot l'a ajoutée : déjà
-            // présente, la table n'a pas grandi et la troncature ne fait rien.
-            self.textures.truncate(textures);
+        if result.is_err() || self.triangles.len() == mark.triangles {
+            self.rollback(mark);
         }
         result
     }
