@@ -391,8 +391,10 @@ typedef struct ScgContext ScgContext;
 // from alive, so the host may destroy the two in either order.
 //
 // **It belongs to no context**, like every resource: computing lightmaps is a
-// named call that allocates, and nothing allows it between the start and the end
-// of a frame.
+// named call that allocates, and so is restoring a cache — neither is allowed
+// between the start and the end of a frame. Belonging to no context is also why
+// that is a precondition and not a refusal: there is no frame here to check
+// against.
 typedef struct ScgLighting ScgLighting;
 
 // An opaque handle to a loaded mesh.
@@ -1895,8 +1897,10 @@ void scg_lighting_destroy(struct ScgLighting *lighting);
 // will name the cell it just changed. An identifier no cell carries is
 // `SCG_ERR_UNKNOWN_RESOURCE`.
 //
-// **This allocates and takes time**, so it is a named call and nothing allows it
-// between the start and the end of a frame. A cell that changes recomputes its
+// **This allocates and takes time**, so it is a named call, and calling it
+// between the start and the end of a frame is forbidden. That is a precondition
+// and not an error you are told about: the holder belongs to no context, so
+// nothing here can know a frame is open. A cell that changes recomputes its
 // own — but **its immediate neighbours become wrong**, since the light coming
 // through the doorway was computed over there, and it is for the host to ask for
 // them again.
@@ -1954,6 +1958,10 @@ int32_t scg_lighting_save(const struct ScgLighting *lighting,
 // Only a malformed block is an error, `SCG_ERR_INVALID_FORMAT`. What the block
 // carries decides nothing on its own: every entry is checked against the loaded
 // map.
+//
+// **It allocates, like `scg_lighting_build`**, so the same precondition holds:
+// not between the start and the end of a frame, and you are not told about it —
+// the holder belongs to no context.
 //
 // # Safety
 //

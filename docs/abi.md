@@ -288,9 +288,9 @@ ne peut agir différemment sur les deux, et un quatrième code obligerait à fig
 l'ordre des contrôles du décodeur dans le contrat.
 
 **La plage du monde reste vide, et l'étape 5 ne l'ouvre pas.** Elle n'avait
-besoin d'aucun code propre, et chacun de ses cas est tombé dans un code déjà
-défini — ce qui est le signe que les plages sont bien tracées, pas le signe d'un
-oubli :
+besoin d'aucun code propre, et chacun de ses cas qui en demandait un est tombé
+dans un code déjà défini — ce qui est le signe que les plages sont bien tracées,
+pas le signe d'un oubli :
 
 - une cellule inconnue par identifiant est **`SCG_ERR_UNKNOWN_RESOURCE`**, défini
   à l'étape 4 pour « une recherche par identifiant stable qui ne trouve rien » et
@@ -299,9 +299,11 @@ oubli :
   d'une version non lue **`SCG_ERR_UNSUPPORTED_FORMAT_VERSION`** : c'est un bloc
   de données comme un autre, venu du stockage de l'hôte, donc hostile par
   hypothèse ;
-- un calcul de lightmaps demandé pendant une image est **`SCG_ERR_INVALID_STATE`**,
-  dont c'est la définition littérale — il alloue, ce qui est interdit entre le
-  début et la fin d'une image ;
+- un calcul de lightmaps demandé pendant une image **n'est pas un cas d'erreur**,
+  c'est une précondition. Il alloue, ce qui reste interdit entre le début et la
+  fin d'une image, mais le porteur de lightmaps n'appartient à aucun contexte :
+  rien côté moteur ne peut savoir qu'une image est ouverte. Voir « Les lightmaps
+  calculées » ;
 - une capacité de triangles insuffisante pour ce que la traversée ramène est
   **`SCG_ERR_INVALID_ARGUMENT`**, par symétrie exacte avec les autres
   dépassements de capacité ;
@@ -1594,9 +1596,13 @@ pas dans le second.
   chargement de texture, et l'hôte peut même paralléliser entre cellules. Une
   barre de progression se fait avec `scg_world_cell_luxel_count`, dont la valeur
   est dérivée au chargement.
-- **Le calcul alloue, donc il est refusé pendant une image** par
-  `SCG_ERR_INVALID_STATE`, et les chaînes de mipmaps se construisent à la fin de
-  l'appel qui calcule ou qui reprend un cache — jamais au premier affichage.
+- **Le calcul alloue, donc il ne se fait pas pendant une image — et c'est une
+  précondition, pas un cas d'erreur.** Elle vaut aussi pour la reprise d'un
+  cache, qui alloue de la même façon. Ni l'un ni l'autre ne prend de contexte,
+  par la décision ci-dessus : rien côté moteur ne peut voir l'image en cours, et
+  la faire voir demanderait le `ScgWorld` repassé à chaque appel, qu'on vient
+  d'écarter. Les chaînes de mipmaps, elles, se construisent à la fin de l'appel
+  qui calcule ou qui reprend un cache — jamais au premier affichage.
 - **`scg_lighting_state` rend l'état d'une cellule** : absente, prête, ou périmée
   parce que la cellule a changé depuis le calcul. C'est un accesseur scalaire,
   comme tous ceux de l'étape 4 ; il n'y a pas de structure rendue à l'hôte.

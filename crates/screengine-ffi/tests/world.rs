@@ -521,6 +521,71 @@ fn une_cellule_inconnue_ne_se_cuit_pas() {
     }
 }
 
+/// Le calcul et la reprise d'un cache ne regardent pas l'image en cours.
+///
+/// **Ce cas épingle le comportement réel, il ne garde pas un refus** : le contrat
+/// dit depuis l'étape 5 qu'une précondition interdit les deux appels pendant une
+/// image, et non qu'ils la refusent. Aucun des deux ne prend de contexte, donc
+/// rien côté moteur ne peut voir l'image ouverte.
+///
+/// Ce qu'il garde est le sens inverse, celui par lequel le défaut est arrivé : la
+/// clause avait été écrite comme un `SCG_ERR_INVALID_STATE`, et un lot qui aurait
+/// voulu l'honorer aurait rattaché le porteur à un contexte — ce que la
+/// disposition « ressources indépendantes de tout contexte » interdit. Le jour où
+/// l'un des deux appels se mettrait à refuser, ce cas rougit.
+#[test]
+fn une_image_ouverte_n_empeche_ni_le_calcul_ni_la_reprise() {
+    let mut ctx = ptr::null_mut();
+    let config = config();
+    // SAFETY: les deux pointeurs visent des valeurs locales vivantes.
+    assert_eq!(unsafe { scg_create(&config, &mut ctx) }, SCG_OK);
+
+    let world = load(&one_cell_world());
+    let mut lighting = ptr::null_mut();
+    // SAFETY: carte vivante, pointeur de sortie local.
+    assert_eq!(unsafe { scg_lighting_create(world, &mut lighting) }, SCG_OK);
+
+    let mut tiles = 0u32;
+    // SAFETY: handle vivant, compteur local.
+    let begun = unsafe { scg_frame_begin(ctx, &mut tiles) };
+    assert_eq!(begun, SCG_OK, "début refusé : {}", context_error(ctx));
+
+    // SAFETY: handle vivant ; l'image ouverte appartient à un autre objet.
+    let built = unsafe { scg_lighting_build(lighting, 7) };
+    assert_eq!(built, SCG_OK, "cuisson refusée : {}", orphan_error());
+
+    let mut len = 0usize;
+    // SAFETY: handle vivant, tampon nul avec capacité nulle, sortie locale.
+    let measured = unsafe { scg_lighting_save(lighting, ptr::null_mut(), 0, &mut len) };
+    assert_eq!(measured, SCG_OK);
+    let mut block = vec![0u8; len];
+    // SAFETY: handle vivant, tampon local de `len` octets, sortie locale.
+    let saved = unsafe { scg_lighting_save(lighting, block.as_mut_ptr(), len, &mut len) };
+    assert_eq!(saved, SCG_OK);
+
+    let mut other = ptr::null_mut();
+    // SAFETY: carte vivante, pointeur de sortie local.
+    assert_eq!(unsafe { scg_lighting_create(world, &mut other) }, SCG_OK);
+    let mut accepted = 0u32;
+    // SAFETY: handle vivant, bloc local de `len` octets, sortie locale.
+    let restored = unsafe { scg_lighting_restore(other, block.as_ptr(), len, &mut accepted) };
+    assert_eq!(restored, SCG_OK, "reprise refusée : {}", orphan_error());
+    assert_eq!(accepted, 1);
+
+    let mut pixels = vec![0u8; 64 * 64 * 4];
+    // SAFETY: handle vivant, et le tampon couvre `stride × hauteur` pixels.
+    let ended = unsafe { scg_frame_end(ctx, pixels.as_mut_ptr(), 64) };
+    assert_eq!(ended, SCG_OK, "fin refusée : {}", context_error(ctx));
+
+    // SAFETY: handles vivants, détruits une seule fois chacun.
+    unsafe {
+        scg_lighting_destroy(other);
+        scg_lighting_destroy(lighting);
+        scg_world_destroy(world);
+        scg_destroy(ctx);
+    }
+}
+
 /// Le cache se mesure, s'écrit, puis se reprend.
 ///
 /// **Le patron en deux temps est ce qu'un auteur de liaison lira le plus souvent
