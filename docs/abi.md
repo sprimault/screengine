@@ -1899,7 +1899,7 @@ règle se devinait jusqu'à présent sans être énoncée.
 #### L'étendue d'un maillage
 
 `scg_mesh_bounds` rend les deux coins de la boîte englobante d'une trame, bas
-puis haut, dans le repère du maillage. Ajoutée après la publication de l'étape,
+puis haut, chacun en `x`, `y`, `z`, dans le repère du maillage. Ajoutée après la publication de l'étape,
 sur un constat simple : l'étendue que l'auteur du décor a écrite était chargée,
 calculée, puis gardée pour le moteur seul, si bien que tout hôte qui pose un
 maillage la réécrivait à la main.

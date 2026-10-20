@@ -348,27 +348,57 @@ fn la_boite_englobante_est_exacte_et_signee() {
     );
 }
 
-/// Chaque trame porte sa propre boîte, et non celle de la première.
+/// Chaque trame porte sa propre boîte, et non celle de la première ni celle du
+/// maillage entier.
 ///
-/// Le cas est un maillage dont la seconde trame s'étire en `z` : une boîte
-/// calculée une fois sur la première tranche de poses passerait tous les autres
-/// essais, puisqu'un maillage statique n'a qu'une trame et que les deux boîtes y
-/// sont la même.
+/// Une boîte calculée une fois sur la première tranche de poses passerait tous
+/// les autres essais, puisqu'un maillage statique n'a qu'une trame et que ses
+/// boîtes y sont la même.
+///
+/// **Trois trames de deux sommets, et non deux de deux** : avec deux de chaque,
+/// le compte de trames et celui de sommets sont le même nombre, si bien que
+/// `frame * vertices.len()` et `frame * frames` prennent la même tranche et que
+/// le pas de trame n'est éprouvé par rien.
+///
+/// **Et chaque trame a ses propres extrema, aucun partagé** : un minimum ou un
+/// maximum hissé hors de la boucle rendrait l'enveloppe des trois, que les deux
+/// premières trames refusent déjà. La troisième est entièrement négative, pour
+/// qu'un maximum laissé à zéro ne passe pas non plus.
+///
+/// **Aucun des deux sommets n'est un coin de la boîte** : leurs composantes se
+/// croisent, et les coins attendus sont écrits à la main. Dérivés de l'entrée,
+/// ils auraient laissé passer « la première et la dernière pose de la tranche ».
 #[test]
 fn chaque_trame_a_sa_boite() {
-    let normal = [0.0, 0.0, 1.0];
-    let mut poses = pose_bytes([0.0; 3], normal);
-    poses.extend_from_slice(&pose_bytes([1.0, 1.0, 1.0], normal));
-    poses.extend_from_slice(&pose_bytes([0.0; 3], normal));
-    poses.extend_from_slice(&pose_bytes([1.0, 1.0, 4.0], normal));
+    let mut poses = Vec::new();
+    for position in [
+        [0.75, 2.0, 0.5],
+        [1.0, 0.0, 3.0],
+        [2.0, 0.5, 6.0],
+        [-1.0, 4.0, 1.5],
+        [-0.5, -3.0, -1.0],
+        [-4.0, -1.25, -2.0],
+    ] {
+        poses.extend_from_slice(&pose_bytes(position, [0.0, 0.0, 1.0]));
+    }
     let uvs = vec![0u8; 2 * VERTEX_LEN];
 
-    let mesh = Mesh::load(&sections(&frames_bytes(2, &poses), &[], &[], &[], &uvs)).unwrap();
+    let mesh = Mesh::load(&sections(&frames_bytes(3, &poses), &[], &[], &[], &uvs)).unwrap();
 
-    assert_eq!(mesh.frame_count(), 2);
-    assert_eq!(mesh.bounds(0), Some([Vec3::ZERO, Vec3::new(1.0, 1.0, 1.0)]));
-    assert_eq!(mesh.bounds(1), Some([Vec3::ZERO, Vec3::new(1.0, 1.0, 4.0)]));
-    assert_eq!(mesh.bounds(2), None, "au-delà de la dernière trame");
+    assert_eq!(mesh.frame_count(), 3);
+    assert_eq!(
+        mesh.bounds(0),
+        Some([Vec3::new(0.75, 0.0, 0.5), Vec3::new(1.0, 2.0, 3.0)])
+    );
+    assert_eq!(
+        mesh.bounds(1),
+        Some([Vec3::new(-1.0, 0.5, 1.5), Vec3::new(2.0, 4.0, 6.0)])
+    );
+    assert_eq!(
+        mesh.bounds(2),
+        Some([Vec3::new(-4.0, -3.0, -2.0), Vec3::new(-0.5, -1.25, -1.0)])
+    );
+    assert_eq!(mesh.bounds(3), None, "au-delà de la dernière trame");
 }
 
 /// Un maillage tronqué à n'importe laquelle de ses longueurs est refusé, sans
