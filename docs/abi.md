@@ -513,7 +513,8 @@ dans la mémoire linéaire après le trap, sans rappeler le module.
   le principe dit qu'il n'en garde aucune référence ; la seconde imposerait un
   verrou global à une fonction déclarée appelable depuis n'importe quel thread.
 
-  **L'alignement garanti est de 16 octets**, et ce n'est ni pour les vues typées
+  **L'alignement garanti est de 16 octets**, que le header publie sous le nom
+  `SCG_BUFFER_ALIGNMENT`, et ce n'est ni pour les vues typées
   de JavaScript — `Uint32Array` n'exige qu'un multiple de quatre — ni pour les
   chemins SIMD de l'étape 9, qui liront le tampon de l'hôte et non un bloc du
   moteur. C'est pour la seule chose qui l'exige vraiment, les chargements alignés
@@ -1590,7 +1591,18 @@ copie serait devenue fausse au premier changement de valeur. Le même piège
 attendait un générateur écrit en C, en Go ou en JavaScript.
 
 - **Les cinq clauses se testent dans l'ordre où le chargement les refuse**, et la
-  première rencontrée est celle qui est rendue : cet ordre fait partie du contrat.
+  première rencontrée est celle qui est rendue : cet ordre fait partie du contrat,
+  donc il s'écrit, et les valeurs le suivent — un axe dégénéré,
+  `SCG_LIGHTMAP_FAULT_DEGENERATE_AXIS` (1) ; une origine hors de sa propre grille,
+  `SCG_LIGHTMAP_FAULT_ORIGIN_OFF_GRID` (2) ; des axes non orthogonaux,
+  `SCG_LIGHTMAP_FAULT_SKEWED_AXES` (3) ; un axe hors du plan de la surface,
+  `SCG_LIGHTMAP_FAULT_AXIS_OFF_PLANE` (4) ; une étendue en luxels au-delà de
+  `SCG_MAX_LIGHTMAP_SIZE`, `SCG_LIGHTMAP_FAULT_EXTENT_TOO_LARGE` (5). L'absence
+  de faute se dit `SCG_LIGHTMAP_FAULT_NONE` (0).
+
+  **Les six se nomment ici parce qu'une liaison sans préprocesseur les recopie à
+  la main**, comme les codes d'erreur : les lire dans le header est le privilège
+  de qui le compile.
 - **Trois coins au minimum**, faute de quoi `SCG_ERR_INVALID_ARGUMENT`. La
   cinquième clause dépend des coins autant que du repère, et en deçà de trois elle
   se trompe **dans les deux sens** : sans aucun coin, les extrema portent sur un
@@ -1925,6 +1937,13 @@ maillage la réécrivait à la main.
   donnée, pas une règle — voir `ROADMAP.md`, « Hors périmètre ».
 - **Une trame au-delà de la dernière est refusée** par
   `SCG_ERR_INVALID_ARGUMENT`, et rien n'est écrit dans le tableau de sortie.
+- **Aucune scène d'hôte ne la décrit, et ce n'est pas un oubli** — la même clause
+  que pour l'oracle du balayage, qu'il faut écrire pour la même raison. Sa forme,
+  un handle, un entier et un tableau de flottants que le moteur remplit, est
+  exactement celle de `scg_sweep_skin` et de `scg_sweep_reach`, que les cinq
+  hôtes franchissent déjà : une scène de plus n'éprouverait aucun chemin d'ABI
+  que les autres n'empruntent pas, seul critère d'entrée dans cette liste. Ce
+  sont les tests de la frontière qui la gardent.
 
 ### Étape 7
 

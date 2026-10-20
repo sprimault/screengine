@@ -807,7 +807,15 @@ fn rend_une_entite_par_ses_accesseurs() {
     unsafe { scg_world_destroy(world) };
 }
 
-/// Un index au-delà de ce que la carte porte est une faute d'appel.
+/// Un index au-delà de ce que la carte porte est une faute d'appel, et le
+/// message renvoie à la carte.
+///
+/// **Le message et pas seulement le code**, parce que c'est lui qui dit à l'hôte
+/// où chercher son compte. La classe d'une entité passe par le protocole de
+/// lecture en deux temps que les noms de matériaux empruntent aussi, et elle en
+/// recevait le message : « slot beyond those the resource declares » envoyait
+/// vérifier un emplacement là où l'index venait d'un compte d'entités. C'est la
+/// règle qu'`entry.rs` s'écrit déjà pour la trame d'un maillage.
 #[test]
 fn refuse_un_index_au_dela_de_la_carte() {
     let world = load(&peopled_world());
@@ -848,11 +856,16 @@ fn refuse_un_index_au_dela_de_la_carte() {
             scg_world_entity_class(world, 1, ptr::null_mut(), 0, &mut len),
             SCG_ERR_INVALID_ARGUMENT
         );
+        let classe = last_error();
         assert_eq!(
             scg_world_entity_data(world, 1, ptr::null_mut(), 0, &mut len),
             SCG_ERR_INVALID_ARGUMENT
         );
+        let donnees = last_error();
         scg_world_destroy(world);
+
+        assert_eq!(classe, donnees, "les deux lectures nomment le même compte");
+        assert_eq!(classe, "index beyond what the map declares");
     }
     assert_eq!(len, usize::MAX, "rien n'est écrit sur un index refusé");
 }

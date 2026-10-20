@@ -8,6 +8,14 @@
 //! calcul écrit ici serait fait autrement par la conformance, qui appelle le
 //! noyau sans passer par lui.
 //!
+//! **Deux points d'entrée s'en passent, et ils se comptent** :
+//! `scg_abi_version`, qui rend une constante, et `scg_last_error`, qui rend un
+//! pointeur sur un tampon déjà écrit et doit rester permise sur un objet
+//! défaillant. Aucune des deux n'a de code de retour où loger une panique, et
+//! chacune porte sa raison sur son corps ; « chaque point d'entrée » se lit donc
+//! comme « chaque point d'entrée qui calcule », ce que `docs/abi.md` énonce dans
+//! les mêmes termes.
+//!
 //! Le contrat est dans `docs/abi.md`. `include/screengine.h` est généré à partir
 //! de ce crate seul, et la documentation des éléments exportés est en anglais
 //! parce que `cbindgen` l'y recopie telle quelle.
@@ -1518,7 +1526,15 @@ pub unsafe extern "C" fn scg_mesh_texture_name(
         let mesh = unsafe { mesh.as_ref() }.ok_or(AbiError::NULL)?;
         // SAFETY: mêmes préconditions que celles de `write_name`, que cet appel
         // porte telles quelles.
-        unsafe { write_name(mesh.inner.texture_name(slot), buf, cap, out_len) }
+        unsafe {
+            write_name(
+                mesh.inner.texture_name(slot),
+                AbiError::SLOT_RANGE,
+                buf,
+                cap,
+                out_len,
+            )
+        }
     })
 }
 
@@ -1784,17 +1800,25 @@ unsafe fn read_extents(ptr: *const f32) -> Result<Vec3, AbiError> {
 /// copie qui divergerait d'un mot ferait mentir le header pour l'une des deux
 /// ressources.
 ///
+/// **L'erreur d'absence vient de l'appelant**, et c'est ce qui distingue le
+/// protocole de ce qu'il désigne : un emplacement de texture et un matériau
+/// sortent d'un rang que la ressource déclare, une entité d'un index que la
+/// carte compte. Portée ici, elle parlait d'emplacement à l'hôte qui lisait la
+/// classe d'une entité — la règle que `entry.rs` s'écrit déjà pour la trame d'un
+/// maillage, distincte par son message seul.
+///
 /// # Safety
 ///
 /// `buf` est nul avec `cap` nul, ou couvre `cap` octets inscriptibles ; `out_len`
 /// vise une `size_t` inscriptible. Le nom ne recouvre pas `buf`.
 unsafe fn write_name(
     name: Option<&str>,
+    absent: AbiError,
     buf: *mut c_char,
     cap: usize,
     out_len: *mut usize,
 ) -> Result<(), AbiError> {
-    let name = name.ok_or(AbiError::SLOT_RANGE)?;
+    let name = name.ok_or(absent)?;
     if !buf.is_null() {
         if cap < name.len() + 1 {
             return Err(AbiError::NAME_CAPACITY);
@@ -2249,7 +2273,7 @@ pub unsafe extern "C" fn scg_lighting_restore(
         // SAFETY: précondition de la fonction — `bytes` couvre `len` octets
         // lisibles. Ce qu'ils portent est hostile, et le décodeur le traite comme
         // tel ; seule la couverture est promise par l'appelant.
-        let block = unsafe { slice::from_raw_parts(bytes, len) };
+        let block = unsafe { slice_of_bytes(bytes, len) };
         let accepted = lighting
             .inner
             .restore(&world, block)
@@ -3196,7 +3220,15 @@ pub unsafe extern "C" fn scg_world_entity_class(
         // handle vivant.
         let world = unsafe { world.as_ref() }.ok_or(AbiError::NULL)?;
         // SAFETY: mêmes préconditions que celles de `write_name`.
-        unsafe { write_name(world.inner.entity_class(index), buf, cap, out_len) }
+        unsafe {
+            write_name(
+                world.inner.entity_class(index),
+                AbiError::WORLD_INDEX,
+                buf,
+                cap,
+                out_len,
+            )
+        }
     })
 }
 
@@ -3279,6 +3311,14 @@ pub unsafe extern "C" fn scg_world_material_name(
         let world = unsafe { world.as_ref() }.ok_or(AbiError::NULL)?;
         // SAFETY: mêmes préconditions que celles de `write_name`, que cet appel
         // porte telles quelles.
-        unsafe { write_name(world.inner.material_name(index), buf, cap, out_len) }
+        unsafe {
+            write_name(
+                world.inner.material_name(index),
+                AbiError::SLOT_RANGE,
+                buf,
+                cap,
+                out_len,
+            )
+        }
     })
 }
