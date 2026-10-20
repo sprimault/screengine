@@ -68,6 +68,8 @@ publié, et explique les conventions du dépôt à qui y contribue.
 - **Le choix du niveau de mipmap enveloppe au lieu de paniquer** sur un triangle
   dont l'aire se compte en sous-pixels, dans une bibliothèque construite avec
   les contrôles de débordement d'entier.
+- **Le header ne promet plus de garder `SCG_ERR_POISONED` « jusqu'à la 1.0 »** :
+  l'alias déprécié n'est jamais retiré, comme tout ce qui est publié.
 
 ***
 
@@ -76,6 +78,8 @@ publié, et explique les conventions du dépôt à qui y contribue.
 - **Mipmap level selection now wraps instead of panicking** on a triangle whose
   area comes down to a few subpixels, in a library built with integer overflow
   checks.
+- **The header no longer promises to keep `SCG_ERR_POISONED` "before 1.0"**: the
+  deprecated alias is never removed, like everything published.
 
 ## [1.5.0] — 2026-10-18 — L'étendue vient du maillage
 

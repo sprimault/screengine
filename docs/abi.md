@@ -390,7 +390,8 @@ signale un défaut du moteur, pas une entrée invalide ; repartir le masquerait,
 aucune réinitialisation n'est fiable depuis un état inconnu.
 
 `SCG_ERR_POISONED`, le nom de ce code dans la 0.0.0, reste défini dans le header
-avec la même valeur. Il est déprécié, et ne sera pas retiré en `0.x`.
+avec la même valeur. Il est déprécié, et il ne sera pas retiré : « Versionnement »
+le nomme comme le seul cas concret de la clause qui ferme la question.
 
 **L'état défaillant n'est pas observé sur wasm.** La bibliothèque standard de
 `wasm32-unknown-unknown` est précompilée en `panic = "abort"` et la chaîne

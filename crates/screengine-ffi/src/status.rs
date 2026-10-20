@@ -39,7 +39,9 @@ pub const SCG_ERR_PANIC: i32 = -5;
 pub const SCG_ERR_FAULTED: i32 = -6;
 
 /// Deprecated name of `SCG_ERR_FAULTED`, same value. Kept so that hosts written
-/// against an earlier header still compile; it will not be removed before 1.0.
+/// against an earlier header still compile: nothing published is ever removed,
+/// deprecation being a usage recommendation and not a schedule. New code uses
+/// `SCG_ERR_FAULTED`.
 // Écrit en littéral et non par renvoi à `SCG_ERR_FAULTED` : les liaisons qui
 // lisent les `#define` du header, JavaScript et PHP, n'évaluent pas un nom.
 pub const SCG_ERR_POISONED: i32 = -6;
