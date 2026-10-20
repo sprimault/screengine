@@ -7,7 +7,7 @@ Un auteur de liaison qui ne lit pas le français trouve l'essentiel dans
 `include/screengine.h`, dont la documentation est en anglais : ce qui ne peut pas
 être ignoré à l'appel y figure, fonction par fonction.
 
-**État : version 1.5.0, l'ABI est gelée** — les sept points d'entrée de l'étape 0,
+**État : version 1.6.0, l'ABI est gelée** — les sept points d'entrée de l'étape 0,
 le rendu par tuiles, les textures avec leur niveau de filtrage, la lumière
 (lightmaps fournies par l'hôte, lumières dynamiques, brouillard, résolution
 interne, courbe de sortie), les deux formats de données avec leurs accesseurs, la
@@ -17,11 +17,12 @@ trames, le texel transparent et la surface modulée, le balayage d'une boîte
 contre les cellules d'une carte, et ce qu'un éditeur réclame : le tracé de lignes
 et de points, et l'interrogation par le rayon, le choix du jeu d'instructions
 qui remplit les triangles, les deux chemins bruts contre lesquels la collision
-et l'interrogation se valident, le diagnostic d'un repère de lightmap refusé et
-l'étendue d'un maillage, trame par trame. **Le contrat du tracé a été figé
-ci-dessous avant son premier remplissage**, comme ceux des étapes 4 à 7 l'ont
-été. Chaque décision
-garde ci-dessous l'option écartée et pourquoi. **Plus aucun point n'est marqué
+et l'interrogation se valident, le diagnostic d'un repère de lightmap refusé,
+l'étendue d'un maillage, trame par trame, le rendu d'une région quelconque hors
+de la répartition en tuiles, et l'identifiant d'un matériau par son rang.
+**Le contrat du tracé a été figé ci-dessous avant son premier remplissage**,
+comme ceux des étapes 4 à 7 l'ont été. Chaque décision garde ci-dessous l'option
+écartée et pourquoi. **Plus aucun point n'est marqué
 À trancher** : le dernier était la dépréciation, fermée au gel de l'ABI — rien
 de publié n'est jamais retiré.
 

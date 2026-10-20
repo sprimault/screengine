@@ -63,6 +63,8 @@ publié, et explique les conventions du dépôt à qui y contribue.
 
 ## [Non publié]
 
+## [1.6.0] — 2026-10-20 — Ce que la surface gardait pour elle
+
 ### Ajouté
 
 - **`scg_frame_region` rend un rectangle quelconque sans passer par la
