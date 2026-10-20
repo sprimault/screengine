@@ -42,12 +42,13 @@ Les versions sont épinglées dans le `Makefile` et nulle part ailleurs.
 là où un `cfg` propre à une plateforme ne serait vérifié par rien d'autre ; celle
 sans `std` est couverte par `make nostd`, qui la compile. Il y ajoute
 `screengine-play` sur les deux cibles Linux ARM et sur wasm, et nulle part
-ailleurs. Il entraîne en outre **six** contrôles qui ne sont pas clippy : la
+ailleurs. Il entraîne en outre **sept** contrôles qui ne sont pas clippy : la
 documentation des fonctions de test, que `missing_docs` ne voit pas, la
 concordance des versions d'outillage Android, celle de l'épinglage de
 `wasm-bindgen` avec ce que le `Cargo.lock` résout, celle de l'état annoncé avec
 la version du paquet, celle des bornes du noyau avec les constantes du header,
-et l'enveloppe `entry::` de chaque point d'entrée de la frontière.
+celle de la liste plate de l'étage d'accueil avec le cas qui la nomme, et
+l'enveloppe `entry::` de chaque point d'entrée de la frontière.
 L'intégration continue appelle `make tools`, qui installe les outils aux
 versions épinglées ici.
 

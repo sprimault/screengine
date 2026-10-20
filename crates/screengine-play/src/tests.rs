@@ -14,15 +14,17 @@ use super::{Error, Input, Play, Scale, Tick, load_png, load_png_icon};
 /// Chaque item du noyau que ce crate promet à plat est joignable sans
 /// `screengine::`.
 ///
-/// **Le seul contrôle de la surface plate, et il ne tenait à rien jusqu'ici.**
-/// Un item retiré de la liste ne casse aucune compilation : l'hôte passe par le
-/// chemin long, personne ne le voit, et la promesse « rien n'est atteignable par
-/// un seul chemin » se perd en silence. Ce cas-ci la tient parce qu'il **nomme**
-/// chaque item sans préfixe : un nom qui sort de la liste ne compile plus.
+/// **Il tient les noms, `make plate-verif` tient l'exhaustivité.** Un item
+/// retiré de la liste ne casse aucune compilation : l'hôte passe par le chemin
+/// long, personne ne le voit, et la promesse « rien n'est atteignable par un
+/// seul chemin » se perd en silence. Ce cas-ci la tient parce qu'il **nomme**
+/// chaque item sans préfixe : un nom qui sort de la liste ne compile plus. Ce
+/// qu'il ne pouvait pas dire, c'est un item qu'il avait lui-même oublié de
+/// nommer — `Sweep` y a manqué —, et c'est la cible qui compare les deux listes.
 ///
-/// Ce qu'il ne fait pas, et qu'il ne faut pas lui prêter : détecter un item
-/// **nouveau** du noyau qu'on aurait oublié de propager. Aucune comparaison des
-/// deux surfaces n'est possible sans réflexion, et c'est la question posée à
+/// Ce qu'aucun des deux ne fait, et qu'il ne faut pas leur prêter : détecter un
+/// item **nouveau** du noyau qu'on aurait oublié de propager. Aucune comparaison
+/// des deux surfaces n'est possible sans réflexion, et c'est la question posée à
 /// chaque lot qui rattrape celle-là.
 #[test]
 fn la_surface_plate_reste_joignable() {
@@ -37,7 +39,7 @@ fn la_surface_plate_reste_joignable() {
         CoreOutput, DepthMode, Element, Filter, Frame, Hit, LINE_CAPACITY, Light, Lightmap,
         LightmapFault, Lightmaps, Line, MAX_LIGHTMAP_SIZE, MAX_LIGHTS, MAX_OVERBRIGHT,
         MAX_RESOLUTION, MAX_TEXEL_COORD, MAX_TEXTURE_SIZE, Malformation, Mesh, Point, Quat, Rect,
-        Rows, SWEEP_CELLS, SimdPath, Sprite, SpriteOrientation, Surfaces, TILE_SIZES,
+        Rows, SWEEP_CELLS, SimdPath, Sprite, SpriteOrientation, Surfaces, Sweep, TILE_SIZES,
         TRAVERSAL_CELLS, TRAVERSAL_DEPTH, TRIANGLE_CAPACITY, Texture, Triangle, Vec3, VertexUv,
         VertexUv2, Visibility, World, lightmap_fault, sweep_reach, sweep_skin,
     };

@@ -89,6 +89,11 @@ pub use screengine;
 // ce qu'elle rend quand on l'atteint est un contrat » : un hôte qui journalise un
 // statut incomplet ou dimensionne une lightmap les écrit, et il n'y avait aucune
 // raison que celle du balayage soit la seule joignable.
+//
+// **Un item ajouté ici se nomme à trois endroits** : cette liste, le cas de
+// `tests.rs` qui la garde, et le compte attendu de `make plate-verif`. La cible
+// refuse l'écart dans les deux sens — et son absence est ce qui a laissé `Sweep`
+// hors du cas, donc joignable par le seul chemin long sans que rien ne rougisse.
 pub use screengine::{
     Affine3, Angle, Argument, BYTES_PER_PIXEL, Camera, Color, Config, Context, DepthMode, Element,
     Error as CoreError, Filter, Frame, Hit, LINE_CAPACITY, Light, Lightmap, LightmapFault,

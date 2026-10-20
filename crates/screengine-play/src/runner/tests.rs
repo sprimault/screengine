@@ -155,6 +155,16 @@ fn le_plafond_suit_l_enveloppe_des_ecrans() {
         (MAX_RESOLUTION, 1440)
     );
 
+    // Deux écrans dont aucun ne porte les deux cotes retenues : le plus large
+    // est le moins haut. « L'écran le plus large, et ses deux cotes » rendrait
+    // 1080, et la fenêtre portée sur le second ne pourrait plus monter. C'est le
+    // seul cas qui sépare les deux axes — les autres prennent leur maximum sur un
+    // écran qui porte déjà les deux.
+    assert_eq!(
+        screen_ceiling(&[(2560, 1080), (1280, 1600)], opening),
+        (MAX_RESOLUTION, 1600)
+    );
+
     // Au-delà de la borne du moteur, c'est elle qui plafonne — un écran 4K ne
     // fait pas rendre une image de 3840 pixels de large.
     assert_eq!(
