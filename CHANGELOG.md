@@ -70,6 +70,8 @@ publié, et explique les conventions du dépôt à qui y contribue.
   les contrôles de débordement d'entier.
 - **Le header ne promet plus de garder `SCG_ERR_POISONED` « jusqu'à la 1.0 »** :
   l'alias déprécié n'est jamais retiré, comme tout ce qui est publié.
+- **Une texture détruite entre deux images ne se libère plus pendant l'image
+  suivante.**
 
 ***
 
@@ -80,6 +82,8 @@ publié, et explique les conventions du dépôt à qui y contribue.
   checks.
 - **The header no longer promises to keep `SCG_ERR_POISONED` "before 1.0"**: the
   deprecated alias is never removed, like everything published.
+- **A texture destroyed between two frames is no longer freed during the next
+  frame.**
 
 ## [1.5.0] — 2026-10-18 — L'étendue vient du maillage
 

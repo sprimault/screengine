@@ -342,6 +342,9 @@ impl Context {
             // demanderait un `&mut`, que la fin n'a pas ; le prochain appel
             // exclusif s'en charge.
             self.stale.store(true, Ordering::SeqCst);
+            // Les textures se périment à part : leur vidage rend de la mémoire,
+            // donc il attend un appel exclusif qui n'ouvre pas d'image.
+            self.textures_stale.store(true, Ordering::SeqCst);
         }
         self.state.store(next, Ordering::SeqCst);
         result
@@ -731,6 +734,7 @@ impl Drop for Frame<'_> {
         // Une `Frame` abandonnée, elle, doit refermer : sans quoi le contexte
         // resterait en rendu pour toujours, sans personne pour l'en sortir.
         self.context.stale.store(true, Ordering::SeqCst);
+        self.context.textures_stale.store(true, Ordering::SeqCst);
         self.context.state.store(RECORDING, Ordering::SeqCst);
     }
 }
