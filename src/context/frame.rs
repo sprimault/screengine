@@ -296,6 +296,64 @@ impl Context {
         result
     }
 
+    /// Rend une région quelconque de l'image, sans passer par la répartition.
+    ///
+    /// **L'oracle des tuiles** : tous les triangles et tous les segments, dans
+    /// l'ordre de soumission, contre la seule région demandée. Une tuile qui en
+    /// diffère a perdu une primitive à la répartition, ou dépend de son
+    /// découpage — et c'est le seul contrôle qui attrape l'un ou l'autre.
+    ///
+    /// **Les deux tampons de travail viennent de l'appelant**, au moins
+    /// `width × height` cellules chacun et de longueurs égales, là où une tuile
+    /// tient les siens sur la pile : une région peut être l'image entière, qui
+    /// n'y tiendrait pas. Deux longueurs différentes sont refusées plutôt que
+    /// ramenées au plus court — c'est la même erreur d'appelant qu'un `stride`
+    /// faux, et elle se dit au même endroit.
+    ///
+    /// Elle ne prend aucune tuile, donc elle ne dispense pas de les rendre, et
+    /// une fin d'image réécrit ce qu'elle a mis là où les deux se recouvrent.
+    ///
+    /// **L'image doit être commencée**, comme pour une tuile : elle lit la liste
+    /// que le début scelle, et la répartition que la région n'emprunte pas n'est
+    /// pas la seule chose que ce début fait. Un appelant qui tient une [`Frame`]
+    /// a cette garantie par construction ; celui qui passe par l'ABI ne l'a que
+    /// par cette ligne.
+    pub fn region<O: Output>(
+        &self,
+        rect: Rect,
+        color: &mut [u32],
+        depth: &mut [u32],
+        out: &mut O,
+    ) -> Result<()> {
+        if self.state.load(Ordering::SeqCst) != RENDERING {
+            return Err(Error::InvalidState);
+        }
+        let image = self.grid.image();
+        let inside = rect
+            .x
+            .checked_add(rect.width)
+            .zip(rect.y.checked_add(rect.height))
+            .is_some_and(|(right, bottom)| right <= image.width && bottom <= image.height);
+        if !inside {
+            return Err(Error::InvalidArgument(Argument::Region));
+        }
+        let pixels = rect.width as usize * rect.height as usize;
+        if color.len() != depth.len() || color.len() < pixels {
+            return Err(Error::InvalidArgument(Argument::ScratchLength));
+        }
+        out.check(rect)?;
+        let scratch = Scratch {
+            color: &mut color[..pixels],
+            depth: &mut depth[..pixels],
+            rect,
+        };
+        let triangles = 0..self.triangles.len() as u32;
+        // Tous les segments, dans l'ordre de soumission, comme tous les
+        // triangles : c'est ce qui fait de cette région l'oracle des tuiles.
+        let segments = 0..self.segments.len() as u32;
+        self.draw(scratch, triangles, segments, out)
+    }
+
     /// Le corps de [`Context::tile`], une fois la tuile décomptée.
     fn tile_inner<O: Output>(&self, index: u32, out: &mut O) -> Result<()> {
         if self.state.load(Ordering::SeqCst) != RENDERING {
@@ -690,30 +748,7 @@ impl<'a> Frame<'a> {
         depth: &mut [u32],
         out: &mut O,
     ) -> Result<()> {
-        let image = self.context.grid.image();
-        let inside = rect
-            .x
-            .checked_add(rect.width)
-            .zip(rect.y.checked_add(rect.height))
-            .is_some_and(|(right, bottom)| right <= image.width && bottom <= image.height);
-        if !inside {
-            return Err(Error::InvalidArgument(Argument::Region));
-        }
-        let pixels = rect.width as usize * rect.height as usize;
-        if color.len() != depth.len() || color.len() < pixels {
-            return Err(Error::InvalidArgument(Argument::ScratchLength));
-        }
-        out.check(rect)?;
-        let scratch = Scratch {
-            color: &mut color[..pixels],
-            depth: &mut depth[..pixels],
-            rect,
-        };
-        let triangles = 0..self.context.triangles.len() as u32;
-        // Tous les segments, dans l'ordre de soumission, comme tous les
-        // triangles : c'est ce qui fait de cette région l'oracle des tuiles.
-        let segments = 0..self.context.segments.len() as u32;
-        self.context.draw(scratch, triangles, segments, out)
+        self.context.region(rect, color, depth, out)
     }
 }
 

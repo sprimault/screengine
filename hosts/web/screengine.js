@@ -263,6 +263,7 @@ export const EXPORTS = [
   "scg_submit",
   "scg_frame_begin",
   "scg_frame_tile",
+  "scg_frame_region",
   "scg_frame_end",
   "scg_last_error",
   "scg_buffer_alloc",

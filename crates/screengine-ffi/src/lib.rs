@@ -40,7 +40,7 @@ use std::sync::Arc;
 
 use screengine::{
     Argument, Context, DepthMode, Error as CoreError, Lightmap, LightmapFault, Lightmaps, Mesh,
-    SpriteOrientation, Surfaces, Texture, Vec3, VertexUv, VertexUv2, Visibility, World,
+    Rect, SpriteOrientation, Surfaces, Texture, Vec3, VertexUv, VertexUv2, Visibility, World,
     lightmap_fault,
 };
 
@@ -665,6 +665,80 @@ pub unsafe extern "C" fn scg_frame_tile(
         // chaque tuile n'en écrit que son rectangle, disjoint des autres.
         let mut out = unsafe { HostRows::new(pixels, stride) };
         core.tile(index, &mut out)?;
+        Ok(())
+    };
+
+    // SAFETY: précondition de la fonction — `ctx` est nul ou un handle vivant.
+    unsafe { entry::with_tile(ctx, render) }
+}
+
+/// Renders an arbitrary rectangle of the begun frame, without binning.
+///
+/// **This is the tiles' oracle.** Every triangle and every line of the frame, in
+/// submission order, against this rectangle alone: a tile that differs from it
+/// has lost a primitive to the binning, or depends on how the image was cut. It
+/// is to rendering what `scg_world_sweep_brute` is to collision — a slower path
+/// that cannot be wrong about the thing the faster one might be wrong about.
+///
+/// **The two scratch buffers belong to the host**, `scratch` cells each and at
+/// least `width × height`. That is the only difference from a tile, which keeps
+/// its colour and depth on the stack of the call: a region may be the whole
+/// image, and 2048 × 2048 cells of colour and depth would not fit there. One
+/// length for both, because the engine requires them equal.
+///
+/// **It takes no tile, so it does not replace them.** `scg_frame_end` still
+/// renders every tile nobody took, and those overlapping the region overwrite
+/// what it wrote there; a host comparing the two reads its buffer in between.
+///
+/// Only between `scg_frame_begin` and `scg_frame_end`, like a tile — outside a
+/// begun frame it returns `SCG_ERR_INVALID_STATE`. A rectangle reaching past the
+/// image, or a `scratch` shorter than it, returns `SCG_ERR_INVALID_ARGUMENT`
+/// without writing anything. The error message goes to the per-thread slot.
+///
+/// **This is not a frame path**, and the contract says so rather than letting
+/// you measure it: every primitive of the frame is tested against the region,
+/// without the binning that culls them per tile.
+///
+/// # Safety
+///
+/// `ctx` is a live handle, `color` and `depth` each point to `scratch` writable
+/// `uint32_t`, and `pixels` points to a writable buffer of at least
+/// `stride × height × 4` bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn scg_frame_region(
+    ctx: *mut ScgContext,
+    x: u32,
+    y: u32,
+    width: u32,
+    height: u32,
+    color: *mut u32,
+    depth: *mut u32,
+    scratch: usize,
+    pixels: *mut u8,
+    stride: u32,
+) -> i32 {
+    let render = |core: &Context| {
+        if pixels.is_null() || color.is_null() || depth.is_null() {
+            return Err(AbiError::NULL);
+        }
+        // SAFETY: précondition de la fonction — chacun des deux couvre
+        // `scratch` mots inscriptibles, et les deux tranches sont distinctes.
+        let (color, depth) = unsafe {
+            (
+                slice::from_raw_parts_mut(color, scratch),
+                slice::from_raw_parts_mut(depth, scratch),
+            )
+        };
+        // SAFETY: précondition de la fonction — le tampon couvre l'image, et la
+        // région n'en écrit que son rectangle.
+        let mut out = unsafe { HostRows::new(pixels, stride) };
+        let rect = Rect {
+            x,
+            y,
+            width,
+            height,
+        };
+        core.region(rect, color, depth, &mut out)?;
         Ok(())
     };
 
