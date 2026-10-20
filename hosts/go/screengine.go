@@ -131,12 +131,14 @@ var identity = C.ScgMat4{m: [16]C.float{
 
 // Alloue un bloc hors du tas de Go et rend son adresse.
 //
-// **Tout ce que le moteur lit passe par ici**, jamais par un pointeur vers une
-// tranche Go. Le langage déplace ses objets, et une adresse prise sur l'un
-// d'eux cesse d'être valide sans prévenir ; la règle du langage l'interdit
-// d'ailleurs pour un pointeur conservé au-delà de l'appel. Le moteur ne conserve
-// rien, mais s'en remettre à cette clause pour une écriture de tampon serait
-// tenir l'invariant du moteur pour une garantie du langage.
+// **Tout ce que le moteur retient ou remplit en volume passe par ici** — texels,
+// fichiers, tampon d'image. Le langage déplace ses objets, et une adresse prise
+// sur l'un d'eux cesse d'être valide sans prévenir ; la règle du langage
+// l'interdit d'ailleurs pour un pointeur conservé au-delà de l'appel. Les
+// structures d'appel, elles, restent en mémoire Go le temps de l'appel, que cgo
+// épingle. Le moteur ne conserve rien, mais s'en remettre à cette clause pour une
+// écriture de tampon serait tenir l'invariant du moteur pour une garantie du
+// langage.
 func alloc(n int) unsafe.Pointer {
 	if n == 0 {
 		n = 1

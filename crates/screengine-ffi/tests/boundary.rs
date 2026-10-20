@@ -1741,6 +1741,82 @@ fn soumet_un_lot_a_normales_et_la_normale_decide() {
     );
 }
 
+/// Une texture nulle est acceptée à normales, et refusée au chemin texturé.
+///
+/// **C'est la seconde différence entre les deux, et le contrat ne la disait
+/// pas** : il annonçait « le même contrat, à une différence près ». Sur le chemin
+/// texturé, un lot sans texture a `scg_submit` pour lui ; sur celui-ci il n'a
+/// rien, `scg_submit` ne portant pas de normale, et c'est pour lui que la
+/// tolérance existe.
+///
+/// Les deux moitiés tiennent l'écart dans les deux sens : aligner l'un sur
+/// l'autre, dans un sens ou dans l'autre, fait rougir l'une des deux.
+#[test]
+fn une_texture_nulle_est_acceptee_a_normales_et_refusee_au_chemin_texture() {
+    let ctx = create(&sane());
+    let model = identite();
+    let triangles = [ScgTriangle {
+        i0: 0,
+        i1: 1,
+        i2: 2,
+        r: 0x80,
+        g: 0x40,
+        b: 0x20,
+        a: 0xFF,
+    }];
+
+    let corner = |y: f32, z: f32| ScgVertexUvN {
+        x: 10.0,
+        y,
+        z,
+        u: 0.0,
+        v: 0.0,
+        nx: -1.0,
+        ny: 0.0,
+        nz: 0.0,
+    };
+    let shaded = [corner(-2.0, -2.0), corner(0.0, 2.0), corner(2.0, -2.0)];
+    // SAFETY: contexte vivant, les deux tableaux couvrent les comptes annoncés,
+    // et le contrat admet une texture nulle sur ce chemin.
+    let code = unsafe {
+        scg_submit_shaded(
+            ctx,
+            &model,
+            shaded.as_ptr(),
+            3,
+            triangles.as_ptr(),
+            1,
+            ptr::null(),
+        )
+    };
+    assert_eq!(code, SCG_OK, "lot à normales refusé : {}", last_error(ctx));
+
+    let plain = |y: f32, z: f32| ScgVertexUv {
+        x: 10.0,
+        y,
+        z,
+        u: 0.0,
+        v: 0.0,
+    };
+    let textured = [plain(-2.0, -2.0), plain(0.0, 2.0), plain(2.0, -2.0)];
+    // SAFETY: mêmes préconditions ; la texture nulle est ce que ce chemin refuse.
+    let code = unsafe {
+        scg_submit_textured(
+            ctx,
+            &model,
+            textured.as_ptr(),
+            3,
+            triangles.as_ptr(),
+            1,
+            ptr::null(),
+        )
+    };
+    assert_eq!(code, SCG_ERR_NULL);
+
+    // SAFETY: le handle est vivant et détruit une seule fois.
+    unsafe { scg_destroy(ctx) };
+}
+
 /// Un mode de profondeur inconnu est refusé, **et zéro en fait partie**.
 ///
 /// La même règle que pour le mélange et l'orientation, et c'est bien une règle

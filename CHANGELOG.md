@@ -68,6 +68,17 @@ publié, et explique les conventions du dépôt à qui y contribue.
 - **Le contrat promettait `SCG_ERR_INVALID_STATE` sur un calcul de lightmaps
   pendant une image**, qu'aucun code ne rend. Le calcul comme la reprise d'un
   cache l'énoncent désormais en précondition.
+- **`scg_submit_shaded` accepte une texture nulle**, ce que le contrat ne disait
+  pas : il annonçait une seule différence avec `scg_submit_textured`, où le même
+  argument est `SCG_ERR_NULL`.
+- **La précondition de 128 Ko de pile vaut aussi pour `scg_frame_end`**, que
+  tout hôte appelle, et pas pour les tuiles seules.
+- **La cinquième faute de repère de lightmap ne tombe pas à
+  `SCG_MAX_LIGHTMAP_SIZE`** : cette constante borne l'atlas d'une cellule, pas
+  l'étendue d'une surface.
+- **La clause de mémoire de l'hôte Go était fausse** : les structures d'appel
+  restent en mémoire Go le temps de l'appel, et seul ce que le moteur retient ou
+  remplit en volume passe par `calloc`.
 
 ***
 
@@ -76,6 +87,16 @@ publié, et explique les conventions du dépôt à qui y contribue.
 - **The contract promised `SCG_ERR_INVALID_STATE` for lightmaps computed during
   a frame**, which no code returns. Computing and restoring a cache now state it
   as a precondition.
+- **`scg_submit_shaded` accepts a null texture**, which the contract did not say:
+  it announced a single difference from `scg_submit_textured`, where the same
+  argument is `SCG_ERR_NULL`.
+- **The 128 KiB stack precondition also covers `scg_frame_end`**, which every
+  host calls, not tiles alone.
+- **The fifth lightmap frame fault does not fire at `SCG_MAX_LIGHTMAP_SIZE`**:
+  that constant bounds a cell's atlas, not one surface's extent.
+- **The Go host's memory clause was wrong**: call structures stay in Go memory
+  for the duration of the call, and only what the engine keeps or fills in bulk
+  goes through `calloc`.
 
 ## [1.6.0] — 2026-10-20 — Ce que la surface gardait pour elle
 
