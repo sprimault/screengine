@@ -267,10 +267,15 @@ HOST_OUT = $(abspath $(SORTIE))/host-$(host_dir_$*)
 #   selection             le même décor, interrogé au rayon : le seul chemin de
 #                         scg_world_pick, et le filtre, qui est tout ce qui
 #                         sépare un rayon d'un balayage d'étendue nulle
+#   normale               deux pans sous deux lumières dynamiques, dont les
+#                         normales viennent de l'hôte : le seul chemin de
+#                         scg_submit_shaded, et le seul qui fasse remplir
+#                         ScgVertexUvN par un hôte. Sa taille était comparée au
+#                         header, ses décalages par personne
 #
 # Une scène ajoutée ici est une scène à écrire dans les cinq hôtes, et c'est
 # voulu : c'est ce qui rend leur comparaison possible.
-HOST_SCENES := arete texture texture-bilineaire gamma lumiere lumiere-surbrillance brouillard lumieres maillage composite salles trace collision selection
+HOST_SCENES := arete texture texture-bilineaire gamma lumiere lumiere-surbrillance brouillard lumieres maillage composite salles trace collision selection normale
 
 # Les fichiers que les scènes chargent, passés à chaque hôte. Un seul endroit :
 # la liste était recopiée sur quatre recettes, et une scène ajoutée y manquait
@@ -963,9 +968,9 @@ ARM_ENV = $(ANDROID_ENV) \
 
 # Ce que chaque cible ARM exécute pour une ABI, `$$cible` portant celle en cours.
 #
-# **La conformance en dit plus que les tests du noyau** : vingt-neuf scènes et
+# **La conformance en dit plus que les tests du noyau** : toutes les scènes et
 # toutes les passes, contre les **mêmes** empreintes versionnées, là où les
-# hôtes n'en comparent que quatorze par le seul chemin que leur machine résout.
+# hôtes n'en comparent qu'une partie, par le seul chemin que leur machine résout.
 # Des références propres à ARM ne diraient que « ARM est reproductible avec
 # lui-même », ce qui n'est pas la question — c'est le raisonnement de
 # `conform-x86`, appliqué à une architecture au lieu d'une largeur de pointeur.
@@ -1063,8 +1068,8 @@ NDK_SYSROOT = $(ANDROID_NDK_HOME)/toolchains/llvm/prebuilt/linux-x86_64/sysroot
 # **Rien n'y tournait**, et c'est le même angle mort qu'ARM avait : `make lint`
 # passe clippy sur `wasm32-unknown-unknown` mais n'exécute rien, et
 # `make test-wasm` lance l'hôte web, qui éprouve la bibliothèque à travers l'ABI
-# et non le noyau. Les vingt-neuf scènes, la virgule fixe et les tables n'avaient
-# donc jamais rendu de verdict sur cette famille d'architecture.
+# et non le noyau. Les scènes de conformance, la virgule fixe et les tables
+# n'avaient donc jamais rendu de verdict sur cette famille d'architecture.
 #
 # **Node plutôt qu'un runtime à installer** : il est déjà requis par l'hôte web,
 # et son `node:wasi` suffit. L'avertissement qu'il écrit sur le drapeau

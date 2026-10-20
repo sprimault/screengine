@@ -55,6 +55,7 @@ func main() {
 	trace, traceOK := renderTrace()
 	sweeps, sweepsOK := renderSweeps(os.Args[3], os.Args[4])
 	picks, picksOK := renderPicks(os.Args[3], os.Args[5])
+	shaded, shadedOK := renderShaded()
 
 	rendered := []struct {
 		hash uint64
@@ -63,7 +64,7 @@ func main() {
 		{edge, edgeOK}, {textured, texturedOK}, {bilinear, bilinearOK}, {graded, gradedOK},
 		{lit, litOK}, {overbright, overbrightOK}, {fog, fogOK}, {lights, lightsOK},
 		{mesh, meshOK}, {composite, compositeOK}, {rooms, roomsOK}, {trace, traceOK},
-		{sweeps, sweepsOK}, {picks, picksOK},
+		{sweeps, sweepsOK}, {picks, picksOK}, {shaded, shadedOK},
 	}
 
 	for _, scene := range rendered {

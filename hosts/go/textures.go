@@ -81,6 +81,34 @@ var sceneLights = [3]C.ScgLight{
 	{x: 24.0, y: -2.0, z: 2.5, radius: 14.0, r: 0x30, g: 0x50, b: 0xFF},
 }
 
+// Les deux lumières de la scène `normale`, une par pan et à égale distance des
+// deux : c'est cette égalité qui fait que seule la normale peut les distinguer.
+var shadedLights = [2]C.ScgLight{
+	{x: 10.0, y: -9.0, z: 2.0, radius: 24.0, r: 0xFF, g: 0xC0, b: 0x60},
+	{x: 10.0, y: 9.0, z: 2.0, radius: 24.0, r: 0x40, g: 0x80, b: 0xFF},
+}
+
+// Le pan de gauche et le pan de droite, avec leurs normales.
+//
+// Les trois composantes de chaque normale sont non nulles et distinctes en
+// valeur absolue : toute permutation change alors l'image, et c'est ce décalage
+// que la scène éprouve. Deux composantes égales en laisseraient passer une. Les
+// normales ne sont pas unitaires — le moteur normalise, et c'est ce qui évite
+// à un hôte d'avoir sa propre racine carrée.
+var shadedLeft = [4]C.ScgVertexUvN{
+	{x: 12.0, y: -1.0, z: -3.0, u: 12.0 * 4.0, v: -1.0 * 4.0, nx: -4.0, ny: -1.0, nz: 2.0},
+	{x: 14.0, y: -9.0, z: -3.0, u: 14.0 * 4.0, v: -9.0 * 4.0, nx: -4.0, ny: -1.0, nz: 2.0},
+	{x: 17.0, y: -9.0, z: 3.0, u: 17.0 * 4.0, v: -9.0 * 4.0, nx: -4.0, ny: -1.0, nz: 2.0},
+	{x: 15.0, y: -1.0, z: 3.0, u: 15.0 * 4.0, v: -1.0 * 4.0, nx: -4.0, ny: -1.0, nz: 2.0},
+}
+
+var shadedRight = [4]C.ScgVertexUvN{
+	{x: 12.0, y: 1.0, z: -3.0, u: 12.0 * 4.0, v: 1.0 * 4.0, nx: -4.0, ny: 1.0, nz: 2.0},
+	{x: 15.0, y: 1.0, z: 3.0, u: 15.0 * 4.0, v: 1.0 * 4.0, nx: -4.0, ny: 1.0, nz: 2.0},
+	{x: 17.0, y: 9.0, z: 3.0, u: 17.0 * 4.0, v: 9.0 * 4.0, nx: -4.0, ny: 1.0, nz: 2.0},
+	{x: 14.0, y: 9.0, z: -3.0, u: 14.0 * 4.0, v: 9.0 * 4.0, nx: -4.0, ny: 1.0, nz: 2.0},
+}
+
 // Écrit le damier procédural, recopié de la suite de conformance teinte pour
 // teinte : c'est lui qui décide de l'empreinte, et un liseré décalé d'un texel
 // la ferait diverger.
@@ -409,5 +437,44 @@ func renderLights() (uint64, bool) {
 
 	code = C.scg_frame_end(ctx, (*C.uint8_t)(frame), stride)
 	check(code == C.SCG_OK, "l'image éclairée se rend")
+	return fingerprint(pixels, width, height, stride), code == C.SCG_OK
+}
+
+// Rend les deux pans dont les normales viennent d'ici.
+//
+// Le seul chemin où cet hôte remplit `ScgVertexUvN` : ailleurs les normales
+// viennent du fichier de maillage, donc aucun décalage de cette structure
+// n'entrait dans une empreinte.
+func renderShaded() (uint64, bool) {
+	config := sceneConfig()
+	frame, pixels := newFrame()
+	defer release(frame)
+
+	var ctx *C.ScgContext
+	check(C.scg_create(&config, &ctx) == C.SCG_OK, "création du contexte à normales")
+	if ctx == nil {
+		return 0, false
+	}
+	defer C.scg_destroy(ctx)
+
+	check(C.scg_set_lights(ctx, &shadedLights[0], 2) == C.SCG_OK, "les deux lumières se règlent")
+
+	texels := makeChecker(floorSide, floorCell)
+	texture := loadTexture(texels, floorSide)
+	check(texture != nil, "le damier des pans se charge")
+	if texture == nil {
+		return 0, false
+	}
+	defer C.scg_texture_destroy(texture)
+
+	code := C.scg_submit_shaded(ctx, &identity, &shadedLeft[0], 4, &floorTriangles[0], 2, texture)
+	check(code == C.SCG_OK, "le pan de gauche est accepté")
+	if code == C.SCG_OK {
+		code = C.scg_submit_shaded(ctx, &identity, &shadedRight[0], 4, &floorTriangles[0], 2, texture)
+		check(code == C.SCG_OK, "le pan de droite est accepté")
+	}
+
+	code = C.scg_frame_end(ctx, (*C.uint8_t)(frame), stride)
+	check(code == C.SCG_OK, "l'image à normales se rend")
 	return fingerprint(pixels, width, height, stride), code == C.SCG_OK
 }

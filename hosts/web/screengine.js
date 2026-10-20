@@ -358,9 +358,7 @@ export const VERTEX_UV2_SIZE = 28;
  * Taille de `ScgVertexUvN` : `ScgVertexUv`, plus une normale à trois `float`.
  *
  * Elle étend la texturée et non la doublement texturée, un objet mobile n'ayant
- * pas de lightmap. Déclarée ici alors que rien dans cette liaison ne la remplit
- * encore : c'est `checkLayout` qui l'exige désormais, et l'exigence porte sur
- * les quinze structures du header, pas sur celles que la page emploie.
+ * pas de lightmap.
  */
 export const VERTEX_UVN_SIZE = 32;
 
@@ -663,6 +661,24 @@ export class Screengine {
     const view = new DataView(this.memory.buffer, ptr, vertices.length * VERTEX_UV2_SIZE);
     vertices.forEach((vertex, i) => {
       vertex.forEach((value, k) => view.setFloat32(i * VERTEX_UV2_SIZE + k * 4, value, true));
+    });
+  }
+
+  /**
+   * Écrit un tableau de sommets à normale : les cinq `float` du sommet
+   * texturé, puis `nx`, `ny` et `nz`.
+   *
+   * Cette liaison est la seule à écrire la structure octet par octet, donc la
+   * seule à répondre de ses décalages : les autres hôtes la laissent poser par
+   * leur compilateur.
+   *
+   * @param {number} ptr adresse d'au moins `vertices.length * VERTEX_UVN_SIZE` octets
+   * @param {number[][]} vertices octuplets `[x, y, z, u, v, nx, ny, nz]`
+   */
+  writeVerticesUvN(ptr, vertices) {
+    const view = new DataView(this.memory.buffer, ptr, vertices.length * VERTEX_UVN_SIZE);
+    vertices.forEach((vertex, i) => {
+      vertex.forEach((value, k) => view.setFloat32(i * VERTEX_UVN_SIZE + k * 4, value, true));
     });
   }
 

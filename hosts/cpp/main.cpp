@@ -267,6 +267,83 @@ uint64_t render_lights(bool &ok)
     return hash;
 }
 
+/// Les deux lumières de la scène `normale`, une par pan et à égale distance
+/// des deux : c'est cette égalité qui fait que seule la normale peut les
+/// distinguer.
+constexpr ScgLight SHADED_LIGHTS[2] = {
+    { 10.0f, -9.0f, 2.0f, 24.0f, 0xFF, 0xC0, 0x60, 0 },
+    { 10.0f,  9.0f, 2.0f, 24.0f, 0x40, 0x80, 0xFF, 0 },
+};
+
+/// Le pan de gauche et le pan de droite, avec leurs normales.
+///
+/// Les trois composantes de chaque normale sont non nulles et distinctes en
+/// valeur absolue : toute permutation change alors l'image, et c'est ce
+/// décalage que la scène éprouve. Deux composantes égales en laisseraient
+/// passer une. Les normales ne sont pas unitaires — le moteur normalise, et
+/// c'est ce qui évite à un hôte d'avoir sa propre racine carrée.
+constexpr ScgVertexUvN SHADED_LEFT[4] = {
+    { 12.0f, -1.0f, -3.0f, 12.0f * 4.0f, -1.0f * 4.0f, -4.0f, -1.0f, 2.0f },
+    { 14.0f, -9.0f, -3.0f, 14.0f * 4.0f, -9.0f * 4.0f, -4.0f, -1.0f, 2.0f },
+    { 17.0f, -9.0f,  3.0f, 17.0f * 4.0f, -9.0f * 4.0f, -4.0f, -1.0f, 2.0f },
+    { 15.0f, -1.0f,  3.0f, 15.0f * 4.0f, -1.0f * 4.0f, -4.0f, -1.0f, 2.0f },
+};
+
+constexpr ScgVertexUvN SHADED_RIGHT[4] = {
+    { 12.0f, 1.0f, -3.0f, 12.0f * 4.0f, 1.0f * 4.0f, -4.0f, 1.0f, 2.0f },
+    { 15.0f, 1.0f,  3.0f, 15.0f * 4.0f, 1.0f * 4.0f, -4.0f, 1.0f, 2.0f },
+    { 17.0f, 9.0f,  3.0f, 17.0f * 4.0f, 9.0f * 4.0f, -4.0f, 1.0f, 2.0f },
+    { 14.0f, 9.0f, -3.0f, 14.0f * 4.0f, 9.0f * 4.0f, -4.0f, 1.0f, 2.0f },
+};
+
+/// Rend les deux pans dont les normales viennent d'ici, et hache son image.
+///
+/// Le seul chemin où cet hôte remplit `ScgVertexUvN` : ailleurs les normales
+/// viennent du fichier de maillage, donc aucun décalage de cette structure
+/// n'entrait dans une empreinte.
+uint64_t render_shaded(bool &ok)
+{
+    ok = false;
+    ScgContextConfig config = scene_config();
+    ScgContext *ctx = nullptr;
+    ScgTexture *texture = nullptr;
+    const std::vector<uint8_t> texels = make_checker();
+
+    ScgTextureDesc desc{};
+    desc.width = FLOOR_SIDE;
+    desc.height = FLOOR_SIDE;
+    desc.format = SCG_TEXTURE_FORMAT_RGBA8;
+    check(scg_texture_load(&desc, texels.data(), texels.size(), &texture) == SCG_OK,
+          "le damier des pans se charge");
+    check(scg_create(&config, &ctx) == SCG_OK, "création du contexte à normales");
+    if (texture == nullptr || ctx == nullptr) {
+        scg_texture_destroy(texture);
+        scg_destroy(ctx);
+        return 0;
+    }
+
+    check(scg_set_lights(ctx, SHADED_LIGHTS, 2) == SCG_OK, "les deux lumières se règlent");
+
+    int32_t submitted =
+        scg_submit_shaded(ctx, &IDENTITY, SHADED_LEFT, 4, FLOOR_TRIANGLES, 2, texture);
+    check(submitted == SCG_OK, "le pan de gauche est accepté");
+    if (submitted == SCG_OK) {
+        submitted =
+            scg_submit_shaded(ctx, &IDENTITY, SHADED_RIGHT, 4, FLOOR_TRIANGLES, 2, texture);
+        check(submitted == SCG_OK, "le pan de droite est accepté");
+    }
+    scg_texture_destroy(texture);
+
+    std::vector<uint8_t> pixels(static_cast<size_t>(STRIDE) * HEIGHT * 4);
+    const int32_t code = scg_frame_end(ctx, pixels.data(), STRIDE);
+    check(code == SCG_OK, "l'image à normales se rend");
+    ok = code == SCG_OK;
+
+    const uint64_t hash = fingerprint(pixels.data(), WIDTH, HEIGHT, STRIDE);
+    scg_destroy(ctx);
+    return hash;
+}
+
 /// Le sol de la scène `brouillard`, plus long que la rampe : sa moitié
 /// lointaine se confond avec le fond, sa moitié proche garde son damier.
 constexpr ScgVertexUv FOG_FLOOR[4] = {
@@ -1689,9 +1766,12 @@ int main(int argc, char **argv)
     bool picks_ok = false;
     const uint64_t picks = render_picks(picks_ok, argv[3], argv[5]);
 
+    bool shaded_ok = false;
+    const uint64_t shaded = render_shaded(shaded_ok);
+
     if (failures > 0 || !ok || !textured_ok || !bilinear_ok || !graded_ok || !lit_ok
         || !overbright_ok || !fog_ok || !lights_ok || !mesh_ok || !composite_ok || !rooms_ok
-        || !trace_ok || !sweeps_ok || !picks_ok) {
+        || !trace_ok || !sweeps_ok || !picks_ok || !shaded_ok) {
         std::fprintf(stderr, "%d vérification(s) en échec\n", failures);
         return 1;
     }
@@ -1709,5 +1789,6 @@ int main(int argc, char **argv)
     std::printf("%016llx\n", static_cast<unsigned long long>(trace));
     std::printf("%016llx\n", static_cast<unsigned long long>(sweeps));
     std::printf("%016llx\n", static_cast<unsigned long long>(picks));
+    std::printf("%016llx\n", static_cast<unsigned long long>(shaded));
     return 0;
 }

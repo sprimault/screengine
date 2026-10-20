@@ -545,6 +545,28 @@ enum Scene {
     /// découpage change. Trois teintes qui se recouvrent, pour que le mélange
     /// des couleurs soit dans l'image et pas seulement leur somme.
     Lights,
+    /// Deux pans inclinés sous deux lumières dynamiques, **dont les normales
+    /// viennent de l'appelant**.
+    ///
+    /// Le seul chemin que `scg_submit_shaded` emprunte depuis un hôte, et le
+    /// seul où la normale ne vient pas d'un fichier : `maillage-lumiere` éclaire
+    /// bien par normale, mais c'est le chargement qui l'a lue. Ici l'appelant
+    /// remplit `ScgVertexUvN` lui-même, si bien que les **décalages** de cette
+    /// structure entrent dans l'empreinte — jusqu'ici seule sa taille était
+    /// comparée au header.
+    ///
+    /// **Les deux pans s'inclinent sur deux axes à la fois**, et c'est ce qui
+    /// rend les trois composantes de chaque normale non nulles et distinctes en
+    /// valeur absolue : toute permutation change alors l'image. Un pan incliné
+    /// sur un seul axe en aurait une nulle, et l'échanger avec une autre ne se
+    /// verrait pas.
+    ///
+    /// Leurs normales sont **symétriques** et ils sont à égale distance des deux
+    /// lumières : une normale ignorée les rendrait à la même teinte, là où
+    /// chacun doit prendre surtout la lumière de son côté. Et chaque sommet a
+    /// `u` différent de `v`, faute de quoi les deux coordonnées de texture
+    /// s'échangeraient sans conséquence.
+    Shaded,
     /// La même, avec le sur-éclairement au maximum.
     ///
     /// Une scène et non une passe, pour la raison qui sépare déjà les deux
@@ -883,6 +905,47 @@ fn lit_quad(
         },
     ];
     context.submit_lit(Affine3::IDENTITY, &vertices, &triangles, texture, lightmap)
+}
+
+/// Un quadrilatère texturé dont les quatre sommets portent la même normale.
+///
+/// **Une normale par quadrilatère et non par sommet**, parce que les pans sont
+/// plans : une normale par sommet n'a d'intérêt que sur une surface courbe, et
+/// un maillage en porte déjà. Ce qui s'éprouve ici est le chemin, pas
+/// l'interpolation.
+///
+/// Les coordonnées de lightmap des sommets restent nulles : ce chemin n'en lit
+/// aucune, et leur donner une valeur laisserait croire qu'elle compte.
+fn shaded_quad(
+    context: &mut Context,
+    corners: [Vec3; 4],
+    normal: Vec3,
+    density: f32,
+    texture: &Arc<Texture>,
+) -> screengine::Result<()> {
+    let vertices: Vec<VertexUv2> = corners
+        .iter()
+        .map(|&position| VertexUv2 {
+            position,
+            u: position.x * density,
+            v: position.y * density,
+            u2: 0.0,
+            v2: 0.0,
+            normal,
+        })
+        .collect();
+    let white = Color::new(0xFF, 0xFF, 0xFF, 0xFF);
+    let triangles = [
+        Triangle {
+            indices: [0, 1, 2],
+            color: white,
+        },
+        Triangle {
+            indices: [0, 2, 3],
+            color: white,
+        },
+    ];
+    context.submit_shaded(Affine3::IDENTITY, &vertices, &triangles, Some(texture))
 }
 
 /// Un emblème **masqué**, `side` texels de côté : un disque et son pied, sur
@@ -1266,7 +1329,7 @@ struct Query {
 
 impl Scene {
     /// Toutes les scènes, dans l'ordre où `--check` les rejoue.
-    const ALL: [Self; 29] = [
+    const ALL: [Self; 30] = [
         Self::Edge,
         Self::Guard,
         Self::Lateral,
@@ -1282,6 +1345,7 @@ impl Scene {
         Self::LitDynamic,
         Self::Fog,
         Self::Lights,
+        Self::Shaded,
         Self::MeshFile,
         Self::MeshMirrored,
         Self::MeshLit,
@@ -1336,6 +1400,7 @@ impl Scene {
             Self::LitDynamic => "lumiere-dynamique",
             Self::Fog => "brouillard",
             Self::Lights => "lumieres",
+            Self::Shaded => "normale",
             Self::MeshFile => "maillage",
             Self::MeshMirrored => "maillage-miroir",
             Self::MeshLit => "maillage-lumiere",
@@ -1474,6 +1539,23 @@ impl Scene {
                 Light {
                     position: Vec3::new(3.5, 3.5, 4.5),
                     radius: 16.0,
+                    color: Color::new(0x40, 0x80, 0xFF, 0xFF),
+                },
+            ],
+            // Une de chaque côté, à égale distance des deux pans : c'est cette
+            // égalité qui fait que seule la normale peut les distinguer. Leur
+            // rayon couvre les deux pans, y compris celui qui leur tourne le
+            // dos — sinon l'extinction serait celle de la portée, et la normale
+            // ne prouverait rien.
+            Self::Shaded => vec![
+                Light {
+                    position: Vec3::new(10.0, -9.0, 2.0),
+                    radius: 24.0,
+                    color: Color::new(0xFF, 0xC0, 0x60, 0xFF),
+                },
+                Light {
+                    position: Vec3::new(10.0, 9.0, 2.0),
+                    radius: 24.0,
                     color: Color::new(0x40, 0x80, 0xFF, 0xFF),
                 },
             ],
@@ -1701,6 +1783,37 @@ impl Scene {
                     ],
                     8.0,
                     &checker(64, 8),
+                )
+            }
+            // Deux pans inclinés sur deux axes, de normales symétriques en y,
+            // chacun face à la lumière de son côté. Les valeurs ne sont pas
+            // unitaires, et c'est voulu : le moteur normalise, et un hôte qui
+            // doit normaliser lui-même emploierait sa propre racine carrée.
+            Self::Shaded => {
+                let sides = checker(64, 8);
+                shaded_quad(
+                    context,
+                    [
+                        Vec3::new(12.0, -1.0, -3.0),
+                        Vec3::new(14.0, -9.0, -3.0),
+                        Vec3::new(17.0, -9.0, 3.0),
+                        Vec3::new(15.0, -1.0, 3.0),
+                    ],
+                    Vec3::new(-4.0, -1.0, 2.0),
+                    4.0,
+                    &sides,
+                )?;
+                shaded_quad(
+                    context,
+                    [
+                        Vec3::new(12.0, 1.0, -3.0),
+                        Vec3::new(15.0, 1.0, 3.0),
+                        Vec3::new(17.0, 9.0, 3.0),
+                        Vec3::new(14.0, 9.0, -3.0),
+                    ],
+                    Vec3::new(-4.0, 1.0, 2.0),
+                    4.0,
+                    &sides,
                 )
             }
             // Un sol et un mur découpés en panneaux, éclairés par trois
@@ -2593,7 +2706,7 @@ fn simd_label(path: SimdPath) -> &'static str {
 /// d'une variante.
 ///
 /// **En tête et une seule fois**, parce que la disponibilité tient à la machine
-/// et jamais à la scène : la répéter sur chacune des vingt-neuf lignes serait du
+/// et jamais à la scène : la répéter sur chacune des lignes serait du
 /// bruit, et c'est précisément ce que les lignes de saut deviennent quand elles
 /// se multiplient.
 fn passes_line() -> String {

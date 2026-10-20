@@ -697,6 +697,28 @@ public final class Screengine {
             byte[] colors, long texture, long lightmap);
 
     /**
+     * {@code scg_submit_shaded}.
+     *
+     * Mêmes tableaux que {@link #submitTextured}, les sommets portant huit
+     * flottants au lieu de cinq : les cinq précédents, puis {@code nx},
+     * {@code ny} et {@code nz}.
+     *
+     * La normale n'a pas à être unitaire — le moteur la normalise —, et une
+     * normale de longueur nulle vaut « pas de normale » : l'éclairage retombe
+     * alors sur la distance seule.
+     *
+     * @param ctx handle, ou 0
+     * @param model seize coefficients, par colonnes
+     * @param vertices huit flottants par sommet
+     * @param indices trois indices par triangle
+     * @param colors quatre octets R, G, B, A par triangle
+     * @param texture handle de la texture du lot, ou 0
+     * @return le code de retour
+     */
+    static native int submitShaded(long ctx, float[] model, float[] vertices, int[] indices,
+            byte[] colors, long texture);
+
+    /**
      * {@code scg_set_overbright}.
      *
      * Le décalage vaut 0, 1 ou 2 ; une autre valeur traverse la couche JNI

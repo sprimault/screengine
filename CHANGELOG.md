@@ -70,6 +70,8 @@ publié, et explique les conventions du dépôt à qui y contribue.
   chemin Rust avait seul.
 - **`scg_world_material_id` rend l'identifiant d'un matériau par son rang**,
   celui que `scg_world_surface_material` donne d'une surface.
+- **`Context::submit_shaded` soumet un lot à normales par indices**, la forme
+  sur deux tranches que seule la famille ombrée n'avait pas.
 
 ### Corrigé
 
@@ -89,6 +91,8 @@ publié, et explique les conventions du dépôt à qui y contribue.
   binning**: the oracle a tile validates against, which only the Rust path had.
 - **`scg_world_material_id` returns a material's identifier by rank**, the rank
   `scg_world_surface_material` gives for a surface.
+- **`Context::submit_shaded` submits an indexed batch of normals**, the
+  two-slice form only the shaded family lacked.
 
 ### Fixed
 
