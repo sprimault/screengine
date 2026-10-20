@@ -73,7 +73,7 @@ pub use screengine;
 // Tout le reste du noyau reste joignable par `screengine::`, qui est réexporté
 // entier juste au-dessus — cette liste est un raccourci, pas une frontière.
 //
-// **Les deux collisions se résolvent par un préfixe, et non par un nom retiré.**
+// **Les trois collisions se résolvent par un préfixe, et non par un nom retiré.**
 // `screengine::Error` et `screengine::Output` portent le nom de types de ce
 // crate, qui sont autre chose — le second est un **trait**, « où une image écrit
 // ses pixels », qu'un hôte implémente pour rendre ses tuiles depuis ses propres
@@ -83,6 +83,14 @@ pub use screengine;
 // surface une carte fait refuser — précisément ce que le noyau a ajouté après
 // que son absence s'est payée deux fois. D'où `CoreError` et `CoreOutput` :
 // renommer l'un des deux côtés aurait touché du code publié.
+//
+// **La troisième est `Result`**, l'alias à un paramètre du noyau, et elle ne
+// masquerait pas un type d'ici mais celui du prélude : ce crate écrit
+// `Result<T, Error>` à deux paramètres dans ses propres signatures, et l'importer
+// sous son nom ne compilerait pas. D'où `CoreResult`, par la même parade. Il
+// entre parce qu'un hôte l'écrit à côté des trois types qui disent *quelle*
+// surface une carte fait refuser, et qu'il était resté le seul de cette famille
+// joignable par le seul chemin long.
 //
 // **Et les bornes y entrent toutes**, là où `SWEEP_CELLS` y était seule de sa
 // famille. `docs/abi.md` dit d'elles que « la valeur d'une borne est un réglage ;
@@ -99,9 +107,9 @@ pub use screengine::{
     Error as CoreError, Filter, Frame, Hit, LINE_CAPACITY, Light, Lightmap, LightmapFault,
     Lightmaps, Line, MAX_LIGHTMAP_SIZE, MAX_LIGHTS, MAX_OVERBRIGHT, MAX_RESOLUTION,
     MAX_TEXEL_COORD, MAX_TEXTURE_SIZE, Malformation, Mesh, Output as CoreOutput, Point, Quat, Rect,
-    Rows, SWEEP_CELLS, SimdPath, Sprite, SpriteOrientation, Surfaces, Sweep, TILE_SIZES,
-    TRAVERSAL_CELLS, TRAVERSAL_DEPTH, TRIANGLE_CAPACITY, Texture, Triangle, Vec3, VertexUv,
-    VertexUv2, Visibility, World, lightmap_fault, sweep_reach, sweep_skin,
+    Result as CoreResult, Rows, SWEEP_CELLS, SimdPath, Sprite, SpriteOrientation, Surfaces, Sweep,
+    TILE_SIZES, TRAVERSAL_CELLS, TRAVERSAL_DEPTH, TRIANGLE_CAPACITY, Texture, Triangle, Vec3,
+    VertexUv, VertexUv2, Visibility, World, lightmap_fault, sweep_reach, sweep_skin,
 };
 pub use texture::{Icon, load_png, load_png_icon, load_png_masked};
 pub use winit::event::MouseButton;

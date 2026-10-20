@@ -706,7 +706,7 @@ BORNES_EXPOSEES = 11
 # dans le cas qui le nomme redevient joignable par le seul chemin long, sans que
 # rien ne casse. `Sweep` y a manqué, et le cas était précisément ce qui aurait dû
 # le dire.
-PLATE_ITEMS = 53
+PLATE_ITEMS = 54
 
 # La cible vérifie en outre que **le majeur n'est jamais inférieur à
 # `SCG_ABI_VERSION`**, ce que `CHANGELOG.md` arrête : un incrément de la seconde

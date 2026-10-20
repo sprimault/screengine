@@ -36,8 +36,8 @@ fn la_surface_plate_reste_joignable() {
     #[allow(unused_imports)]
     use super::{
         Affine3, Angle, Argument, BYTES_PER_PIXEL, Camera, Color, Config, Context, CoreError,
-        CoreOutput, DepthMode, Element, Filter, Frame, Hit, LINE_CAPACITY, Light, Lightmap,
-        LightmapFault, Lightmaps, Line, MAX_LIGHTMAP_SIZE, MAX_LIGHTS, MAX_OVERBRIGHT,
+        CoreOutput, CoreResult, DepthMode, Element, Filter, Frame, Hit, LINE_CAPACITY, Light,
+        Lightmap, LightmapFault, Lightmaps, Line, MAX_LIGHTMAP_SIZE, MAX_LIGHTS, MAX_OVERBRIGHT,
         MAX_RESOLUTION, MAX_TEXEL_COORD, MAX_TEXTURE_SIZE, Malformation, Mesh, Point, Quat, Rect,
         Rows, SWEEP_CELLS, SimdPath, Sprite, SpriteOrientation, Surfaces, Sweep, TILE_SIZES,
         TRAVERSAL_CELLS, TRAVERSAL_DEPTH, TRIANGLE_CAPACITY, Texture, Triangle, Vec3, VertexUv,
