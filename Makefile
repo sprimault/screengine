@@ -123,7 +123,8 @@ android_build = for cible in $(CIBLES_ANDROID); do \
 -include makefile.local
 
 .PHONY: build lib lib-wasm lib-android run example web test native-libs fmt fmt-fix lint lint-doc-tests \
-        lint-android-versions lint-wasm-bindgen lint-enveloppes etat-verif plate-verif nostd test-arm test-linux-arm test-wasi msrv bench bench-wasi stubs \
+        lint-android-versions lint-wasm-bindgen lint-enveloppes etat-verif bornes-verif plate-verif sorties-verif \
+        dispositions-verif java-verif nostd test-arm test-linux-arm test-wasi msrv bench bench-wasi stubs \
         conform conform-arm conform-linux-arm conform-wasi conform-x86 conform-update conform-images mesh header header-verif audit deny doc doc-verif hosts host-c host-cpp host-web host-go \
         host-android demo-c demo-cpp clean tools
 
@@ -595,8 +596,13 @@ ENTREES_HORS = scg_abi_version scg_last_error
 # serait annoncé comme nu, et c'est le bon sens du défaut : la cible accuse à
 # tort plutôt que d'acquitter à tort.
 lint-enveloppes:
-	@awk -v hors="$(ENTREES_HORS)" ' \
-	  FNR == 1 { passe++ } \
+	@sources=$$(find crates/screengine-ffi/src -name '*.rs' | sort); \
+	if [ -z "$$sources" ]; then \
+	  echo "lint-enveloppes : aucune source de la frontiere trouvee"; exit 1; \
+	fi; \
+	nf=$$(echo $$sources | wc -w); \
+	awk -v hors="$(ENTREES_HORS)" -v nf="$$nf" ' \
+	  FNR == 1 { fichiers++; passe = int((fichiers - 1) / nf) + 1 } \
 	  passe < 3 { \
 	    if (/^(unsafe )?fn [a-z_0-9]+/) { \
 	      match($$0, /fn [a-z_0-9]+/); courant = substr($$0, RSTART + 3, RLENGTH - 3); next } \
@@ -626,7 +632,7 @@ lint-enveloppes:
 	    if (mauvais) { exit 1 } \
 	    printf "lint-enveloppes : %d points d entree, %d enveloppes, %d exemption(s) nommee(s)\n", \
 	      total, gardes, total - gardes }' \
-	  crates/screengine-ffi/src/lib.rs crates/screengine-ffi/src/lib.rs crates/screengine-ffi/src/lib.rs
+	  $$sources $$sources $$sources
 
 # La concordance de l'état annoncé avec la version du paquet, l'un des contrôles
 # que `lint` entraîne sans être clippy — comme la documentation des tests et les
@@ -845,6 +851,213 @@ plate-verif:
 	fi; \
 	echo "plate-verif : $$compte items de la liste plate nommes par le cas"
 
+# Le seul paramètre de sortie que `sortie.rs` ne passe pas en revue, et ce n'en
+# est un qu'au sens de la signature : le tampon d'image appartient à l'hôte, qui
+# en connaît la longueur et le remplit lui-même. Les autres sont de petites
+# valeurs que le moteur écrit, et c'est leur intégrité sur un refus qui est en
+# jeu.
+SORTIES_HORS = pixels
+
+# Les paramètres de sortie passés en revue par `sortie.rs` doivent être tous
+# ceux que la frontière porte, et rien d'autre.
+#
+# **Ce que le cas ne pouvait pas garder.** Son `APPELS` attrape un appel
+# **supprimé** — le compteur retombe — mais pas un point d'entrée **ajouté** sans
+# sa ligne : le compte reste celui qu'on a écrit, et il concorde. La clause en
+# tête du fichier dit pourtant « tout point d'entrée qui en a un, sans
+# exception », et c'est une promesse dont une liaison dépend : elle garde sa
+# propre valeur dans le tampon qu'elle passe et la relit sur un refus.
+#
+# **Aucun nombre n'est écrit ici, et c'est le point.** La cible dérive le compte
+# des signatures, le cas l'assène contre ses appels réels, et `APPELS` est la
+# seule valeur écrite — tenue des deux côtés. Ajouter un `SORTIES_ATTENDUS`
+# aurait recréé le défaut qu'on ferme.
+#
+# Un paramètre de sortie est un `*mut` qui n'est pas le handle, donc tout `*mut`
+# hors du premier paramètre. La signature est recollée sur une ligne avant d'être
+# découpée, parce qu'elle s'écrit tantôt d'un trait tantôt sur dix lignes, et
+# qu'un relevé ligne par ligne ratait les premières — mesuré, pas supposé.
+#
+# Elle ne depend pas de `git`, comme ses voisines : un glob suffit, et elle
+# tourne donc aussi dans l'arbre sans `.git` que `verif-evo` envoie.
+sorties-verif:
+	@derives=$$(awk ' \
+	  /extern "C" fn/ { sig = $$0; dedans = 1 } \
+	  dedans && !/extern "C" fn/ { sig = sig " " $$0 } \
+	  dedans && /\)/ { \
+	    dedans = 0; \
+	    match(sig, /fn [a-z_0-9]+/); nom = substr(sig, RSTART + 3, RLENGTH - 3); \
+	    sub(/.*extern "C" fn [a-z_0-9]+\(/, "", sig); sub(/\).*/, "", sig); \
+	    n = split(sig, p, ","); \
+	    for (i = 2; i <= n; i++) { \
+	      if (p[i] ~ /\*mut/) { \
+	        q = p[i]; sub(/^[[:space:]]*/, "", q); sub(/:.*/, "", q); \
+	        print nom " " q } } }' \
+	  crates/screengine-ffi/src/*.rs); \
+	if [ -z "$$derives" ]; then \
+	  echo "sorties-verif : aucun parametre de sortie trouve, la recherche n a pas abouti"; \
+	  exit 1; \
+	fi; \
+	retenus=$$(echo "$$derives" | awk -v hors="$(SORTIES_HORS)" \
+	  '{ if (index(" " hors " ", " " $$2 " ") == 0) print $$1 }'); \
+	compte=$$(echo "$$retenus" | grep -c . ); \
+	fonctions=$$(echo "$$retenus" | sort -u); \
+	appels=$$(sed -n 's/^const APPELS: usize = \([0-9]*\);$$/\1/p' \
+	  crates/screengine-ffi/tests/sortie.rs); \
+	if [ -z "$$appels" ]; then \
+	  echo "sorties-verif : APPELS introuvable dans tests/sortie.rs"; exit 1; \
+	fi; \
+	if [ "$$compte" != "$$appels" ]; then \
+	  echo "sorties-verif : $$compte parametre(s) de sortie dans la frontiere, APPELS en annonce $$appels"; \
+	  exit 1; \
+	fi; \
+	cites=$$(grep -oE '"scg_[a-z_0-9]+' crates/screengine-ffi/tests/sortie.rs \
+	  | tr -d '"' | sort -u); \
+	liste_cites=$$(echo $$cites); liste_fonctions=$$(echo $$fonctions); \
+	manquantes=""; surnumeraires=""; total=0; \
+	for f in $$fonctions; do \
+	  case " $$liste_cites " in \
+	    *" $$f "*) total=$$((total + 1));; \
+	    *) manquantes="$$manquantes $$f";; \
+	  esac; \
+	done; \
+	for f in $$cites; do \
+	  case " $$liste_fonctions " in *" $$f "*) ;; *) surnumeraires="$$surnumeraires $$f";; esac; \
+	done; \
+	if [ -n "$$manquantes" ]; then \
+	  echo "sorties-verif : point(s) d entree a parametre de sortie que sortie.rs ne nomme pas :$$manquantes"; \
+	  exit 1; \
+	fi; \
+	if [ -n "$$surnumeraires" ]; then \
+	  echo "sorties-verif : nom(s) cite(s) par sortie.rs sans parametre de sortie :$$surnumeraires"; \
+	  exit 1; \
+	fi; \
+	echo "sorties-verif : $$compte parametres de sortie sur $$total fonctions, concordants avec APPELS"
+
+# Les assertions de disposition du header doivent couvrir toutes les structures
+# `#[repr(C)]` de la frontière, et elles seules.
+#
+# **Elles sont écrites à la main dans `cbindgen.toml`**, que `cbindgen` recopie
+# tel quel : il n'en déduit aucune. Rien ne les rapprochait des structures
+# réelles, si bien qu'une structure nouvelle n'avait d'assertion que si on y
+# pensait — et c'est le défaut qui compte, parce que la disposition est
+# précisément ce qu'une liaison écrite champ par champ reproduit de mémoire.
+# L'hôte web a déjà payé cette classe sur `ScgSprite` et `ScgCamera`, absents de
+# sa table de tailles.
+#
+# **Les handles opaques n'en ont pas, et c'est voulu** : ils ne traversent qu'en
+# pointeur, et leur disposition n'est pas publiée. La distinction se fait par
+# `#[repr(C)]`, donc par ce que le code dit, et non par une liste de noms.
+#
+# S'y ajoute la cohérence interne de chaque bloc, que personne ne vérifiait : les
+# décalages affirmés doivent croître et rester sous la taille affirmée. Un chiffre
+# recopié de travers dans `cbindgen.toml` passerait sinon la compilation de C —
+# l'assertion serait vraie du type faux.
+dispositions-verif:
+	@structs=$$(awk ' \
+	  /^#\[repr\(C\)\]/ { repr = 1; next } \
+	  /^pub struct Scg[A-Za-z0-9]+/ { \
+	    if (repr) { match($$0, /Scg[A-Za-z0-9]+/); print substr($$0, RSTART, RLENGTH) } \
+	    repr = 0; next } \
+	  /^(pub |)(enum|union|fn|impl|type) / { repr = 0 }' \
+	  $$(find crates/screengine-ffi/src -name '*.rs' | sort) | sort -u); \
+	if [ -z "$$structs" ]; then \
+	  echo "dispositions-verif : aucune structure repr(C) trouvee"; exit 1; \
+	fi; \
+	affirmes=$$(grep -oE "sizeof\(Scg[A-Za-z0-9]+\) ==" include/screengine.h \
+	  | grep -oE "Scg[A-Za-z0-9]+" | sort -u); \
+	if [ -z "$$affirmes" ]; then \
+	  echo "dispositions-verif : aucune assertion de taille dans le header"; exit 1; \
+	fi; \
+	liste_affirmes=$$(echo $$affirmes); liste_structs=$$(echo $$structs); \
+	manquantes=""; surnumeraires=""; compte=0; \
+	for s in $$structs; do \
+	  case " $$liste_affirmes " in \
+	    *" $$s "*) compte=$$((compte + 1));; \
+	    *) manquantes="$$manquantes $$s";; \
+	  esac; \
+	done; \
+	for s in $$affirmes; do \
+	  case " $$liste_structs " in *" $$s "*) ;; *) surnumeraires="$$surnumeraires $$s";; esac; \
+	done; \
+	if [ -n "$$manquantes" ]; then \
+	  echo "dispositions-verif : structure(s) repr(C) sans assertion de taille :$$manquantes"; \
+	  exit 1; \
+	fi; \
+	if [ -n "$$surnumeraires" ]; then \
+	  echo "dispositions-verif : assertion(s) de taille sans structure repr(C) :$$surnumeraires"; \
+	  exit 1; \
+	fi; \
+	awk ' \
+	  /LAYOUT_ASSERT\(sizeof\(/ { \
+	    match($$0, /Scg[A-Za-z0-9]+/); s = substr($$0, RSTART, RLENGTH); \
+	    match($$0, /== [0-9]+/); taille[s] = substr($$0, RSTART + 3, RLENGTH - 3); \
+	    precedent[s] = -1; next } \
+	  /LAYOUT_ASSERT\(offsetof\(/ { \
+	    match($$0, /Scg[A-Za-z0-9]+/); s = substr($$0, RSTART, RLENGTH); \
+	    match($$0, /== [0-9]+/); d = substr($$0, RSTART + 3, RLENGTH - 3) + 0; \
+	    if (!(s in taille)) { \
+	      print "dispositions-verif : decalage affirme sur " s " sans taille affirmee"; \
+	      mauvais = 1; next } \
+	    if (d <= precedent[s]) { \
+	      print "dispositions-verif : decalages de " s " non croissants, " d " apres " precedent[s]; \
+	      mauvais = 1 } \
+	    if (d >= taille[s] + 0) { \
+	      print "dispositions-verif : decalage " d " de " s " hors de sa taille " taille[s]; \
+	      mauvais = 1 } \
+	    precedent[s] = d; vus++; next } \
+	  END { \
+	    if (vus == 0) { \
+	      print "dispositions-verif : aucun decalage affirme, la recherche n a pas abouti"; exit 1 } \
+	    if (mauvais) { exit 1 } }' include/screengine.h || exit 1; \
+	decalages=$$(grep -c "LAYOUT_ASSERT(offsetof(" include/screengine.h); \
+	echo "dispositions-verif : $$compte structures repr(C) affirmees, $$decalages decalages coherents"
+
+# La seule constante du pont Java qui n'a pas de `#define` en face, et ce n'est
+# pas un oubli : `BYTES_PER_PIXEL` est l'une des deux bornes du noyau que l'ABI
+# ne publie pas — voir `BORNES_HORS` —, le contrat portant « quatre octets par
+# pixel » en propres termes. L'hôte en a besoin pour dimensionner son tampon, il
+# l'écrit donc chez lui.
+JAVA_HORS = BYTES_PER_PIXEL
+
+# Les constantes que le pont Java recopie doivent valoir ce que le header dit.
+#
+# **Rien ne les rapprochait**, là où l'hôte web compare les siennes dans son
+# propre test : une valeur recopiée de travers en Java ne se voyait qu'à
+# l'exécution sur émulateur, par une image fausse ou un refus inattendu — et
+# `verif-evo` saute Android faute de NDK. Cette cible, elle, ne demande ni NDK ni
+# appareil : elle lit deux fichiers.
+#
+# **Un seul sens, et c'est délibéré** : le pont ne recopie que les constantes
+# dont il se sert, donc une constante du header absente de Java n'est pas un
+# défaut. Ce qui en est un, c'est un nom qui ne correspond à rien ou une valeur
+# qui diverge.
+java-verif:
+	@awk -v hors="$(JAVA_HORS)" ' \
+	  FNR == NR { \
+	    if ($$1 == "#define" && $$2 ~ /^SCG_/ && $$3 ~ /^-?[0-9]+$$/) { \
+	      def[substr($$2, 5)] = $$3 } \
+	    next } \
+	  /public static final (int|long) [A-Z][A-Z0-9_]* = -?[0-9]+;/ { \
+	    match($$0, /[A-Z][A-Z0-9_]* = -?[0-9]+;/); \
+	    t = substr($$0, RSTART, RLENGTH); sub(/;$$/, "", t); \
+	    split(t, p, " = "); nom = p[1]; val = p[2]; \
+	    if (index(" " hors " ", " " nom " ")) { exemptes++; next } \
+	    if (!(nom in def)) { \
+	      printf "java-verif : %s = %s, aucun SCG_%s dans le header\n", nom, val, nom; \
+	      mauvais = 1; next } \
+	    if (def[nom] + 0 != val + 0) { \
+	      printf "java-verif : %s vaut %s en Java et %s dans le header\n", nom, val, def[nom]; \
+	      mauvais = 1; next } \
+	    compte++ } \
+	  END { \
+	    if (compte == 0) { \
+	      print "java-verif : aucune constante comparee, la recherche n a pas abouti"; exit 1 } \
+	    if (mauvais) { exit 1 } \
+	    printf "java-verif : %d constantes du pont concordantes, %d exemption(s) nommee(s)\n", \
+	      compte, exemptes }' \
+	  include/screengine.h hosts/android/src/screengine/host/Screengine.java
+
 # Les cibles qu'un contrôle traverse au-delà de celle du poste, et le seul
 # endroit où du code propre à une autre architecture se compile ici : `neon.rs`
 # sur `aarch64`, les chemins wasm, et la largeur de pointeur de `i686`. En
@@ -874,7 +1087,7 @@ CIBLES_PLAY = $(CIBLES_LINUX_ARM) $(CIBLE_WASM)
 # leur plancher n'est pas sous notre contrôle, et l'y faire entrer donnerait une
 # contrainte qu'une montée de dépendance casserait sans qu'on puisse rien.
 
-lint: lint-doc-tests lint-android-versions lint-wasm-bindgen lint-enveloppes etat-verif bornes-verif plate-verif
+lint: lint-doc-tests lint-android-versions lint-wasm-bindgen lint-enveloppes etat-verif bornes-verif plate-verif sorties-verif dispositions-verif java-verif
 	cargo clippy --workspace --all-targets --all-features -- -D warnings
 	for cible in $(CIBLES_CROISEES); do \
 	  cargo clippy -p screengine -p screengine-ffi --lib --target $$cible -- -D warnings || exit 1; \

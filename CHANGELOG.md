@@ -68,6 +68,10 @@ publié, et explique les conventions du dépôt à qui y contribue.
 - **Un code de conduite**, dans les deux langues comme les autres documents
   d'accueil : le Contributor Covenant 2.1, dont les signalements passent par le
   canal privé que `SECURITY.md` emploie déjà.
+- **Trois contrôles qui gardent les deux sens** : les paramètres de sortie de la
+  frontière contre ceux que le cas passe en revue, les structures `#[repr(C)]`
+  contre les assertions de disposition du header, et les constantes du pont Java
+  contre ce que le header en dit — cette dernière sans NDK ni appareil.
 
 ### Corrigé
 
@@ -98,6 +102,10 @@ publié, et explique les conventions du dépôt à qui y contribue.
 - **A code of conduct**, in both languages like the other welcome documents:
   Contributor Covenant 2.1, with reports going through the private channel
   `SECURITY.md` already uses.
+- **Three checks that hold both ways**: the boundary's output parameters against
+  those the case reviews, the `#[repr(C)]` structs against the header's layout
+  assertions, and the Java bridge's constants against what the header says — the
+  last one without an NDK or a device.
 
 ### Fixed
 

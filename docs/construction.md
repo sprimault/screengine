@@ -45,24 +45,34 @@ que `make nostd` compile, et WASI, que `make test-wasi` et `make conform-wasi`
 exécutent — toutes deux éprouvées par une cible qui en fait plus que compiler.
 Il y ajoute
 `screengine-play` sur les deux cibles Linux ARM et sur wasm, et nulle part
-ailleurs. Il entraîne en outre **sept** contrôles qui ne sont pas clippy : la
-documentation des fonctions de test, que `missing_docs` ne voit pas, la
-concordance des versions d'outillage Android, celle de l'épinglage de
-`wasm-bindgen` avec ce que le `Cargo.lock` résout, celle de l'état annoncé avec
-la version du paquet, celle des bornes du noyau avec les constantes du header,
-celle de la liste plate de l'étage d'accueil avec le cas qui la nomme, et
-l'enveloppe `entry::` de chaque point d'entrée de la frontière.
+ailleurs. Il entraîne en outre **les contrôles qui ne sont pas clippy** : la documentation
+des fonctions de test, que `missing_docs` ne voit pas, la concordance des
+versions d'outillage Android, celle de l'épinglage de `wasm-bindgen` avec ce que
+le `Cargo.lock` résout, celle de l'état annoncé avec la version du paquet, celle
+des bornes du noyau avec les constantes du header, celle de la liste plate de
+l'étage d'accueil avec le cas qui la nomme, celle des paramètres de sortie de la
+frontière avec ceux que le cas passe en revue, celle des structures `#[repr(C)]`
+avec les assertions de disposition du header, celle des constantes que le pont
+Java recopie avec ce que le header en dit, et l'enveloppe `entry::` de chaque
+point d'entrée.
 L'intégration continue appelle `make tools`, qui installe les outils aux
 versions épinglées ici.
 
 **L'enveloppe se vérifie en suivant la délégation, sur deux niveaux.** Un point
 d'entrée sur cinq n'appelle pas l'enveloppe lui-même : il passe par un
 utilitaire partagé qui la porte, pour que la vérification du handle et celle du
-pointeur de sortie n'existent qu'à un endroit. Le contrôle lit donc le fichier
+pointeur de sortie n'existent qu'à un endroit. Le contrôle lit donc les sources
 deux fois avant de juger, et un troisième niveau de délégation serait annoncé
-comme nu — il accuse à tort plutôt que d'acquitter à tort. Ce qu'il ne peut pas
-voir reste écrit : un point d'entrée **manquant** ne se détecte pas
-mécaniquement, l'ABI n'exposant pas tout le noyau.
+comme nu — il accuse à tort plutôt que d'acquitter à tort, et c'est pourquoi la
+délégation n'est pas suivie jusqu'à son terme. Ce qu'il ne peut pas voir reste
+écrit : un point d'entrée **manquant** ne se détecte pas mécaniquement, l'ABI
+n'exposant pas tout le noyau.
+
+**Il lit tout le crate de la frontière, pas son seul `lib.rs`.** Les points
+d'entrée y vivent tous aujourd'hui, et c'était la raison du périmètre étroit :
+un point d'entrée écrit ailleurs échappait alors au seul contrôle mécanique de
+l'enveloppe. Vérifié en posant un point d'entrée nu dans `texture.rs`, qui
+passait et qui échoue désormais.
 
 **Tous portent la même garde, et elle n'est pas un ornement** : ce qu'un
 contrôle cherche et ne trouve pas est un échec, jamais un succès. Deux motifs
