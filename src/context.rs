@@ -301,6 +301,18 @@ pub struct Context {
     /// qu'un `&self`, des tuiles pouvant encore la lire. Le prochain appel
     /// exclusif — une soumission, un début — la vide avant d'y toucher.
     stale: AtomicBool,
+    /// Vrai quand la table de textures appartient à l'image déjà close.
+    ///
+    /// **Distinct de `stale`, et c'est ce qui sort la libération de l'image.**
+    /// Les quatre tampons que `stale` gouverne sont des `Vec` de valeurs
+    /// simples : leur `clear()` garde la capacité et ne rend rien à
+    /// l'allocateur. La table de textures, elle, porte des références fortes,
+    /// et la vider relâche les mégaoctets d'une chaîne de mipmaps dès que
+    /// l'hôte s'est défait de la sienne — un début d'image ne peut donc pas s'en
+    /// charger sans libérer dans la frontière d'image, ce que l'invariant
+    /// interdit depuis le 2026-10-20. Seul un appel exclusif **qui n'ouvre pas
+    /// d'image** la consomme.
+    textures_stale: AtomicBool,
 }
 
 /// Un sommet porté en espace de vue, ses coordonnées de texture intactes.
@@ -496,6 +508,7 @@ impl Context {
             state: AtomicU8::new(RECORDING),
             in_flight: AtomicU32::new(0),
             stale: AtomicBool::new(false),
+            textures_stale: AtomicBool::new(false),
         })
     }
 
@@ -860,6 +873,9 @@ impl Context {
         if *self.state.get_mut() != RECORDING {
             return Err(Error::InvalidState);
         }
+        // **Le vidage de la liste, et lui seul** : il ne rend rien à
+        // l'allocateur, là où celui de la table de textures le ferait — et nous
+        // sommes ici à l'intérieur de la frontière d'image.
         self.drop_closed_frame();
         self.seal();
         Ok(self.grid.count())
@@ -870,21 +886,56 @@ impl Context {
     /// Le vidage se fait ici et non à la fin de l'image parce que la fin ne
     /// tient qu'un `&self`. C'est aussi ce qui permet à un hôte de soumettre
     /// dès le retour de la fin sans que sa scène soit jetée au début suivant.
+    ///
+    /// **Rien de ce qu'elle vide ne touche l'allocateur** : les quatre tampons
+    /// sont dimensionnés à la création et `clear()` garde leur capacité. C'est
+    /// ce qui la rend licite dans un début d'image, là où
+    /// [`Context::release_closed_textures`] ne l'est pas.
     fn drop_closed_frame(&mut self) {
         if *self.stale.get_mut() {
             self.triangles.clear();
             self.segments.clear();
             self.lighting.clear();
-            // Les textures meurent avec les triangles qui les référencent :
-            // les garder ferait vivre une ressource que plus rien ne dessine.
-            self.textures.clear();
-            // Et les fenêtres avec eux : gardées, elles borneraient les triangles
-            // d'une image suivante que la traversée n'a pas produits.
+            // Les fenêtres meurent avec les triangles : gardées, elles
+            // borneraient les triangles d'une image suivante que la traversée
+            // n'a pas produits.
             self.visits.clear();
             self.visited_first = 0;
             self.visited_end = 0;
             *self.stale.get_mut() = false;
         }
+    }
+
+    /// Relâche les textures d'une image close, hors de toute frontière d'image.
+    ///
+    /// Les textures meurent avec les triangles qui les référencent : les garder
+    /// ferait vivre une ressource que plus rien ne dessine. Mais **c'est la
+    /// seule des cinq listes dont le vidage rend de la mémoire** — elle porte
+    /// des références fortes —, et l'invariant d'allocation couvre la
+    /// libération : un début d'image ne peut donc pas s'en charger.
+    ///
+    /// Appelée par tout appel exclusif qui n'ouvre pas d'image. Un hôte qui
+    /// enchaînerait des images sans jamais rien soumettre ni régler garde donc
+    /// ses textures une image de plus que le contrat ne promet, ce qui ne lui
+    /// retire rien : « détruire une texture qu'une image référence encore est
+    /// sans effet sur elle » reste vrai, et vivre plus longtemps n'est pas une
+    /// capacité qu'on observe.
+    fn release_closed_textures(&mut self) {
+        if *self.textures_stale.get_mut() {
+            self.textures.clear();
+            *self.textures_stale.get_mut() = false;
+        }
+    }
+
+    /// Ce qu'un appel exclusif **hors image** règle avant de toucher à l'état.
+    ///
+    /// Les deux vidages d'une image close, dont l'un rend de la mémoire. Un
+    /// début d'image n'appelle que le premier, et c'est toute la différence
+    /// entre les deux : la libération a besoin d'un appel qui ne soit pas une
+    /// frontière d'image, et toute soumission, tout réglage en est un.
+    fn settle(&mut self) {
+        self.drop_closed_frame();
+        self.release_closed_textures();
     }
 
     /// Refuse un réglage qui vaut pour l'image entière quand l'image en cours
@@ -898,7 +949,7 @@ impl Context {
     /// un lot dont pas un triangle n'a survécu à la projection ne laisse rien
     /// dans l'image, donc rien à mêler.
     fn require_empty_frame(&mut self) -> Result<()> {
-        self.drop_closed_frame();
+        self.settle();
         // Les segments comptent autant que les triangles : ils sont projetés à
         // la soumission eux aussi, donc une caméra changée après eux laisserait
         // deux espaces écran dans la même image.
@@ -1124,7 +1175,7 @@ impl Context {
         // posé, si bien qu'une marque lue avant désigne une longueur que la
         // liste n'a plus. Le `truncate` du refus ne ferait alors rien, et un
         // maillage refusé resterait à moitié posé.
-        self.drop_closed_frame();
+        self.settle();
         let (mark, textures) = (self.triangles.len(), self.textures.len());
         let lights = self.lighting.len();
 
@@ -1320,7 +1371,7 @@ impl Context {
         F: Fn(u32) -> Option<&'t Arc<Texture>>,
     {
         // Avant la marque, pour la raison écrite dans `submit_mesh_with`.
-        self.drop_closed_frame();
+        self.settle();
         let (mark, textures) = (self.triangles.len(), self.textures.len());
         let lights = self.lighting.len();
 
@@ -1463,7 +1514,7 @@ impl Context {
         // autres soumissions le font, il l'effacerait entre le remplissage par la
         // traversée et la boucle qui la relit, et la seconde image d'un même
         // contexte s'arrêterait sur un index hors borne.
-        self.drop_closed_frame();
+        self.settle();
         let start = world.cell_of(cell_id).ok_or(Error::UnknownResource)?;
 
         let image = Rect {
@@ -1810,7 +1861,7 @@ impl Context {
             return Err(Error::InvalidState);
         }
         finite_model(model)?;
-        self.drop_closed_frame();
+        self.settle();
         let (mark, textures) = (self.triangles.len(), self.textures.len());
         let lights = self.lighting.len();
         let result = self
@@ -2093,7 +2144,7 @@ impl Context {
             return Err(Error::InvalidState);
         }
         finite_model(model)?;
-        self.drop_closed_frame();
+        self.settle();
 
         let mark = self.segments.len();
         let transform = self.view.product(model);

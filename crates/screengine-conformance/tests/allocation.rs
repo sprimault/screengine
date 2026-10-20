@@ -185,6 +185,12 @@ unsafe impl GlobalAlloc for Counting {
     }
 
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
+        // **La libération compte**, et c'est une décision prise le 2026-10-20 :
+        // l'invariant ne disait qu'« allocation », mais `free` prend le même
+        // verrou que `malloc` et rendre plusieurs mégaoctets au début d'une
+        // image coûte à cette image-là. Sans cette ligne, la moitié du coût
+        // était hors de la mesure.
+        note();
         // SAFETY: précondition de `GlobalAlloc::dealloc`, transmise telle quelle.
         unsafe { System.dealloc(ptr, layout) }
     }
@@ -211,6 +217,23 @@ fn le_compteur_voit_une_allocation() {
         std::hint::black_box(Vec::<u8>::with_capacity(64));
     });
     assert!(seen >= 1, "aucune allocation vue");
+}
+
+/// Le compteur voit une libération : même témoin que ci-dessus, pour la moitié
+/// de la mesure que l'invariant a gagnée le 2026-10-20.
+///
+/// Sans lui, un `dealloc` qui cesserait de compter rendrait vertes toutes les
+/// mesures de libération sans qu'aucune ne le dise — et c'est le mode de panne
+/// qu'un instrument non vérifié a toujours.
+#[test]
+fn le_compteur_voit_une_liberation() {
+    let seen = allocations(|| {
+        drop(std::hint::black_box(Vec::<u8>::with_capacity(64)));
+    });
+    assert!(
+        seen >= 2,
+        "{seen} : l'allocation et sa libération attendues"
+    );
 }
 
 /// Une texture et toute sa chaîne de mipmaps tiennent dans une allocation, et
@@ -289,6 +312,69 @@ fn aucune_image_texturee_n_alloue() {
         });
         assert_eq!(seen, 0, "{seen} allocation(s) en {filter:?}");
     }
+}
+
+/// Une texture que l'hôte a relâchée entre deux images ne se libère pas dans
+/// l'image suivante.
+///
+/// **C'est le cas que la décision du 2026-10-20 a rendu mesurable**, et il n'est
+/// pas celui des mesures voisines : elles gardent leurs textures vivantes du
+/// début à la fin, si bien que le vidage de la table du contexte ne relâche
+/// jamais la dernière référence et qu'aucune libération n'a lieu. Ici l'hôte
+/// détruit la sienne après l'image qui l'a soumise — ce que le contrat lui
+/// permet, « détruire une texture qu'une image référence encore est sans effet
+/// sur elle » —, donc le moteur tient seul les mégaoctets de la chaîne de
+/// mipmaps, et c'est lui qui les rend.
+///
+/// Ce qu'il ne faut pas en conclure : que le contexte doive relâcher plus tôt.
+/// La référence doit vivre jusqu'à la fin de l'image qui la soumet, le contrat
+/// le promet. Ce qui est en jeu est **quand** elle meurt après cela, et la
+/// réponse ne peut pas être « au début de l'image suivante ».
+#[test]
+fn une_texture_relachee_par_l_hote_ne_se_libere_pas_dans_l_image_suivante() {
+    let (width, height) = (320, 180);
+    let mut context = Context::new(Config {
+        max_width: width,
+        max_height: height,
+        width,
+        height,
+        tile_size: 64,
+        max_triangles: 0,
+        max_lines: 0,
+    })
+    .expect("configuration valide");
+    let mut pixels = vec![0u8; width as usize * height as usize * BYTES_PER_PIXEL];
+
+    // Hors mesure : le chargement est un appel nommé, et la chaîne de mipmaps
+    // d'une texture de 256 pèse assez pour qu'une libération se voie.
+    let texture = Arc::new(
+        Texture::load(256, 256, &vec![0x80u8; 256 * 256 * BYTES_PER_PIXEL])
+            .expect("texture valide"),
+    );
+    let vertices: Vec<VertexUv> = VERTICES
+        .iter()
+        .enumerate()
+        .map(|(i, position)| VertexUv {
+            position: *position,
+            u: ((i & 1) * 64) as f32,
+            v: ((i >> 1) * 64) as f32,
+        })
+        .collect();
+
+    // L'image qui soumet la texture, puis l'hôte qui s'en défait : le contexte
+    // reste alors seul à la tenir.
+    context
+        .submit_textured(Affine3::IDENTITY, &vertices, &TRIANGLES, &texture)
+        .expect("scène soumise");
+    context.frame_end(&mut pixels, width).expect("image rendue");
+    drop(texture);
+
+    // L'image suivante, mesurée : elle ne soumet rien et ne doit rien rendre à
+    // l'allocateur.
+    let seen = allocations(|| {
+        context.frame_end(&mut pixels, width).expect("image rendue");
+    });
+    assert_eq!(seen, 0, "{seen} mouvement(s) d'allocateur dans l'image");
 }
 
 /// Aucune image soumise depuis un maillage n'alloue.
