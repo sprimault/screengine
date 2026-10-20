@@ -71,6 +71,48 @@ fn les_deux_filtres_different_quelque_part() {
     );
 }
 
+/// Ce qu'`agree` refuse d'un rayon tronqué, et qu'aucune donnée ne lui présente.
+///
+/// **La branche est atteinte** — les deux rayons de l'enfilade saturent le budget,
+/// un par filtre, et ce sont les deux seuls sur mille neuf cent vingt-deux —, mais
+/// elle l'est par un résultat conforme : un `Ok(())` rendu d'emblée passerait la
+/// conformance sans rien dire. Le rayon n'a pas les deux clauses du balayage sur
+/// le point et la cellule, le contrat ne lui promettant que le conservatisme de
+/// sa fraction.
+#[test]
+fn un_tronque_qui_rend_le_rayon_entier_est_refuse() {
+    let slow = free(Vec3::ZERO);
+    let mut fast = free(Vec3::ZERO);
+    fast.incomplete = true;
+
+    fast.fraction = 0.5;
+    assert!(
+        agree(&fast, &slow).is_ok(),
+        "un tronqué conservateur passe, quoi que rende la force brute"
+    );
+
+    fast.fraction = 1.0;
+    assert!(
+        agree(&fast, &slow).is_err(),
+        "une troncature qui rend le rayon entier"
+    );
+}
+
+/// La scène rencontre un rayon tronqué, et il n'y en a que deux.
+///
+/// Ils tiennent au seul trajet de l'enfilade, posé en queue de chaque moitié :
+/// les rayons du treillis sont trop courts pour saturer, si bien que retirer ce
+/// cas-là retirerait le statut de l'empreinte sans que rien d'autre ne le dise.
+#[test]
+fn la_scene_rencontre_un_rayon_tronque() {
+    let played = played();
+    let tronques = played
+        .iter()
+        .filter(|(_, hit)| hit.is_some_and(|hit| hit.incomplete))
+        .count();
+    assert!(tronques > 0, "aucun rayon ne sature le budget de cellules");
+}
+
 /// Les deux moitiés de la liste posent les mêmes rayons, dans le même ordre.
 ///
 /// C'est ce qui rend le test précédent lisible — il compare `i` et
