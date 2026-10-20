@@ -1292,6 +1292,19 @@ int32_t scg_world_entity_data(const struct ScgWorld *world, uint32_t index,
   relue à celle qu'il a posée que par l'ordre d'écriture, que rien ne garantit.
   Une fonction s'ajoute sans incrémenter `SCG_ABI_VERSION`, et c'est ce qui l'a
   rendue possible sans rien reprendre.
+- **L'identifiant d'un matériau se lit par `scg_world_material_id`**, par le rang
+  que `scg_world_material_name` prend. C'est l'argument de `scg_world_light_id`
+  transposé, et le manque était plus net ici : ce que
+  `scg_world_surface_material` rend **est** un rang, la table portait les
+  identifiants, le chargement les validait uniques, et rien ne les rendait — si
+  bien que la clause « les identifiants restent dans la table, où
+  l'interrogation de la scène les retrouve » n'avait personne pour la tenir. Un
+  hôte qui a écrit la carte ne pouvait relier un matériau relu à celui qu'il
+  avait posé que par l'ordre d'écriture, que rien ne garantit.
+
+  Ajoutée après la publication de l'étape, sans toucher `SCG_ABI_VERSION`. Pas
+  de scène d'hôte : la forme `(handle, uint32_t, uint32_t *out)` est celle de
+  `scg_world_light_id`, que les cinq franchissent déjà.
 - **Les identifiants d'une entité sont ceux de l'éditeur**, jamais des index :
   `index` désigne un rang dans ce que `scg_world_entity_count` a rendu, `id` et
   `cell` sont stables d'un chargement à l'autre.
@@ -1499,6 +1512,16 @@ pas dans le second.
   coplanaires, et en ordre de traversée cet ordre deviendrait fonction de la
   position de la caméra ; et l'égalité avec le chemin brut est alors vraie par
   construction plutôt que par chance.
+
+  **Aucune fonction ne dit quelles cellules la traversée a retenues**, et c'est
+  délibéré. Le moteur garde cette liste, avec la fenêtre par laquelle chacune a
+  été atteinte, et la rendre figerait exactement ce que le projet s'est réservé
+  de changer : la fenêtre est passée du rectangle à l'octogone en 0.9.0 sans
+  déplacer un pixel, ce qu'une liste publiée aurait rendu observable — donc
+  rompu. Un hôte qui veut éliminer ses entités par cellule le fait avec
+  `scg_world_locate` et l'adjacence que sa carte porte déjà. **Écartée tant
+  qu'aucun intégrateur ne la demande**, et elle se rouvrirait sous une forme qui
+  ne promet pas la finesse de l'élimination, jamais celle-ci.
 - **`scg_world_triangle_count` est un dimensionnement nominal, jamais un pire
   cas**, et c'est le grand décor ouvert qui met la nuance en défaut.
   `max_triangles` compte des triangles **préparés**, et le clipping en produit
@@ -2125,6 +2148,16 @@ disposition de `ScgSprite`, et pour la même raison.
 - **Les deux champs réservés sont nuls obligatoires**, et leur usage prévu est
   connu : une profondeur de pénétration, dont le neutre *est* zéro, ce que la
   clause d'extensibilité exige.
+
+  **Le noyau la calcule déjà**, pour départager les surfaces d'un départ solide
+  à la moindre pénétration — et elle n'est pas publiée. **Écartée tant qu'aucun
+  intégrateur ne la demande**, et la place lui reste : le contrat dit que « le
+  balayage ne dégage pas » et qu'« un départ dans le solide se signale, il ne se
+  corrige pas », donc la publier inviterait à un dégagement que le moteur refuse
+  de définir — il n'existe aucun vecteur de dégagement contre un jeu de surfaces
+  non convexes. Elle se rouvre le jour où un hôte doit tirer un mobile coincé
+  dans un chambranle et n'y arrive pas avec la normale seule ; l'attendre ne
+  coûte rien, puisqu'un champ réservé ne se déplace pas.
 - **La structure est rendue par pointeur, jamais par valeur.** L'ABI
   `extern "C"` de `wasm32-unknown-unknown` a divergé de celle de clang pendant
   des années sur le passage d'agrégats par valeur.

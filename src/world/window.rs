@@ -25,8 +25,6 @@
 // qu'il se teste seul — sans rendu, sans cellule et sans contexte —, et c'est
 // précisément ce qui le rend vérifiable : une réduction fautive ne se lit pas
 // dans une empreinte, elle se lit dans un trou.
-#![allow(dead_code)]
-
 use crate::math::fixed::SUBPIXEL_SCALE;
 use crate::math::projection::{ClipVertex, NEAR_PLANE};
 use crate::math::{Affine3, Projection, Vec3};

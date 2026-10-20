@@ -303,6 +303,7 @@ export const EXPORTS = [
   "scg_world_light_count",
   "scg_world_light",
   "scg_world_light_id",
+  "scg_world_material_id",
   "scg_world_entity_count",
   "scg_world_entity_ids",
   "scg_world_entity_pose",

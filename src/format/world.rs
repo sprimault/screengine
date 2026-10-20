@@ -827,6 +827,20 @@ impl World {
         self.material_names.get(index as usize).map(String::as_str)
     }
 
+    /// L'identifiant stable d'un matériau, ou `None` au-delà du dernier.
+    ///
+    /// **Par rang, celui que [`World::material_name`] prend**, et c'est
+    /// l'argument de [`World::light_id`] transposé : sans lui, un hôte qui a
+    /// écrit la carte ne peut relier un matériau relu à celui qu'il a posé que
+    /// par l'ordre d'écriture, que rien ne garantit.
+    ///
+    /// Le manque était plus net ici que pour une lumière, parce que ce que la
+    /// surface rend **est** un rang : la table portait les identifiants, le
+    /// chargement les validait uniques, et rien ne les rendait.
+    pub fn material_id(&self, index: u32) -> Option<u32> {
+        self.material_ids.get(index as usize).copied()
+    }
+
     /// Les cellules, dans l'ordre du fichier.
     pub(crate) fn cells(&self) -> &[Cell] {
         &self.cells

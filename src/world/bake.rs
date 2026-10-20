@@ -66,7 +66,6 @@ const LIFT: f32 = 0.015_625;
 /// Son lecteur est l'empreinte du cache, qui arrive avec lui : elle est écrite
 /// dès maintenant parce qu'elle appartient au calcul, et l'ajouter au moment du
 /// cache ferait oublier de l'incrémenter pour les changements déjà faits.
-#[allow(dead_code)]
 pub(crate) const REVISION: u32 = 1;
 
 /// Les luxels d'une cellule, prêts à devenir une texture.

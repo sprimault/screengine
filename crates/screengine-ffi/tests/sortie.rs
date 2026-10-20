@@ -32,10 +32,10 @@ use screengine_ffi::*;
 ///
 /// **Un compte attendu, pas un relevé** : un appel supprimé ou un point d'entrée
 /// ajouté sans sa ligne ici laisseraient sinon le cas vert, et c'est exactement
-/// ce que cette clause existe pour empêcher. Quarante-quatre et non trente-huit
-/// parce que six fonctions ont deux paramètres de sortie — un tampon et sa
+/// ce que cette clause existe pour empêcher. Plus nombreux que les fonctions,
+/// parce que six d'entre elles ont deux paramètres de sortie — un tampon et sa
 /// longueur, ou deux identifiants —, chacun éprouvé à part.
-const APPELS: usize = 44;
+const APPELS: usize = 47;
 
 /// Le compteur des paramètres de sortie passés en revue.
 struct Sorties {
@@ -81,6 +81,8 @@ fn aucun_refus_n_ecrit_sa_sortie() {
     let mut v = Sorties { compte: 0 };
     let mut jetable = 0u32;
     let mut jetable_len = 0usize;
+    let mut jetable_mots = [0u32; 4];
+    let mut jetable_pixels = [0u8; 16];
 
     // SAFETY: un seul bloc pour tous les appels qui suivent, et non une phrase
     // par appel : la précondition est la même partout et tient par construction
@@ -95,6 +97,37 @@ fn aucun_refus_n_ecrit_sa_sortie() {
         });
         v.intact("scg_frame_begin", 0xdead_u32, |out| {
             scg_frame_begin(ptr::null_mut(), out)
+        });
+        // Les deux tampons de travail d'une région sont des paramètres de sortie
+        // comme les autres — le moteur les écrit —, donc un refus n'y touche
+        // pas. Ils s'éprouvent un par un, l'autre recevant un tampon jetable.
+        v.intact("scg_frame_region color", [0xdead_u32; 4], |out| {
+            scg_frame_region(
+                ptr::null_mut(),
+                0,
+                0,
+                2,
+                2,
+                out.cast::<u32>(),
+                jetable_mots.as_mut_ptr(),
+                4,
+                jetable_pixels.as_mut_ptr(),
+                2,
+            )
+        });
+        v.intact("scg_frame_region depth", [0xdead_u32; 4], |out| {
+            scg_frame_region(
+                ptr::null_mut(),
+                0,
+                0,
+                2,
+                2,
+                jetable_mots.as_mut_ptr(),
+                out.cast::<u32>(),
+                4,
+                jetable_pixels.as_mut_ptr(),
+                2,
+            )
         });
 
         // Les chargements de ressources, qui rendent un handle.
@@ -154,6 +187,9 @@ fn aucun_refus_n_ecrit_sa_sortie() {
         });
         v.intact("scg_world_light_id", 0xdead_u32, |out| {
             scg_world_light_id(ptr::null(), 0, out)
+        });
+        v.intact("scg_world_material_id", 0xdead_u32, |out| {
+            scg_world_material_id(ptr::null(), 0, out)
         });
         v.intact("scg_world_entity_count", 0xdead_u32, |out| {
             scg_world_entity_count(ptr::null(), out)
