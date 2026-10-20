@@ -182,7 +182,6 @@ The wasm host needs Node and the `wasm32-unknown-unknown` target, which
 `make tools` installs; the Android host needs the NDK, SDK, emulator and
 `qemu-user`, which `hosts/android/Dockerfile` brings together on Linux with KVM;
 the two desktop demonstrations need SDL3, and say what is missing rather than
-failing to compile. iOS
-waits until the rest is stable — see the roadmap.
+failing to compile. iOS and macOS wait on a macOS runner — see the roadmap.
 [`docs/construction.md`](docs/construction.md) carries the full matrix (in
 French).

@@ -214,7 +214,7 @@ son étendue.
 volontiers un repère par matériau et le partage entre les surfaces qu'il
 habille ; le calcul des lightmaps rabat lui-même le point sur le plan.
 
-### Les trois contraintes du repère de lightmap
+### Les quatre contraintes du repère de lightmap
 
 Le chargement les vérifie, et une carte qu'elles refusent était déjà fausse.
 Chacune répond à un besoin distinct, et aucune ne remplace une autre :
