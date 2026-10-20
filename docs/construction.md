@@ -42,11 +42,22 @@ Les versions sont épinglées dans le `Makefile` et nulle part ailleurs.
 là où un `cfg` propre à une plateforme ne serait vérifié par rien d'autre ; celle
 sans `std` est couverte par `make nostd`, qui la compile. Il y ajoute
 `screengine-play` sur les deux cibles Linux ARM et sur wasm, et nulle part
-ailleurs. Il entraîne en outre **trois** contrôles qui ne sont pas clippy : la documentation
-des fonctions de test, que `missing_docs` ne voit pas, la concordance des
-versions d'outillage Android, et celle de l'état annoncé avec la version du
-paquet. L'intégration continue appelle `make tools`, qui installe les outils aux
+ailleurs. Il entraîne en outre **cinq** contrôles qui ne sont pas clippy : la
+documentation des fonctions de test, que `missing_docs` ne voit pas, la
+concordance des versions d'outillage Android, celle de l'épinglage de
+`wasm-bindgen` avec ce que le `Cargo.lock` résout, celle de l'état annoncé avec
+la version du paquet, et celle des bornes du noyau avec les constantes du
+header. L'intégration continue appelle `make tools`, qui installe les outils aux
 versions épinglées ici.
+
+**Les cinq portent la même garde, et elle n'est pas un ornement** : ce qu'un
+contrôle cherche et ne trouve pas est un échec, jamais un succès. Deux motifs
+qui cessent de correspondre comparaient sinon la chaîne vide à elle-même, et la
+cible annonçait un succès en ne surveillant plus rien — c'est ce que
+`lint-android-versions` a fait jusqu'au 2026-10-20, et ce que la première
+version de `make stubs` avait déjà payé. Même raison pour la recherche de
+fichiers de `lint-doc-tests` : un chemin qui ne rend rien laissait passer tout
+un dépôt.
 
 **`make doc-verif` passe rustdoc en `-D warnings`, et aucune autre cible ne
 l'entraîne** : un renvoi vers un élément qu'aucun `pub use` n'expose ne fait
@@ -54,9 +65,8 @@ rougir ni `lint` ni `test`, et c'est ainsi qu'une constante est restée
 inatteignable une version entière. Elle est dans la liste d'avant-publication et
 dans le job de vérification, au même titre que `header-verif`.
 
-**`make lint` entraîne un troisième contrôle qui n'est pas clippy :
-`etat-verif`**, la concordance de l'état annoncé avec la version du
-`Cargo.toml`. Toute ligne d'un document versionné qui porte un numéro d'étape
+**`etat-verif`** est celui de ces cinq qui porte la concordance de l'état annoncé
+avec la version du `Cargo.toml`. Toute ligne d'un document versionné qui porte un numéro d'étape
 **et** une version du dépôt annonce l'état courant, et doit donc porter celle du
 paquet ; les datations — « Franchie, publiée en 0.4.0 », « ajoutée après la
 0.8.1 » — n'en portent pas et restent dehors. Le compte des annonces est vérifié

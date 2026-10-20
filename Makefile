@@ -123,7 +123,7 @@ android_build = for cible in $(CIBLES_ANDROID); do \
 -include makefile.local
 
 .PHONY: build lib lib-wasm lib-android run example web test native-libs fmt fmt-fix lint lint-doc-tests \
-        lint-android-versions etat-verif nostd test-arm test-linux-arm test-wasi msrv bench bench-wasi stubs \
+        lint-android-versions lint-wasm-bindgen etat-verif nostd test-arm test-linux-arm test-wasi msrv bench bench-wasi stubs \
         conform conform-arm conform-linux-arm conform-wasi conform-x86 conform-update conform-images mesh header header-verif audit deny doc doc-verif hosts host-c host-cpp host-web host-go \
         host-android demo-c demo-cpp clean tools
 
@@ -518,14 +518,47 @@ fmt-fix:
 # construit avec un NDK et une CI qui en attend un autre, ce qui ne se voit
 # qu'au premier défaut propre à une version.
 lint-android-versions:
-	@for nom in NDK_VERSION BUILD_TOOLS PLATFORM SYSTEM_IMAGE; do \
+	@compte=0; \
+	for nom in NDK_VERSION BUILD_TOOLS PLATFORM SYSTEM_IMAGE; do \
 	  fait=$$(sed -n "s/^$$nom *?= *//p" hosts/android/Makefile); \
 	  attendu=$$(sed -n "s/^ARG $$nom=//p" hosts/android/Dockerfile); \
+	  if [ -z "$$fait" ]; then \
+	    echo "lint-android-versions : $$nom introuvable dans hosts/android/Makefile"; \
+	    exit 1; \
+	  fi; \
+	  if [ -z "$$attendu" ]; then \
+	    echo "lint-android-versions : $$nom introuvable dans hosts/android/Dockerfile"; \
+	    exit 1; \
+	  fi; \
 	  if [ "$$fait" != "$$attendu" ]; then \
 	    echo "$$nom : $$fait dans hosts/android/Makefile, $$attendu dans son Dockerfile"; \
 	    exit 1; \
 	  fi; \
-	done
+	  compte=$$((compte + 1)); \
+	done; \
+	echo "lint-android-versions : $$compte reglages Android concordants"
+
+# `wasm-bindgen-cli` doit porter **exactement** la version du crate que le
+# `Cargo.lock` résout : l'outil lit dans le module un schéma qui change d'une
+# version à l'autre, et un écart de correctif suffit à l'arrêter. C'est le seul
+# outil du projet dont la version ne soit pas un choix.
+#
+# L'épinglage était tenu à la main et rien ne le comparait. Une montée par
+# `cargo update` le laisse en arrière sans que `make lint` bronche — il compile
+# l'étage d'accueil sur wasm sans faire intervenir l'outil —, et c'est
+# `make test-wasm` qui tombe, sur un message d'outil que rien ne rattache à
+# l'épinglage. Même forme que `lint-android-versions`, pour la même raison : le
+# dire en commentaire n'a jamais empêché deux valeurs de diverger.
+lint-wasm-bindgen:
+	@resolu=$$(sed -n '/^name = "wasm-bindgen"$$/,/^version = /{/^version = /s/^version = "\(.*\)"$$/\1/p;}' Cargo.lock); \
+	if [ -z "$$resolu" ]; then \
+	  echo "lint-wasm-bindgen : wasm-bindgen introuvable dans Cargo.lock"; exit 1; \
+	fi; \
+	if [ "$$resolu" != "$(WASM_BINDGEN_VERSION)" ]; then \
+	  echo "lint-wasm-bindgen : $(WASM_BINDGEN_VERSION) epingle, $$resolu resolu par Cargo.lock"; \
+	  exit 1; \
+	fi; \
+	echo "lint-wasm-bindgen : $$resolu, epinglage et Cargo.lock concordants"
 
 # La concordance de l'état annoncé avec la version du paquet, troisième contrôle
 # que `lint` entraîne sans être clippy — comme la documentation des tests et les
@@ -712,7 +745,7 @@ CIBLES_PLAY = $(CIBLES_LINUX_ARM) $(CIBLE_WASM)
 # leur plancher n'est pas sous notre contrôle, et l'y faire entrer donnerait une
 # contrainte qu'une montée de dépendance casserait sans qu'on puisse rien.
 
-lint: lint-doc-tests lint-android-versions etat-verif bornes-verif
+lint: lint-doc-tests lint-android-versions lint-wasm-bindgen etat-verif bornes-verif
 	cargo clippy --workspace --all-targets --all-features -- -D warnings
 	for cible in $(CIBLES_CROISEES); do \
 	  cargo clippy -p screengine -p screengine-ffi --lib --target $$cible -- -D warnings || exit 1; \
@@ -739,6 +772,11 @@ lint: lint-doc-tests lint-android-versions etat-verif bornes-verif
 # déclarations dans ce dépôt, donc une documentation lointaine ne couvre pas ce
 # qui suit.
 lint-doc-tests:
+	@fichiers=$$(find src crates -name '*.rs'); \
+	if [ -z "$$fichiers" ]; then \
+	  echo "lint-doc-tests : aucun fichier .rs trouve, la recherche n a pas abouti"; \
+	  exit 1; \
+	fi
 	@awk '/^[[:space:]]*\/\/\// { doc = 1; next } \
 	      /^[[:space:]]*$$/ { doc = 0; next } \
 	      /#\[test\]/ { if (!doc) { \
