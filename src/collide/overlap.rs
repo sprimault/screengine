@@ -26,8 +26,8 @@
 use crate::format::world::{Cell, Surface};
 use crate::math::Vec3d;
 
-use super::abs;
 use super::shape::support;
+use super::{abs, set_axis};
 
 /// La pénétration d'une boîte dans une surface, le long de la normale du plan.
 ///
@@ -175,15 +175,6 @@ fn length_of(square: f64) -> f64 {
         guess = (guess + square / guess) * 0.5;
     }
     guess
-}
-
-/// Pose une composante d'un vecteur, par son rang.
-fn set_axis(v: &mut Vec3d, index: usize, value: f64) {
-    match index {
-        0 => v.x = value,
-        1 => v.y = value,
-        _ => v.z = value,
-    }
 }
 
 #[cfg(test)]

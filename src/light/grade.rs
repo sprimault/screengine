@@ -171,15 +171,24 @@ impl Transfer for Grade {
 /// Le bornage est écrit avant la conversion : `as` sature, mais la saturation
 /// ne sert jamais de garde-fou — la règle vaut ici comme partout où un flottant
 /// devient entier.
+///
+/// **Même forme que la quantification de la cuisson**, `NaN` nommément compris :
+/// les deux ramènent un flottant sur un octet par trois cas écrits, et deux
+/// écritures de la même règle à deux endroits du moteur finiraient par n'en
+/// garder qu'une juste. Ce qui diffère est l'échelle d'entrée, un canal de zéro
+/// à un ici contre un octet pondéré là-bas.
 fn quantize(value: f32) -> u8 {
-    let scaled = value * 255.0 + 0.5;
-    if scaled <= 0.0 {
+    if value.is_nan() {
         return 0;
     }
-    if scaled >= 255.0 {
-        return 255;
+    let scaled = value * 255.0 + 0.5;
+    if scaled <= 0.0 {
+        0
+    } else if scaled >= 255.0 {
+        255
+    } else {
+        scaled as u8
     }
-    scaled as u8
 }
 
 #[cfg(test)]

@@ -75,9 +75,17 @@ impl Placed {
     /// ce qui dessine un anneau net au bord de la portée — un défaut qu'on
     /// prend pour une erreur de géométrie. Le carré l'annule en douceur.
     ///
-    /// Aucune racine n'est appelée : c'est le carré de la distance qui entre
-    /// dans la formule, et il s'obtient par un produit scalaire.
-    fn contribution(&self, point: Vec3, normal: Vec3) -> [f32; 3] {
+    /// Aucune racine n'est appelée pour l'atténuation : c'est le carré de la
+    /// distance qui entre dans la formule, et il s'obtient par un produit
+    /// scalaire.
+    ///
+    /// **`unit` est la normale déjà normalisée**, ou `None` quand le lot n'en
+    /// porte pas. La racine inverse de la normale se paie une fois par sommet
+    /// dans [`sum`], jamais une fois par lumière : c'est l'ordre que
+    /// `docs/rust.md` fixe — « par sommet », puis « par sommet et par
+    /// lumière » —, et à huit lumières cela fait sept racines de moins par
+    /// sommet pour exactement les mêmes bits.
+    fn contribution(&self, point: Vec3, unit: Option<Vec3>) -> [f32; 3] {
         // **De la surface vers la lumière**, et ce sens compte : il était
         // l'inverse tant que seul le carré servait, et le produit scalaire du
         // terme de Lambert le rendrait négatif partout.
@@ -95,21 +103,23 @@ impl Placed {
         // même signe que le terme de Lambert, donc il le devance sans rien
         // coûter — et c'est le rejet le plus payant du calcul, une surface qui
         // tourne le dos à la lumière n'ayant rien à recevoir.
-        // Une normale nulle est une normale absente : le lot n'en porte pas, ou
-        // elle est dégénérée. Ni l'une ni l'autre ne dit vers où la surface
-        // regarde, et l'atténuation reste alors celle de la distance seule —
-        // le comportement d'avant la normale par sommet.
-        let lambert = if normal.dot(normal) <= 0.0 {
-            1.0
-        } else {
-            if normal.dot(offset) <= 0.0 {
-                return [0.0; 3];
+        // Une normale absente — le lot n'en porte pas, ou elle est dégénérée —
+        // ne dit pas vers où la surface regarde : l'atténuation reste alors
+        // celle de la distance seule, le comportement d'avant la normale par
+        // sommet.
+        let lambert = match unit {
+            None => 1.0,
+            Some(unit) => {
+                if unit.dot(offset) <= 0.0 {
+                    return [0.0; 3];
+                }
+                // La normalisation de la direction passe par la table du noyau :
+                // aucune libm, aucune approximation matérielle. L'ordre suit
+                // celui de la cuisson — direction d'abord, produit scalaire
+                // ensuite —, sans quoi les deux modes ne seraient pas
+                // comparables.
+                unit.dot(offset.normalize())
             }
-            // La normalisation passe par la table du noyau : aucune libm,
-            // aucune approximation matérielle. L'ordre suit celui de la
-            // cuisson — direction d'abord, produit scalaire ensuite —, sans
-            // quoi les deux modes ne seraient pas comparables.
-            normal.normalize().dot(offset.normalize())
         };
         let falloff = (1.0 - ratio) * (1.0 - ratio) * lambert;
         [
@@ -127,9 +137,19 @@ impl Placed {
 /// forte domine, alors que leur teinte est précisément ce qu'on veut voir se
 /// mélanger.
 pub fn sum(lights: &[Placed], point: Vec3, normal: Vec3) -> [f32; 3] {
+    // **La normale se normalise ici, une fois.** C'est le rang que l'ordre
+    // contractuel lui donne — « par sommet », avant le terme « par sommet et
+    // par lumière » —, et une normale nulle reste une normale absente : ni un
+    // lot sans normale ni une normale dégénérée ne dit vers où la surface
+    // regarde.
+    let unit = if normal.dot(normal) > 0.0 {
+        Some(normal.normalize())
+    } else {
+        None
+    };
     let mut total = [0.0f32; 3];
     for light in lights {
-        let add = light.contribution(point, normal);
+        let add = light.contribution(point, unit);
         total[0] += add[0];
         total[1] += add[1];
         total[2] += add[2];
@@ -148,7 +168,7 @@ impl Placed {
     /// dépend pas de l'orientation : la passer à chaque appel n'apprendrait
     /// rien et masquerait ce qui varie d'un cas à l'autre.
     fn lit(&self, point: Vec3) -> [f32; 3] {
-        self.contribution(point, Vec3::ZERO)
+        self.contribution(point, None)
     }
 }
 

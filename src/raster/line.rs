@@ -289,13 +289,17 @@ pub fn cover<F: FnMut(i32, i32, u32)>(segment: &Segment, window: Rect, mut pixel
     }
 
     let (bx0, by0, bx1, by1) = segment.bounds();
-    let major_x = dx.abs() >= dy.abs();
+    // Les deux étendues une fois, et l'axe majeur décidé une fois sur elles.
+    // `steps` est l'étendue de cet axe : la reprendre par un `max` écrirait une
+    // seconde fois le même arbitrage, et deux écritures d'une décision dont
+    // dépend le parcours entier sont deux occasions qu'elles divergent.
+    let (adx, ady) = (dx.abs(), dy.abs());
+    let major_x = adx >= ady;
     // Le parcours va toujours dans le sens croissant de l'axe majeur : la règle
     // de sortie du losange ne dépend pas du sens, et un parcours unique évite
     // d'avoir deux boucles dont une seule serait éprouvée.
     let (first, last) = if major_x { (bx0, bx1) } else { (by0, by1) };
-
-    let steps = dx.abs().max(dy.abs());
+    let steps = if major_x { adx } else { ady };
     for major in first..=last {
         // Le pixel candidat de cette colonne — ou de cette ligne —, pris sur
         // l'axe mineur par la forme close : aucune accumulation, donc aucune

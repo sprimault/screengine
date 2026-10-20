@@ -20,7 +20,7 @@
 
 use crate::math::Vec3d;
 
-use super::abs;
+use super::{abs, set_axis};
 
 /// Ce qu'un balayage retient d'un contact.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -413,15 +413,6 @@ fn min(a: f64, b: f64) -> f64 {
 /// Le plus grand de deux nombres, par comparaison écrite.
 fn max(a: f64, b: f64) -> f64 {
     if a > b { a } else { b }
-}
-
-/// Pose une composante d'un vecteur, par son rang.
-fn set_axis(v: &mut Vec3d, index: usize, value: f64) {
-    match index {
-        0 => v.x = value,
-        1 => v.y = value,
-        _ => v.z = value,
-    }
 }
 
 #[cfg(test)]

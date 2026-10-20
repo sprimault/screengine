@@ -155,9 +155,18 @@ pub fn blend(pixel: u32, fog: u32, factor: u16, bias: u32) -> u32 {
 /// d'un brouillard en couleurs directes. Un arrondi qui varie avec la position
 /// les remplace par une frange d'un niveau.
 ///
-/// Transposée, et non recopiée : le tramage des coordonnées de texture emploie
-/// déjà la même matrice, et deux motifs identiques superposés se renforcent au
-/// lieu de se disperser. La transposition les décorrèle sans table de plus.
+/// Transposée, et non recopiée : le tramage des coordonnées de texture lit la
+/// même matrice par `(y, x)` pour son `u`, et deux motifs identiques superposés
+/// se renforcent au lieu de se disperser.
+///
+/// **Elle coïncide en revanche avec le `v` de ce tramage**, qui prend déjà la
+/// transposée — mesuré : seize positions sur seize, contre quatre pour `u`, la
+/// diagonale. Ce n'est pas la décorrélation que cette clause a d'abord
+/// annoncée, et c'est sans conséquence visible : le décalage sous-texel déplace
+/// l'échantillon d'une texture, l'arrondi du brouillard choisit un niveau de
+/// mélange, et rien ne fait qu'un pixel les subisse dans le même sens. La
+/// corriger coûterait une table de plus et déplacerait toutes les empreintes
+/// portant du brouillard, pour une frange d'un niveau que personne n'a vue.
 ///
 /// **L'index se prend sur la position dans l'image**, jamais dans la tuile,
 /// pour la raison qui vaut partout ici : le motif se décalerait d'une tuile à

@@ -938,7 +938,11 @@ pub(super) fn abs(value: f64) -> f64 {
 }
 
 /// Pose une composante d'un vecteur, par son rang.
-fn set_axis(v: &mut Vec3d, index: usize, value: f64) {
+///
+/// Une seule pour le module, par l'argument déjà écrit pour [`abs`] : elle
+/// vivait aussi en trois exemplaires identiques, et une copie par fichier est
+/// une occasion de plus qu'un rang y soit traité à part.
+pub(super) fn set_axis(v: &mut Vec3d, index: usize, value: f64) {
     match index {
         0 => v.x = value,
         1 => v.y = value,

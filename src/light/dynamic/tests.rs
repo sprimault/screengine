@@ -183,7 +183,11 @@ fn la_distance_est_celle_des_trois_axes() {
 fn une_normale_nulle_laisse_l_attenuation_par_la_distance() {
     let light = white(10.0);
     for point in [Vec3::ZERO, away(3.0), away(7.5)] {
-        assert_eq!(light.contribution(point, Vec3::ZERO), light.lit(point));
+        // Par `sum`, parce que c'est elle qui traduit une normale nulle en
+        // normale absente — la contribution ne reçoit plus que l'une ou
+        // l'autre. Aucun de ces trois points ne sature, donc la somme d'une
+        // lumière rend exactement sa contribution.
+        assert_eq!(sum(&[light], point, Vec3::ZERO), light.lit(point));
     }
 }
 
@@ -203,30 +207,30 @@ fn le_lambert_suit_l_orientation_de_la_surface() {
     let dos = Vec3::new(1.0, 0.0, 0.0);
     let biais = Vec3::new(-1.0, 1.0, 0.0);
 
-    let face = light.contribution(point, vers);
+    let face = sum(&[light], point, vers);
     assert_eq!(face, light.lit(point), "de face, rien n'est retranché");
 
-    let oblique = light.contribution(point, biais);
+    let oblique = sum(&[light], point, biais);
     assert!(oblique[0] > 0.0 && oblique[0] < face[0], "{oblique:?}");
 
-    assert_eq!(light.contribution(point, dos), [0.0; 3], "de dos, rien");
+    assert_eq!(sum(&[light], point, dos), [0.0; 3], "de dos, rien");
 }
 
 /// La normale n'a pas à être unitaire : le moteur la normalise.
 ///
 /// C'est une précondition qu'un hôte ne pourrait pas tenir — une normale
 /// interpolée entre deux trames n'est plus unitaire —, donc elle n'existe pas.
+///
+/// **Par `sum`, et c'est désormais le seul chemin qui le prouve** : la
+/// normalisation se fait une fois par sommet, là, et non une fois par lumière
+/// dans la contribution.
 #[test]
 fn la_normale_n_a_pas_a_etre_unitaire() {
     let light = white(10.0);
     let point = away(3.0);
-    let unitaire = light.contribution(point, Vec3::new(-1.0, 0.0, 0.0));
+    let unitaire = sum(&[light], point, Vec3::new(-1.0, 0.0, 0.0));
     for echelle in [0.25, 4.0, 100.0] {
         let mise = Vec3::new(-echelle, 0.0, 0.0);
-        assert_eq!(
-            light.contribution(point, mise),
-            unitaire,
-            "échelle {echelle}"
-        );
+        assert_eq!(sum(&[light], point, mise), unitaire, "échelle {echelle}");
     }
 }
