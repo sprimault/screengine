@@ -546,9 +546,7 @@ impl Context {
     /// en angle binaire, qui replierait un champ de vision de trois demi-tours
     /// en un demi-tour parfaitement acceptable.
     pub fn set_camera(&mut self, camera: Camera) -> Result<()> {
-        if *self.state.get_mut() != RECORDING {
-            return Err(Error::InvalidState);
-        }
+        self.require_recording()?;
         self.require_empty_frame()?;
         // **Avant la projection, qui ne répond que de `fov_y` et de `near`.** Un
         // quaternion non fini se normalise en vecteur nul, et la matrice de vue
@@ -596,9 +594,7 @@ impl Context {
     /// même image des tuiles lues autrement — une image que rien ne décrit, et
     /// qui dépendrait de l'ordre où l'hôte a pris ses tuiles.
     pub fn set_filter(&mut self, filter: Filter) -> Result<()> {
-        if *self.state.get_mut() != RECORDING {
-            return Err(Error::InvalidState);
-        }
+        self.require_recording()?;
         self.filter = filter;
         Ok(())
     }
@@ -631,9 +627,7 @@ impl Context {
     ///
     /// Refusé pendant le rendu, comme tout réglage que les tuiles lisent.
     pub fn set_simd(&mut self, simd: SimdPath) -> Result<()> {
-        if *self.state.get_mut() != RECORDING {
-            return Err(Error::InvalidState);
-        }
+        self.require_recording()?;
         if !simd.available() {
             return Err(Error::InvalidArgument(Argument::SimdPath));
         }
@@ -659,9 +653,7 @@ impl Context {
     /// dont les tuiles n'auraient pas toutes le même réglage n'est décrite par
     /// rien.
     pub fn set_overbright(&mut self, overbright: u32) -> Result<()> {
-        if *self.state.get_mut() != RECORDING {
-            return Err(Error::InvalidState);
-        }
+        self.require_recording()?;
         if overbright > MAX_OVERBRIGHT {
             return Err(Error::InvalidArgument(Argument::Overbright));
         }
@@ -682,9 +674,7 @@ impl Context {
     ///
     /// Refusé pendant le rendu, comme les autres réglages d'image.
     pub fn set_fog(&mut self, color: Color, start: f32, end: f32) -> Result<()> {
-        if *self.state.get_mut() != RECORDING {
-            return Err(Error::InvalidState);
-        }
+        self.require_recording()?;
         self.fog.set(color.packed(), self.camera.near, start, end)?;
         self.fog_range = (start, end);
         Ok(())
@@ -692,9 +682,7 @@ impl Context {
 
     /// Éteint le brouillard.
     pub fn clear_fog(&mut self) -> Result<()> {
-        if *self.state.get_mut() != RECORDING {
-            return Err(Error::InvalidState);
-        }
+        self.require_recording()?;
         self.fog.clear();
         Ok(())
     }
@@ -717,9 +705,7 @@ impl Context {
     /// Refusée pendant le rendu, comme tout réglage que les tuiles d'une même
     /// image doivent partager.
     pub fn set_grade(&mut self, gamma: f32, gains: [f32; 3], offsets: [f32; 3]) -> Result<()> {
-        if *self.state.get_mut() != RECORDING {
-            return Err(Error::InvalidState);
-        }
+        self.require_recording()?;
         self.grade.set(gamma, gains, offsets)
     }
 
@@ -729,9 +715,7 @@ impl Context {
     /// hôte qui remet sa courbe à plat en fin de niveau n'a pas à se souvenir
     /// s'il l'avait réglée.
     pub fn clear_grade(&mut self) -> Result<()> {
-        if *self.state.get_mut() != RECORDING {
-            return Err(Error::InvalidState);
-        }
+        self.require_recording()?;
         self.grade.clear();
         Ok(())
     }
@@ -757,9 +741,7 @@ impl Context {
     ///
     /// Refusé pendant le rendu, comme les autres réglages d'image.
     pub fn set_lights(&mut self, lights: &[Light]) -> Result<()> {
-        if *self.state.get_mut() != RECORDING {
-            return Err(Error::InvalidState);
-        }
+        self.require_recording()?;
         if lights.len() > MAX_LIGHTS {
             return Err(Error::InvalidArgument(Argument::LightCapacity));
         }
@@ -848,9 +830,7 @@ impl Context {
     /// laissé à sa taille d'avant est trop court d'autant, et c'est à
     /// l'appelant de le redimensionner.
     pub fn set_resolution(&mut self, width: u32, height: u32) -> Result<()> {
-        if *self.state.get_mut() != RECORDING {
-            return Err(Error::InvalidState);
-        }
+        self.require_recording()?;
         self.require_empty_frame()?;
         let bounded = |v: u32, max: u32| v >= 1 && v <= max;
         if !bounded(width, self.config.max_width) || !bounded(height, self.config.max_height) {
@@ -884,9 +864,7 @@ impl Context {
     /// Rien de soumis donne une image de fond, sans erreur : c'est une scène
     /// vide, pas un appel fautif.
     pub fn begin(&mut self) -> Result<u32> {
-        if *self.state.get_mut() != RECORDING {
-            return Err(Error::InvalidState);
-        }
+        self.require_recording()?;
         // **Le vidage de la liste, et lui seul** : il ne rend rien à
         // l'allocateur, là où celui de la table de textures le ferait — et nous
         // sommes ici à l'intérieur de la frontière d'image.
@@ -984,6 +962,25 @@ impl Context {
     fn settle(&mut self) {
         self.drop_closed_frame();
         self.release_closed_textures();
+    }
+
+    /// Refuse un appel qui n'a rien à faire entre le début et la fin d'une
+    /// image.
+    ///
+    /// **Le contrat énonce la règle une fois** — tout réglage et toute
+    /// soumission sont refusés pendant une image —, et quatorze méthodes en
+    /// reprenaient les trois mêmes lignes. Ce n'est pas qu'une question de
+    /// style : une liste ajoutée au contexte sans que son garde le soit aussi
+    /// laisserait un lot à demi posé, et c'est l'énumération des sites qui
+    /// l'aurait fait voir.
+    ///
+    /// L'état se lit par `get_mut`, sans ordre mémoire, parce qu'un `&mut self`
+    /// prouve déjà qu'aucun autre thread ne le touche.
+    fn require_recording(&mut self) -> Result<()> {
+        match *self.state.get_mut() {
+            RECORDING => Ok(()),
+            _ => Err(Error::InvalidState),
+        }
     }
 
     /// Refuse un réglage qui vaut pour l'image entière quand l'image en cours
@@ -1545,9 +1542,7 @@ impl Context {
     where
         F: Fn(u32) -> Option<&'t Arc<Texture>>,
     {
-        if *self.state.get_mut() != RECORDING {
-            return Err(Error::InvalidState);
-        }
+        self.require_recording()?;
         if cell_id == 0 {
             return Ok(Visibility::NoCell);
         }
@@ -1923,9 +1918,7 @@ impl Context {
     where
         F: Fn(usize) -> Result<([VertexUv2; 3], Color)>,
     {
-        if *self.state.get_mut() != RECORDING {
-            return Err(Error::InvalidState);
-        }
+        self.require_recording()?;
         finite_model(model)?;
         self.settle();
         let mark = self.mark();
@@ -2201,9 +2194,7 @@ impl Context {
     where
         F: Fn(usize) -> (Vec3, Vec3, Color),
     {
-        if *self.state.get_mut() != RECORDING {
-            return Err(Error::InvalidState);
-        }
+        self.require_recording()?;
         finite_model(model)?;
         self.settle();
 

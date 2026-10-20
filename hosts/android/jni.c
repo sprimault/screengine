@@ -67,17 +67,47 @@ static jint create(JNIEnv *env, jclass cls, jintArray config, jlongArray out)
 }
 
 /*
- * scg_submit, les structures recomposées depuis trois tableaux Java.
+ * Un lot recomposé depuis les tableaux Java.
  *
  * Java ne sait pas décrire un tableau de structures : la couche JNI alloue les
  * siennes le temps de l'appel. C'est de la mémoire d'hôte, pas du moteur — la
  * règle « zéro allocation par image » porte sur ce que le noyau fait, pas sur
  * ce qu'un hôte se donne pour lui parler.
+ *
+ * **Cinq soumissions prenaient les mêmes quarante lignes** — quatre `calloc`,
+ * quatre `GetArrayRegion`, la boucle des `ScgTriangle`, quatre `free` —, et ne
+ * différaient que par le nombre de flottants d'un sommet et par l'appel final.
+ * Une soumission de plus les recopiait, et c'est exactement là qu'un `free`
+ * manque sans que rien ne le dise.
  */
-static jint submit(JNIEnv *env, jclass cls, jlong ctx, jfloatArray model,
-                   jfloatArray vertices, jintArray indices, jbyteArray colors)
+typedef struct {
+    ScgMat4 matrix;
+    /* Les sommets, en flottants contigus : au tireur de les relire dans sa
+     * structure. Chacune est exactement ses `float` à la suite, ce que les
+     * assertions du header vérifient sur cette cible même. */
+    void *points;
+    ScgTriangle *faces;
+    uint32_t vertex_count;
+    uint32_t triangle_count;
+    /* Les deux tableaux bruts, dont les triangles sont recomposés. */
+    jint *raw_indices;
+    jbyte *raw_colors;
+} Lot;
+
+/*
+ * Recompose un lot, ou rend le code qui dit pourquoi il ne l'est pas.
+ *
+ * `par_sommet` est le nombre de `float` d'un sommet : trois pour `ScgVertex`,
+ * cinq pour `ScgVertexUv`, huit pour `ScgVertexUvN`.
+ *
+ * **Le lot se rend par `lot_rendre` dans tous les cas**, refus compris : la
+ * fonction met la structure à zéro avant tout, si bien qu'un `free` sur un
+ * champ jamais alloué ne fait rien.
+ */
+static int32_t lot_prendre(JNIEnv *env, jfloatArray model, jfloatArray vertices,
+                           jintArray indices, jbyteArray colors, uint32_t par_sommet, Lot *lot)
 {
-    (void)cls;
+    memset(lot, 0, sizeof *lot);
     if (model == NULL || vertices == NULL || indices == NULL || colors == NULL) {
         return SCG_ERR_NULL;
     }
@@ -85,47 +115,61 @@ static jint submit(JNIEnv *env, jclass cls, jlong ctx, jfloatArray model,
     jsize floats = (*env)->GetArrayLength(env, vertices);
     jsize index_count = (*env)->GetArrayLength(env, indices);
     jsize channels = (*env)->GetArrayLength(env, colors);
-    if ((*env)->GetArrayLength(env, model) != 16 || floats % 3 != 0 || index_count % 3 != 0
-        || channels != index_count / 3 * 4) {
+    if ((*env)->GetArrayLength(env, model) != 16 || floats % (jsize)par_sommet != 0
+        || index_count % 3 != 0 || channels != index_count / 3 * 4) {
         return SCG_ERR_INVALID_ARGUMENT;
     }
 
-    uint32_t vertex_count = (uint32_t)(floats / 3);
-    uint32_t triangle_count = (uint32_t)(index_count / 3);
-    ScgMat4 matrix;
-    ScgVertex *points = calloc(vertex_count ? vertex_count : 1, sizeof *points);
-    ScgTriangle *faces = calloc(triangle_count ? triangle_count : 1, sizeof *faces);
-    jint *raw_indices = calloc(index_count ? (size_t)index_count : 1, sizeof *raw_indices);
-    jbyte *raw_colors = calloc(channels ? (size_t)channels : 1, sizeof *raw_colors);
-    int32_t code = SCG_ERR_OUT_OF_MEMORY;
-
-    if (points != NULL && faces != NULL && raw_indices != NULL && raw_colors != NULL) {
-        (*env)->GetFloatArrayRegion(env, model, 0, 16, matrix.m);
-        /* Les sommets se remplissent d'un bloc : `ScgVertex` est exactement
-         * trois `float` contigus, ce que les assertions du header vérifient sur
-         * cette cible même. */
-        (*env)->GetFloatArrayRegion(env, vertices, 0, floats, (jfloat *)points);
-        (*env)->GetIntArrayRegion(env, indices, 0, index_count, raw_indices);
-        (*env)->GetByteArrayRegion(env, colors, 0, channels, raw_colors);
-
-        for (uint32_t i = 0; i < triangle_count; i++) {
-            faces[i].i0 = (uint32_t)raw_indices[i * 3];
-            faces[i].i1 = (uint32_t)raw_indices[i * 3 + 1];
-            faces[i].i2 = (uint32_t)raw_indices[i * 3 + 2];
-            faces[i].r = (uint8_t)raw_colors[i * 4];
-            faces[i].g = (uint8_t)raw_colors[i * 4 + 1];
-            faces[i].b = (uint8_t)raw_colors[i * 4 + 2];
-            faces[i].a = (uint8_t)raw_colors[i * 4 + 3];
-        }
-        code = scg_submit((ScgContext *)(intptr_t)ctx, &matrix, points, vertex_count, faces,
-                          triangle_count);
+    lot->vertex_count = (uint32_t)(floats / (jsize)par_sommet);
+    lot->triangle_count = (uint32_t)(index_count / 3);
+    lot->points = calloc(floats ? (size_t)floats : 1, sizeof(jfloat));
+    lot->faces = calloc(lot->triangle_count ? lot->triangle_count : 1, sizeof *lot->faces);
+    lot->raw_indices = calloc(index_count ? (size_t)index_count : 1, sizeof *lot->raw_indices);
+    lot->raw_colors = calloc(channels ? (size_t)channels : 1, sizeof *lot->raw_colors);
+    if (lot->points == NULL || lot->faces == NULL || lot->raw_indices == NULL
+        || lot->raw_colors == NULL) {
+        return SCG_ERR_OUT_OF_MEMORY;
     }
 
-    free(points);
-    free(faces);
-    free(raw_indices);
-    free(raw_colors);
-    return code;
+    (*env)->GetFloatArrayRegion(env, model, 0, 16, lot->matrix.m);
+    (*env)->GetFloatArrayRegion(env, vertices, 0, floats, (jfloat *)lot->points);
+    (*env)->GetIntArrayRegion(env, indices, 0, index_count, lot->raw_indices);
+    (*env)->GetByteArrayRegion(env, colors, 0, channels, lot->raw_colors);
+
+    for (uint32_t i = 0; i < lot->triangle_count; i++) {
+        lot->faces[i].i0 = (uint32_t)lot->raw_indices[i * 3];
+        lot->faces[i].i1 = (uint32_t)lot->raw_indices[i * 3 + 1];
+        lot->faces[i].i2 = (uint32_t)lot->raw_indices[i * 3 + 2];
+        lot->faces[i].r = (uint8_t)lot->raw_colors[i * 4];
+        lot->faces[i].g = (uint8_t)lot->raw_colors[i * 4 + 1];
+        lot->faces[i].b = (uint8_t)lot->raw_colors[i * 4 + 2];
+        lot->faces[i].a = (uint8_t)lot->raw_colors[i * 4 + 3];
+    }
+    return SCG_OK;
+}
+
+/* Rend au tas ce que `lot_prendre` a pris, qu'il ait abouti ou non. */
+static void lot_rendre(Lot *lot)
+{
+    free(lot->points);
+    free(lot->faces);
+    free(lot->raw_indices);
+    free(lot->raw_colors);
+}
+
+/* scg_submit, les structures recomposées depuis trois tableaux Java. */
+static jint submit(JNIEnv *env, jclass cls, jlong ctx, jfloatArray model,
+                   jfloatArray vertices, jintArray indices, jbyteArray colors)
+{
+    (void)cls;
+    Lot lot;
+    int32_t code = lot_prendre(env, model, vertices, indices, colors, 3, &lot);
+    if (code == SCG_OK) {
+        code = scg_submit((ScgContext *)(intptr_t)ctx, &lot.matrix, (ScgVertex *)lot.points,
+                          lot.vertex_count, lot.faces, lot.triangle_count);
+    }
+    lot_rendre(&lot);
+    return (jint)code;
 }
 
 /* scg_destroy. */
@@ -770,54 +814,15 @@ static jint submit_textured(JNIEnv *env, jclass cls, jlong ctx, jfloatArray mode
                             jlong texture)
 {
     (void)cls;
-    if (model == NULL || vertices == NULL || indices == NULL || colors == NULL) {
-        return SCG_ERR_NULL;
+    Lot lot;
+    int32_t code = lot_prendre(env, model, vertices, indices, colors, 5, &lot);
+    if (code == SCG_OK) {
+        code = scg_submit_textured((ScgContext *)(intptr_t)ctx, &lot.matrix,
+                                   (ScgVertexUv *)lot.points, lot.vertex_count, lot.faces,
+                                   lot.triangle_count, (ScgTexture *)(intptr_t)texture);
     }
-
-    jsize floats = (*env)->GetArrayLength(env, vertices);
-    jsize index_count = (*env)->GetArrayLength(env, indices);
-    jsize channels = (*env)->GetArrayLength(env, colors);
-    if ((*env)->GetArrayLength(env, model) != 16 || floats % 5 != 0 || index_count % 3 != 0
-        || channels != index_count / 3 * 4) {
-        return SCG_ERR_INVALID_ARGUMENT;
-    }
-
-    uint32_t vertex_count = (uint32_t)(floats / 5);
-    uint32_t triangle_count = (uint32_t)(index_count / 3);
-    ScgMat4 matrix;
-    ScgVertexUv *points = calloc(vertex_count ? vertex_count : 1, sizeof *points);
-    ScgTriangle *faces = calloc(triangle_count ? triangle_count : 1, sizeof *faces);
-    jint *raw_indices = calloc(index_count ? (size_t)index_count : 1, sizeof *raw_indices);
-    jbyte *raw_colors = calloc(channels ? (size_t)channels : 1, sizeof *raw_colors);
-    int32_t code = SCG_ERR_OUT_OF_MEMORY;
-
-    if (points != NULL && faces != NULL && raw_indices != NULL && raw_colors != NULL) {
-        (*env)->GetFloatArrayRegion(env, model, 0, 16, matrix.m);
-        /* Même remplissage d'un bloc que pour `submit` : `ScgVertexUv` est
-         * exactement cinq `float` contigus, ce que les assertions du header
-         * vérifient sur cette cible même. */
-        (*env)->GetFloatArrayRegion(env, vertices, 0, floats, (jfloat *)points);
-        (*env)->GetIntArrayRegion(env, indices, 0, index_count, raw_indices);
-        (*env)->GetByteArrayRegion(env, colors, 0, channels, raw_colors);
-
-        for (uint32_t i = 0; i < triangle_count; i++) {
-            faces[i].i0 = (uint32_t)raw_indices[i * 3];
-            faces[i].i1 = (uint32_t)raw_indices[i * 3 + 1];
-            faces[i].i2 = (uint32_t)raw_indices[i * 3 + 2];
-            faces[i].r = (uint8_t)raw_colors[i * 4];
-            faces[i].g = (uint8_t)raw_colors[i * 4 + 1];
-            faces[i].b = (uint8_t)raw_colors[i * 4 + 2];
-            faces[i].a = (uint8_t)raw_colors[i * 4 + 3];
-        }
-        code = scg_submit_textured((ScgContext *)(intptr_t)ctx, &matrix, points, vertex_count,
-                                   faces, triangle_count, (ScgTexture *)(intptr_t)texture);
-    }
-
-    free(points);
-    free(faces);
-    free(raw_indices);
-    free(raw_colors);
-    return code;
+    lot_rendre(&lot);
+    return (jint)code;
 }
 
 /*
@@ -832,52 +837,16 @@ static jint submit_blended(JNIEnv *env, jclass cls, jlong ctx, jfloatArray model
                            jlong texture, jint blend)
 {
     (void)cls;
-    if (model == NULL || vertices == NULL || indices == NULL || colors == NULL) {
-        return SCG_ERR_NULL;
-    }
-
-    jsize floats = (*env)->GetArrayLength(env, vertices);
-    jsize index_count = (*env)->GetArrayLength(env, indices);
-    jsize channels = (*env)->GetArrayLength(env, colors);
-    if ((*env)->GetArrayLength(env, model) != 16 || floats % 5 != 0 || index_count % 3 != 0
-        || channels != index_count / 3 * 4) {
-        return SCG_ERR_INVALID_ARGUMENT;
-    }
-
-    uint32_t vertex_count = (uint32_t)(floats / 5);
-    uint32_t triangle_count = (uint32_t)(index_count / 3);
-    ScgMat4 matrix;
-    ScgVertexUv *points = calloc(vertex_count ? vertex_count : 1, sizeof *points);
-    ScgTriangle *faces = calloc(triangle_count ? triangle_count : 1, sizeof *faces);
-    jint *raw_indices = calloc(index_count ? (size_t)index_count : 1, sizeof *raw_indices);
-    jbyte *raw_colors = calloc(channels ? (size_t)channels : 1, sizeof *raw_colors);
-    int32_t code = SCG_ERR_OUT_OF_MEMORY;
-
-    if (points != NULL && faces != NULL && raw_indices != NULL && raw_colors != NULL) {
-        (*env)->GetFloatArrayRegion(env, model, 0, 16, matrix.m);
-        (*env)->GetFloatArrayRegion(env, vertices, 0, floats, (jfloat *)points);
-        (*env)->GetIntArrayRegion(env, indices, 0, index_count, raw_indices);
-        (*env)->GetByteArrayRegion(env, colors, 0, channels, raw_colors);
-
-        for (uint32_t i = 0; i < triangle_count; i++) {
-            faces[i].i0 = (uint32_t)raw_indices[i * 3];
-            faces[i].i1 = (uint32_t)raw_indices[i * 3 + 1];
-            faces[i].i2 = (uint32_t)raw_indices[i * 3 + 2];
-            faces[i].r = (uint8_t)raw_colors[i * 4];
-            faces[i].g = (uint8_t)raw_colors[i * 4 + 1];
-            faces[i].b = (uint8_t)raw_colors[i * 4 + 2];
-            faces[i].a = (uint8_t)raw_colors[i * 4 + 3];
-        }
-        code = scg_submit_blended((ScgContext *)(intptr_t)ctx, &matrix, points, vertex_count,
-                                  faces, triangle_count, (ScgTexture *)(intptr_t)texture,
+    Lot lot;
+    int32_t code = lot_prendre(env, model, vertices, indices, colors, 5, &lot);
+    if (code == SCG_OK) {
+        code = scg_submit_blended((ScgContext *)(intptr_t)ctx, &lot.matrix,
+                                  (ScgVertexUv *)lot.points, lot.vertex_count, lot.faces,
+                                  lot.triangle_count, (ScgTexture *)(intptr_t)texture,
                                   (uint32_t)blend);
     }
-
-    free(points);
-    free(faces);
-    free(raw_indices);
-    free(raw_colors);
-    return code;
+    lot_rendre(&lot);
+    return (jint)code;
 }
 
 /*
@@ -1012,54 +981,16 @@ static jint submit_lit(JNIEnv *env, jclass cls, jlong ctx, jfloatArray model,
                        jlong texture, jlong lightmap)
 {
     (void)cls;
-    if (model == NULL || vertices == NULL || indices == NULL || colors == NULL) {
-        return SCG_ERR_NULL;
-    }
-
-    jsize floats = (*env)->GetArrayLength(env, vertices);
-    jsize index_count = (*env)->GetArrayLength(env, indices);
-    jsize channels = (*env)->GetArrayLength(env, colors);
-    if ((*env)->GetArrayLength(env, model) != 16 || floats % 7 != 0 || index_count % 3 != 0
-        || channels != index_count / 3 * 4) {
-        return SCG_ERR_INVALID_ARGUMENT;
-    }
-
-    uint32_t vertex_count = (uint32_t)(floats / 7);
-    uint32_t triangle_count = (uint32_t)(index_count / 3);
-    ScgMat4 matrix;
-    ScgVertexUv2 *points = calloc(vertex_count ? vertex_count : 1, sizeof *points);
-    ScgTriangle *faces = calloc(triangle_count ? triangle_count : 1, sizeof *faces);
-    jint *raw_indices = calloc(index_count ? (size_t)index_count : 1, sizeof *raw_indices);
-    jbyte *raw_colors = calloc(channels ? (size_t)channels : 1, sizeof *raw_colors);
-    int32_t code = SCG_ERR_OUT_OF_MEMORY;
-
-    if (points != NULL && faces != NULL && raw_indices != NULL && raw_colors != NULL) {
-        (*env)->GetFloatArrayRegion(env, model, 0, 16, matrix.m);
-        /* `ScgVertexUv2` est exactement sept `float` contigus, ce que les
-         * assertions du header vérifient sur cette cible même. */
-        (*env)->GetFloatArrayRegion(env, vertices, 0, floats, (jfloat *)points);
-        (*env)->GetIntArrayRegion(env, indices, 0, index_count, raw_indices);
-        (*env)->GetByteArrayRegion(env, colors, 0, channels, raw_colors);
-
-        for (uint32_t i = 0; i < triangle_count; i++) {
-            faces[i].i0 = (uint32_t)raw_indices[i * 3];
-            faces[i].i1 = (uint32_t)raw_indices[i * 3 + 1];
-            faces[i].i2 = (uint32_t)raw_indices[i * 3 + 2];
-            faces[i].r = (uint8_t)raw_colors[i * 4];
-            faces[i].g = (uint8_t)raw_colors[i * 4 + 1];
-            faces[i].b = (uint8_t)raw_colors[i * 4 + 2];
-            faces[i].a = (uint8_t)raw_colors[i * 4 + 3];
-        }
-        code = scg_submit_lit((ScgContext *)(intptr_t)ctx, &matrix, points, vertex_count,
-                              faces, triangle_count, (ScgTexture *)(intptr_t)texture,
+    Lot lot;
+    int32_t code = lot_prendre(env, model, vertices, indices, colors, 7, &lot);
+    if (code == SCG_OK) {
+        code = scg_submit_lit((ScgContext *)(intptr_t)ctx, &lot.matrix,
+                              (ScgVertexUv2 *)lot.points, lot.vertex_count, lot.faces,
+                              lot.triangle_count, (ScgTexture *)(intptr_t)texture,
                               (ScgTexture *)(intptr_t)lightmap);
     }
-
-    free(points);
-    free(faces);
-    free(raw_indices);
-    free(raw_colors);
-    return code;
+    lot_rendre(&lot);
+    return (jint)code;
 }
 
 /*
@@ -1074,53 +1005,15 @@ static jint submit_shaded(JNIEnv *env, jclass cls, jlong ctx, jfloatArray model,
                           jlong texture)
 {
     (void)cls;
-    if (model == NULL || vertices == NULL || indices == NULL || colors == NULL) {
-        return SCG_ERR_NULL;
+    Lot lot;
+    int32_t code = lot_prendre(env, model, vertices, indices, colors, 8, &lot);
+    if (code == SCG_OK) {
+        code = scg_submit_shaded((ScgContext *)(intptr_t)ctx, &lot.matrix,
+                                 (ScgVertexUvN *)lot.points, lot.vertex_count, lot.faces,
+                                 lot.triangle_count, (ScgTexture *)(intptr_t)texture);
     }
-
-    jsize floats = (*env)->GetArrayLength(env, vertices);
-    jsize index_count = (*env)->GetArrayLength(env, indices);
-    jsize channels = (*env)->GetArrayLength(env, colors);
-    if ((*env)->GetArrayLength(env, model) != 16 || floats % 8 != 0 || index_count % 3 != 0
-        || channels != index_count / 3 * 4) {
-        return SCG_ERR_INVALID_ARGUMENT;
-    }
-
-    uint32_t vertex_count = (uint32_t)(floats / 8);
-    uint32_t triangle_count = (uint32_t)(index_count / 3);
-    ScgMat4 matrix;
-    ScgVertexUvN *points = calloc(vertex_count ? vertex_count : 1, sizeof *points);
-    ScgTriangle *faces = calloc(triangle_count ? triangle_count : 1, sizeof *faces);
-    jint *raw_indices = calloc(index_count ? (size_t)index_count : 1, sizeof *raw_indices);
-    jbyte *raw_colors = calloc(channels ? (size_t)channels : 1, sizeof *raw_colors);
-    int32_t code = SCG_ERR_OUT_OF_MEMORY;
-
-    if (points != NULL && faces != NULL && raw_indices != NULL && raw_colors != NULL) {
-        (*env)->GetFloatArrayRegion(env, model, 0, 16, matrix.m);
-        /* `ScgVertexUvN` est exactement huit `float` contigus, ce que les
-         * assertions du header vérifient sur cette cible même. */
-        (*env)->GetFloatArrayRegion(env, vertices, 0, floats, (jfloat *)points);
-        (*env)->GetIntArrayRegion(env, indices, 0, index_count, raw_indices);
-        (*env)->GetByteArrayRegion(env, colors, 0, channels, raw_colors);
-
-        for (uint32_t i = 0; i < triangle_count; i++) {
-            faces[i].i0 = (uint32_t)raw_indices[i * 3];
-            faces[i].i1 = (uint32_t)raw_indices[i * 3 + 1];
-            faces[i].i2 = (uint32_t)raw_indices[i * 3 + 2];
-            faces[i].r = (uint8_t)raw_colors[i * 4];
-            faces[i].g = (uint8_t)raw_colors[i * 4 + 1];
-            faces[i].b = (uint8_t)raw_colors[i * 4 + 2];
-            faces[i].a = (uint8_t)raw_colors[i * 4 + 3];
-        }
-        code = scg_submit_shaded((ScgContext *)(intptr_t)ctx, &matrix, points, vertex_count,
-                                 faces, triangle_count, (ScgTexture *)(intptr_t)texture);
-    }
-
-    free(points);
-    free(faces);
-    free(raw_indices);
-    free(raw_colors);
-    return code;
+    lot_rendre(&lot);
+    return (jint)code;
 }
 
 /*

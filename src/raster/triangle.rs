@@ -325,6 +325,30 @@ impl Vertex {
 }
 
 impl Prepared {
+    /// L'écart en sous-pixels entre le centre du pixel d'abscisse `x` et le
+    /// point de référence du plan.
+    ///
+    /// **Six sites la recopiaient, dont un sur le chemin vectoriel.** La
+    /// duplication voulue du projet est celle de la **boucle de remplissage**,
+    /// référence contre laquelle une variante se valide ; cette conversion-ci
+    /// n'est pas une boucle, c'est l'arithmétique qui alimente
+    /// [`Plane::at`](super::plane::Plane::at) — donc exactement ce dont le
+    /// déterminisme dépend. La partager rend les chemins identiques sur elle par
+    /// construction, là où un `PIXEL_CENTER` oublié dans l'une des six n'aurait
+    /// divergé que sur les passes qui l'empruntent.
+    fn ex(&self, x: i32) -> i64 {
+        (x * SUBPIXEL_SCALE + PIXEL_CENTER - self.ref_x) as i64
+    }
+
+    /// L'écart en sous-pixels entre la ligne `y` et le point de référence du
+    /// plan.
+    ///
+    /// Elle ne prend pas le centre du pixel comme [`Prepared::ex`] : `py_of` le
+    /// fait déjà.
+    fn ey(&self, y: i32) -> i64 {
+        (py_of(y) - self.ref_y) as i64
+    }
+
     /// Les pixels extrêmes que le triangle peut couvrir : `(x0, y0, x1, y1)`,
     /// bornes comprises.
     pub fn bounds(&self) -> (i32, i32, i32, i32) {
@@ -669,8 +693,8 @@ pub fn fill<T: Target>(
             // close : elle ne se propage pas d'une ligne à l'autre, les spans
             // ne commençant pas à la même abscisse. Les pas entiers qui suivent
             // donnent les mêmes bits que l'évaluation directe en chaque pixel.
-            let ey = (py_of(y) - triangle.ref_y) as i64;
-            let ex = |x: i32| (x * SUBPIXEL_SCALE + PIXEL_CENTER - triangle.ref_x) as i64;
+            let ey = triangle.ey(y);
+            let ex = |x: i32| triangle.ex(x);
             // **Le seul chemin qui se passe de segments est la couleur unie
             // sans éclairage.** Dès qu'un attribut se lit dans une image — le
             // texel, l'éclairage, ou les deux —, il faut la division de
@@ -823,8 +847,8 @@ fn fill_segment<T: Target>(
     // Les écarts se recalculent ici plutôt que de traverser la signature :
     // deux soustractions par segment, contre deux paramètres de plus dans une
     // liste qui en compte déjà huit.
-    let ey = (py_of(y) - triangle.ref_y) as i64;
-    let ex = |x: i32| (x * SUBPIXEL_SCALE + PIXEL_CENTER - triangle.ref_x) as i64;
+    let ey = triangle.ey(y);
+    let ex = |x: i32| triangle.ex(x);
     let depth_at = |x: i32| triangle.depth.at(ex(x), ey);
 
     let (from, to) = segment;
@@ -958,8 +982,8 @@ fn sampled_simd<T: Target>(
     // l'est pas : voir `SampledRow::shift`, et `Crawl::sample`, qui fait déjà
     // cette distinction.
     let level = (texel.level as usize).min(texture.level_count() - 1);
-    let ey = (py_of(y) - triangle.ref_y) as i64;
-    let ex = (draw.0 * SUBPIXEL_SCALE + PIXEL_CENTER - triangle.ref_x) as i64;
+    let ey = triangle.ey(y);
+    let ex = triangle.ex(draw.0);
     let start = triangle.depth.at(ex, ey);
     let step = triangle.depth.step_x(SUBPIXEL_SCALE);
     // Les quatre décalages du bloc, pris par la fonction du scalaire plutôt que
@@ -1163,8 +1187,8 @@ impl<T: Target> Walk<'_, T> {
     /// d'aucun ombrage, et les recopier dans chacun aurait rendu quatre fois
     /// le contrat du tampon de profondeur.
     fn run<S: Shade>(self, mut shade: S) {
-        let ey = (py_of(self.y) - self.triangle.ref_y) as i64;
-        let ex = |x: i32| (x * SUBPIXEL_SCALE + PIXEL_CENTER - self.triangle.ref_x) as i64;
+        let ey = self.triangle.ey(self.y);
+        let ex = |x: i32| self.triangle.ex(x);
         let mut depth = self.triangle.depth.at(ex(self.draw.0), ey);
         let depth_x = self.triangle.depth.step_x(SUBPIXEL_SCALE);
 
@@ -1408,7 +1432,7 @@ impl Ramp {
 
     /// La marche des trois plans depuis le pixel `start`.
     fn new(triangle: &Prepared, planes: &[Plane; 3], start: i32, ey: i64) -> Self {
-        let ex = (start * SUBPIXEL_SCALE + PIXEL_CENTER - triangle.ref_x) as i64;
+        let ex = triangle.ex(start);
         let mut value = [0i64; 3];
         let mut step = [0i64; 3];
         for i in 0..3 {
@@ -1498,7 +1522,7 @@ impl Crawl {
 
     /// La marche d'`planes` sur le segment que `ends` décrit.
     fn new(triangle: &Prepared, planes: &[Plane; 2], ey: i64, ends: &Ends) -> Self {
-        let ex = |x: i32| (x * SUBPIXEL_SCALE + PIXEL_CENTER - triangle.ref_x) as i64;
+        let ex = |x: i32| triangle.ex(x);
         let at = |end: &Reciprocal| {
             let read = |plane: &Plane| {
                 i64::from(texel_coord(plane.at(ex(end.x), ey) >> GRADIENT_BITS, end.w))
