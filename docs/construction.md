@@ -633,9 +633,10 @@ Dans l'ordre où les causes se rencontrent :
 
 Les hôtes de `hosts/` ont deux rôles, et tous ne portent pas les deux : celui qui
 éprouve la frontière sans fenêtre — `make test` le construit et compare son
-empreinte — et celui qui montre le moteur. Le second ouvre une fenêtre, donc il
-n'est dans aucun contrôle : ni `make test`, ni l'intégration continue ne le
-construisent.
+empreinte — et celui qui montre le moteur. Le second ouvre une fenêtre, donc
+**aucun contrôle ne l'exécute**. Les deux démonstrations de bureau ne sont pas
+construites non plus ; celle d'Android l'est, `make test` compilant son APK avec
+le reste de l'hôte sans jamais le lancer.
 
 **`hosts/go` n'a que le premier**, et c'est cohérent avec ce qu'il existe pour
 éprouver : un langage qui déplace ses objets se vérifie sur le passage de

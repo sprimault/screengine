@@ -184,6 +184,6 @@ L'hôte wasm demande Node et la cible `wasm32-unknown-unknown`, que
 `make tools` installe ; l'hôte Android demande NDK, SDK, émulateur et
 `qemu-user`, que `hosts/android/Dockerfile` réunit sous Linux avec KVM ; les
 deux démonstrations de bureau demandent SDL3, et disent ce qui manque plutôt que
-d'échouer à la compilation. iOS attend que le reste soit stable — voir la feuille de
-route. [`docs/construction.md`](docs/construction.md) porte la
+d'échouer à la compilation. iOS et macOS attendent un runner macOS — voir la
+feuille de route. [`docs/construction.md`](docs/construction.md) porte la
 matrice complète.
