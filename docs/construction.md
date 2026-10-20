@@ -42,13 +42,23 @@ Les versions sont épinglées dans le `Makefile` et nulle part ailleurs.
 là où un `cfg` propre à une plateforme ne serait vérifié par rien d'autre ; celle
 sans `std` est couverte par `make nostd`, qui la compile. Il y ajoute
 `screengine-play` sur les deux cibles Linux ARM et sur wasm, et nulle part
-ailleurs. Il entraîne en outre **cinq** contrôles qui ne sont pas clippy : la
+ailleurs. Il entraîne en outre **six** contrôles qui ne sont pas clippy : la
 documentation des fonctions de test, que `missing_docs` ne voit pas, la
 concordance des versions d'outillage Android, celle de l'épinglage de
 `wasm-bindgen` avec ce que le `Cargo.lock` résout, celle de l'état annoncé avec
-la version du paquet, et celle des bornes du noyau avec les constantes du
-header. L'intégration continue appelle `make tools`, qui installe les outils aux
+la version du paquet, celle des bornes du noyau avec les constantes du header,
+et l'enveloppe `entry::` de chaque point d'entrée de la frontière.
+L'intégration continue appelle `make tools`, qui installe les outils aux
 versions épinglées ici.
+
+**L'enveloppe se vérifie en suivant la délégation, sur deux niveaux.** Un point
+d'entrée sur cinq n'appelle pas l'enveloppe lui-même : il passe par un
+utilitaire partagé qui la porte, pour que la vérification du handle et celle du
+pointeur de sortie n'existent qu'à un endroit. Le contrôle lit donc le fichier
+deux fois avant de juger, et un troisième niveau de délégation serait annoncé
+comme nu — il accuse à tort plutôt que d'acquitter à tort. Ce qu'il ne peut pas
+voir reste écrit : un point d'entrée **manquant** ne se détecte pas
+mécaniquement, l'ABI n'exposant pas tout le noyau.
 
 **Les cinq portent la même garde, et elle n'est pas un ornement** : ce qu'un
 contrôle cherche et ne trouve pas est un échec, jamais un succès. Deux motifs
