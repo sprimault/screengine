@@ -85,9 +85,9 @@ CIBLES_LINUX_ARM ?= aarch64-unknown-linux-gnu armv7-unknown-linux-gnueabihf
 CARGO_INSTALL_FLAGS ?=
 
 # Les hôtes construits par `make hosts`. Chacun exige son outillage — un
-# compilateur C, php, la cible wasm, le NDK — et aucun poste ne les a tous.
-# La liste se surcharge dans makefile.local plutôt que de faire échouer la
-# cible sur ce qui manque.
+# compilateur C, la cible wasm et Node, le NDK, Go avec un compilateur C pour
+# cgo — et aucun poste ne les a tous. La liste se surcharge dans makefile.local
+# plutôt que de faire échouer la cible sur ce qui manque.
 HOSTS ?= c cpp web go
 
 # Les éditeurs de liens du NDK, par variables plutôt que par cargo-ndk : trois
@@ -181,6 +181,12 @@ test:
 #   wasm     l'hôte web sous Node, sans fenêtre : le module instancié sans
 #            import, la mémoire linéaire et scg_buffer_alloc
 #   android  les trois ABI sans appareil, x86_64 sur un émulateur par JNI
+#   go       le seul lié par cgo, et le seul dont le langage déplace ses
+#            objets : aucun pointeur rendu au moteur n'appartient à un tas
+#            ramassé
+#
+# Ils sont cinq, et c'est ce qui rend comparable une scène ajoutée à
+# HOST_SCENES : elle coûte cinq descriptions.
 #
 # Chaque hôte garde dans son Makefile `why-not`, `all` et `run`, avec PROFILE et
 # OUT ; ce qui suit ne connaît que son répertoire, son profil et la commande qui
@@ -214,9 +220,6 @@ host_name_android    := Android
 host_profile_android := ffi-test
 host_build_android    = $(call android_build,ffi-test)
 
-# Le seul hôte lié par cgo, et le seul dont le langage déplace ses objets : ce
-# qu'il éprouve que les quatre autres n'éprouvent pas est qu'aucun pointeur
-# rendu au moteur n'appartient à un tas ramassé.
 host_dir_go      := go
 host_name_go     := Go
 host_profile_go  := ffi-test
@@ -241,7 +244,7 @@ HOST_OUT = $(abspath $(SORTIE))/host-$(host_dir_$*)
 #   composite             les cinq chemins de l'étape 6 dans une seule image :
 #                         maillage entre deux trames, texture masquée, les deux
 #                         modes d'orientation de sprite, le roulis, la surface
-#                         modulée. Une seule, parce qu'une scène coûte quatre
+#                         modulée. Une seule, parce qu'une scène coûte cinq
 #                         descriptions ; les scènes séparées de la conformance
 #                         disent lequel des chemins a bougé
 #   salles                le décor chargé depuis hosts/salles.world, cuit cellule

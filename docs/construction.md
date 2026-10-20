@@ -36,11 +36,14 @@ Sans lui, un clone se construit dans `target/`.
 | `qemu-user` | celui de la distribution | exécute les tests aarch64 et armv7 de l'hôte Android sans appareil |
 
 Les versions sont épinglées dans le `Makefile` et nulle part ailleurs.
-`make tools` les installe, avec les cibles `thumbv7em-none-eabihf`,
-`wasm32-unknown-unknown`, `i686-pc-windows-msvc` et les trois cibles Android.
-`make lint` passe aussi clippy sur toutes celles-là **sauf la cible sans `std`**,
-là où un `cfg` propre à une plateforme ne serait vérifié par rien d'autre ; celle
-sans `std` est couverte par `make nostd`, qui la compile. Il y ajoute
+`make tools` les installe, avec neuf cibles : `thumbv7em-none-eabihf`,
+`wasm32-unknown-unknown`, `wasm32-wasip1`, `i686-pc-windows-msvc`, les trois
+cibles Android et les deux cibles Linux sur ARM.
+`make lint` passe aussi clippy sur ces cibles **sauf deux**, là où un `cfg`
+propre à une plateforme ne serait vérifié par rien d'autre : celle sans `std`,
+que `make nostd` compile, et WASI, que `make test-wasi` et `make conform-wasi`
+exécutent — toutes deux éprouvées par une cible qui en fait plus que compiler.
+Il y ajoute
 `screengine-play` sur les deux cibles Linux ARM et sur wasm, et nulle part
 ailleurs. Il entraîne en outre **sept** contrôles qui ne sont pas clippy : la
 documentation des fonctions de test, que `missing_docs` ne voit pas, la
@@ -153,9 +156,9 @@ l'exécution par `scg_abi_version`.
 |---|---|---|---|---|---|
 | Windows x64 | `x86_64-pc-windows-msvc` | `.dll`, `.lib` | MSVC Build Tools | `screengine-play`, `hosts/c`, `hosts/cpp`, `hosts/go` | CI |
 | Windows x86 | `i686-pc-windows-msvc` | `.dll`, `.lib` | MSVC Build Tools | aucun | CI, `make conform-x86` |
-| Linux x64 | `x86_64-unknown-linux-gnu` | `.so`, `.a` | gcc ou clang | `hosts/c`, `hosts/cpp`, `hosts/go`, conformance | CI |
+| Linux x64 | `x86_64-unknown-linux-gnu` | `.so`, `.a` | gcc ou clang | `screengine-play`, `hosts/c`, `hosts/cpp`, `hosts/go`, conformance | CI |
 | Linux x86 | `i686-unknown-linux-gnu` | `.so`, `.a` | gcc-multilib | aucun | CI, au tag seulement |
-| Navigateur | `wasm32-unknown-unknown` | `.wasm` | cible rustup, Node | `hosts/web` | CI, `make test-wasm` sous Linux et Windows |
+| Navigateur | `wasm32-unknown-unknown` | `.wasm` | cible rustup, Node, `wasm-bindgen-cli` pour l'étage d'accueil | `screengine-play`, `hosts/web` | CI, `make test-wasm` sous Linux et Windows |
 | wasm WASI | `wasm32-wasip1` | `.wasm` exécutable | cible rustup, Node | aucun | CI, `make test-wasi` et `make conform-wasi`, pour le noyau ; `make bench-wasi` le mesure, hors contrôle |
 | Android arm64 | `aarch64-linux-android` | `.so`, `.a` | NDK, `qemu-user` | `hosts/android` | CI, `make test-android` sous Linux, sous `qemu-user` ; `make test-arm` et `make conform-arm` pour le noyau |
 | Android armv7 | `armv7-linux-androideabi` | `.so`, `.a` | NDK, `qemu-user` | `hosts/android` | CI, `make test-android` sous Linux, sous `qemu-user` ; `make test-arm` et `make conform-arm` pour le noyau |

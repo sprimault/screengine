@@ -292,6 +292,11 @@ fn chosen() -> Vec<Vec3> {
     chosen
 }
 
+/// Les points de départ que le balayage et l'interrogation partagent.
+///
+/// Publique parce que les deux scènes les posent : un départ commun est ce qui
+/// rend leurs deux rapports lisibles en regard, et deux treillis engendrés
+/// séparément auraient dérivé au premier réglage.
 pub fn starts() -> Vec<Vec3> {
     let mut starts = Vec::new();
     // **Un treillis par cellule, dans sa propre boîte englobante**, plutôt qu'un
