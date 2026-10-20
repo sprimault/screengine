@@ -787,6 +787,7 @@ function checkLayout(header) {
     ScgLine: scg.LINE_SIZE,
     ScgPoint: scg.POINT_SIZE,
     ScgSweepHit: scg.SWEEP_HIT_SIZE,
+    ScgVertexUvN: scg.VERTEX_UVN_SIZE,
   };
 
   // **La table au-dessus se compare à ce que la liaison déclare**, et non
@@ -810,15 +811,30 @@ function checkLayout(header) {
   check(asserts.length > 0, "le header affirme des tailles de structures");
 
   let vues = 0;
+  const ignorees = [];
   for (const [, name, value] of asserts) {
     if (name in sizes) {
       check(sizes[name] === Number(value), `sizeof(${name}) vaut ${value} comme dans le header`);
       vues += 1;
+    } else {
+      ignorees.push(name);
     }
   }
   check(
     vues === Object.keys(sizes).length,
     `les ${Object.keys(sizes).length} tailles de la liaison sont dans le header, ${vues} vues`,
+  );
+  // **Le sens inverse manquait, et c'est lui qui ferme la classe** : une
+  // structure que le header affirme et que la table ne connaît pas était
+  // ignorée par la boucle, sans un mot. Les autres cibles compilent les
+  // assertions statiques du header, donc elles sont couvertes deux fois ; wasm
+  // est la seule qui reproduise les décalages à la main, et la seule où
+  // l'oubli ne coûte rien avant le premier octet mal placé.
+  check(
+    ignorees.length === 0,
+    `les ${asserts.length} structures du header ont leur taille ici${
+      ignorees.length ? `, il manque ${ignorees.join(", ")}` : ""
+    }`,
   );
 }
 
