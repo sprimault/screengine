@@ -25,8 +25,6 @@
 // qu'il se vérifie sur des propriétés — alignement, recouvrement, gouttière — que
 // personne ne saurait juger sur une image, alors qu'un atlas faux sous un
 // éclairage plausible ne se verrait pas.
-#![allow(dead_code)]
-
 use alloc::vec::Vec;
 
 use crate::buffer::reserved;

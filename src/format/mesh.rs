@@ -81,7 +81,6 @@ pub(crate) struct Pose {
     pub(crate) position: Vec3,
     /// Sa normale, pas nécessairement unitaire : l'interpolation la dénormalise
     /// de toute façon, et c'est le moteur qui normalise.
-    #[allow(dead_code)]
     pub(crate) normal: Vec3,
 }
 
@@ -216,7 +215,6 @@ impl Mesh {
     ///
     /// Une tranche contiguë, ce que le rangement par trame garantit : rien
     /// n'est à rassembler, donc rien n'est à allouer.
-    #[allow(dead_code)]
     pub(crate) fn frame(&self, index: u32) -> Option<&[Pose]> {
         let n = self.vertices.len();
         let debut = (index as usize).checked_mul(n)?;

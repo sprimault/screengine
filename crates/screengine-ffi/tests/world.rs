@@ -966,6 +966,36 @@ fn rend_les_comptes_de_la_carte() {
     assert_eq!(materials, 2);
 }
 
+/// L'identifiant d'un matériau se lit par son rang, et c'est ce que la surface
+/// rend qui le rend nécessaire.
+///
+/// `scg_world_surface_material` rend un **rang**, jamais l'identifiant du
+/// fichier : sans cet accesseur, un hôte qui a écrit la carte ne peut relier un
+/// matériau relu à celui qu'il a posé que par l'ordre d'écriture, que rien ne
+/// garantit. C'est l'argument de `scg_world_light_id`, et il tenait ici depuis
+/// l'étape 4 sans que rien ne le close.
+///
+/// Les deux rangs sont lus, et non le seul premier : un accesseur qui rendrait
+/// toujours l'identifiant de tête passerait sur un seul.
+#[test]
+fn lit_l_identifiant_d_un_materiau_par_son_rang() {
+    let world = load(&one_cell_world());
+    let mut id = 0;
+    // SAFETY: handle vivant, paramètres de sortie locaux.
+    let refus = unsafe {
+        assert_eq!(scg_world_material_id(world, 0, &mut id), SCG_OK);
+        assert_eq!(id, 1, "« mur »");
+        assert_eq!(scg_world_material_id(world, 1, &mut id), SCG_OK);
+        assert_eq!(id, 2, "« plafond »");
+
+        let refus = scg_world_material_id(world, 2, &mut id);
+        scg_world_destroy(world);
+        refus
+    };
+    assert_eq!(refus, SCG_ERR_INVALID_ARGUMENT, "au-delà du dernier rang");
+    assert_eq!(id, 2, "rien n'est écrit sur un rang refusé");
+}
+
 /// Un nom de matériau se lit en deux temps, comme un nom d'emplacement.
 #[test]
 fn lit_un_nom_de_materiau_en_deux_temps() {

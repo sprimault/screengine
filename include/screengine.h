@@ -2154,6 +2154,25 @@ int32_t scg_world_light(const struct ScgWorld *world, uint32_t index, struct Scg
 // a writable `uint32_t`.
 int32_t scg_world_light_id(const struct ScgWorld *world, uint32_t index, uint32_t *out);
 
+// Writes a material's stable identifier to `out`, by rank.
+//
+// **The rank is the one `scg_world_material_name` takes**, and this is the
+// argument of `scg_world_light_id` transposed: without it, a host that wrote
+// the map can only match a material it reads back to the one it placed by
+// relying on write order, which nothing guarantees.
+//
+// The gap was plainer here than for a light, because what
+// `scg_world_surface_material` returns **is** a rank: the table carried the
+// identifiers, the loader checked them unique, and nothing returned them. An
+// `index` beyond `scg_world_material_count` returns
+// `SCG_ERR_INVALID_ARGUMENT` and writes nothing.
+//
+// # Safety
+//
+// `world` must be a live handle from `scg_world_load`, and `out` must point to
+// a writable `uint32_t`.
+int32_t scg_world_material_id(const struct ScgWorld *world, uint32_t index, uint32_t *out);
+
 // Sweeps an axis-aligned box from `from` to `to`, starting in `from_cell`.
 //
 // **The collision module needs no rendering context**, which is the whole point:
