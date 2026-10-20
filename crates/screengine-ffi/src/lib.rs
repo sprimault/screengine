@@ -1630,8 +1630,8 @@ pub unsafe extern "C" fn scg_mesh_frame_count(mesh: *const ScgMesh, out: *mut u3
     unsafe { mesh_count(mesh, out, Mesh::frame_count) }
 }
 
-/// Writes a frame's bounding box to `out`: three floats of the low corner, then
-/// three of the high one, in the mesh's own space — a pose is not known here.
+/// Writes a frame's bounding box to `out`: the low corner's `x`, `y` and `z`,
+/// then the high corner's, in the mesh's own space — a pose is not known here.
 /// The centre and half-extents a sweep takes are one sum and one difference
 /// away.
 ///

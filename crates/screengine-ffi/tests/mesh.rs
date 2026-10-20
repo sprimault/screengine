@@ -272,16 +272,30 @@ fn refuse_un_pointeur_nul_aux_accesseurs() {
     }
 }
 
-/// Le même triangle sur deux trames, la seconde étirée en `z`.
+/// Le même triangle sur deux trames, chacune posée ailleurs et autrement.
 ///
 /// Deux trames et non une : avec une seule, un accesseur qui rendrait toujours
 /// la première boîte passerait, et c'est précisément ce qu'on veut voir rougir.
+///
+/// **Aucune cote ne se répète dans un coin**, ni d'un coin à l'autre. Les six
+/// flottants que la frontière recopie n'ont pas de nom : rien d'autre qu'une
+/// valeur distincte ne sépare une transposition d'axes d'une recopie juste, et
+/// une liaison qui lirait `out[0]` comme `x` recevrait `y` sans que rien ne le
+/// dise. Le triangle était auparavant d'étendue égale en `x` et en `y`.
+///
+/// Les composantes des trois sommets se croisent, de sorte qu'aucun d'eux n'est
+/// un coin de la boîte.
 fn two_frame_mesh() -> Vec<u8> {
+    const FRAMES: [[[f32; 3]; 3]; 2] = [
+        [[-1.0, 3.25, -2.0], [2.0, 0.5, -0.5], [0.0, 1.0, -1.0]],
+        [[-0.25, 6.5, 3.0], [4.0, 1.5, 7.25], [1.0, 2.0, 5.0]],
+    ];
+
     let mut poses = 2u32.to_le_bytes().to_vec();
     let mut uvs = Vec::new();
-    for z in [-2.0f32, 3.0] {
-        for (x, y) in [(0.0f32, 0.0f32), (1.0, 0.0), (0.0, 1.0)] {
-            for value in [x, y, z, 0.0, 0.0, 1.0] {
+    for frame in FRAMES {
+        for position in frame {
+            for value in position.into_iter().chain([0.0, 0.0, 1.0]) {
                 poses.extend_from_slice(&value.to_le_bytes());
             }
         }
@@ -295,8 +309,12 @@ fn two_frame_mesh() -> Vec<u8> {
     mesh_bytes(&[(*b"FRMS", poses), (*b"VTXS", uvs)], b"MESH", 2)
 }
 
-/// Les deux coins d'une trame franchissent la frontière, et chaque trame rend
-/// les siens.
+/// Les deux coins d'une trame franchissent la frontière, chaque trame rend les
+/// siens, et chaque composante arrive à son rang.
+///
+/// C'est le seul contrôle du rang des six flottants : le test du noyau distingue
+/// bien les trois axes mais n'emprunte pas la frontière, et aucun hôte n'appelle
+/// la fonction.
 ///
 /// Le refus d'une trame inexistante est vérifié avec le tableau de sortie : rien
 /// n'y est écrit sur un chemin d'erreur, ce que toute l'ABI tient.
@@ -308,14 +326,18 @@ fn lit_la_boite_englobante_de_chaque_trame() {
     // SAFETY: handle vivant, et le tableau couvre les six flottants annoncés.
     let refus = unsafe {
         assert_eq!(scg_mesh_bounds(mesh, 0, corners.as_mut_ptr()), SCG_OK);
-        assert_eq!(corners, [0.0, 0.0, -2.0, 1.0, 1.0, -2.0]);
+        assert_eq!(corners, [-1.0, 0.5, -2.0, 2.0, 3.25, -0.5]);
 
         assert_eq!(scg_mesh_bounds(mesh, 1, corners.as_mut_ptr()), SCG_OK);
-        assert_eq!(corners, [0.0, 0.0, 3.0, 1.0, 1.0, 3.0]);
+        assert_eq!(corners, [-0.25, 1.5, 3.0, 4.0, 6.5, 7.25]);
 
         let code = scg_mesh_bounds(mesh, 2, corners.as_mut_ptr());
         let message = last_error();
-        assert_eq!(corners, [0.0, 0.0, 3.0, 1.0, 1.0, 3.0], "rien n'est écrit");
+        assert_eq!(
+            corners,
+            [-0.25, 1.5, 3.0, 4.0, 6.5, 7.25],
+            "rien n'est écrit"
+        );
 
         assert_eq!(scg_mesh_bounds(mesh, 0, ptr::null_mut()), SCG_ERR_NULL);
         assert_eq!(

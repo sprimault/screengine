@@ -1697,8 +1697,8 @@ int32_t scg_submit_mesh_frame(struct ScgContext *ctx,
 // writable `uint32_t`.
 int32_t scg_mesh_frame_count(const struct ScgMesh *mesh, uint32_t *out);
 
-// Writes a frame's bounding box to `out`: three floats of the low corner, then
-// three of the high one, in the mesh's own space — a pose is not known here.
+// Writes a frame's bounding box to `out`: the low corner's `x`, `y` and `z`,
+// then the high corner's, in the mesh's own space — a pose is not known here.
 // The centre and half-extents a sweep takes are one sum and one difference
 // away.
 //
