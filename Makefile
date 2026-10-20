@@ -123,7 +123,7 @@ android_build = for cible in $(CIBLES_ANDROID); do \
 -include makefile.local
 
 .PHONY: build lib lib-wasm lib-android run example web test native-libs fmt fmt-fix lint lint-doc-tests \
-        lint-android-versions lint-wasm-bindgen lint-enveloppes etat-verif nostd test-arm test-linux-arm test-wasi msrv bench bench-wasi stubs \
+        lint-android-versions lint-wasm-bindgen lint-enveloppes etat-verif plate-verif nostd test-arm test-linux-arm test-wasi msrv bench bench-wasi stubs \
         conform conform-arm conform-linux-arm conform-wasi conform-x86 conform-update conform-images mesh header header-verif audit deny doc doc-verif hosts host-c host-cpp host-web host-go \
         host-android demo-c demo-cpp clean tools
 
@@ -698,6 +698,13 @@ BORNES_HORS = BYTES_PER_PIXEL TILE_SIZES
 # annonçait pourtant publiée.
 BORNES_EXPOSEES = 11
 
+# Combien d'items la liste plate de l'étage d'accueil promet, et **c'est un
+# contrôle, pas un réglage** : un item qui entre dans le `pub use` sans entrer
+# dans le cas qui le nomme redevient joignable par le seul chemin long, sans que
+# rien ne casse. `Sweep` y a manqué, et le cas était précisément ce qui aurait dû
+# le dire.
+PLATE_ITEMS = 53
+
 # La cible vérifie en outre que **le majeur n'est jamais inférieur à
 # `SCG_ABI_VERSION`**, ce que `CHANGELOG.md` arrête : un incrément de la seconde
 # impose le premier.
@@ -776,6 +783,60 @@ bornes-verif:
 	fi; \
 	echo "bornes-verif : $$compte bornes du noyau publiees par le header"
 
+# La liste plate de `screengine-play` et le cas qui la garde doivent nommer les
+# mêmes items. Le cas ne tenait que ce qu'il nommait déjà : un item ajouté au
+# `pub use` et oublié là-bas ne casse aucune compilation — l'hôte passe par le
+# chemin long `screengine::`, personne ne le voit, et la promesse « rien n'est
+# atteignable par un seul chemin » se perd en silence. C'est ainsi que `Sweep`
+# est resté dehors, et c'est la classe que cette cible ferme là où le cas ne
+# fermait que son instance.
+#
+# **Les deux sens sont des échecs.** Un item nommé par le cas et absent de la
+# liste ne compile pas, mais il y arrive par un `pub use` retiré : le message doit
+# alors nommer le retrait plutôt que de laisser chercher dans une erreur de rustc.
+#
+# Le nom retenu est celui que le cas écrit, donc celui d'après `as` : `Error as
+# CoreError` entre comme `CoreError`, les deux collisions se résolvant par un
+# préfixe et non par un nom laissé dehors.
+#
+# Elle ne depend pas de `git`, comme ses deux voisines : deux globs suffisent, et
+# elle tourne donc aussi dans un arbre sans `.git`.
+plate-verif:
+	@plate=$$(sed -n '/^pub use screengine::{/,/^};/p' crates/screengine-play/src/lib.rs \
+	  | tr ',' '\n' | sed 's/.* as //' \
+	  | grep -oE "[A-Za-z_][A-Za-z0-9_]*" \
+	  | grep -vxE "pub|use|screengine" | sort -u); \
+	cas=$$(sed -n '/^    use super::{$$/,/^    };$$/p' crates/screengine-play/src/tests.rs \
+	  | tr ',' '\n' | grep -oE "[A-Za-z_][A-Za-z0-9_]*" \
+	  | grep -vxE "use|super" | sort -u); \
+	if [ -z "$$plate" ]; then \
+	  echo "plate-verif : aucun item reconnu dans le pub use de screengine-play"; exit 1; \
+	fi; \
+	if [ -z "$$cas" ]; then \
+	  echo "plate-verif : aucun item reconnu dans le cas de la surface plate"; exit 1; \
+	fi; \
+	liste_plate=$$(echo $$plate); liste_cas=$$(echo $$cas); \
+	manquants=""; surnumeraires=""; compte=0; \
+	for item in $$plate; do \
+	  case " $$liste_cas " in \
+	    *" $$item "*) compte=$$((compte + 1));; \
+	    *) manquants="$$manquants $$item";; \
+	  esac; \
+	done; \
+	for item in $$cas; do \
+	  case " $$liste_plate " in *" $$item "*) ;; *) surnumeraires="$$surnumeraires $$item";; esac; \
+	done; \
+	if [ -n "$$manquants" ]; then \
+	  echo "plate-verif : item(s) de la liste plate que le cas ne nomme pas :$$manquants"; exit 1; \
+	fi; \
+	if [ -n "$$surnumeraires" ]; then \
+	  echo "plate-verif : item(s) nomme(s) par le cas et hors de la liste plate :$$surnumeraires"; exit 1; \
+	fi; \
+	if [ "$$compte" != "$(PLATE_ITEMS)" ]; then \
+	  echo "plate-verif : $$compte item(s) concordant(s), $(PLATE_ITEMS) attendu(s)"; exit 1; \
+	fi; \
+	echo "plate-verif : $$compte items de la liste plate nommes par le cas"
+
 # Les cibles qu'un contrôle traverse au-delà de celle du poste, et le seul
 # endroit où du code propre à une autre architecture se compile ici : `neon.rs`
 # sur `aarch64`, les chemins wasm, et la largeur de pointeur de `i686`. En
@@ -805,7 +866,7 @@ CIBLES_PLAY = $(CIBLES_LINUX_ARM) $(CIBLE_WASM)
 # leur plancher n'est pas sous notre contrôle, et l'y faire entrer donnerait une
 # contrainte qu'une montée de dépendance casserait sans qu'on puisse rien.
 
-lint: lint-doc-tests lint-android-versions lint-wasm-bindgen lint-enveloppes etat-verif bornes-verif
+lint: lint-doc-tests lint-android-versions lint-wasm-bindgen lint-enveloppes etat-verif bornes-verif plate-verif
 	cargo clippy --workspace --all-targets --all-features -- -D warnings
 	for cible in $(CIBLES_CROISEES); do \
 	  cargo clippy -p screengine -p screengine-ffi --lib --target $$cible -- -D warnings || exit 1; \
