@@ -4,8 +4,8 @@ Français : [SECURITY.fr.md](SECURITY.fr.md)
 
 ## Supported versions
 
-The latest published release. In `0.x` there is no maintenance branch: a fix
-ships in the next version.
+The latest published release. There is no maintenance branch: a fix ships in the
+next release, never as a backport onto an earlier one.
 
 ## Reporting a vulnerability
 

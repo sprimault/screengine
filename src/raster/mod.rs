@@ -187,6 +187,14 @@ pub struct Span {
     pub simd: SimdPath,
 }
 
+/// Où un remplissage propose ses pixels, et ce qui décide de les écrire.
+///
+/// **Un trait et non une fonction**, parce que le même parcours sert trois
+/// puits qui n'ont rien en commun que leur interface : la tuile, qui écrit
+/// couleur et profondeur ; le comptage, qui ne retient que le nombre de
+/// propositions ; et les variantes vectorielles, qui traitent une ligne d'un
+/// bloc. L'étanchéité se vérifie alors sur le parcours, une fois, plutôt que sur
+/// chaque puits.
 pub trait Target {
     /// Remplit une ligne entière d'une surface unie.
     ///

@@ -2099,6 +2099,14 @@ taille des tuiles, ni du nombre de threads.**
   publics, constantes, statiques, fonctions de test. Une ligne quand c'est
   évident, un paragraphe quand il y a un arbitrage à retrouver. Le lint
   `missing_docs` le fait refuser par `make lint`.
+
+  **Il a deux angles morts, et la règle n'y souffre pas d'exception pour
+  autant** : les fonctions privées d'un `mod tests`, d'où la cible
+  `lint-doc-tests`, et tout ce qui est public dans un module **privé** — le lint
+  ne regarde que ce qui est atteignable du dehors du crate, si bien qu'un trait
+  de `raster` ou une fonction de la conformance peut rester muette sans rien
+  faire rougir. Celle-là se tient à la relecture, comme la règle qui veut qu'un
+  refus de contenu nomme son élément.
 - **Les commentaires disent pourquoi**, jamais ce que dit la ligne suivante. Leur
   densité suit la difficulté : quatre lignes sur la règle top-left, rien sur la
   plomberie.

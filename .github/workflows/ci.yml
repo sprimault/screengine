@@ -95,8 +95,10 @@ jobs:
       - name: Documentation
         run: make doc-verif
 
-      # La version minimale que `Cargo.toml` déclare et que `CONTRIBUTING`
-      # reprend : tout le reste se construit avec une chaîne récente, et une
+      # La version minimale que `Cargo.toml` déclare, et que `docs/rust.md` et
+      # `docs/construction.md` reprennent — mais pas `CONTRIBUTING`, qui ne
+      # porte aucun numéro : une quatrième copie du plancher serait une de plus
+      # à tenir accordée. Tout le reste se construit avec une chaîne récente, et une
       # fonction stabilisée depuis passerait sans bruit jusqu'à ce que quelqu'un
       # ouvre le dépôt avec la chaîne annoncée. Une étape de ce job plutôt qu'un
       # job à part : la protection de branche exige les contrôles par leur nom,

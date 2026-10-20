@@ -4,8 +4,9 @@ English: [SECURITY.md](SECURITY.md)
 
 ## Versions suivies
 
-La dernière version publiée. En `0.x`, il n'y a pas de branche de maintenance :
-un correctif sort dans la version suivante.
+La dernière version publiée. Il n'y a pas de branche de maintenance : un
+correctif sort dans la version suivante, jamais en rétroportage sur une version
+antérieure.
 
 ## Signaler une faille
 
