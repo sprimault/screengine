@@ -516,10 +516,13 @@ toutes les autres cibles.
   `-lscreengine.dll`, sans `gendef` ni `dlltool`. C'est ce qui ouvre Windows à cet
   hôte là où l'hôte C y reste sur MSVC, faute de pouvoir lier une **statique**
   MSVC depuis MinGW.
-- **Aucun pointeur vers le tas de Go ne traverse la frontière.** Tout ce que le
-  moteur lit ou écrit passe par `calloc` : le langage déplace ses objets, et une
-  adresse prise sur l'un d'eux cesse d'être valide sans prévenir. Le moteur
-  ne conserve rien au-delà d'un appel, mais s'en remettre à cette clause pour une
+- **Rien de ce que le moteur retient, ni aucun tampon qu'il remplit en volume, ne
+  vit en mémoire Go** : texels, fichiers et tampon d'image passent par `calloc`,
+  parce que le langage déplace ses objets et qu'une adresse prise sur l'un d'eux
+  cesse d'être valide sans prévenir. Les structures d'appel y restent, elles, le
+  temps de l'appel — `scg_create(&config, &ctx)` lit un local et écrit dans un
+  autre —, ce que les règles de cgo autorisent parce que l'appel les épingle. Le
+  moteur ne conserve rien au-delà, mais s'en remettre à cette clause pour une
   écriture de tampon serait tenir l'invariant du moteur pour une garantie du
   langage.
 - **C'est ce que cet hôte éprouve que les quatre autres n'éprouvent pas** : que

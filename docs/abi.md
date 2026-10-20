@@ -1672,9 +1672,18 @@ attendait un générateur écrit en C, en Go ou en JavaScript.
   `SCG_LIGHTMAP_FAULT_DEGENERATE_AXIS` (1) ; une origine hors de sa propre grille,
   `SCG_LIGHTMAP_FAULT_ORIGIN_OFF_GRID` (2) ; des axes non orthogonaux,
   `SCG_LIGHTMAP_FAULT_SKEWED_AXES` (3) ; un axe hors du plan de la surface,
-  `SCG_LIGHTMAP_FAULT_AXIS_OFF_PLANE` (4) ; une étendue en luxels au-delà de
-  `SCG_MAX_LIGHTMAP_SIZE`, `SCG_LIGHTMAP_FAULT_EXTENT_TOO_LARGE` (5). L'absence
-  de faute se dit `SCG_LIGHTMAP_FAULT_NONE` (0).
+  `SCG_LIGHTMAP_FAULT_AXIS_OFF_PLANE` (4) ; une étendue en luxels plus large que
+  ce qu'une surface seule peut occuper dans l'atlas de sa cellule,
+  `SCG_LIGHTMAP_FAULT_EXTENT_TOO_LARGE` (5). L'absence de faute se dit
+  `SCG_LIGHTMAP_FAULT_NONE` (0).
+
+  **Cette cinquième borne n'est pas `SCG_MAX_LIGHTMAP_SIZE`**, qui borne le côté
+  de l'atlas d'une **cellule** : une surface est bornée bien plus bas, et la
+  gouttière d'un luxel avec l'arrondi à la puissance de deux y suffisent — une
+  surface au côté de l'atlas réclamerait un emplacement deux fois plus grand, et
+  la moitié de ce côté le remplirait à elle seule. Sa valeur n'est pas publiée, et
+  c'est délibéré : elle inviterait à reproduire la mesure de l'étendue, qui est
+  justement ce que cette fonction existe pour éviter.
 
   **Les six se nomment ici parce qu'une liaison sans préprocesseur les recopie à
   la main**, comme les codes d'erreur : les lire dans le header est le privilège
@@ -1971,6 +1980,11 @@ règle se devinait jusqu'à présent sans être énoncée.
   maillage.** Le maillage animé porte ses normales dans le fichier et n'a besoin
   d'aucune structure ; celle-ci existe pour l'hôte qui anime lui-même, au titre
   de « deux chemins vers le moteur, aucun de seconde classe ».
+- **`texture` peut y être nul**, et le lot rend alors la couleur de chaque
+  triangle. C'est la seconde différence avec `scg_submit_textured`, où le même
+  argument est `SCG_ERR_NULL` : là, un lot sans texture a `scg_submit` pour lui.
+  Ici il n'a rien — `scg_submit` ne porte pas de normale —, et c'est pour lui que
+  la tolérance existe.
 - **La normale n'est pas exigée unitaire, le moteur la normalise**, comme le
   quaternion d'une caméra. Il le faut de toute façon : une normale interpolée
   entre deux trames n'est plus unitaire. Ce qui est vérifié à la réception est la
@@ -2793,8 +2807,11 @@ noms ne le sont pas.
 - **Mettre une structure de configuration entièrement à zéro avant de la
   remplir.** Ses champs `_reserved` doivent être nuls, et c'est ce qui permettra
   d'en utiliser un sans casser les liaisons déjà écrites.
-- **Réserver au moins 128 Ko de pile** au thread qui rend des tuiles, et lire le
-  message d'une tuile par `scg_last_error(NULL)`, sur ce thread.
+- **Réserver au moins 128 Ko de pile** au thread qui rend des tuiles **ou qui
+  appelle `scg_frame_end`** — un hôte sans threads, qui n'appelle que la seconde,
+  en a besoin autant —, et lire le message d'une tuile par `scg_last_error(NULL)`,
+  sur ce thread. `scg_frame_region` n'en demande rien : ses tampons de travail
+  viennent de l'hôte.
 - **Sur wasm, passer par `scg_buffer_alloc`.** L'hôte ne peut pas fournir un
   pointeur arbitraire : seule la mémoire linéaire du module est adressable.
 - **Sur wasm, un pointeur revient signé en JavaScript.** Un `i32` exporté y est

@@ -1250,7 +1250,8 @@ int32_t scg_frame_tile(struct ScgContext *ctx, uint32_t index, uint8_t *pixels, 
 // least `width × height`. That is the only difference from a tile, which keeps
 // its colour and depth on the stack of the call: a region may be the whole
 // image, and 2048 × 2048 cells of colour and depth would not fit there. One
-// length for both, because the engine requires them equal.
+// length for both, because the engine requires them equal. **So this call asks
+// nothing of the stack**, where a tile and `scg_frame_end` need 128 KiB.
 //
 // **It takes no tile, so it does not replace them.** `scg_frame_end` still
 // renders every tile nobody took, and those overlapping the region overwrite
@@ -1293,6 +1294,11 @@ int32_t scg_frame_region(struct ScgContext *ctx,
 // buffer holds at least `stride × height` pixels of four bytes each, in R, G,
 // B, A order with alpha always written. The engine never receives the buffer
 // length and cannot check it: that is a documented precondition.
+//
+// It renders tiles, and each keeps its colour and depth on the stack of the
+// call: the calling thread needs at least 128 KiB of stack, exactly as for
+// `scg_frame_tile`. A host without threads, which calls nothing but this
+// function, needs it too.
 //
 // # Safety
 //
@@ -1522,10 +1528,16 @@ int32_t scg_submit_points(struct ScgContext *ctx,
 
 // Submits a batch of triangles whose vertices carry a normal.
 //
-// Same contract as `scg_submit_textured`, with one difference: dynamic lights
-// then take the surface's orientation into account. A face turned away from a
-// light receives nothing, where without a normal it received the same light as
-// every other face at the same distance.
+// Same contract as `scg_submit_textured`, with two differences. The first is the
+// point of this path: dynamic lights then take the surface's orientation into
+// account. A face turned away from a light receives nothing, where without a
+// normal it received the same light as every other face at the same distance.
+//
+// The second is easy to miss: **`texture` may be null here**, and each triangle
+// then renders its own colour. The same argument is `SCG_ERR_NULL` on
+// `scg_submit_textured`, where an untextured batch belongs on `scg_submit`
+// instead — but `scg_submit` carries no normal, so a shaded batch without a
+// texture has nowhere else to go.
 //
 // **The normal need not be unit** — the engine normalises it, and it must,
 // since interpolating between frames denormalises it anyway. A zero-length
