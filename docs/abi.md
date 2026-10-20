@@ -618,6 +618,52 @@ int32_t scg_frame_end(ScgContext *ctx, uint8_t *pixels, uint32_t stride);
   `tile_size`. Une tuile vide se rend aussi : fond, alpha et post-traitement
   s'écrivent partout. Aucune fonction ne rend le rectangle d'une tuile ; elle
   pourra s'ajouter sans changer la version d'ABI.
+- **`scg_frame_region` rend un rectangle quelconque sans passer par la
+  répartition**, et c'est l'oracle des tuiles :
+
+  ```c
+  int32_t scg_frame_region(ScgContext *ctx,
+                           uint32_t x, uint32_t y, uint32_t width, uint32_t height,
+                           uint32_t *color, uint32_t *depth, size_t scratch,
+                           uint8_t *pixels, uint32_t stride);
+  ```
+
+  Tous les triangles et toutes les lignes de l'image, dans l'ordre de
+  soumission, contre la seule région demandée. **Une tuile qui en diffère a
+  perdu une primitive à la répartition, ou dépend de son découpage** — et c'est
+  le pendant, pour le rendu, de ce que `scg_world_sweep_brute` est à la
+  collision. La conformance s'en sert à chaque passage, sous le nom d'image
+  entière ; un intégrateur qui voit une couture n'avait, lui, aucun moyen de
+  distinguer « la répartition a perdu un triangle » de « ma scène est fausse ».
+
+  - **Les deux tampons de travail appartiennent à l'hôte**, `scratch` cellules
+    chacun, au moins `width × height`. C'est la seule différence d'avec une
+    tuile, qui tient sa couleur et sa profondeur sur la pile de l'appel : une
+    région peut être l'image entière, et 2048 × 2048 pixels de couleur et de
+    profondeur n'y tiendraient pas. Une seule longueur pour les deux, puisque le
+    moteur les veut égales.
+  - **Elle ne prend aucune tuile et ne dispense pas de les rendre.**
+    `scg_frame_end` rend ensuite toutes celles que personne n'a prises, donc
+    celles qui recouvrent la région **réécrivent** ce qu'elle y avait mis. Un
+    hôte qui veut comparer les deux lit son tampon entre les deux appels.
+  - **Pendant une image, comme une tuile** : hors rendu,
+    `SCG_ERR_INVALID_STATE`. Un rectangle qui sort de l'image, ou un `scratch`
+    plus court que lui, rendent `SCG_ERR_INVALID_ARGUMENT` sans rien écrire.
+  - **Ce n'est pas un chemin d'image, et le contrat le dit plutôt que de laisser
+    un intégrateur le mesurer** : chaque primitive de l'image est testée contre
+    la région, sans la répartition qui les élague par tuile. Le coût est celui
+    d'une scène entière par appel.
+  - **Seul l'hôte wasm l'emprunte, et c'est écrit pour qu'on ne le prenne pas
+    pour un oubli.** Elle ouvre pourtant un chemin que rien d'autre n'emprunte —
+    deux tableaux de `uint32_t` que l'hôte fournit et que le moteur écrit, là où
+    tout le reste de l'ABI remplit une structure, un tableau de `float` ou des
+    octets. Mais la question qu'il pose n'existe que dans la mémoire linéaire :
+    `scg_buffer_alloc` rend des octets, et l'hôte doit en tirer deux tampons de
+    mots dont l'alignement de quatre tient. En C, en C++, en Go et en Java, un
+    tableau natif ne demande rien de neuf, et les quatre prouveraient la même
+    chose une quatrième fois. Ce n'est d'ailleurs pas une scène de plus mais une
+    **seconde façon de rendre** celles qui existent, comparée à l'empreinte des
+    tuiles — comme ces hôtes comparent déjà des tuiles rendues en désordre.
 - **Un tampon refusé par `scg_frame_end` ne laisse pas l'image ouverte.** Quand
   elle fait le début elle-même, elle vérifie la sortie **avant** : un `stride`
   plus court que la largeur, ou un tampon trop court côté Rust, rend

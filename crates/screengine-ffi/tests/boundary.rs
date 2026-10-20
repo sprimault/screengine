@@ -409,6 +409,172 @@ fn tiles_buffer() -> Vec<u8> {
     vec![0; TILES_W as usize * TILES_H as usize * 4]
 }
 
+/// La région rend ce que les tuiles rendent, et c'est l'oracle que l'ABI
+/// n'avait pas.
+///
+/// **L'égalité est tout l'objet de la fonction** : la région dessine toutes les
+/// primitives dans l'ordre, sans répartition, donc une tuile qui en diffère a
+/// perdu quelque chose à la répartition ou dépend du découpage. Deux tampons
+/// distincts, parce que la fin réécrirait le premier.
+///
+/// Le triangle est pris en travers de plusieurs tuiles — c'est la seule
+/// géométrie qui fasse travailler la répartition, et un triangle tenant dans
+/// une seule tuile rendrait l'égalité vraie sans rien éprouver.
+#[test]
+fn la_region_rend_ce_que_les_tuiles_rendent() {
+    let ctx = tiled();
+    let mut par_region = tiles_buffer();
+    let mut par_tuiles = tiles_buffer();
+    let cells = TILES_W as usize * TILES_H as usize;
+    let mut color = vec![0u32; cells];
+    let mut depth = vec![0u32; cells];
+    let mut count = 0;
+
+    let vertices = [
+        ScgVertex {
+            x: 4.0,
+            y: -1.5,
+            z: -1.0,
+        },
+        ScgVertex {
+            x: 4.0,
+            y: 1.5,
+            z: -1.0,
+        },
+        ScgVertex {
+            x: 4.0,
+            y: 0.0,
+            z: 1.2,
+        },
+    ];
+    let triangles = [ScgTriangle {
+        i0: 0,
+        i1: 1,
+        i2: 2,
+        r: 0x20,
+        g: 0x90,
+        b: 0xd0,
+        a: 255,
+    }];
+    let model = ScgMat4 {
+        m: [
+            1.0, 0.0, 0.0, 0.0, //
+            0.0, 1.0, 0.0, 0.0, //
+            0.0, 0.0, 1.0, 0.0, //
+            0.0, 0.0, 0.0, 1.0,
+        ],
+    };
+
+    // SAFETY: handle vivant pour tout ce test, tableaux et tampons locaux, et
+    // les deux tampons de travail couvrent l'image entière.
+    unsafe {
+        assert_eq!(
+            scg_submit(ctx, &model, vertices.as_ptr(), 3, triangles.as_ptr(), 1),
+            SCG_OK
+        );
+        assert_eq!(scg_frame_begin(ctx, &mut count), SCG_OK);
+        assert_eq!(
+            scg_frame_region(
+                ctx,
+                0,
+                0,
+                TILES_W,
+                TILES_H,
+                color.as_mut_ptr(),
+                depth.as_mut_ptr(),
+                cells,
+                par_region.as_mut_ptr(),
+                TILES_W,
+            ),
+            SCG_OK
+        );
+        assert_eq!(scg_frame_end(ctx, par_tuiles.as_mut_ptr(), TILES_W), SCG_OK);
+        scg_destroy(ctx);
+    }
+
+    assert!(
+        par_region.iter().any(|&b| b != 0),
+        "la région n'a rien peint"
+    );
+    assert_eq!(par_region, par_tuiles, "la région et les tuiles divergent");
+}
+
+/// Ce que la région refuse, et qu'aucune autre fonction ne refuse pour elle.
+///
+/// Les deux clauses qui lui sont propres sont le rectangle et la longueur des
+/// tampons de travail : hors d'une image, elle se refuse comme une tuile.
+#[test]
+fn la_region_refuse_un_rectangle_ou_un_tampon_hors_borne() {
+    let ctx = tiled();
+    let mut pixels = tiles_buffer();
+    let cells = TILES_W as usize * TILES_H as usize;
+    let mut color = vec![0u32; cells];
+    let mut depth = vec![0u32; cells];
+    let mut count = 0;
+
+    // SAFETY: handle vivant, tampons locaux couvrant l'image.
+    let mut region = |x, y, w, h, scratch| unsafe {
+        scg_frame_region(
+            ctx,
+            x,
+            y,
+            w,
+            h,
+            color.as_mut_ptr(),
+            depth.as_mut_ptr(),
+            scratch,
+            pixels.as_mut_ptr(),
+            TILES_W,
+        )
+    };
+
+    assert_eq!(
+        region(0, 0, TILES_W, TILES_H, cells),
+        SCG_ERR_INVALID_STATE,
+        "hors d'une image"
+    );
+
+    // SAFETY: comme ci-dessus.
+    unsafe { assert_eq!(scg_frame_begin(ctx, &mut count), SCG_OK) };
+
+    assert_eq!(
+        region(1, 0, TILES_W, TILES_H, cells),
+        SCG_ERR_INVALID_ARGUMENT,
+        "le rectangle dépasse à droite"
+    );
+    assert_eq!(
+        region(0, 0, TILES_W, TILES_H, cells - 1),
+        SCG_ERR_INVALID_ARGUMENT,
+        "les tampons de travail sont trop courts"
+    );
+    assert_eq!(
+        region(0, 0, TILES_W, TILES_H, cells),
+        SCG_OK,
+        "et le même appel borné passe"
+    );
+
+    // SAFETY: comme ci-dessus.
+    unsafe {
+        let null = ptr::null_mut();
+        assert_eq!(
+            scg_frame_region(
+                ctx,
+                0,
+                0,
+                1,
+                1,
+                null,
+                depth.as_mut_ptr(),
+                cells,
+                pixels.as_mut_ptr(),
+                TILES_W,
+            ),
+            SCG_ERR_NULL
+        );
+        scg_destroy(ctx);
+    }
+}
+
 /// Un pointeur que les threads d'un test se partagent.
 ///
 /// Les pointeurs bruts ne sont pas `Send` ; ce qui rend le partage sain est le

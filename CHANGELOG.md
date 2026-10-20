@@ -63,6 +63,12 @@ publié, et explique les conventions du dépôt à qui y contribue.
 
 ## [Non publié]
 
+### Ajouté
+
+- **`scg_frame_region` rend un rectangle quelconque sans passer par la
+  répartition en tuiles** : l'oracle contre lequel une tuile se valide, que le
+  chemin Rust avait seul.
+
 ### Corrigé
 
 - **Le choix du niveau de mipmap enveloppe au lieu de paniquer** sur un triangle
@@ -74,6 +80,11 @@ publié, et explique les conventions du dépôt à qui y contribue.
   suivante.**
 
 ***
+
+### Added
+
+- **`scg_frame_region` renders an arbitrary rectangle without the tile
+  binning**: the oracle a tile validates against, which only the Rust path had.
 
 ### Fixed
 

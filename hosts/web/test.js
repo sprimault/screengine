@@ -1145,6 +1145,62 @@ function checkTiles(engine, expected) {
 }
 
 /**
+ * L'oracle des tuiles, et le seul chemin de l'ABI qui demande à l'hôte deux
+ * tampons de mots.
+ *
+ * **Pourquoi ici et dans aucun autre hôte** : partout ailleurs, ce que le moteur
+ * remplit est une structure, un tableau de flottants ou des octets. Deux
+ * tableaux de `uint32_t` inscriptibles ne posent de question que dans la mémoire
+ * linéaire — `scg_buffer_alloc` rend des octets, et il faut en tirer des mots
+ * dont l'alignement de quatre tient. En C ou en Go, un tableau natif ne demande
+ * rien de neuf, et le contrat dit pourquoi les quatre autres s'en passent.
+ *
+ * Ce n'est pas une scène de plus : c'est la même scène rendue autrement, et son
+ * empreinte doit être celle des tuiles.
+ */
+function checkRegion(engine, expected) {
+  const e = engine.exports;
+  const len = STRIDE * HEIGHT * scg.BYTES_PER_PIXEL;
+  const cells = WIDTH * HEIGHT;
+  const pixels = engine.alloc(len);
+  const color = engine.alloc(cells * 4);
+  const depth = engine.alloc(cells * 4);
+  const out = engine.alloc(4);
+  const config = engine.alloc(scg.CONFIG_SIZE);
+  engine.writeConfig(config, sceneConfig());
+  if (pixels === 0 || color === 0 || depth === 0 || e.scg_create(config, out) < 0) {
+    check(false, "création du contexte de la région");
+    return;
+  }
+  const ctx = engine.readU32(out);
+
+  // L'alignement est ce que cet hôte éprouve en propre : `scg_buffer_alloc`
+  // garantit seize octets, donc les deux tampons sont bien alignés pour des
+  // mots, et un moteur qui lirait de travers se verrait ici.
+  check(color % 4 === 0 && depth % 4 === 0, "les deux tampons de mots sont alignés");
+
+  const region = (x, y, w, h, scratch) =>
+    e.scg_frame_region(ctx, x, y, w, h, color, depth, scratch, pixels, STRIDE);
+
+  check(region(0, 0, WIDTH, HEIGHT, cells) === scg.SCG_ERR_INVALID_STATE, "région hors d'une image refusée");
+  check(submitScene(engine, ctx), "scène soumise");
+  check(e.scg_frame_begin(ctx, out) === scg.SCG_OK, "image commencée");
+  check(region(1, 0, WIDTH, HEIGHT, cells) === scg.SCG_ERR_INVALID_ARGUMENT, "rectangle hors de l'image refusé");
+  check(region(0, 0, WIDTH, HEIGHT, cells - 1) === scg.SCG_ERR_INVALID_ARGUMENT, "tampons trop courts refusés");
+  check(region(0, 0, WIDTH, HEIGHT, cells) === scg.SCG_OK, "la région rend l'image entière");
+  check(engine.fingerprint(pixels, WIDTH, HEIGHT, STRIDE) === expected, "la région rend ce que les tuiles rendent");
+
+  check(e.scg_frame_end(ctx, pixels, STRIDE) === scg.SCG_OK, "la fin reste disponible après la région");
+
+  e.scg_destroy(ctx);
+  engine.free(out, 4);
+  engine.free(config, scg.CONFIG_SIZE);
+  engine.free(depth, cells * 4);
+  engine.free(color, cells * 4);
+  engine.free(pixels, len);
+}
+
+/**
  * La matrice qui place la caisse, recopiée de la suite de conformance.
  *
  * Elle y est écrite en littéraux pour cette raison : les tables
@@ -2129,6 +2185,7 @@ async function main() {
   const hash = render(engine);
   if (hash !== null) {
     checkTiles(engine, hash);
+    checkRegion(engine, hash);
     checkResize(engine, hash);
   }
 
