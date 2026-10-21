@@ -344,53 +344,68 @@ fn l_ordre_des_tuiles_ne_change_rien() {
     }
 }
 
-/// Des colonnes **désalignées** rendent l'image entière, pixel pour pixel.
+/// Des régions **désalignées sur les deux axes** rendent l'image entière, pixel
+/// pour pixel.
 ///
 /// **Ce qu'aucun autre découpage n'éprouve.** Les tuiles commencent toutes à un
 /// multiple de leur taille, et les régions du dépôt couvrent l'image entière :
-/// rien n'y tombe sur une abscisse quelconque. Une région, pourtant, est
-/// quelconque — l'ABI la donne ainsi à l'hôte, et un hôte qui rend par bandes
-/// de treize pixels est en droit de retrouver la même image.
+/// rien n'y tombe sur une abscisse ni une ordonnée quelconques. Une région,
+/// pourtant, est quelconque — l'ABI la donne ainsi à l'hôte, et un hôte qui rend
+/// par pavés de treize sur vingt-trois est en droit de retrouver la même image.
 ///
 /// Les motifs de tramage se répètent tous les quatre pixels, si bien qu'un
 /// index pris depuis le coin d'une tuile donne le même motif qu'un index pris
 /// dans l'image : c'est ici, et seulement ici, qu'un tel index se verrait.
 /// Vérifié en indexant le tramage du brouillard sur la tuile — celui-ci rougit,
 /// les deux comparaisons de tuiles restent vertes.
+///
+/// **Les deux découpages comptent, et le premier ne suffisait pas** : des
+/// colonnes pleine hauteur laissent l'ordonnée à zéro partout, si bien qu'un
+/// index pris depuis le **haut** d'une région rendait encore la bonne image. La
+/// grille le déplace aussi, et vingt-trois n'est pas plus multiple de quatre que
+/// treize.
 #[test]
-fn des_colonnes_desalignees_rendent_l_image_entiere() {
+fn des_regions_desalignees_rendent_l_image_entiere() {
     const BAND: u32 = 13;
+    const ROW: u32 = 23;
 
-    for seed in 1..=12 {
-        let mut context = context(32);
-        scene(&mut context, seed);
-        let expected = reference(&mut context);
+    for (band, row) in [(BAND, H), (BAND, ROW)] {
+        for seed in 1..=12 {
+            let mut context = context(32);
+            scene(&mut context, seed);
+            let expected = reference(&mut context);
 
-        let mut out = pixels();
-        let frame = open(&mut context);
-        let mut color = vec![0u32; (BAND * H) as usize];
-        let mut depth = color.clone();
-        let mut x = 0;
-        while x < W {
-            let width = BAND.min(W - x);
-            let rect = Rect {
-                x,
-                y: 0,
-                width,
-                height: H,
-            };
-            let pixels = (width * H) as usize;
-            frame
-                .region(
-                    rect,
-                    &mut color[..pixels],
-                    &mut depth[..pixels],
-                    &mut Rows::new(&mut out, W),
-                )
-                .expect("région");
-            x += width;
+            let mut out = pixels();
+            let frame = open(&mut context);
+            let mut color = vec![0u32; (band * row) as usize];
+            let mut depth = color.clone();
+            let mut y = 0;
+            while y < H {
+                let height = row.min(H - y);
+                let mut x = 0;
+                while x < W {
+                    let width = band.min(W - x);
+                    let rect = Rect {
+                        x,
+                        y,
+                        width,
+                        height,
+                    };
+                    let pixels = (width * height) as usize;
+                    frame
+                        .region(
+                            rect,
+                            &mut color[..pixels],
+                            &mut depth[..pixels],
+                            &mut Rows::new(&mut out, W),
+                        )
+                        .expect("région");
+                    x += width;
+                }
+                y += height;
+            }
+            assert!(out == expected, "graine {seed}, pavés de {band}×{row}");
         }
-        assert!(out == expected, "graine {seed}");
     }
 }
 

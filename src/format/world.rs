@@ -2127,7 +2127,13 @@ fn link_portals(cells: &mut [Cell]) -> Result<()> {
             keys.push((key, c as u32, p as u32));
         }
     }
-    keys.sort_unstable_by(|a, b| a.0.cmp(&b.0));
+    // **Sur le triplet entier, et non sur la seule clé.** Le tri est instable,
+    // donc une comparaison qui ne regarde que la clé laisse l'ordre de deux
+    // portails qui la partagent à ce que l'implémentation du tri décide — c'est
+    // exactement ce qu'on refuse à une table de hachage deux lignes plus haut.
+    // Le triplet porte ensuite la cellule et le rang, qui sont uniques : l'ordre
+    // devient total, donc le même partout.
+    keys.sort_unstable();
 
     let mut i = 0;
     while i < keys.len() {

@@ -1732,19 +1732,28 @@ fn mip_level(triangle: &Prepared, planes: &[Plane; 2], u: i32, v: i32, reciproca
     // l'`i64`. Le résultat enveloppe alors, à l'identique sur toutes les
     // cibles, et ne fausse qu'un niveau de mipmap sur un triangle en lame de
     // couteau.
+    //
+    // **D'où `wrapping_shl` plutôt que `<<`** : les deux produisent les mêmes
+    // bits — un décalage ne vérifie jamais la perte de poids fort, quel que soit
+    // le profil —, mais la règle veut qu'un débordement possible s'écrive. Celui
+    // du dessus se décrivait en commentaire et se lisait comme un oubli.
     let numerator = |plane: &Plane, coord: i32, depth_step: i64| {
-        let slope = plane.step_x(pixel) << (UV_BITS - GRADIENT_BITS);
+        let slope = plane.step_x(pixel).wrapping_shl(UV_BITS - GRADIENT_BITS);
         slope.wrapping_sub((i64::from(coord).saturating_mul(depth_step)) >> UV_SHIFT)
     };
     let worst = [
         numerator(&planes[0], u, dx),
         numerator(&planes[1], v, dx),
         {
-            let slope = planes[0].step_y(pixel) << (UV_BITS - GRADIENT_BITS);
+            let slope = planes[0]
+                .step_y(pixel)
+                .wrapping_shl(UV_BITS - GRADIENT_BITS);
             slope.wrapping_sub((i64::from(u).saturating_mul(dy)) >> UV_SHIFT)
         },
         {
-            let slope = planes[1].step_y(pixel) << (UV_BITS - GRADIENT_BITS);
+            let slope = planes[1]
+                .step_y(pixel)
+                .wrapping_shl(UV_BITS - GRADIENT_BITS);
             slope.wrapping_sub((i64::from(v).saturating_mul(dy)) >> UV_SHIFT)
         },
     ]
