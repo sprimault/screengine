@@ -124,7 +124,7 @@ android_build = for cible in $(CIBLES_ANDROID); do \
 
 .PHONY: build lib lib-wasm lib-android run example web test native-libs fmt fmt-fix lint lint-doc-tests \
         lint-android-versions lint-wasm-bindgen lint-enveloppes lint-intrinseques etat-verif bornes-verif plate-verif sorties-verif \
-        dispositions-verif java-verif codes-verif frontiere-verif etage-verif nostd test-arm test-linux-arm test-wasi msrv bench bench-wasi stubs \
+        dispositions-verif java-verif codes-verif frontiere-verif etage-verif contrat-verif nostd test-arm test-linux-arm test-wasi msrv bench bench-wasi stubs \
         conform conform-arm conform-linux-arm conform-wasi conform-x86 conform-update conform-images mesh header header-verif audit deny doc doc-verif hosts host-c host-cpp host-web host-go \
         host-android demo-c demo-cpp clean tools
 
@@ -1261,6 +1261,59 @@ etage-verif:
 	fi; \
 	echo "etage-verif : $$(echo $$sources | wc -w) fichiers du noyau, aucune mention de l etage"
 
+# **Toute declaration du header apparait dans `docs/abi.md`**, qui fait foi.
+#
+# Proposé par le sceptique d'un audit et resté non livré : le site qu'il avait
+# trouvé — le prototype de `scg_lightmap_fault`, absent du contrat — a été
+# corrige, mais rien ne fermait la classe. Un point d'entree ajoute sans sa
+# clause fait mentir le document qui fait foi, et `git.md` veut qu'un desaccord
+# entre les deux se corrige **dans le code** : un contrat incomplet peut donc
+# faire retirer a tort, un jour, ce qu'il avait omis de decrire.
+#
+# Quatre familles, parce qu'un handle, une constante et une structure engagent le
+# contrat autant qu'une fonction : les points d'entree, les `#define SCG_`, les
+# structures qui traversent et les handles opaques. Le critere est la **mention**
+# du nom, pas sa description : un controle qui jugerait de la prose n'en serait
+# pas un, et c'est la relecture au tag qui juge du fond.
+#
+# Le nom se cherche avec ses chiffres : un motif en `Scg[A-Za-z]+` rend `ScgMat`
+# pour `ScgMat4`, donc accuse un contrat complet. Vu a l'ecriture.
+# Les deux entrées sont surchargeables, comme `java-verif` prend ses fichiers en
+# arguments, et c'est ce qui permet d'éprouver les **deux** gardes plutôt que de
+# les supposer : `CONTRAT_DOC=docs/absent.md` fait répondre celle du fichier
+# manquant, et `CONTRAT_HEADER=README.md` celle du décompte — un vrai fichier
+# sans déclaration, qui en rend cinq et se fait refuser. `/dev/null` ne vaut pas
+# pour la seconde : il n'est pas un fichier régulier, donc la première répond
+# d'abord.
+CONTRAT_HEADER ?= include/screengine.h
+CONTRAT_DOC    ?= docs/abi.md
+
+contrat-verif:
+	@if [ ! -f $(CONTRAT_HEADER) ] || [ ! -f $(CONTRAT_DOC) ]; then \
+	  echo "contrat-verif : header ou contrat introuvable, la recherche n a pas abouti"; exit 1; \
+	fi; \
+	fonctions=$$(grep -oE '\bscg_[a-z_0-9]+\(' $(CONTRAT_HEADER) | tr -d '(' | sort -u); \
+	constantes=$$(grep -oE '^#define SCG_[A-Z_0-9]+' $(CONTRAT_HEADER) \
+	  | awk '{print $$2}' | sort -u); \
+	structures=$$(grep -oE '^\} Scg[A-Za-z0-9]+;' $(CONTRAT_HEADER) | tr -d '};' \
+	  | awk '{print $$1}' | sort -u); \
+	handles=$$(grep -oE '^typedef struct Scg[A-Za-z0-9]+ Scg[A-Za-z0-9]+;' $(CONTRAT_HEADER) \
+	  | awk '{print $$3}' | tr -d ';' | sort -u); \
+	noms=$$(printf '%s\n%s\n%s\n%s\n' "$$fonctions" "$$constantes" "$$structures" "$$handles" \
+	  | grep -c .); \
+	if [ "$$noms" -lt 100 ]; then \
+	  echo "contrat-verif : $$noms declarations extraites, la recherche n a pas abouti"; exit 1; \
+	fi; \
+	absents=""; \
+	for nom in $$fonctions $$constantes $$structures $$handles; do \
+	  grep -qE "\\b$$nom\\b" $(CONTRAT_DOC) || absents="$$absents $$nom"; \
+	done; \
+	if [ -n "$$absents" ]; then \
+	  echo "contrat-verif : declaration(s) absente(s) de $(CONTRAT_DOC) :$$absents"; \
+	  exit 1; \
+	fi; \
+	echo "contrat-verif : $$noms declarations du header nommees par le contrat"
+
 # Les cibles qu'un contrôle traverse au-delà de celle du poste, et le seul
 # endroit où du code propre à une autre architecture se compile ici : `neon.rs`
 # sur `aarch64`, les chemins wasm, et la largeur de pointeur de `i686`. En
@@ -1290,7 +1343,7 @@ CIBLES_PLAY = $(CIBLES_LINUX_ARM) $(CIBLE_WASM)
 # leur plancher n'est pas sous notre contrôle, et l'y faire entrer donnerait une
 # contrainte qu'une montée de dépendance casserait sans qu'on puisse rien.
 
-lint: lint-doc-tests lint-android-versions lint-wasm-bindgen lint-enveloppes lint-intrinseques etat-verif bornes-verif plate-verif sorties-verif dispositions-verif java-verif codes-verif frontiere-verif etage-verif
+lint: lint-doc-tests lint-android-versions lint-wasm-bindgen lint-enveloppes lint-intrinseques etat-verif bornes-verif plate-verif sorties-verif dispositions-verif java-verif codes-verif frontiere-verif etage-verif contrat-verif
 	cargo clippy --workspace --all-targets --all-features -- -D warnings
 	for cible in $(CIBLES_CROISEES); do \
 	  cargo clippy -p screengine -p screengine-ffi --lib --target $$cible -- -D warnings || exit 1; \

@@ -60,8 +60,9 @@ Java recopie avec ce que le header en dit, l'absence d'intrinsèque fusionnée,
 relâchée ou approximative dans le noyau et à la frontière, l'enveloppe
 `entry::` de chaque point d'entrée, l'absence de code de retour jugé
 autrement que par son signe dans les hôtes, l'absence de callback et de pointeur
-rendu hors des deux exemptions que le contrat nomme, et l'absence de mention de
-l'étage d'accueil dans le noyau.
+rendu hors des deux exemptions que le contrat nomme, l'absence de mention de
+l'étage d'accueil dans le noyau, et la présence dans `docs/abi.md` de chaque
+déclaration du header — fonctions, constantes, structures et handles.
 L'intégration continue appelle `make tools`, qui installe les outils aux
 versions épinglées ici.
 
