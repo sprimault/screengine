@@ -637,10 +637,17 @@ impl World {
     /// **C'est la forme complète du balayage**, et [`World::sweep`] en est le
     /// raccourci. Celui-ci rend `Option<Hit>`, qui ne peut pas porter trois
     /// réponses : un résultat, « la boîte n'est nulle part », et un refus. La
-    /// frontière C les sépare depuis l'étape 7 — elle traite `from_cell` à zéro
-    /// avant d'appeler et vérifie la finitude de ce qu'on lui passe —, si bien
-    /// que l'ABI donnait une information que le chemin Rust ne donnait pas. La
-    /// règle des deux chemins veut l'inverse.
+    /// frontière C les séparait depuis l'étape 7 en les reconstruisant
+    /// elle-même, si bien que l'ABI donnait une information que le chemin Rust
+    /// ne donnait pas. La règle des deux chemins veut l'inverse.
+    ///
+    /// **La frontière appelle ceci désormais**, et c'est ce qui rend vraie la
+    /// clause du site unique : le départage entre « nulle part » et « cette
+    /// cellule n'existe pas » n'est plus écrit qu'ici. Ce qu'elle garde est la
+    /// lecture des pointeurs bruts, où son propre contrôle de finitude refuse
+    /// les mêmes valeurs par la même erreur — deux travaux distincts, et non une
+    /// copie : il protège les vingt points d'entrée qui lisent un triplet de
+    /// flottants, que celui-ci n'atteint pas.
     ///
     /// - `from_cell` à zéro rend [`Sweep::NoCell`] : rien n'est examiné, et
     ///   c'est un **succès**, un hôte pouvant légitimement poser son mobile

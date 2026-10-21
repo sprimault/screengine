@@ -40,8 +40,8 @@ use std::sync::Arc;
 
 use screengine::{
     Argument, Context, DepthMode, Error as CoreError, Lightmap, LightmapFault, Lightmaps, Mesh,
-    Rect, SpriteOrientation, Surfaces, Texture, Vec3, VertexUv, VertexUv2, Visibility, World,
-    lightmap_fault,
+    Rect, SpriteOrientation, Surfaces, Sweep, Texture, Vec3, VertexUv, VertexUv2, Visibility,
+    World, lightmap_fault,
 };
 
 use entry::AbiError;
@@ -894,6 +894,13 @@ pub unsafe extern "C" fn scg_frame_end(ctx: *mut ScgContext, pixels: *mut u8, st
 /// on the thread that made the failing call, immediately after it. A coroutine
 /// that resumes on another thread of a pool will find it empty.
 ///
+/// **That slot's lifetime is shorter than the context one's**: every entry point
+/// clears it on the way in, whichever it is and whether it takes a context or
+/// not. So it is valid until the **next call of any kind on the same thread**,
+/// where the context message survives until the next call on that same context.
+/// A host that calls anything between the failure and the read gets the empty
+/// string, not a stale message.
+///
 /// Allowed on a faulted context, so the host can learn the cause.
 ///
 /// # Safety
@@ -1284,6 +1291,12 @@ pub unsafe extern "C" fn scg_submit_lines(
     depth: u32,
 ) -> i32 {
     let submit = |mut core: entry::Core<'_>| {
+        // **L'état d'abord, les arguments ensuite** : la convention de la
+        // frontière, écrite dans `docs/abi.md`. Ces deux soumissions étaient les
+        // seules à l'inverse, et pendant le rendu un mode fautif y rendait
+        // `SCG_ERR_INVALID_ARGUMENT` là où les huit réglages rendaient
+        // `SCG_ERR_INVALID_STATE`.
+        let context = core.exclusive()?;
         let depth = depth_mode(depth)?;
         // SAFETY: précondition de la fonction — `model` est nul ou lisible.
         let model = unsafe { model.as_ref() }.ok_or(AbiError::NULL)?;
@@ -1294,7 +1307,7 @@ pub unsafe extern "C" fn scg_submit_lines(
         // Le tableau se lit sur place par une fonction d'accès, jamais recopié
         // ni réinterprété : une copie serait une allocation par image, et une
         // réinterprétation imposerait au noyau la disposition de la frontière.
-        core.exclusive()?
+        context
             .submit_each_line(model, lines.len(), depth, |i| lines[i].to_core())
             .map_err(AbiError::from)
     };
@@ -1321,6 +1334,8 @@ pub unsafe extern "C" fn scg_submit_points(
     depth: u32,
 ) -> i32 {
     let submit = |mut core: entry::Core<'_>| {
+        // L'état d'abord, comme la soumission de lignes et pour la même raison.
+        let context = core.exclusive()?;
         let depth = depth_mode(depth)?;
         // SAFETY: précondition de la fonction — `model` est nul ou lisible.
         let model = unsafe { model.as_ref() }.ok_or(AbiError::NULL)?;
@@ -1328,7 +1343,7 @@ pub unsafe extern "C" fn scg_submit_points(
         // SAFETY: précondition de la fonction — `points` couvre son nombre
         // d'éléments.
         let points = unsafe { slice_of(points, point_count) };
-        core.exclusive()?
+        context
             .submit_each_point(model, points.len(), depth, |i| points[i].to_core())
             .map_err(AbiError::from)
     };
@@ -1693,9 +1708,6 @@ pub unsafe extern "C" fn scg_mesh_texture_name(
     out_len: *mut usize,
 ) -> i32 {
     entry::without_context(|| {
-        if out_len.is_null() || (buf.is_null() && cap != 0) {
-            return Err(AbiError::NULL);
-        }
         // SAFETY: précondition de la fonction — le pointeur est nul ou vise un
         // handle vivant.
         let mesh = unsafe { mesh.as_ref() }.ok_or(AbiError::NULL)?;
@@ -1977,9 +1989,14 @@ unsafe fn read_extents(ptr: *const f32) -> Result<Vec3, AbiError> {
 /// classe d'une entité — la règle que `entry.rs` s'écrit déjà pour la trame d'un
 /// maillage, distincte par son message seul.
 ///
+/// **Le refus des pointeurs est ici**, et non chez les quatre appelants : il y
+/// était recopié mot pour mot, et c'est le genre de ligne qu'on oublie sur le
+/// point d'entrée ajouté en dernier. L'ordre des deux refus ne se voit pas d'un
+/// hôte, `AbiError::NULL` n'ayant qu'un message.
+///
 /// # Safety
 ///
-/// `buf` est nul avec `cap` nul, ou couvre `cap` octets inscriptibles ; `out_len`
+/// `buf` est nul, ou couvre `cap` octets inscriptibles ; `out_len` est nul, ou
 /// vise une `size_t` inscriptible. Le nom ne recouvre pas `buf`.
 unsafe fn write_name(
     name: Option<&str>,
@@ -1988,6 +2005,9 @@ unsafe fn write_name(
     cap: usize,
     out_len: *mut usize,
 ) -> Result<(), AbiError> {
+    if out_len.is_null() || (buf.is_null() && cap != 0) {
+        return Err(AbiError::NULL);
+    }
     let name = name.ok_or(absent)?;
     if !buf.is_null() {
         if cap < name.len() + 1 {
@@ -2896,19 +2916,21 @@ pub unsafe extern "C" fn scg_world_sweep(
         // SAFETY: idem.
         let end = unsafe { read_point(to) }?;
 
-        // « Nulle part » se traite avant le noyau : ce n'est pas une cellule
-        // inconnue, c'est l'absence de cellule, et le moteur n'a rien examiné.
-        // Inventer un mur serait inventer de la géométrie.
-        if from_cell == 0 {
-            // SAFETY: précondition — `out` vise une `ScgSweepHit` inscriptible.
-            unsafe { out.write(ScgSweepHit::free(end)) };
-            return Ok(status::SCG_STATUS_NO_CELL);
-        }
-
-        let hit = world
-            .inner
-            .sweep(from_cell, half, start, end)
-            .ok_or_else(|| AbiError::from(CoreError::UnknownResource))?;
+        // **Le départage vient du noyau**, par `World::sweep_checked` : « nulle
+        // part » contre « cette cellule n'existe pas » est la distinction que
+        // `Sweep` porte, et elle vivait ici en second exemplaire — la
+        // documentation de `sweep_checked` dit elle-même qu'une seconde copie
+        // finirait par diverger sur le cas ajouté en dernier.
+        let hit = match world.inner.sweep_checked(from_cell, half, start, end)? {
+            Sweep::Reached(hit) => hit,
+            // Rien n'a été examiné, et inventer un mur serait inventer de la
+            // géométrie : le déplacement se rend libre jusqu'à son arrivée.
+            Sweep::NoCell => {
+                // SAFETY: précondition — `out` vise une `ScgSweepHit` inscriptible.
+                unsafe { out.write(ScgSweepHit::free(end)) };
+                return Ok(status::SCG_STATUS_NO_CELL);
+            }
+        };
 
         // SAFETY: précondition — `out` vise une `ScgSweepHit` inscriptible, et
         // rien n'y a été écrit avant ce point.
@@ -3157,19 +3179,16 @@ pub unsafe extern "C" fn scg_world_pick(
         // SAFETY: idem.
         let end = unsafe { read_point(to) }?;
 
-        // « Nulle part » se traite avant le noyau, exactement comme pour le
-        // balayage : ce n'est pas une cellule inconnue, c'est l'absence de
-        // cellule, et le moteur n'a rien examiné.
-        if from_cell == 0 {
-            // SAFETY: précondition — `out` vise une `ScgSweepHit` inscriptible.
-            unsafe { out.write(ScgSweepHit::free(end)) };
-            return Ok(status::SCG_STATUS_NO_CELL);
-        }
-
-        let hit = world
-            .inner
-            .pick(from_cell, start, end, surfaces)
-            .ok_or_else(|| AbiError::from(CoreError::UnknownResource))?;
+        // Le départage vient du noyau, exactement comme pour le balayage, et par
+        // le site qu'il partage avec lui.
+        let hit = match world.inner.pick_checked(from_cell, start, end, surfaces)? {
+            Sweep::Reached(hit) => hit,
+            Sweep::NoCell => {
+                // SAFETY: précondition — `out` vise une `ScgSweepHit` inscriptible.
+                unsafe { out.write(ScgSweepHit::free(end)) };
+                return Ok(status::SCG_STATUS_NO_CELL);
+            }
+        };
 
         // SAFETY: précondition — `out` vise une `ScgSweepHit` inscriptible, et
         // rien n'y a été écrit avant ce point.
@@ -3385,9 +3404,6 @@ pub unsafe extern "C" fn scg_world_entity_class(
     out_len: *mut usize,
 ) -> i32 {
     entry::without_context(|| {
-        if out_len.is_null() || (buf.is_null() && cap != 0) {
-            return Err(AbiError::NULL);
-        }
         // SAFETY: précondition de la fonction — le pointeur est nul ou vise un
         // handle vivant.
         let world = unsafe { world.as_ref() }.ok_or(AbiError::NULL)?;
@@ -3475,9 +3491,6 @@ pub unsafe extern "C" fn scg_world_material_name(
     out_len: *mut usize,
 ) -> i32 {
     entry::without_context(|| {
-        if out_len.is_null() || (buf.is_null() && cap != 0) {
-            return Err(AbiError::NULL);
-        }
         // SAFETY: précondition de la fonction — le pointeur est nul ou vise un
         // handle vivant.
         let world = unsafe { world.as_ref() }.ok_or(AbiError::NULL)?;

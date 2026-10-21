@@ -1665,6 +1665,15 @@ impl Context {
     ///
     /// Même contrat que [`Context::submit`] pour le reste : `model` porte
     /// l'objet vers le monde, et le lot est accepté ou refusé en entier.
+    ///
+    /// **Sans texture, les coordonnées que portent ces sommets ne sont lues par
+    /// rien**, et c'est pourquoi aucun appelant n'existe hors du noyau : un lot
+    /// non texturé se soumet par [`Context::submit`], dont les sommets n'ont pas
+    /// de coordonnées à remplir pour rien. La forme reste publiée — le dépôt ne
+    /// retire jamais ce qu'il a publié —, et c'est l'ABI qui dit la règle en
+    /// propres termes sur `scg_submit_shaded` : un lot non texturé appartient à
+    /// `scg_submit`. Elle sert quand un hôte tient déjà ses sommets sous cette
+    /// forme et veut les soumettre sans texture, plutôt que de les recopier.
     pub fn submit_uv(
         &mut self,
         model: Affine3,

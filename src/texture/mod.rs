@@ -294,6 +294,14 @@ impl Texture {
     /// Les quatre texels voisins d'un point, mélangés selon ses bits
     /// fractionnaires.
     ///
+    /// **C'est l'échantillonneur du rasteriseur, et rien n'y appelle de
+    /// l'extérieur.** Elle reste publiée, le dépôt ne retirant jamais ce qu'il a
+    /// publié, mais un hôte qui lit la couleur d'un texel veut
+    /// [`Texture::texel`] : celui-ci prend des texels entiers, là où les
+    /// coordonnées 16.16 d'ici et leur recentrage n'ont de sens qu'au milieu
+    /// d'une boucle de remplissage. L'employer hors de là, c'est réécrire le
+    /// rasteriseur un pixel à la fois.
+    ///
     /// `u` et `v` sont en 16.16, dans le niveau demandé. **Un demi-texel se
     /// retranche d'abord** : le centre du texel `(0, 0)` est en `(0,5, 0,5)`,
     /// et sans ce recentrage l'image glisserait d'un demi-texel vers le haut et
