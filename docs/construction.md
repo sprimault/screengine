@@ -859,9 +859,16 @@ une panne, jamais une charge.
 
 **Un plafond trop large ne sert à rien**, et c'est ce qui donne sa forme à
 celui de l'étape d'installation Android : à quarante minutes sur le job, le
-blocage de trente-deux serait passé dessous sans rien dire. L'étape qui
-télécharge en porte donc un propre, bien plus court — ce qui nomme la panne au
-lieu de laisser le job expirer sans raison affichée.
+blocage de trente-deux serait passé dessous sans rien dire. Les étapes qui
+téléchargent en portent donc un propre, bien plus court — ce qui nomme la panne
+au lieu de laisser le job expirer sans raison affichée.
+
+**Elles sont deux dans ce job, et la seconde n'en avait pas** : celle qui
+installe le NDK, les outils et la plateforme, et celle de l'émulateur, qui
+installe son propre paquet avant de créer l'appareil. C'est la seconde qui s'est
+arrêtée vingt-trois minutes, et le job entier avait expiré à sa place. « L'étape
+qui télécharge » se lit donc au pluriel : chaque étape qui va sur le réseau
+porte son plafond, et une étape ajoutée qui télécharge en demande un.
 
 La protection de branche exige les contrôles par leur nom : un workflow modifié
 peut rendre vert un contrôle qui ne vérifie plus rien. C'est pour cela que

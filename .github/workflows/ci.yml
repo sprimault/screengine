@@ -60,8 +60,9 @@ env:
 #
 # **Trop large, un plafond ne sert à rien** : à quarante minutes, le blocage de
 # trente-deux qu'on a vu serait passé dessous sans rien dire. C'est pourquoi
-# l'étape qui télécharge en porte un propre, bien plus court que celui de son
-# job.
+# **chaque étape qui télécharge** en porte un propre, bien plus court que celui
+# de son job — elles sont deux dans le job de tests, et la seconde n'en a eu un
+# qu'après s'être arrêtée vingt-trois minutes.
 jobs:
   verification:
     name: Format, lint, no_std, header, licences
@@ -212,8 +213,20 @@ jobs:
 
       # Sous Linux, make test entier tourne une fois l'émulateur démarré : c'est
       # le seul moment où l'hôte Android a un appareil.
+      #
+      # **Elle télécharge aussi**, et c'est ce qui lui vaut un plafond propre :
+      # l'action installe le paquet `emulator` avant de créer l'appareil, donc il
+      # y a deux étapes qui pendent dans ce job et non une. Vue le 2026-10-21 sur
+      # une PR : vingt-trois minutes arrêtées sur `sdkmanager --install emulator`,
+      # qui ont mangé le plafond du job entier faute d'en avoir un ici. L'étape
+      # d'installation au-dessus en portait un depuis longtemps ; celle-ci, non.
+      #
+      # Quinze minutes : le job entier tourne en onze, émulateur et `make test`
+      # compris. Les atteindre nomme la panne au lieu de laisser le job expirer
+      # sans raison affichée.
       - name: Tests
         if: runner.os == 'Linux'
+        timeout-minutes: 15
         uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
         with:
           api-level: ${{ env.API_LEVEL }}
