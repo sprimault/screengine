@@ -127,6 +127,14 @@ which validates once the branch has already been pushed.
 reviewed in the pull request, which is when it matters. The release takes its
 name and notes from it, and a missing section stops the release.
 
+**Before tagging, check that the tip of `master` carries a successful run.** A
+merge push normally triggers its own, but once it did not, with no explanation:
+the merge happened, `master` moved on, and no run was created. Nothing reports
+it, and **no check in the workflow can** — the case to catch is the one where no
+run exists, so where nobody asks the question. Tagging is where the omission
+would cost, since the archives come out of a tree CI never built. The detail is
+in [`docs/construction.md`](docs/construction.md), "Intégration continue".
+
 **The tag does not publish.** It builds the archives and creates the release as
 a **draft**; making it visible takes one more step, once the notes have been
 read as an integrator will read them. Until then the archives exist without

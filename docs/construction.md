@@ -870,6 +870,25 @@ arrêtée vingt-trois minutes, et le job entier avait expiré à sa place. « L'
 qui télécharge » se lit donc au pluriel : chaque étape qui va sur le réseau
 porte son plafond, et une étape ajoutée qui télécharge en demande un.
 
+**Un push de fusion peut ne déclencher aucun passage, et rien ne le dit.** Vu
+une fois le 2026-10-21 : la fusion avait lieu, `master` avançait d'un commit, et
+aucune exécution n'était créée — ni annulée, ni en échec, absente. Les
+déclencheurs étaient en place, la fusion suivante en a déclenché un normalement,
+et la cause reste inconnue.
+
+**Aucun contrôle de ce workflow ne peut le voir**, et ce n'est pas une question
+de permission : le cas à attraper est celui où aucun passage n'existe, donc où
+personne ne pose la question. Un travail qui interrogerait l'historique des
+exécutions ne verrait que les commits pour lesquels il tourne.
+
+Deux choses bornent la conséquence sans la supprimer. Le passage **hebdomadaire**
+du `schedule` construit `master` même sans push, donc la branche n'attend jamais
+plus d'une semaine. Et le passage d'une **pull request** bâtit l'arbre fusionné :
+tant que rien n'atterrit entre l'ouverture et la fusion, l'arbre que `master`
+reçoit est exactement celui qui a été vérifié — ce qui était le cas ici, à
+l'arbre près. Reste la relecture au tag, où l'omission coûterait vraiment, et
+c'est `CONTRIBUTING.fr.md` qui la demande.
+
 La protection de branche exige les contrôles par leur nom : un workflow modifié
 peut rendre vert un contrôle qui ne vérifie plus rien. C'est pour cela que
 `.github/workflows/` se discute avant d'être modifié.

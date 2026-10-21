@@ -131,6 +131,16 @@ l'intégration continue seule, qui valide une fois la branche déjà poussée.
 relue en pull request, donc au moment où elle compte. La publication en tire le
 nom et les notes de la version, et une section absente l'arrête.
 
+**Avant de poser un tag, vérifier que la tête de `master` porte un passage
+réussi.** Un push de fusion déclenche normalement le sien, mais l'absence a été
+vue une fois, sans explication : la fusion avait lieu, `master` avançait, et
+aucune exécution n'était créée. Rien ne le signale, et **aucun contrôle du
+workflow ne peut le signaler** — le cas à attraper est celui où aucun passage
+n'existe, donc où personne ne pose la question. C'est au tag que l'omission
+coûterait, les archives sortant d'un arbre que l'intégration continue n'aurait
+pas bâti. Le détail est dans
+[`docs/construction.md`](docs/construction.md), section « Intégration continue ».
+
 **Le tag ne publie pas.** Il déclenche la construction des archives et crée la
 release **en brouillon** ; la rendre visible demande un geste de plus, une fois
 les notes relues telles qu'un intégrateur les lira. Tant qu'il n'est pas fait,
