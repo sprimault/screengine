@@ -63,6 +63,8 @@ publié, et explique les conventions du dépôt à qui y contribue.
 
 ## [Non publié]
 
+## [1.7.0] — 2026-10-22 — Ce que rien ne gardait
+
 ### Ajouté
 
 - **Un code de conduite**, dans les deux langues comme les autres documents
