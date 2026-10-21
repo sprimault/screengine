@@ -396,6 +396,83 @@ fn une_texture_relachee_par_l_hote_ne_se_libere_pas_dans_l_image_suivante() {
     );
 }
 
+/// Une soumission **refusée** pendant une image ne rend rien à l'allocateur.
+///
+/// C'est le régime que la mesure voisine déclarait impossible — « une image ne
+/// peut pas à la fois travailler et porter une libération en attente » —, et il
+/// l'était pour une soumission acceptée, qui solde la table avant que l'image
+/// commence. Un appel **refusé** l'atteint : les deux soumissions de ressource
+/// réglaient avant de vérifier l'état, si bien que les mégaoctets d'une chaîne
+/// de mipmaps partaient entre le début et la fin d'une image, sur un appel que
+/// le contexte refusait par ailleurs.
+///
+/// Le maillage est quelconque : ce qui est mesuré n'est pas son contenu mais
+/// l'ordre de la façade, et un maillage vide est éprouvé par le noyau, où il
+/// révèle le second défaut du même ordre — l'appel y passait tout court.
+#[test]
+fn une_soumission_refusee_pendant_une_image_ne_libere_rien() {
+    let (width, height) = (320, 180);
+    let mut context = Context::new(Config {
+        max_width: width,
+        max_height: height,
+        width,
+        height,
+        tile_size: 64,
+        max_triangles: 0,
+        max_lines: 0,
+    })
+    .expect("configuration valide");
+    let mut pixels = vec![0u8; width as usize * height as usize * BYTES_PER_PIXEL];
+
+    // Hors mesure, comme ci-dessus : une chaîne de 256 pèse assez pour qu'une
+    // libération se voie, et l'habillage du maillage doit survivre à la mesure
+    // pour que la fermeture ne soit pas ce qui la fait échouer.
+    let texture = Arc::new(
+        Texture::load(256, 256, &vec![0x80u8; 256 * 256 * BYTES_PER_PIXEL])
+            .expect("texture valide"),
+    );
+    let habillage = Arc::new(
+        Texture::load(64, 64, &vec![0x40u8; 64 * 64 * BYTES_PER_PIXEL]).expect("texture valide"),
+    );
+    let mesh = Mesh::load(&quad_mesh(1)).expect("maillage valide");
+    let vertices: Vec<VertexUv> = VERTICES
+        .iter()
+        .enumerate()
+        .map(|(i, position)| VertexUv {
+            position: *position,
+            u: ((i & 1) * 64) as f32,
+            v: ((i >> 1) * 64) as f32,
+        })
+        .collect();
+
+    // L'image qui soumet la texture, puis l'hôte qui s'en défait : le contexte
+    // tient seul la chaîne, et c'est elle qui est en attente de règlement.
+    context
+        .submit_textured(Affine3::IDENTITY, &vertices, &TRIANGLES, &texture)
+        .expect("scène soumise");
+    context.frame_end(&mut pixels, width).expect("image rendue");
+    drop(texture);
+
+    context.begin().expect("image commencée");
+    let seen = allocations(|| {
+        context
+            .submit_mesh(Affine3::IDENTITY, &mesh, |_| Some(&habillage))
+            .expect_err("une soumission pendant une image est refusée");
+    });
+    assert_eq!(seen, 0, "{seen} mouvement(s) d'allocateur dans l'image");
+
+    // La même seconde moitié que la mesure voisine, et pour la même raison : le
+    // zéro ci-dessus passerait aussi sur un moteur qui ne libère jamais.
+    context.frame_end(&mut pixels, width).expect("image rendue");
+    let apres = allocations(|| {
+        context.set_filter(Filter::Dither).expect("hors image");
+    });
+    assert!(
+        apres >= 1,
+        "la libération n'a eu lieu nulle part : rien n'était en attente, et la mesure ci-dessus ne portait sur rien"
+    );
+}
+
 /// Aucune image soumise depuis un maillage n'alloue.
 ///
 /// Le maillage se charge **hors de la mesure** — un chargement est un appel
