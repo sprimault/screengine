@@ -21,7 +21,7 @@ use std::sync::Arc;
 
 use screengine::{
     Affine3, Angle, BYTES_PER_PIXEL, Color, Config, Context, DepthMode, Filter, Light, Lightmaps,
-    Line, Mesh, Point, Rows, Sprite, SpriteOrientation, Texture, Triangle, Vec3, VertexUv,
+    Line, Mesh, Point, Rect, Rows, Sprite, SpriteOrientation, Texture, Triangle, Vec3, VertexUv,
     VertexUv2, World,
 };
 
@@ -1053,4 +1053,147 @@ fn la_cuisson_n_alloue_pas_par_rayon() {
         seen < luxels,
         "{seen} mouvement(s) d'allocateur pour {luxels} luxels : la cuisson alloue par rayon"
     );
+}
+
+/// La façade ombrée sur tranches n'alloue pas, et rien ne la mesurait.
+///
+/// **Les autres soumissions non mesurées partagent leur corps avec une façade
+/// qui l'est** : `submit_uv` celui de `submit_textured`, les trois soumissions
+/// de décor celui de `submit_world_visible`, et chaque forme `submit_each_*`
+/// celui de sa jumelle sur tranche. **Mesuré plutôt que supposé** : une faute
+/// placée dans `submit_each_shaded` fait aussi rougir le maillage et l'étape 6,
+/// qui l'empruntent — ce qui n'était gardé par rien, c'est cette façade-ci, son
+/// contrôle de finitude et l'assemblage de ses coins.
+///
+/// **Avec texture puis sans** : le second cas est celui qu'un pan uni éclairé
+/// emprunte, et c'est aussi celui où le contrat impose une normale faute de
+/// texture à moduler.
+#[test]
+fn aucune_image_ombree_n_alloue() {
+    let (width, height) = (640, 360);
+    let mut context = Context::new(Config {
+        max_width: width,
+        max_height: height,
+        width,
+        height,
+        tile_size: 64,
+        max_triangles: 0,
+        max_lines: 0,
+    })
+    .expect("configuration valide");
+    let mut pixels = vec![0u8; width as usize * height as usize * BYTES_PER_PIXEL];
+
+    // Hors mesure : les appels nommés allouent, c'est leur droit.
+    let texture = Arc::new(
+        Texture::load(64, 64, &vec![0x80u8; 64 * 64 * BYTES_PER_PIXEL]).expect("texture valide"),
+    );
+    let lights = [Light {
+        position: Vec3::new(2.5, 0.0, 0.5),
+        radius: 8.0,
+        color: Color::new(0xFF, 0xC0, 0x60, 0xFF),
+    }];
+    context.set_lights(&lights).expect("hors image");
+
+    // La normale pointe vers la caméra, qui regarde le +X depuis l'origine : un
+    // pan éteint ne ferait travailler ni l'atténuation ni la saturation.
+    let vertices: Vec<VertexUv2> = VERTICES
+        .iter()
+        .enumerate()
+        .map(|(i, position)| VertexUv2 {
+            position: *position,
+            u: ((i & 1) * 64) as f32,
+            v: ((i >> 1) * 64) as f32,
+            u2: 0.0,
+            v2: 0.0,
+            normal: Vec3::new(-1.0, 0.0, 0.0),
+        })
+        .collect();
+
+    for bound in [Some(&texture), None] {
+        let seen = allocations(|| {
+            for _ in 0..3 {
+                context
+                    .submit_shaded(Affine3::IDENTITY, &vertices, &TRIANGLES, bound)
+                    .expect("scène soumise");
+                context.frame_end(&mut pixels, width).expect("image rendue");
+            }
+        });
+        let texturee = bound.is_some();
+        assert_eq!(
+            seen, 0,
+            "{seen} allocation(s) pour trois images ombrées, texturée : {texturee}"
+        );
+    }
+}
+
+/// Le rendu par région n'alloue pas, et c'était le seul chemin sans mesure.
+///
+/// Les trois autres — le début d'image, la tuile et la fin — sont mesurés
+/// ailleurs dans ce fichier. Celui-ci reçoit ses deux tampons de travail de
+/// l'hôte, donc il n'a **rien** à prendre : une allocation ici serait un tampon
+/// interne qu'on ne lui a pas demandé, et c'est exactement ce que l'invariant
+/// interdit.
+///
+/// **Quatre régions désalignées plutôt qu'une sur l'image entière** : une seule
+/// région pleine ne distingue pas un tampon dimensionné sur la région d'un
+/// tampon dimensionné sur l'image, et c'est la première qui grandirait.
+#[test]
+fn aucun_rendu_par_region_n_alloue() {
+    let (width, height) = (203, 150);
+    let mut context = Context::new(Config {
+        max_width: width,
+        max_height: height,
+        width,
+        height,
+        tile_size: 32,
+        max_triangles: 0,
+        max_lines: 0,
+    })
+    .expect("configuration valide");
+    let mut pixels = vec![0u8; width as usize * height as usize * BYTES_PER_PIXEL];
+    let cells = width as usize * height as usize;
+    let mut color = vec![0u32; cells];
+    let mut depth = vec![0u32; cells];
+
+    // Un pavage dont aucune découpe n'épouse un bord de tuile de 32.
+    const DECOUPES: [(u32, u32, u32, u32); 4] = [
+        (0, 0, 100, 70),
+        (100, 0, 103, 70),
+        (0, 70, 100, 80),
+        (100, 70, 103, 80),
+    ];
+
+    let seen = allocations(|| {
+        for _ in 0..3 {
+            context
+                .submit(Affine3::IDENTITY, &VERTICES, &TRIANGLES)
+                .expect("scène soumise");
+            let frame = context.frame_begin().expect("début");
+            for (x, y, w, h) in DECOUPES {
+                let rect = Rect {
+                    x,
+                    y,
+                    width: w,
+                    height: h,
+                };
+                let mut rows = Rows::band(&mut pixels, width, 0);
+                frame
+                    .region(rect, &mut color, &mut depth, &mut rows)
+                    .expect("région rendue");
+            }
+            frame.end(&mut rows_of(&mut pixels, width)).expect("fin");
+        }
+    });
+    assert_eq!(
+        seen, 0,
+        "{seen} allocation(s) pour douze régions et trois images"
+    );
+}
+
+/// Le tampon de l'hôte vu comme des lignes, à l'origine de l'image.
+///
+/// Un emprunt séparé par appel : la région et la fin écrivent dans le même
+/// tampon, et les garder tous deux vivants ne compilerait pas.
+fn rows_of(pixels: &mut [u8], width: u32) -> Rows<'_> {
+    Rows::band(pixels, width, 0)
 }

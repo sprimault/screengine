@@ -34,6 +34,7 @@ use crate::error::Result;
 use crate::format::World;
 use crate::format::world::{Cell, Mapping, Surface};
 use crate::math::Vec3;
+use crate::math::fixed::rounded;
 use crate::math::polygon::{abs, axis, newell};
 use crate::scene::Light;
 
@@ -527,26 +528,11 @@ fn plane_axes(normal: Vec3) -> (usize, usize) {
 
 /// La valeur ramenée dans un octet.
 ///
-/// Le bornage est écrit, jamais laissé à la saturation de `as` : celle-ci diffère
-/// entre le scalaire et les chemins vectoriels, et elle ne sert jamais de garde.
-///
-/// **`NaN` se teste nommément**, et il manquait : les deux comparaisons sont
-/// fausses avec lui, si bien qu'il atteignait la conversion — dont la saturation
-/// rend bien zéro en Rust, mais qui est précisément la garde que cette fonction
-/// dit ne pas employer. Un luxel noir est la réponse voulue ; ce qui change est
-/// qu'elle est désormais écrite, là où un chemin vectoriel en rendrait une autre.
+/// La valeur arrive déjà pondérée, donc l'échelle est l'unité : ce qui reste est
+/// l'arrondi au plus proche et le bornage écrit, que [`rounded`] porte pour les
+/// trois sites qui en avaient besoin.
 fn quantize(value: f32) -> u8 {
-    if value.is_nan() {
-        return 0;
-    }
-    let scaled = value + 0.5;
-    if scaled <= 0.0 {
-        0
-    } else if scaled >= 255.0 {
-        255
-    } else {
-        scaled as u8
-    }
+    rounded(value, 1.0, 255) as u8
 }
 
 /// Recopie le bord du rectangle dans sa gouttière.

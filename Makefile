@@ -124,7 +124,7 @@ android_build = for cible in $(CIBLES_ANDROID); do \
 
 .PHONY: build lib lib-wasm lib-android run example web test native-libs fmt fmt-fix lint lint-doc-tests \
         lint-android-versions lint-wasm-bindgen lint-enveloppes lint-intrinseques etat-verif bornes-verif plate-verif sorties-verif \
-        dispositions-verif java-verif codes-verif nostd test-arm test-linux-arm test-wasi msrv bench bench-wasi stubs \
+        dispositions-verif java-verif codes-verif frontiere-verif etage-verif nostd test-arm test-linux-arm test-wasi msrv bench bench-wasi stubs \
         conform conform-arm conform-linux-arm conform-wasi conform-x86 conform-update conform-images mesh header header-verif audit deny doc doc-verif hosts host-c host-cpp host-web host-go \
         host-android demo-c demo-cpp clean tools
 
@@ -1207,6 +1207,60 @@ codes-verif:
 	fi; \
 	echo "codes-verif : $$(echo $$sources | wc -w) fichiers d hote, aucun jugement par egalite"
 
+# Deux clauses de l'invariant 1 que ni clippy ni aucune autre cible ne garde, et
+# qui se lisent toutes deux dans le header : **aucun callback**, et **aucune
+# allocation qui traverse**.
+#
+# Un pointeur de fonction dans une declaration serait un callback, donc de la
+# reentrance et une pile traversee dans l'autre sens. `cbindgen` les ecrit
+# `(*nom)(`, et il n'en existe aucun aujourd'hui — c'est ce que ce controle fige.
+#
+# Un point d'entree qui rend un pointeur rend de la memoire que l'hote devrait
+# liberer, ou une vue sur celle du moteur. Deux fonctions le font, nommees ici
+# parce que le contrat les nomme : `scg_last_error` rend un tampon deja ecrit,
+# dont la duree de vie est documentee, et `scg_buffer_alloc` alloue pour le
+# compte de l'hote, qui en devient proprietaire. Toute troisieme est un defaut.
+RETOURS_HORS = scg_last_error scg_buffer_alloc
+
+frontiere-verif:
+	@if [ ! -f include/screengine.h ]; then \
+	  echo "frontiere-verif : header introuvable, la recherche n a pas abouti"; exit 1; \
+	fi; \
+	rappels=$$(grep -cE '\(\*[A-Za-z_][A-Za-z0-9_]*\)\(' include/screengine.h || true); \
+	if [ "$$rappels" -ne 0 ]; then \
+	  echo "frontiere-verif : $$rappels pointeur(s) de fonction dans le header :"; \
+	  grep -nE '\(\*[A-Za-z_][A-Za-z0-9_]*\)\(' include/screengine.h; exit 1; \
+	fi; \
+	motif=$$(echo "$(RETOURS_HORS)" | tr ' ' '|'); \
+	rendus=$$(grep -nE '^[A-Za-z_][A-Za-z0-9_ ]*\*[A-Za-z_]*scg_[a-z_]+\(' include/screengine.h \
+	  | grep -vE "$$motif" || true); \
+	if [ -n "$$rendus" ]; then \
+	  echo "frontiere-verif : un point d entree rend un pointeur hors des exemptions :"; \
+	  echo "$$rendus"; exit 1; \
+	fi; \
+	declares=$$(grep -cE '^[A-Za-z_].*scg_[a-z_]+\(' include/screengine.h); \
+	echo "frontiere-verif : $$declares declarations, aucun callback, $$(echo $(RETOURS_HORS) | wc -w) exemption(s) nommee(s)"
+
+# La clause de l'invariant 5 qu'aucune cible ne gardait : **le noyau ignore
+# l'existence de son etage d'accueil**.
+#
+# Il ne depend pas de `screengine-play`, ne le mentionne pas, et n'a aucune
+# fonctionnalite pour lui. L'absence de dependance est tenue par `Cargo.toml` et
+# par la compilation ; la mention, par rien — un commentaire qui renverrait a
+# l'etage, un `cfg` taille pour lui, une docstring qui nomme sa fenetre passaient
+# tous. C'est le premier pas vers une fonctionnalite qui n existe que pour lui.
+etage-verif:
+	@sources=$$(find src -name '*.rs' | sort); \
+	if [ -z "$$sources" ]; then \
+	  echo "etage-verif : aucune source du noyau trouvee, la recherche n a pas abouti"; exit 1; \
+	fi; \
+	fautifs=$$(grep -nE 'screengine[_-]play' $$sources || true); \
+	if [ -n "$$fautifs" ]; then \
+	  echo "etage-verif : le noyau mentionne son etage d accueil :"; \
+	  echo "$$fautifs"; exit 1; \
+	fi; \
+	echo "etage-verif : $$(echo $$sources | wc -w) fichiers du noyau, aucune mention de l etage"
+
 # Les cibles qu'un contrôle traverse au-delà de celle du poste, et le seul
 # endroit où du code propre à une autre architecture se compile ici : `neon.rs`
 # sur `aarch64`, les chemins wasm, et la largeur de pointeur de `i686`. En
@@ -1236,7 +1290,7 @@ CIBLES_PLAY = $(CIBLES_LINUX_ARM) $(CIBLE_WASM)
 # leur plancher n'est pas sous notre contrôle, et l'y faire entrer donnerait une
 # contrainte qu'une montée de dépendance casserait sans qu'on puisse rien.
 
-lint: lint-doc-tests lint-android-versions lint-wasm-bindgen lint-enveloppes lint-intrinseques etat-verif bornes-verif plate-verif sorties-verif dispositions-verif java-verif codes-verif
+lint: lint-doc-tests lint-android-versions lint-wasm-bindgen lint-enveloppes lint-intrinseques etat-verif bornes-verif plate-verif sorties-verif dispositions-verif java-verif codes-verif frontiere-verif etage-verif
 	cargo clippy --workspace --all-targets --all-features -- -D warnings
 	for cible in $(CIBLES_CROISEES); do \
 	  cargo clippy -p screengine -p screengine-ffi --lib --target $$cible -- -D warnings || exit 1; \

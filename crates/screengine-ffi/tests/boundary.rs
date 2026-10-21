@@ -499,6 +499,119 @@ fn la_region_rend_ce_que_les_tuiles_rendent() {
     assert_eq!(par_region, par_tuiles, "la région et les tuiles divergent");
 }
 
+/// Quatre régions partielles recomposent l'image que les tuiles rendent.
+///
+/// **Le seul appel réussi de cette fonction passait l'image entière**, ici comme
+/// partout : la clause qui l'intéresse — un rectangle quelconque, et la
+/// composition de plusieurs — n'était éprouvée par rien à travers l'ABI. Un
+/// défaut qui aurait décalé la copie d'une région de son origine serait passé,
+/// l'origine valant zéro dans le seul cas joué.
+///
+/// **Les quatre découpes sont désalignées sur les deux axes** : 100 et 70 ne
+/// sont multiples ni de 32 ni de 64, donc aucune n'épouse un bord de tuile. La
+/// leçon est celle du cas jumeau du noyau, qui ne désalignait que l'abscisse et
+/// laissait la moitié de sa propriété sans épreuve.
+///
+/// Les tampons de travail couvrent l'image entière, donc chaque région s'en
+/// sert partiellement : la clause est « au moins la région », et la passer plus
+/// grande est ce qu'un hôte fait pour n'allouer qu'une fois.
+#[test]
+fn des_regions_partielles_recomposent_l_image() {
+    let ctx = tiled();
+    let mut par_regions = tiles_buffer();
+    let mut par_tuiles = tiles_buffer();
+    let cells = TILES_W as usize * TILES_H as usize;
+    let mut color = vec![0u32; cells];
+    let mut depth = vec![0u32; cells];
+    let mut count = 0;
+
+    // Le même triangle en travers de plusieurs tuiles que le cas ci-dessus, et
+    // il traverse aussi les quatre découpes : une géométrie tenant dans une
+    // seule rendrait la recomposition vraie sans rien éprouver.
+    let vertices = [
+        ScgVertex {
+            x: 4.0,
+            y: -1.5,
+            z: -1.0,
+        },
+        ScgVertex {
+            x: 4.0,
+            y: 1.5,
+            z: -1.0,
+        },
+        ScgVertex {
+            x: 4.0,
+            y: 0.0,
+            z: 1.2,
+        },
+    ];
+    let triangles = [ScgTriangle {
+        i0: 0,
+        i1: 1,
+        i2: 2,
+        r: 0x20,
+        g: 0x90,
+        b: 0xd0,
+        a: 255,
+    }];
+    let model = ScgMat4 {
+        m: [
+            1.0, 0.0, 0.0, 0.0, //
+            0.0, 1.0, 0.0, 0.0, //
+            0.0, 0.0, 1.0, 0.0, //
+            0.0, 0.0, 0.0, 1.0,
+        ],
+    };
+
+    // Un pavage de l'image par quatre rectangles disjoints, aucun aligné sur une
+    // tuile : leur union est l'image, donc leur somme doit l'être aussi.
+    const DECOUPES: [(u32, u32, u32, u32); 4] = [
+        (0, 0, 100, 70),
+        (100, 0, 103, 70),
+        (0, 70, 100, 80),
+        (100, 70, 103, 80),
+    ];
+
+    // SAFETY: handle vivant pour tout ce test, tableaux et tampons locaux, et
+    // les tampons de travail couvrent l'image entière donc chaque région.
+    unsafe {
+        assert_eq!(
+            scg_submit(ctx, &model, vertices.as_ptr(), 3, triangles.as_ptr(), 1),
+            SCG_OK
+        );
+        assert_eq!(scg_frame_begin(ctx, &mut count), SCG_OK);
+        for (x, y, w, h) in DECOUPES {
+            assert_eq!(
+                scg_frame_region(
+                    ctx,
+                    x,
+                    y,
+                    w,
+                    h,
+                    color.as_mut_ptr(),
+                    depth.as_mut_ptr(),
+                    cells,
+                    par_regions.as_mut_ptr(),
+                    TILES_W,
+                ),
+                SCG_OK,
+                "la région ({x}, {y}, {w}, {h})"
+            );
+        }
+        assert_eq!(scg_frame_end(ctx, par_tuiles.as_mut_ptr(), TILES_W), SCG_OK);
+        scg_destroy(ctx);
+    }
+
+    assert!(
+        par_regions.iter().any(|&b| b != 0),
+        "les régions n'ont rien peint"
+    );
+    assert_eq!(
+        par_regions, par_tuiles,
+        "les quatre régions et les tuiles divergent"
+    );
+}
+
 /// Ce que la région refuse, et qu'aucune autre fonction ne refuse pour elle.
 ///
 /// Les deux clauses qui lui sont propres sont le rectangle et la longueur des

@@ -23,6 +23,7 @@ use alloc::vec::Vec;
 
 use crate::error::{Argument, Error, Result};
 use crate::math::exp2::powf;
+use crate::math::fixed::rounded;
 
 /// Entrées par canal : une par valeur d'un octet.
 const LEVELS: usize = 256;
@@ -168,27 +169,12 @@ impl Transfer for Grade {
 
 /// Ramène une valeur de `[0, 1]` sur un octet, arrondie au plus proche.
 ///
-/// Le bornage est écrit avant la conversion : `as` sature, mais la saturation
-/// ne sert jamais de garde-fou — la règle vaut ici comme partout où un flottant
-/// devient entier.
-///
-/// **Même forme que la quantification de la cuisson**, `NaN` nommément compris :
-/// les deux ramènent un flottant sur un octet par trois cas écrits, et deux
-/// écritures de la même règle à deux endroits du moteur finiraient par n'en
-/// garder qu'une juste. Ce qui diffère est l'échelle d'entrée, un canal de zéro
-/// à un ici contre un octet pondéré là-bas.
+/// L'échelle d'entrée était la seule chose qui distinguait cette fonction de la
+/// quantification de la cuisson, et sa documentation disait déjà que deux
+/// écritures de la même règle finiraient par n'en garder qu'une juste : les deux
+/// passent désormais par [`rounded`].
 fn quantize(value: f32) -> u8 {
-    if value.is_nan() {
-        return 0;
-    }
-    let scaled = value * 255.0 + 0.5;
-    if scaled <= 0.0 {
-        0
-    } else if scaled >= 255.0 {
-        255
-    } else {
-        scaled as u8
-    }
+    rounded(value, 255.0, 255) as u8
 }
 
 #[cfg(test)]
