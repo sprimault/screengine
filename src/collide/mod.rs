@@ -942,7 +942,13 @@ pub(super) fn max(a: f64, b: f64) -> f64 {
     if a > b { a } else { b }
 }
 
-/// La valeur absolue, écrite plutôt qu'empruntée à la bibliothèque du système.
+/// La valeur absolue, qui laisse passer le zéro négatif comme celle de
+/// `math::polygon`.
+///
+/// `f64::abs` est permis, à la différence de `min` et `max` juste au-dessus : ce
+/// qui le tient dehors n'est pas une interdiction mais le signe du zéro, qu'il
+/// normaliserait — et c'est la sortie du balayage, elle, qui décide de le
+/// ramener à `+0,0`.
 ///
 /// Une seule pour le module : elle vivait en trois exemplaires identiques, ce qui
 /// est un de trop pour une expression dont chaque copie est une occasion de la

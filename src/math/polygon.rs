@@ -50,10 +50,14 @@ pub(crate) fn axis(v: Vec3, index: usize) -> f32 {
     }
 }
 
-/// La valeur absolue.
+/// La valeur absolue, qui laisse passer le zéro négatif.
 ///
-/// `f32::abs` vit dans `std`, que le noyau n'a pas. Une implémentation par
-/// masque de bit serait la même partout — celle-ci l'est aussi, et se lit.
+/// **C'est elle qui est la raison de l'écrire, et non une indisponibilité.**
+/// `f32::abs` est permis par `clippy.toml` — il ne touche que le bit de signe —
+/// et `core` le porte sur le plancher annoncé par `rust-version` ; mais il rend
+/// `+0,0` d'un `-0,0`, là où cette expression le rend tel qu'il est entré. Deux
+/// chemins d'empreinte la traversent, et le test voisin dit pourquoi ce signe ne
+/// gêne personne.
 pub(crate) fn abs(value: f32) -> f32 {
     if value < 0.0 { -value } else { value }
 }

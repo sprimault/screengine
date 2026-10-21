@@ -512,7 +512,8 @@ impl World {
         }
 
         let lights = lights(sections[LGTS])?;
-        let cell_ids: Vec<u32> = cells.iter().map(|cell| cell.id).collect();
+        let mut cell_ids = reserved(cells.len())?;
+        cell_ids.extend(cells.iter().map(|cell| cell.id));
         let entities = entities(sections[ENTS], &cell_ids)?;
 
         // La table des identifiants de cellules, triée, que toute désignation
