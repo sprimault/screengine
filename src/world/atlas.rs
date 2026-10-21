@@ -99,7 +99,8 @@ pub(crate) fn pack(cell: &Cell) -> Result<Atlas> {
     // Décroissant par côté le plus long, puis par l'autre, puis par rang : les
     // grands rectangles se posent d'abord, ce qui laisse les interstices aux
     // petits plutôt que l'inverse.
-    let mut order: Vec<usize> = (0..sizes.len()).collect();
+    let mut order = reserved(sizes.len())?;
+    order.extend(0..sizes.len());
     order.sort_by_key(|&i| {
         let (rank, w, h) = sizes[i];
         let (long, short) = if w >= h { (w, h) } else { (h, w) };
@@ -134,7 +135,7 @@ pub(crate) fn pack(cell: &Cell) -> Result<Atlas> {
                 element: Element::None,
             }));
         }
-        if let Some(slots) = try_pack(&sizes, &order, side) {
+        if let Some(slots) = try_pack(&sizes, &order, side)? {
             return Ok(Atlas { side, slots });
         }
         side *= 2;
@@ -145,30 +146,38 @@ pub(crate) fn pack(cell: &Cell) -> Result<Atlas> {
 ///
 /// Rend `None` dès qu'un rectangle ne trouve pas sa place : l'appelant double le
 /// côté et recommence, plutôt que de poser ce qui rentre et d'abandonner le reste.
-fn try_pack(sizes: &[(usize, u32, u32)], order: &[usize], side: u32) -> Option<Vec<Slot>> {
-    let mut placed: Vec<(usize, Slot)> = Vec::new();
+///
+/// **Le `Result` est celui de l'allocation, et il enveloppe le `None`** : les deux
+/// réponses ne sont pas de même nature, « ça ne rentre pas à ce côté-ci » étant un
+/// résultat que l'appelant exploite, là où « plus de mémoire » doit remonter à
+/// l'hôte. Ses deux listes ont une taille connue d'avance, donc leur capacité se
+/// réserve et aucun `push` ne croît.
+fn try_pack(sizes: &[(usize, u32, u32)], order: &[usize], side: u32) -> Result<Option<Vec<Slot>>> {
+    let mut placed = reserved(order.len())?;
     for &i in order {
         let (_, width, height) = sizes[i];
         if width > side || height > side {
-            return None;
+            return Ok(None);
         }
-        let slot = find(&placed, side, width, height)?;
+        let Some(slot) = find(&placed, side, width, height) else {
+            return Ok(None);
+        };
         placed.push((i, slot));
     }
 
-    let mut slots = alloc::vec![
-        Slot {
+    let mut slots = reserved(sizes.len())?;
+    for _ in 0..sizes.len() {
+        slots.push(Slot {
             x: 0,
             y: 0,
             width: 0,
             height: 0,
-        };
-        sizes.len()
-    ];
+        });
+    }
     for (i, slot) in placed {
         slots[i] = slot;
     }
-    Some(slots)
+    Ok(Some(slots))
 }
 
 /// Le premier emplacement libre pour un rectangle de cette taille.

@@ -1022,3 +1022,35 @@ fn aucune_image_tracee_n_alloue() {
     });
     assert_eq!(seen, 0, "{seen} allocation(s) après redimensionnement");
 }
+
+/// La cuisson d'une cellule alloue par surface, jamais par rayon d'ombre.
+///
+/// **C'est un appel nommé : il a le droit d'allouer**, et la mesure ne lui
+/// demande pas zéro. Ce qu'elle lui refuse est d'allouer *par rayon* — donc par
+/// luxel, par échantillon et par lumière —, ce que faisait le contour de la
+/// surface éclairée en se reconstruisant à chaque test d'occultation.
+///
+/// Le seuil est le nombre de luxels de la cellule, et il est choisi parce qu'il
+/// sépare franchement les deux régimes : une cuisson qui alloue par surface
+/// reste deux ordres de grandeur en dessous, une cuisson qui alloue par rayon le
+/// dépasse d'autant. Un compte exact serait un chiffre à tenir à jour sans que
+/// rien ne le vérifie.
+#[test]
+fn la_cuisson_n_alloue_pas_par_rayon() {
+    let world = World::load(SALLES).expect("décor versionné valide");
+    let mut lightmaps = Lightmaps::new(&world).expect("atlas alloués");
+    let id = world.cell_id(0).expect("le décor a au moins une cellule");
+    let luxels = world.cell_luxel_count(id).expect("cellule connue") as usize;
+    assert!(
+        luxels > 0,
+        "la cellule ne porte aucun luxel : la mesure ne porterait sur rien"
+    );
+
+    let seen = allocations(|| {
+        lightmaps.build(&world, id).expect("cuisson");
+    });
+    assert!(
+        seen < luxels,
+        "{seen} mouvement(s) d'allocateur pour {luxels} luxels : la cuisson alloue par rayon"
+    );
+}

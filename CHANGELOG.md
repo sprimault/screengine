@@ -112,6 +112,9 @@ publié, et explique les conventions du dépôt à qui y contribue.
 - **Un maillage ou une carte vide se soumettait pendant une image** au lieu de
   rendre `SCG_ERR_INVALID_STATE`, et toute soumission de ressource rendait de la
   mémoire à l'allocateur entre le début et la fin d'une image.
+- **Un échec d'allocation du rangement d'un atlas ou de la cuisson avortait le
+  processus** au lieu de rendre `SCG_ERR_OUT_OF_MEMORY`. La cuisson n'alloue en
+  outre plus une fois par rayon d'ombre.
 
 ***
 
@@ -162,6 +165,9 @@ publié, et explique les conventions du dépôt à qui y contribue.
 - **An empty mesh or world could be submitted during a frame** instead of
   returning `SCG_ERR_INVALID_STATE`, and any resource submission then released
   memory to the allocator between the start and the end of a frame.
+- **An allocation failure while packing an atlas or baking aborted the process**
+  instead of returning `SCG_ERR_OUT_OF_MEMORY`. Baking also no longer allocates
+  once per shadow ray.
 
 ## [1.6.0] — 2026-10-20 — Ce que la surface gardait pour elle
 

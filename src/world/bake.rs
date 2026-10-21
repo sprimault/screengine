@@ -105,7 +105,7 @@ pub(crate) fn bake(world: &World, index: u32, atlas: Atlas) -> Result<Baked> {
             &occluders,
             side,
             &mut texels,
-        );
+        )?;
     }
 
     Ok(Baked {
@@ -235,14 +235,15 @@ fn shade(
     occluders: &[Occluder],
     side: u32,
     texels: &mut [u8],
-) {
+) -> Result<()> {
     let unit = normal.normalize();
     let mapping = surface.lightmap;
     let inverse_u = 1.0 / mapping.u.dot(mapping.u);
     let inverse_v = 1.0 / mapping.v.dot(mapping.v);
-    let outline: Vec<Vec3> = (0..surface.corners.len())
-        .map(|i| cell.vertices[point_of(cell, surface, i)].position)
-        .collect();
+    let mut outline = reserved(surface.corners.len())?;
+    outline.extend(
+        (0..surface.corners.len()).map(|i| cell.vertices[point_of(cell, surface, i)].position),
+    );
     let anchor = outline[0];
 
     for j in 0..surface.luxels.height {
@@ -270,7 +271,7 @@ fn shade(
                         point.y + unit.y * LIFT,
                         point.z + unit.z * LIFT,
                     );
-                    let sample = gather(lifted, unit, lights, occluders, cell, surface);
+                    let sample = gather(lifted, unit, lights, occluders, &outline);
                     for (slot, value) in total.iter_mut().zip(sample) {
                         *slot += value;
                     }
@@ -289,6 +290,7 @@ fn shade(
     }
 
     fill_gutter(slot, side, texels);
+    Ok(())
 }
 
 /// Le point ramené sur la surface, s'il en était sorti.
@@ -385,8 +387,7 @@ fn gather(
     normal: Vec3,
     lights: &[Light],
     occluders: &[Occluder],
-    cell: &Cell,
-    surface: &Surface,
+    own: &[Vec3],
 ) -> [f32; 3] {
     let mut total = [0.0f32; 3];
     for light in lights {
@@ -406,7 +407,7 @@ fn gather(
         if lambert <= 0.0 {
             continue;
         }
-        if shadowed(point, light.position, occluders, cell, surface) {
+        if shadowed(point, light.position, occluders, own) {
             continue;
         }
         let falloff = 1.0 - square / (light.radius * light.radius);
@@ -424,19 +425,15 @@ fn gather(
 /// La surface éclairée est exclue de ses propres occulteurs : un luxel posé sur
 /// elle s'ombrerait lui-même, et le décalage le long de la normale ne suffirait pas
 /// à l'en sauver sur une surface rasante.
-fn shadowed(
-    point: Vec3,
-    light: Vec3,
-    occluders: &[Occluder],
-    cell: &Cell,
-    surface: &Surface,
-) -> bool {
-    let own: Vec<Vec3> = (0..surface.corners.len())
-        .map(|i| cell.vertices[point_of(cell, surface, i)].position)
-        .collect();
+///
+/// **Son contour arrive de l'appelant**, qui l'a déjà sous la main pour ramener
+/// ses luxels sur le polygone. Reconstruit ici, il l'était une fois par rayon —
+/// donc par luxel, par échantillon et par lumière —, et par la même expression
+/// qu'à l'appel.
+fn shadowed(point: Vec3, light: Vec3, occluders: &[Occluder], own: &[Vec3]) -> bool {
     occluders
         .iter()
-        .filter(|o| o.points != own)
+        .filter(|o| o.points.as_slice() != own)
         .any(|o| crosses(&o.points, point, light))
 }
 
