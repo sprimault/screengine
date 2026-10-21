@@ -1831,6 +1831,60 @@ fn une_texture_nulle_est_acceptee_a_normales_et_refusee_au_chemin_texture() {
     unsafe { scg_destroy(ctx) };
 }
 
+/// Pendant une image, l'état est refusé **avant** l'argument.
+///
+/// La convention de la frontière, et elle n'était tenue nulle part : les huit
+/// réglages prennent l'exclusivité avant de convertir leur argument, les deux
+/// soumissions de tracé le faisaient dans l'autre sens. Un hôte recevait donc
+/// `SCG_ERR_INVALID_ARGUMENT` ici et `SCG_ERR_INVALID_STATE` là pour la même
+/// faute double, et aucun document ne départageait.
+///
+/// **Le mode est doublement fautif**, et c'est ce qui rend le cas mordant : zéro
+/// n'est pas un mode publié, donc les deux refus s'appliquent et un seul peut
+/// sortir.
+#[test]
+fn l_etat_passe_avant_l_argument_pendant_une_image() {
+    let ctx = create(&sane());
+    let model = identite();
+    let lines = [ligne()];
+    let points = [point()];
+    let mut tiles = 0;
+
+    // SAFETY: `ctx` est vivant, le compteur est local, et l'image se referme
+    // plus bas.
+    assert_eq!(unsafe { scg_frame_begin(ctx, &mut tiles) }, SCG_OK);
+
+    // SAFETY: handle vivant, pointeurs locaux, comptes exacts.
+    let code = unsafe { scg_submit_lines(ctx, &model, lines.as_ptr(), 1, 0) };
+    assert_eq!(
+        code, SCG_ERR_INVALID_STATE,
+        "lignes, mode nul pendant l'image"
+    );
+    // SAFETY: mêmes préconditions.
+    let code = unsafe { scg_submit_points(ctx, &model, points.as_ptr(), 1, 0) };
+    assert_eq!(
+        code, SCG_ERR_INVALID_STATE,
+        "points, mode nul pendant l'image"
+    );
+
+    let mut pixels = vec![0u8; 64 * 32 * 4];
+    // SAFETY: le tampon porte bien `stride × hauteur × 4` octets.
+    let fin = unsafe { scg_frame_end(ctx, pixels.as_mut_ptr(), 64) };
+    assert_eq!(fin, SCG_OK);
+
+    // Hors de l'image, le même mode rend bien le refus d'argument : le cas
+    // n'aurait rien prouvé si l'état masquait un mode que personne ne refuse.
+    // SAFETY: mêmes préconditions.
+    let code = unsafe { scg_submit_lines(ctx, &model, lines.as_ptr(), 1, 0) };
+    assert_eq!(
+        code, SCG_ERR_INVALID_ARGUMENT,
+        "hors image, l'argument sort"
+    );
+
+    // SAFETY: le handle est vivant et détruit une seule fois.
+    unsafe { scg_destroy(ctx) };
+}
+
 /// Un mode de profondeur inconnu est refusé, **et zéro en fait partie**.
 ///
 /// La même règle que pour le mélange et l'orientation, et c'est bien une règle

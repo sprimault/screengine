@@ -1350,6 +1350,13 @@ int32_t scg_frame_end(struct ScgContext *ctx, uint8_t *pixels, uint32_t stride);
 // on the thread that made the failing call, immediately after it. A coroutine
 // that resumes on another thread of a pool will find it empty.
 //
+// **That slot's lifetime is shorter than the context one's**: every entry point
+// clears it on the way in, whichever it is and whether it takes a context or
+// not. So it is valid until the **next call of any kind on the same thread**,
+// where the context message survives until the next call on that same context.
+// A host that calls anything between the failure and the read gets the empty
+// string, not a stale message.
+//
 // Allowed on a faulted context, so the host can learn the cause.
 //
 // # Safety

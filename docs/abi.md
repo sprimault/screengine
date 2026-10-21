@@ -194,6 +194,14 @@ Arrêté, et c'est la convention entière :
   de la sortie d'une scène de conformance.
 - **un statut n'est jamais collant.** Il décrit l'appel qui vient de rendre, pas
   un état du contexte, et rien ne se lit ensuite pour le retrouver.
+- **entre deux erreurs, l'état passe avant l'argument.** Un appel fautif sur les
+  deux plans — un mode inconnu passé pendant une image — rend
+  `SCG_ERR_INVALID_STATE`, et c'est le seul ordre que la frontière puisse tenir
+  partout : le contrôle d'un argument vit souvent dans le noyau, qu'elle
+  n'atteint qu'après avoir pris l'exclusivité, et l'inverser l'obligerait à
+  recopier ce contrôle. Une convention uniforme qu'on peut tenir vaut mieux
+  qu'une hiérarchie au cas par cas, et deux soumissions rendaient l'autre code
+  jusqu'à ce que la clause existe.
 - **une liaison juge par le signe.** `code < 0` est un échec, `code == 0` un
   succès sans rien à signaler, `code > 0` un succès dont l'hôte peut ne rien
   faire. Un statut inconnu se traite donc comme `SCG_OK`.
@@ -394,7 +402,13 @@ lire ici :
   après un point de suspension retombe sur un autre thread du pool et reçoit la
   chaîne vide, sans que rien ne le signale ;
 - **chaque point d'entrée vide l'emplacement en entrant**, pour qu'un thread
-  recyclé ne rende jamais le message d'une tâche précédente.
+  recyclé ne rende jamais le message d'une tâche précédente ;
+- **sa durée de vie est donc plus courte que celle du message d'un contexte**,
+  et c'est le seul endroit où les deux se comparent. Celui-ci vaut jusqu'au
+  prochain appel **sur le même contexte** ; celui-là jusqu'au prochain appel
+  **de n'importe quelle sorte sur ce thread** — un appel sur un autre contexte
+  suffit à le vider, puisque tous passent par la même entrée. Le header le dit
+  désormais, là où un auteur de liaison le lira.
 
 ### Après une panique
 
@@ -1688,6 +1702,16 @@ alors que c'est ce document qui fait foi.
 n'en a jamais produit. L'hôte passe le repère et les coins qu'il a lui-même
 écrits — tout ce qui lui reste à cet instant —, et c'est pourquoi elle ne peut pas
 vivre sur `ScgWorld`.
+
+**Elle alloue, et c'est la seule interrogation qui le fasse** : les coins se
+recopient dans la mémoire du moteur, le nombre n'étant pas borné. C'est permis
+par l'invariant — un appel nommé a le droit d'allouer, et celui-ci n'est pas dans
+une image —, mais il faut le dire : un outil qui l'appelle sur chaque surface
+d'une carte paye une allocation par appel, et un hôte qui l'appellerait **pendant
+une image** romprait la clause de zéro allocation pour son propre compte. Elle se
+range avec le chargement, pas avec le rendu. Écartée pour cela : la lecture sur
+place de la tranche de flottants, qui imposerait à l'hôte la disposition d'un
+type du noyau.
 
 **C'est le prédicat du chargeur, pas une seconde écriture.** Le chargement appelle
 le même code, si bien que les deux ne peuvent pas diverger, et c'est sa raison

@@ -190,6 +190,20 @@ l'hôte gardant sa fenêtre, sa boucle et ses entrées.
   régulières. Écartés : `pixels` et `wgpu`, qui font dépendre l'affichage d'un
   moteur logiciel d'un pilote graphique, et SDL, qui ajoute une bibliothèque C à
   construire.
+
+  **« Confiné » veut dire confiné à ce crate, pas absent de sa surface.** Deux
+  types de `winit` sont réexportés — `MouseButton` et `KeyCode` —, et ils
+  figurent dans les six méthodes d'`Input` qui interrogent le clavier et la
+  souris : la version de `winit` fait donc partie du contrat de cet étage, et une
+  rupture chez elle en est une ici. C'est assumé, et l'inverse a été écarté le
+  2026-10-21 : des énumérations propres coûteraient une table de près de deux
+  cents variantes à tenir d'accord avec l'amont, pour désigner exactement les
+  mêmes touches. Ce qui reste interdit est qu'un type de `winit` traverse
+  l'**ABI** ou entre dans le noyau, ce que l'invariant garde.
+
+  Corollaire pour qui consomme ce crate : une montée de `winit` peut lui demander
+  une reprise, là où une montée du noyau ne peut pas. C'est la contrepartie du
+  confort, et c'est pourquoi l'autre chemin existe.
 - **Le décodage d'images y est aussi**, par `png`. Le moteur n'ouvre aucun
   fichier et ne connaît aucun format : il reçoit un bloc de texels RGBA. Un hôte
   écrit contre l'ABI C décode avec ce que sa plateforme lui donne, et ce crate

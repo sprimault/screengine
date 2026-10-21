@@ -116,6 +116,10 @@ publié, et explique les conventions du dépôt à qui y contribue.
 - **Le contrat ne publiait pas le prototype de `scg_lightmap_fault`.**
 - **L'appariement des portails n'avait pas d'ordre déterministe** entre deux
   portails qui partagent leurs sommets.
+- **Un argument fautif pendant une image rendait deux codes différents** selon
+  la fonction : `scg_submit_lines` et `scg_submit_points` rendaient
+  `SCG_ERR_INVALID_ARGUMENT` là où les réglages rendent
+  `SCG_ERR_INVALID_STATE`, qui est désormais la règle.
 
 ***
 
@@ -170,6 +174,10 @@ publié, et explique les conventions du dépôt à qui y contribue.
 - **The contract did not publish `scg_lightmap_fault`'s prototype.**
 - **Portal pairing had no deterministic order** between two portals sharing
   their vertices.
+- **A faulty argument during a frame returned two different codes** depending on
+  the function: `scg_submit_lines` and `scg_submit_points` returned
+  `SCG_ERR_INVALID_ARGUMENT` where the settings return `SCG_ERR_INVALID_STATE`,
+  which is now the rule.
 
 ## [1.6.0] — 2026-10-20 — Ce que la surface gardait pour elle
 
