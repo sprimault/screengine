@@ -318,6 +318,12 @@ $(addsuffix -run,$(addprefix test-,$(TEST_HOSTS))): test-%-run:
 	if [ -z "$$host" ]; then \
 	  echo "test-$* : l'hote $(host_name_$*) n'a rien ecrit"; exit 1; \
 	fi; \
+	attendu=$(words $(HOST_SCENES)); \
+	lignes=$$(printf '%s\n' "$$host" | wc -l); \
+	if [ "$$lignes" -ne "$$attendu" ]; then \
+	  echo "test-$* : l'hote $(host_name_$*) a ecrit $$lignes ligne(s) pour $$attendu scene(s)"; \
+	  exit 1; \
+	fi; \
 	i=1; for scene in $(HOST_SCENES); do \
 	  r=$$(echo "$$rust" | sed -n "$$i p"); h=$$(echo "$$host" | sed -n "$$i p"); \
 	  if [ "$$r" != "$$h" ]; then \
@@ -1121,7 +1127,10 @@ java-verif:
 # Les deux premières familles changent les bits selon la cible, la troisième
 # selon le fondeur. Les noms sont des préfixes, pour attraper les suffixes de
 # largeur et de type — `vfmaq_f32` comme `vfma_f32`.
-INTRINSEQUES = vfma vfms vrsqrte vrsqrts vrecpe vrecps fmadd fmsub fnmadd fnmsub _rsqrt_ _rcp_ relaxed_ mul_add
+INTRINSEQUES = vfma vfms vrsqrte vrsqrts vrecpe vrecps fmadd fmsub fnmadd fnmsub \
+  _rsqrt _rcp relaxed_ mul_add \
+  _min_p _min_s _max_p _max_s vminq_f vmaxq_f vminnm vmaxnm vmin_f vmax_f \
+  x4_min x4_max x2_min x2_max _pmin _pmax
 
 # Aucune intrinsèque fusionnée, relâchée ou approximative dans le noyau ni à la
 # frontière.
@@ -1143,6 +1152,14 @@ INTRINSEQUES = vfma vfms vrsqrte vrsqrts vrecpe vrecps fmadd fmsub fnmadd fnmsub
 # Ce qu'elle ne peut pas voir : une intrinsèque appelée par un nom réexporté. Le
 # `use core::arch::…` la nommerait quand même, et c'est ce que la recherche
 # attrape.
+#
+# **Les minimums et maximums ne sont cherches qu'en flottant**, et les motifs
+# sont ecrits pour cela : ce qui differe d'une cible a l'autre est le traitement
+# de NaN et du zero negatif, qu'un entier n'a pas. Le noyau emploie
+# `_mm256_min_epu16` et `vminq_u16` pour saturer, et ces deux-la sont exacts
+# partout. Un motif plus large — `_min_` seul — les accuserait, et la cible
+# deviendrait inutilisable : c'est la raison pour laquelle elle ne cherchait
+# aucun minimum avant, et la distinction est ce qui permet de l'ajouter.
 lint-intrinseques:
 	@sources=$$(find src crates/screengine-ffi/src -name '*.rs' | sort); \
 	if [ -z "$$sources" ]; then \

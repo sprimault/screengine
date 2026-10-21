@@ -367,11 +367,25 @@ fn le_materiau_d_une_surface_se_lit_par_son_identifiant() {
 #[test]
 fn le_balayage_est_concurrent_sur_une_meme_carte() {
     let world = load();
-    let half = [0.5f32; 3];
-    let from = [2.0f32, 2.0, 5.0];
-    let to = [2.0f32, 2.0, -5.0];
 
-    let sweep_once = |handle: usize| {
+    // **Huit trajets distincts, et c'est ce qui fait mordre le cas.** Huit
+    // appels identiques convergeraient même en se marchant dessus : chacun
+    // écrirait la même valeur dans l'état qu'ils partageraient, et le résultat
+    // serait juste par accident. Des trajets différents font au contraire rendre
+    // à l'un ce que l'autre a calculé, qui est le seul symptôme observable d'un
+    // partage fautif.
+    let trajets: Vec<([f32; 3], [f32; 3], [f32; 3])> = (0..8)
+        .map(|i| {
+            let d = i as f32;
+            (
+                [0.25 + d * 0.125, 0.5, 0.5],
+                [2.0 + d * 0.5, 2.0, 5.0],
+                [2.0 + d * 0.5, 2.0, -5.0 + d],
+            )
+        })
+        .collect();
+
+    let sweep_once = |handle: usize, (half, from, to): &([f32; 3], [f32; 3], [f32; 3])| {
         let mut hit = dirty_hit();
         // SAFETY: le handle reste vivant pendant tout l'appel — la destruction
         // n'a lieu qu'après la jonction de tous les threads —, les trois
@@ -392,12 +406,20 @@ fn le_balayage_est_concurrent_sur_une_meme_carte() {
     // Le handle traverse la frontière des threads par son adresse : l'ABI le
     // déclare partageable en lecture, et c'est exactement cela qu'on éprouve.
     let address = world as usize;
-    let alone = sweep_once(address);
-    assert_ne!(alone.2, 0, "le balayage de référence touche le sol");
+    let seuls: Vec<_> = trajets.iter().map(|t| sweep_once(address, t)).collect();
+    assert!(
+        seuls.iter().any(|r| r.2 != 0),
+        "aucun trajet ne touche de surface : il n'y aurait rien à comparer"
+    );
+    assert!(
+        seuls.iter().any(|r| *r != seuls[0]),
+        "les huit trajets rendent le même résultat : un partage fautif resterait invisible"
+    );
 
     let results: Vec<_> = std::thread::scope(|scope| {
-        let handles: Vec<_> = (0..8)
-            .map(|_| scope.spawn(|| sweep_once(address)))
+        let handles: Vec<_> = trajets
+            .iter()
+            .map(|t| scope.spawn(move || sweep_once(address, t)))
             .collect();
         handles
             .into_iter()
@@ -405,8 +427,8 @@ fn le_balayage_est_concurrent_sur_une_meme_carte() {
             .collect()
     });
 
-    for (index, result) in results.iter().enumerate() {
-        assert_eq!(*result, alone, "thread {index} diverge de l'appel seul");
+    for (index, (ensemble, seul)) in results.iter().zip(&seuls).enumerate() {
+        assert_eq!(ensemble, seul, "thread {index} diverge de son appel seul");
     }
 
     // SAFETY: handle vivant, détruit une seule fois, après la jonction.

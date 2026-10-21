@@ -72,9 +72,10 @@ publié, et explique les conventions du dépôt à qui y contribue.
   frontière contre ceux que le cas passe en revue, les structures `#[repr(C)]`
   contre les assertions de disposition du header, et les constantes du pont Java
   contre ce que le header en dit — cette dernière sans NDK ni appareil.
-- **Un contrôle des intrinsèques non déterministes** : quatorze familles
-  fusionnées, relâchées ou approximatives, cherchées là où clippy ne les voit
-  pas — une intrinsèque sous `cfg` n'est compilée que sur la passe de sa cible.
+- **Un contrôle des intrinsèques non déterministes** : les familles fusionnées,
+  relâchées ou approximatives, et les minimums et maximums flottants, cherchés là
+  où clippy ne les voit pas — une intrinsèque sous `cfg` n'est compilée que sur
+  la passe de sa cible.
 
 ### Corrigé
 
@@ -105,20 +106,13 @@ publié, et explique les conventions du dépôt à qui y contribue.
   par le lint. Le chiffre est retiré partout où rien ne le vérifiait.
 - **Le coût de la présentation sur wasm était énoncé trois fois avec trois
   valeurs** ; il ne l'est plus qu'une, là où la mesure est attribuée.
-- **Trois clauses fausses de la documentation** : la liste des contrôles que
-  `make lint` entraîne, le nombre de passes de conformance, et une clause du
-  contrat qui se contredisait sur ce que chaque chemin expose du jeu
-  d'instructions résolu.
-- **Un maillage ou une carte vide se soumettait pendant une image** au lieu de
-  rendre `SCG_ERR_INVALID_STATE`, et toute soumission de ressource rendait de la
-  mémoire à l'allocateur entre le début et la fin d'une image.
-- **Un échec d'allocation du rangement d'un atlas ou de la cuisson avortait le
-  processus** au lieu de rendre `SCG_ERR_OUT_OF_MEMORY`. La cuisson n'alloue en
-  outre plus une fois par rayon d'ombre.
-- **Le contrat ne publiait pas le prototype de `scg_lightmap_fault`**, seule
-  fonction exportée dans ce cas, et sa clause de concurrence énumérait trois
-  fonctions sans handle au lieu d'en donner le critère. La clause SemVer des
-  deux `CONTRIBUTING` décrivait encore le régime du `0.x`.
+- **Une ressource vide soumise pendant une image n'était pas refusée**, et toute
+  soumission de ressource rendait de la mémoire dans l'image.
+- **Un échec d'allocation avortait le processus** au lieu de rendre
+  `SCG_ERR_OUT_OF_MEMORY`, au rangement d'un atlas et à la cuisson.
+- **Le contrat ne publiait pas le prototype de `scg_lightmap_fault`.**
+- **L'appariement des portails n'avait pas d'ordre déterministe** entre deux
+  portails qui partagent leurs sommets.
 
 ***
 
@@ -131,9 +125,10 @@ publié, et explique les conventions du dépôt à qui y contribue.
   those the case reviews, the `#[repr(C)]` structs against the header's layout
   assertions, and the Java bridge's constants against what the header says — the
   last one without an NDK or a device.
-- **A check for non-deterministic intrinsics**: fourteen fused, relaxed or
-  approximate families, searched where clippy cannot see them — an intrinsic
-  behind a `cfg` is only compiled on its own target's pass.
+- **A check for non-deterministic intrinsics**: the fused, relaxed and
+  approximate families, plus the floating-point minimums and maximums, searched
+  where clippy cannot see them — an intrinsic behind a `cfg` is only compiled on
+  its own target's pass.
 
 ### Fixed
 
@@ -162,20 +157,13 @@ publié, et explique les conventions du dépôt à qui y contribue.
   gone wherever nothing verified it.
 - **The cost of presentation on wasm was stated three times with three values**;
   it is now stated once, where the measurement is attributed.
-- **Three incorrect clauses in the documentation**: the list of checks `make
-  lint` drives, the number of conformance passes, and a contract clause that
-  contradicted itself about what each path exposes of the resolved instruction
-  set.
-- **An empty mesh or world could be submitted during a frame** instead of
-  returning `SCG_ERR_INVALID_STATE`, and any resource submission then released
-  memory to the allocator between the start and the end of a frame.
-- **An allocation failure while packing an atlas or baking aborted the process**
-  instead of returning `SCG_ERR_OUT_OF_MEMORY`. Baking also no longer allocates
-  once per shadow ray.
-- **The contract did not publish `scg_lightmap_fault`'s prototype**, the only
-  exported function in that case, and its concurrency clause listed three
-  handle-free functions instead of stating the criterion. Both `CONTRIBUTING`
-  files still described the `0.x` SemVer regime.
+- **An empty resource submitted during a frame was not refused**, and any
+  resource submission released memory inside the frame.
+- **An allocation failure aborted the process** instead of returning
+  `SCG_ERR_OUT_OF_MEMORY`, when packing an atlas and when baking.
+- **The contract did not publish `scg_lightmap_fault`'s prototype.**
+- **Portal pairing had no deterministic order** between two portals sharing
+  their vertices.
 
 ## [1.6.0] — 2026-10-20 — Ce que la surface gardait pour elle
 

@@ -390,6 +390,11 @@ impl Projection {
                 } else {
                     0.0
                 };
+                // **Troncature vers zéro**, et c'est le sens d'arrondi que
+                // `rust.md` demande d'écrire sur la conversion plutôt que de
+                // laisser deviner. La valeur est déjà bornée dans `[0, 1]`,
+                // donc le produit tient dans `[0, 65536]` et aucune saturation
+                // ne sert ici de bornage — ce que la même règle interdit.
                 (bounded * 65536.0) as i32
             }),
         }
