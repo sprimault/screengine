@@ -514,6 +514,17 @@ fn absorb_margins(half: Vec3, bytes: &mut Vec<u8>) {
     bytes.extend_from_slice(&sweep_reach(half).to_bits().to_le_bytes());
 }
 
+/// Écrit un résultat de balayage dans l'empreinte, statut compris.
+///
+/// **Le statut en fait partie, et c'est une clause du contrat** : ce qui entre
+/// dans une empreinte est ce qu'un appel par l'ABI rend, et la règle de priorité
+/// entre deux statuts applicables entre dans la référence avec lui. Sans ce
+/// dernier octet, deux résultats que seule leur réponse départage se hacheraient
+/// pareil.
+///
+/// L'enregistrement est de taille unique, les cas de bord étant résolus par
+/// l'appelant : un enregistrement plus court serait un branchement à porter dans
+/// chacun des cinq hôtes.
 fn absorb(hit: &Hit, status: u8, bytes: &mut Vec<u8>) {
     bytes.extend_from_slice(&hit.fraction.to_bits().to_le_bytes());
     for value in [hit.normal.x, hit.normal.y, hit.normal.z] {

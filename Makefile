@@ -344,7 +344,7 @@ $(addsuffix -run,$(addprefix test-,$(TEST_HOSTS))): test-%-run:
 # sans que rien ne le voie.
 ARCHIVE_OUT = $(abspath $(SORTIE))/archive
 
-# Les trois hôtes qu'une archive peut porter, et ce qu'il faut y trouver pour
+# Les hôtes qu'une archive peut porter, et ce qu'il faut y trouver pour
 # qu'ils s'y lient. L'hôte Android n'en est pas : son paquet ne contient que des
 # `.so` pour une autre machine, qui se lisent dans leur en-tête ELF sans rien
 # exécuter.
@@ -1229,7 +1229,7 @@ lint-doc-tests:
 	      /^[[:space:]]*#\[/ { next } \
 	      { doc = 0 } END { exit bad }' \
 	  $$(find src crates -name '*.rs') < /dev/null \
-	  || (echo "Chaque declaration d un module de test porte sa documentation, aides comprises." && exit 1)
+	  || (echo "Chaque test porte sa documentation, et chaque declaration en tete de ligne d un fichier de test aussi." && exit 1)
 
 # Le noyau seul, sur une cible sans std. Les autres crates en sont dispensés :
 # l'étage d'accueil ouvre une fenêtre, la conformance écrit des fichiers, la
@@ -1584,8 +1584,13 @@ doc:
 # documentation. Un renvoi vers un item qu'aucun `pub use` n'expose produit une
 # page dont le lien ne mène nulle part, sans que rien ne rougisse : c'est ainsi
 # que `LINE_CAPACITY` est resté inatteignable une version entière.
+# **--document-private-items, et c'est la moitie du controle.** Sans ce drapeau,
+# rustdoc ne resout que les renvois des items publics : un renvoi mort ecrit dans
+# la documentation d'une fonction privee passait sans un mot. Mesure en placant
+# le meme renvoi aux deux endroits — code 2 sur un item public, code 0 sur un
+# item prive —, et la documentation du noyau est presque entierement privee.
 doc-verif:
-	RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps
+	RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --document-private-items
 
 hosts: $(addprefix host-,$(HOSTS))
 

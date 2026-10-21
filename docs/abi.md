@@ -557,8 +557,12 @@ Arrêté :
 - Le moteur ne crée aucun thread et n'en suppose aucun.
 - **Un objet est utilisé par un seul thread à la fois.** Deux contextes distincts
   sont indépendants et peuvent servir chacun sur son thread.
-- Les fonctions sans objet — `scg_abi_version`, `scg_buffer_alloc`,
-  `scg_buffer_free` — sont appelables depuis n'importe quel thread.
+- **Une fonction qui ne prend aucun handle s'appelle depuis n'importe quel
+  thread.** C'est le critère, et non une liste : la version d'ABI, la paire
+  d'allocation de tampon, le diagnostic d'un repère de lightmap, la marge et la
+  portée du balayage en relèvent, comme le chargement d'une ressource — qui ne
+  prend pas de handle et en rend un. Une fonction qui s'ajoute y entre d'elle-même,
+  et c'est pourquoi rien ne s'énumère ici.
 - **Une seconde exception, sur un objet et non sur un contexte :
   `scg_world_sweep`.** `ScgWorld` est immuable après chargement, le balayage ne
   la lit qu'en partage, et il ne prend aucune ressource : il s'appelle depuis
@@ -1649,10 +1653,22 @@ pas dans le second.
 
 #### Le diagnostic d'un repère refusé
 
+```c
+int32_t scg_lightmap_fault(const float *origin, const float *u, const float *v,
+                           const float *corners, uint32_t corner_count,
+                           uint32_t *out);
+```
+
 `scg_lightmap_fault` dit laquelle des cinq clauses du repère de lightmap ferait
 refuser une surface, ou `SCG_LIGHTMAP_FAULT_NONE`. Ajoutée après la publication
 de l'étape, sur le constat du même audit que l'oracle : le prédicat existait pour
 un appelant Rust, et l'ABI n'en donnait aucun.
+
+**Les trois premiers tableaux portent trois flottants chacun**, origine puis axes
+du repère ; `corners` en porte `3 × corner_count`, dans l'ordre du polygone.
+C'était la seule fonction exportée dont le contrat ne publiait ni le prototype ni
+une règle qui le dérive — l'ordre de ses paramètres ne vivait que dans le header,
+alors que c'est ce document qui fait foi.
 
 **Elle ne prend aucun handle, et c'est ce qui la rend utile** : une carte refusée
 n'en a jamais produit. L'hôte passe le repère et les coins qu'il a lui-même
@@ -1973,9 +1989,12 @@ règle se devinait jusqu'à présent sans être énoncée.
   mobile n'a pas de lightmap, une lightmap se calculant par cellule. Trente-deux
   octets, décalages 0 à 28, identiques sur les quatre cibles, sans bourrage. Une
   structure nouvelle et une fonction nouvelle, ce que la règle d'extension
-  prévoit ; aucune structure publiée ne bouge. **Ce sont les cinq hôtes qui
-  gardent ces décalages**, par la scène `normale` : leurs assertions statiques ne
-  tenaient que la taille, et un champ déplacé y passait.
+  prévoit ; aucune structure publiée ne bouge. **Ce qui garde ces décalages est
+  ailleurs que dans les hôtes** : les assertions statiques du header, compilées
+  par ceux d'entre eux qui compilent du C, et le contrôle qui confronte chaque
+  structure `repr(C)` à ce que le header affirme d'elle. La scène `normale` garde
+  autre chose, et c'est sa raison d'être : que les cinq franchissent ce chemin
+  d'ABI, qu'aucune autre scène n'emprunte.
 - **`scg_submit_shaded` est au chemin direct ce que la trame est au chemin
   maillage.** Le maillage animé porte ses normales dans le fichier et n'a besoin
   d'aucune structure ; celle-ci existe pour l'hôte qui anime lui-même, au titre
@@ -2461,6 +2480,12 @@ trouvés par cette comparaison, du côté Rust.
   remplissent le `ScgSweepHit` de l'étape 7 et prennent le filtre de l'étape 8.
   `SCG_ABI_VERSION` reste à **1**.
 
+**Ce cas est le plus fréquent, et non l'exception** : une bonne part des points
+d'entrée n'est appelée par aucun hôte, puisqu'une scène n'y entre que pour un
+chemin d'ABI que les autres n'empruntent pas. Ce que les hôtes démontrent est
+donc la portabilité d'un chemin, jamais la couverture de la surface — celle-là
+est aux tests de la frontière.
+
 **Aucune scène d'hôte ne les décrit**, et c'est écrit pour qu'on ne le prenne pas
 pour un oubli : une scène commune aux cinq hôtes entre pour un chemin d'ABI que
 les autres n'empruntent pas, or la structure, le filtre et les statuts le sont
@@ -2852,3 +2877,9 @@ noms ne le sont pas.
   propriété ». Ce qui est vrai des deux aujourd'hui ne le restera pas forcément.
 - **Ne rien calculer.** Une liaison convertit des types. Ce qui devrait être
   partagé entre deux liaisons remonte dans le noyau.
+- **Les pièges propres à un langage ne sont pas ici**, et cette liste ne les
+  recopie pas : ce que `cgo` impose sur le passage de pointeurs, l'ordre des
+  canaux qu'un bitmap Android échange sous un nom trompeur, les macros que
+  `windows.h` définit et qui mangent un champ, le choix du CRT sous MSVC — tout
+  cela est dans [`construction.md`](construction.md), « Par cible ». Ce qui
+  figure ici vaut pour **toute** liaison, quel que soit son langage.

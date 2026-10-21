@@ -200,8 +200,8 @@ Identifiants stables pour cellules, portails, surfaces et entités. Jamais d'ind
 de tableau comme référence persistante.
 
 **Un hôte de démonstration par langage, avec fenêtre, entrées et boucle.** Les
-hôtes existants vérifient une empreinte : ils rendent trois scènes et comparent
-un nombre, sans jamais ouvrir de fenêtre. C'est ce qu'il faut pour la
+hôtes existants vérifient une empreinte : ils rendent les scènes que le
+`Makefile` leur donne et comparent un nombre, sans jamais ouvrir de fenêtre. C'est ce qu'il faut pour la
 conformance, et c'est inutilisable comme point de départ — quelqu'un qui veut
 parcourir un décor depuis un autre langage n'a rien à copier, alors que l'étage
 d'accueil Rust lui offre un couloir qu'on traverse.

@@ -5,7 +5,7 @@ du genre « pourquoi le `.so` Android ne se charge pas » se tranche ici.
 
 **État : version 1.6.0.** Ce document décrit la construction
 telle qu'elle est ; les points que l'outillage réel doit encore confirmer sont
-marqués **À vérifier**, et les choix restants **À trancher**.
+marqués **À vérifier**. Aucun choix n'y reste ouvert.
 
 ## Passer par le `Makefile`
 
@@ -35,8 +35,11 @@ Sans lui, un clone se construit dans `target/`.
 | JDK | 17 | `javac` et les outils du SDK |
 | `qemu-user` | celui de la distribution | exécute les tests aarch64 et armv7 de l'hôte Android sans appareil |
 
-Les versions sont épinglées dans le `Makefile` et nulle part ailleurs.
-`make tools` les installe, avec neuf cibles : `thumbv7em-none-eabihf`,
+Les versions des outils que `make tools` installe sont épinglées dans le
+`Makefile` ; celles de l'outillage Android le sont dans `hosts/android/Makefile`,
+et le reste — Node, Go, le JDK, `qemu-user` — vient de la machine, aux versions
+que le tableau ci-dessus donne pour celles sur lesquelles les tests tournent.
+`make tools` ajoute aussi neuf cibles : `thumbv7em-none-eabihf`,
 `wasm32-unknown-unknown`, `wasm32-wasip1`, `i686-pc-windows-msvc`, les trois
 cibles Android et les deux cibles Linux sur ARM.
 `make lint` passe aussi clippy sur ces cibles **sauf deux**, là où un `cfg`
@@ -59,8 +62,8 @@ relâchée ou approximative dans le noyau et à la frontière, et l'enveloppe
 L'intégration continue appelle `make tools`, qui installe les outils aux
 versions épinglées ici.
 
-**L'enveloppe se vérifie en suivant la délégation, sur deux niveaux.** Un point
-d'entrée sur cinq n'appelle pas l'enveloppe lui-même : il passe par un
+**L'enveloppe se vérifie en suivant la délégation, sur deux niveaux.** Une part
+des points d'entrée ne l'appelle pas elle-même : ceux-là passent par un
 utilitaire partagé qui la porte, pour que la vérification du handle et celle du
 pointeur de sortie n'existent qu'à un endroit. Le contrôle lit donc les sources
 deux fois avant de juger, et un troisième niveau de délégation serait annoncé
@@ -111,7 +114,7 @@ installe lui-même, et aucun workflow ne les nomme.
 | `dev` | développement | `opt-level = 3` pour le noyau et les dépendances, assertions conservées |
 | `release` | binaires : exemples de l'étage d'accueil, conformance | `lto = "fat"`, `codegen-units = 1`, `panic = "abort"` |
 | `release-ffi` | bibliothèque partagée et statique | hérite de `release`, `panic = "unwind"` |
-| `ffi-test` | bibliothèques de `make test-abi`, `make test-cpp` et `make test-android` | hérite de `release`, `panic = "unwind"`, sans LTO, assertions conservées |
+| `ffi-test` | bibliothèques des hôtes natifs de `make test` | hérite de `release`, `panic = "unwind"`, sans LTO, assertions conservées |
 | `release-wasm` | module wasm publié | hérite de `release`, `panic = "abort"`, `strip = true` |
 | `wasm-test` | module de `make test-wasm` | hérite de `ffi-test`, `panic = "abort"` |
 
@@ -284,7 +287,8 @@ n'est décodée en cours d'image. Le volume téléchargé, lui, ne change pas �
 sont les mêmes octets, mais le navigateur n'en compile plus que le cinquième et
 met les autres en cache pour l'exemple suivant. **La glue est ce que winit et softbuffer imposent** : eux passent par
 `wasm-bindgen`, là où `screengine.wasm` n'a aucun import et s'en dispense — voir
-la clause ci-dessus, qui dit pourquoi les deux ne se contredisent pas.
+la clause « Pas de `wasm-bindgen` » de la section « wasm », qui dit pourquoi les
+deux ne se contredisent pas.
 
 **Vu dans un navigateur le 2026-10-15** : canvas inséré, image rendue, 1 280 ×
 720 pixels physiques affichés à la taille que le facteur de périphérique impose,

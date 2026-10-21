@@ -173,18 +173,15 @@ existing files.
 `SCG_ABI_VERSION` exists so that a binding cleanly refuses a library that is too
 old, rather than linking and rendering garbage.
 
-The repository follows SemVer with the zero clause, defined in
-[`CHANGELOG.md`](CHANGELOG.md): **in `0.x`, nothing is guaranteed.** The minor
-number marks a step of [`ROADMAP.md`](ROADMAP.md), not an API break; everything
-else accumulates as patches. Direct consequence: **the number warns of
-nothing**, and it is the release notes that must say what a binding author has
-to rework.
+**The repository follows SemVer in full**: an increment of `SCG_ABI_VERSION`
+forces a major, and nothing published is ever removed — not even once deprecated.
+The details are in [`CHANGELOG.md`](CHANGELOG.md), which is authoritative;
+`make lint` checks that the major agrees with `SCG_ABI_VERSION`.
 
-**As soon as the major leaves zero, the clause falls away**: SemVer applies in
-full, an increment of `SCG_ABI_VERSION` forces a major, and nothing published is
-ever removed — not even once deprecated. These three rules are spelled out in
-[`CHANGELOG.md`](CHANGELOG.md), which is authoritative; `make lint` checks the
-second one.
+**The zero clause fell away when the ABI was frozen in 1.0.0**, and what follows
+now only holds for `0.x` releases: the minor number marked a step of
+[`ROADMAP.md`](ROADMAP.md) rather than a break, everything else accumulated as
+patches, and the number warned of nothing.
 
 ## Language
 

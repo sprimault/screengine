@@ -526,6 +526,17 @@ pub fn chain_exit() -> [f32; 3] {
     ]
 }
 
+/// Écrit une cellule en prisme droit : son empreinte au sol, extrudée vers le
+/// haut.
+///
+/// `portals` donne les rangs des arêtes de l'empreinte qui deviennent des
+/// portails plutôt que des murs. `open_ceiling` marque la surface du dessus
+/// **non solide** : elle reste là, donc la cellule reste fermée pour la parité
+/// de la localisation, et c'est le balayage seul qui la traverse — ce que le
+/// drapeau existe pour dire.
+///
+/// `first_id` est le premier identifiant libre : les surfaces et les portails en
+/// consomment à la suite, et l'appelant le fait avancer d'une cellule à l'autre.
 fn prism(
     id: u32,
     first_id: u32,

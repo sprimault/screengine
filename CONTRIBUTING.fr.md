@@ -178,17 +178,15 @@ migration des fichiers existants.
 `SCG_ABI_VERSION` existe pour qu'une liaison refuse proprement une bibliothèque
 trop ancienne, plutôt que de se lier et de rendre n'importe quoi.
 
-Le dépôt suit SemVer avec la clause du zéro, définie dans
-[`CHANGELOG.md`](CHANGELOG.md) : **en `0.x`, rien n'est imposé.** Le mineur
-marque une étape de [`ROADMAP.md`](ROADMAP.md), pas une rupture d'API ; tout le
-reste s'accumule en correctif. Conséquence directe : **le numéro ne prévient de
-rien**, et ce sont les notes de version qui doivent dire ce qu'un auteur de
-liaison doit reprendre.
+**Le dépôt suit SemVer en entier** : un incrément de `SCG_ABI_VERSION` impose un
+majeur, et rien de publié n'est jamais retiré — même déprécié. Le détail est dans
+[`CHANGELOG.md`](CHANGELOG.md), qui fait foi ; `make lint` vérifie la concordance
+du majeur avec `SCG_ABI_VERSION`.
 
-**Dès que le majeur quitte zéro, la clause tombe** : SemVer s'applique en
-entier, un incrément de `SCG_ABI_VERSION` impose un majeur, et rien de publié
-n'est jamais retiré — même déprécié. Le détail de ces trois règles est dans
-[`CHANGELOG.md`](CHANGELOG.md), qui fait foi ; `make lint` vérifie la seconde.
+**La clause du zéro est tombée au gel de l'ABI en 1.0.0**, et ce qui suit ne vaut
+plus que pour les versions `0.x` : le mineur y marquait une étape de
+[`ROADMAP.md`](ROADMAP.md) et non une rupture, le reste s'accumulait en
+correctif, et le numéro ne prévenait de rien.
 
 ## Langue
 
