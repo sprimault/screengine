@@ -58,8 +58,10 @@ frontière avec ceux que le cas passe en revue, celle des structures `#[repr(C)]
 avec les assertions de disposition du header, celle des constantes que le pont
 Java recopie avec ce que le header en dit, l'absence d'intrinsèque fusionnée,
 relâchée ou approximative dans le noyau et à la frontière, l'enveloppe
-`entry::` de chaque point d'entrée, et l'absence de code de retour jugé
-autrement que par son signe dans les hôtes.
+`entry::` de chaque point d'entrée, l'absence de code de retour jugé
+autrement que par son signe dans les hôtes, l'absence de callback et de pointeur
+rendu hors des deux exemptions que le contrat nomme, et l'absence de mention de
+l'étage d'accueil dans le noyau.
 L'intégration continue appelle `make tools`, qui installe les outils aux
 versions épinglées ici.
 

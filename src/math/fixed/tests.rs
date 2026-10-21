@@ -125,3 +125,49 @@ fn la_coordonnee_de_texture_reste_dans_son_format() {
     // littéralement vrai.
     assert!(limit <= 1 << 26);
 }
+
+/// [`rounded`] rend les bonnes valeurs sur tout son domaine et au-delà.
+///
+/// **Ce que ce cas ne peut pas distinguer, et il faut le dire** : le bornage
+/// écrit de la saturation de `as`. Sur cette cible les deux rendent les mêmes
+/// bits — `as` sature déjà à zéro depuis un négatif et depuis `NaN` —, et c'est
+/// vérifié plutôt que supposé : en remplaçant le corps par
+/// `(value * scale + 0.5) as u32).min(max)`, ce cas reste vert. La règle du
+/// bornage écrit tient donc par la **portabilité**, que seul un chemin vectoriel
+/// mettrait en défaut, et aucun test scalaire ne la gardera.
+///
+/// Ce qu'il garde réellement : le demi-pas, le maximum, et les deux bornes.
+/// Chacune de ces trois mutations le fait rougir.
+#[test]
+fn l_arrondi_rend_les_bonnes_valeurs_sur_tout_son_domaine() {
+    // Le domaine nominal, demi-pas compris : `0,5/255` est le point qui bascule,
+    // et un canal plein doit rendre le maximum exactement.
+    for (value, expected) in [(0.0, 0), (1.0, 255), (0.5, 128), (0.002, 1)] {
+        assert_eq!(rounded(value, 255.0, 255), expected, "{value}");
+    }
+
+    // Hors domaine, des deux côtés, et `NaN`.
+    for value in [-0.001, -1.0, f32::NEG_INFINITY, f32::NAN] {
+        assert_eq!(rounded(value, 255.0, 255), 0, "{value} sous la borne");
+    }
+    for value in [1.001, 2.0, f32::INFINITY] {
+        assert_eq!(rounded(value, 255.0, 255), 255, "{value} au-dessus");
+    }
+}
+
+/// L'échelle est un paramètre, et c'est tout ce qui distinguait les trois sites.
+///
+/// Une valeur déjà pondérée prend `1.0`, un canal de zéro à un prend son
+/// maximum, et le brouillard une échelle qui n'est pas celle d'un octet : les
+/// trois doivent rendre la même chose pour la même fraction du plein.
+#[test]
+fn l_echelle_et_le_maximum_se_donnent_separement() {
+    // La moitié du plein, à trois échelles.
+    assert_eq!(rounded(127.5, 1.0, 255), 128);
+    assert_eq!(rounded(0.5, 255.0, 255), 128);
+    assert_eq!(rounded(0.5, 4096.0, 4096), 2048);
+
+    // Le maximum borne, même quand l'échelle le dépasse : c'est lui qui décide,
+    // pas le produit.
+    assert_eq!(rounded(1.0, 4096.0, 255), 255);
+}

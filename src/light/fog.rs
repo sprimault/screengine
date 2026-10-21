@@ -12,6 +12,7 @@
 use alloc::vec::Vec;
 
 use crate::error::{Argument, Error, Result};
+use crate::math::fixed::rounded;
 
 /// Le facteur de brouillard plein.
 ///
@@ -250,10 +251,10 @@ fn factor_at(depth: u32, near: f32, start: f32, end: f32) -> u16 {
     }
     // `end > start` est vérifié au réglage : la rampe est strictement positive.
     let ratio = (distance - start) / (end - start);
-    // Arrondi au plus proche, puis borné : un arrondi flottant ne doit pas
-    // pouvoir dépasser le plein, que le mélange suppose.
-    let scaled = (ratio * f32::from(FULL) + 0.5) as u32;
-    scaled.min(u32::from(FULL)) as u16
+    // Le bornage vient avant la conversion et non après : il était confié à la
+    // saturation de `as` pour sa borne basse, que les deux autres sites de cette
+    // règle refusent en propres termes.
+    rounded(ratio, f32::from(FULL), u32::from(FULL)) as u16
 }
 
 #[cfg(test)]

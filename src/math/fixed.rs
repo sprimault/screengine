@@ -42,6 +42,48 @@ pub fn to_subpixel(v: f32) -> i32 {
     }) as i32
 }
 
+/// Ramène un flottant mis à l'échelle sur `[0, max]`, arrondi au plus proche.
+///
+/// **Le bornage est écrit, jamais laissé à la saturation de `as`** : celle-ci
+/// diffère entre le scalaire et les chemins vectoriels, et ce qui tient
+/// l'invariant du déterminisme ne se confie pas à un comportement qui change
+/// avec le jeu d'instructions. `NaN` se teste nommément, pour la même raison :
+/// les deux comparaisons sont fausses avec lui, si bien qu'il atteindrait la
+/// conversion.
+///
+/// **Aucun test ne garde cette forme-là, et c'est mesuré** : sur cette cible le
+/// bornage écrit et la saturation rendent les mêmes bits, donc le cas du module
+/// reste vert sur l'une comme sur l'autre. La règle tient par la portabilité, pas
+/// par un contrôle — à relire si cette fonction gagnait un jour une variante
+/// vectorielle, qui est le seul endroit où l'écart apparaîtrait.
+///
+/// **Trois sites l'écrivaient différemment** — la quantification d'un luxel, la
+/// courbe de sortie et le facteur de brouillard —, et deux de leurs
+/// documentations disaient déjà qu'une seconde écriture de cette règle finirait
+/// par n'en garder qu'une juste. Le troisième bornait **après** la conversion et
+/// confiait donc sa borne basse à la saturation que les deux autres refusent en
+/// propres termes.
+///
+/// `scale` porte l'échelle d'entrée, qui est la seule chose qui les distinguait :
+/// un canal de zéro à un la reçoit, un luxel déjà pondéré prend `1.0`.
+///
+/// **Ce que cette fonction ne couvre pas**, et c'est délibéré : la conversion du
+/// gain d'un sommet en 16.16, qui **tronque** vers zéro et le dit. Un demi-pas y
+/// serait un changement de rendu, pas une uniformisation.
+pub fn rounded(value: f32, scale: f32, max: u32) -> u32 {
+    if value.is_nan() {
+        return 0;
+    }
+    let scaled = value * scale + 0.5;
+    if scaled <= 0.0 {
+        0
+    } else if scaled >= max as f32 {
+        max
+    } else {
+        scaled as u32
+    }
+}
+
 /// La marge qui sépare une profondeur de sommet des bornes du `u32`.
 ///
 /// L'équation de plan arrondit ses gradients et se trompe de moins de 64 unités
