@@ -370,7 +370,7 @@ archive_vars_wasm  = WASM=$(abspath $(PAQUET))/lib/screengine.wasm HEADER=$(absp
 # qui se charge.
 archive_vars_go    = $(archive_vars_abi)
 
-ARCHIVE_TARGETS := test-archive archive-empreintes paquet paquet-verif test-paquet \
+ARCHIVE_TARGETS := test-archive archive-empreintes paquet paquet-verif test-paquet paquet-casse \
   $(addprefix test-archive-,$(ARCHIVE_HOSTS_ALL))
 .PHONY: $(ARCHIVE_TARGETS)
 
@@ -472,6 +472,42 @@ paquet_eprouve = $(MAKE) -s --no-print-directory paquet PAQUET=$(PAQUET_OUT)/$(1
 test-paquet: lib lib-wasm
 	$(call paquet_eprouve,natif,$(TARGET_DIR)/release-ffi,$(PAQUET_NATIF))
 	$(call paquet_eprouve,wasm32,$(TARGET_DIR)/$(CIBLE_WASM)/release-wasm,screengine.wasm)
+	@$(MAKE) -s --no-print-directory paquet-casse
+
+# **Le cas qui rougit sur le défaut d'origine**, et les deux paquets ci-dessus ne
+# le font pas : ils passent tous les deux, ce qui est le régime où `test-archive`
+# a menti mais pas la preuve qu'il ne mente plus. Il faut un **troisième** paquet
+# dont rien ne puisse se lier, et voir si son échec est masqué par les binaires
+# des précédents.
+#
+# **La bibliothèque est vidée plutôt que prise d'une autre architecture.** Le
+# défaut est le même — rien ne s'y lie —, et le cas tourne sur les deux
+# plateformes, là où un paquet 32 bits demanderait MSVC et ne dirait rien sous
+# Linux. Les noms de fichiers restent, donc `ARCHIVE_HOSTS` désigne les mêmes
+# hôtes et ils sont bien tentés.
+#
+# **Le paquet entier est vieilli, et il a fallu trois essais pour que le cas
+# morde.** Vidée seule, la bibliothèque porte l'heure de sa copie, donc elle est
+# plus récente que l'exécutable et l'hôte relie — le cas passait dans les deux
+# états sans rien garder. En vieillissant la bibliothèque seule, c'est le
+# **header** du paquet qui forçait le relink. Le régime fidèle est celui d'une
+# archive extraite, dont `tar` restitue toutes les dates : c'est là que
+# `test-archive` a menti, et nulle part ailleurs.
+#
+# Vérifié dans les deux états : avec l'effacement d'`ARCHIVE_OUT`, le paquet vidé
+# échoue ; sans lui, il passe — les exécutables du paquet natif étant à jour,
+# `all` ne refait rien et `run` rend les empreintes d'avant.
+paquet-casse:
+	@$(MAKE) -s --no-print-directory paquet PAQUET=$(PAQUET_OUT)/casse \
+	  SOURCE=$(TARGET_DIR)/release-ffi FICHIERS="$(PAQUET_NATIF)"
+	@for fichier in $(PAQUET_OUT)/casse/lib/*; do : > $$fichier; done
+	@find $(PAQUET_OUT)/casse -exec touch -t 200001010000 {} +
+	@if $(MAKE) -s --no-print-directory test-archive PAQUET=$(PAQUET_OUT)/casse \
+	  >/dev/null 2>&1; then \
+	  echo "paquet-casse : un paquet dont rien ne peut se lier a passe test-archive,"; \
+	  echo "  donc les binaires du paquet precedent ont ete reutilises"; exit 1; \
+	fi
+	@echo "paquet-casse : un paquet illisible echoue, sans reutiliser le precedent"
 
 # Phony, et donc jouée une fois pour tous les hôtes de l'appel : un fichier
 # daterait de l'exécution précédente et ferait comparer l'archive à des
