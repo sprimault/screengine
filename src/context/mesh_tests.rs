@@ -1122,3 +1122,37 @@ fn deux_trames_identiques_rendent_le_chemin_statique_avec_normale() {
         assert_eq!(pixels_of(&mut anime), attendu, "facteur {t}");
     }
 }
+
+/// Une ressource vide soumise pendant une image est refusée comme une autre.
+///
+/// **Le cas vise ce que seules ces deux façades peuvent laisser passer.** Elles
+/// bouclent sur les groupes ou sur les cellules, et c'est leur contenu qui
+/// rencontre le contrôle d'état plus bas, dans `submit_lot`. Une ressource vide
+/// n'entre dans aucune boucle : l'appel rendait `Ok` au milieu d'une image, ce
+/// que le contrat refuse nommément — et il avait au passage rendu à l'allocateur
+/// la table d'une image close, entre le début et la fin d'une image.
+///
+/// Le format accepte ces deux ressources, et c'est ce qui rend le cas
+/// atteignable : un fichier réduit à son en-tête est légitime.
+#[test]
+fn une_ressource_vide_soumise_pendant_une_image_est_refusee() {
+    let mesh = Mesh::load(&file(&[], &[], &[], &[])).expect("maillage vide");
+    let world = {
+        use crate::format::world::tests::file as world_file;
+        World::load(&world_file(&[], &[], &[], &[])).expect("carte vide")
+    };
+
+    let mut ctx = small_ctx();
+    ctx.begin().expect("image commencée");
+
+    assert_eq!(
+        ctx.submit_mesh(Affine3::IDENTITY, &mesh, |_| None),
+        Err(Error::InvalidState),
+        "un maillage sans groupe a traversé le contrôle d'état"
+    );
+    assert_eq!(
+        ctx.submit_world_lit(Affine3::IDENTITY, &world, |_| None, None),
+        Err(Error::InvalidState),
+        "une carte sans cellule a traversé le contrôle d'état"
+    );
+}

@@ -109,6 +109,9 @@ publié, et explique les conventions du dépôt à qui y contribue.
   `make lint` entraîne, le nombre de passes de conformance, et une clause du
   contrat qui se contredisait sur ce que chaque chemin expose du jeu
   d'instructions résolu.
+- **Un maillage ou une carte vide se soumettait pendant une image** au lieu de
+  rendre `SCG_ERR_INVALID_STATE`, et toute soumission de ressource rendait de la
+  mémoire à l'allocateur entre le début et la fin d'une image.
 
 ***
 
@@ -156,6 +159,9 @@ publié, et explique les conventions du dépôt à qui y contribue.
   lint` drives, the number of conformance passes, and a contract clause that
   contradicted itself about what each path exposes of the resolved instruction
   set.
+- **An empty mesh or world could be submitted during a frame** instead of
+  returning `SCG_ERR_INVALID_STATE`, and any resource submission then released
+  memory to the allocator between the start and the end of a frame.
 
 ## [1.6.0] — 2026-10-20 — Ce que la surface gardait pour elle
 

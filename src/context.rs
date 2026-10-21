@@ -1237,6 +1237,12 @@ impl Context {
         F: Fn(u32) -> Option<&'t Arc<Texture>>,
         V: Fn(usize) -> VertexUv2,
     {
+        // **L'état d'abord, le règlement ensuite**, et c'est l'ordre des trois
+        // autres soumissions. Le règlement rend à l'allocateur la table d'une
+        // image close ; placé avant, il tombait à l'intérieur de la frontière
+        // d'image dès que l'appel était de trop. Et comme une ressource vide
+        // n'entre dans aucune boucle, rien en dessous ne refusait l'appel.
+        self.require_recording()?;
         // **Avant de prendre la marque**, et c'est tout l'intérêt de la prendre :
         // les listes d'une image close ne sont vidées qu'au premier triangle
         // posé, si bien qu'une marque lue avant désigne une longueur que la
@@ -1434,7 +1440,9 @@ impl Context {
     where
         F: Fn(u32) -> Option<&'t Arc<Texture>>,
     {
-        // Avant la marque, pour la raison écrite dans `submit_mesh_with`.
+        // L'état avant le règlement, et le règlement avant la marque : les deux
+        // raisons sont écrites dans `submit_mesh_with`.
+        self.require_recording()?;
         self.settle();
         let mark = self.mark();
 
