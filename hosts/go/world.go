@@ -137,7 +137,7 @@ func loadMesh(bytes []byte) *C.ScgMesh {
 	defer release(block)
 
 	var mesh *C.ScgMesh
-	if C.scg_mesh_load((*C.uint8_t)(block), C.size_t(len(bytes)), &mesh) != C.SCG_OK {
+	if C.scg_mesh_load((*C.uint8_t)(block), C.size_t(len(bytes)), &mesh) < 0 {
 		return nil
 	}
 	return mesh
@@ -148,12 +148,12 @@ func loadMesh(bytes []byte) *C.ScgMesh {
 // Un hôte qui devinerait la longueur se tromperait le jour où elle change.
 func readName(read func(buf *C.char, cap C.size_t, need *C.size_t) C.int32_t) (string, bool) {
 	var needed C.size_t
-	if read(nil, 0, &needed) != C.SCG_OK {
+	if read(nil, 0, &needed) < 0 {
 		return "", false
 	}
 	buf := alloc(int(needed) + 1)
 	defer release(buf)
-	if read((*C.char)(buf), C.size_t(needed)+1, &needed) != C.SCG_OK {
+	if read((*C.char)(buf), C.size_t(needed)+1, &needed) < 0 {
 		return "", false
 	}
 	return string(view(buf, int(needed))), true
@@ -496,7 +496,7 @@ func renderSweeps(worldPath, sweepsPath string) (uint64, bool) {
 		// Zéro veut dire « nulle part », et se passe tel quel : c'est le
 		// balayage qui rend le déplacement libre, pas l'hôte qui le fabrique.
 		var cell C.uint32_t
-		if C.scg_world_locate(world, from, &cell) != C.SCG_OK {
+		if C.scg_world_locate(world, from, &cell) < 0 {
 			check(false, "la cellule de départ se cherche")
 			return 0, false
 		}
@@ -591,7 +591,7 @@ func renderPicks(worldPath, picksPath string) (uint64, bool) {
 		filter := binary.LittleEndian.Uint32(record[24:28])
 
 		var cell C.uint32_t
-		if C.scg_world_locate(world, from, &cell) != C.SCG_OK {
+		if C.scg_world_locate(world, from, &cell) < 0 {
 			check(false, "la cellule de départ du rayon se cherche")
 			return 0, false
 		}
@@ -607,6 +607,81 @@ func renderPicks(worldPath, picksPath string) (uint64, bool) {
 		digest = append(digest, hitView[:36]...)
 		digest = append(digest, byte(status))
 		digest = binary.LittleEndian.AppendUint32(digest, filter)
+	}
+
+	return hashBytes(digest), true
+}
+
+// Les pixels de la scène `rayon`, dans l'ordre contractuel de l'empreinte.
+//
+// Les deux derniers débordent, un sur chaque axe : leur refus entre dans
+// l'empreinte, sans quoi elle ne dirait que l'accord quand le calcul a lieu.
+var rayPixels = [10][2]uint32{
+	{0, 0}, {319, 0}, {0, 179}, {319, 179}, {160, 90},
+	{37, 151}, {283, 22}, {111, 64}, {320, 179}, {319, 180},
+}
+
+// Remonte du pixel vers le monde, l'inverse de la projection.
+//
+// La seule scène qui remonte — les autres descendent, des sommets vers des
+// pixels ou d'un segment vers un contact —, et la seule qui éprouve
+// `scg_pixel_ray`. Treize octets par pixel : l'acceptation, puis trois
+// flottants.
+//
+// Toutes les valeurs de la caméra sont des fractions dyadiques, donc exactement
+// représentables : elles ne s'arrondissent nulle part, et les cinq hôtes partent
+// des mêmes bits sans dépendre de leur lecture de décimales. Le quaternion n'est
+// pas unitaire, la normalisation appartenant au moteur.
+//
+// Les zéros d'un refus sont écrits et non relus : la frontière n'écrit rien
+// quand elle refuse, donc hacher le tampon reviendrait à hacher ce qu'il
+// contenait avant.
+func renderRays() (uint64, bool) {
+	var config C.ScgContextConfig
+	config.max_width = 320
+	config.width = 320
+	config.max_height = 180
+	config.height = 180
+	config.tile_size = tile
+
+	var ctx *C.ScgContext
+	if C.scg_create(&config, &ctx) < 0 {
+		check(false, "le contexte de la scène du rayon se crée")
+		return 0, false
+	}
+	defer C.scg_destroy(ctx)
+
+	var camera C.ScgCamera
+	camera.position[0] = 1.5
+	camera.position[1] = -2.25
+	camera.position[2] = 0.75
+	camera.orientation[0] = 0.25
+	camera.orientation[2] = 0.5
+	camera.orientation[3] = 1.0
+	camera.fov_y = 1.0
+	camera.near_plane = 0.125
+	if C.scg_set_camera(ctx, &camera) < 0 {
+		check(false, "la caméra de la scène du rayon se règle")
+		return 0, false
+	}
+
+	out := alloc(3 * 4)
+	defer release(out)
+	outView := view(out, 3*4)
+
+	digest := make([]byte, 0, len(rayPixels)*13)
+	for _, pixel := range rayPixels {
+		for i := range outView {
+			outView[i] = 0
+		}
+		code := C.scg_pixel_ray(ctx, C.uint32_t(pixel[0]), C.uint32_t(pixel[1]), (*C.float)(out))
+		if code < 0 {
+			digest = append(digest, 1)
+			digest = append(digest, make([]byte, 12)...)
+			continue
+		}
+		digest = append(digest, 0)
+		digest = append(digest, outView...)
 	}
 
 	return hashBytes(digest), true

@@ -493,6 +493,50 @@ pub unsafe extern "C" fn scg_set_lights(
     unsafe { entry::with_context(ctx, set) }
 }
 
+/// Writes to `out` the world direction the centre of pixel `(x, y)` points at:
+/// three floats, `x`, `y` then `z`, of unit length.
+///
+/// **The inverse of the projection, for picking with a cursor.** Form the
+/// segment of a ray query by starting at the camera's position and adding this
+/// vector scaled by the reach you want, then pass it to `scg_world_pick`. This
+/// is the only step that goes back from the image to the world, and a host
+/// cannot redo it without copying two of the engine's conventions: the aspect
+/// ratio carried by the width alone, and the view basis of `docs/abi.md`.
+///
+/// **Unit length is what makes the reach a distance.** The raw direction has a
+/// depth of one, so its length grows towards the edges of the image; scaled by a
+/// reach it would carry further at a corner than at the centre, and a selection
+/// would see further where you aim askew.
+///
+/// `x` and `y` are in the **internal resolution**, not the window: a pixel at or
+/// beyond it is `SCG_ERR_INVALID_ARGUMENT`, and that refusal is the point — a
+/// windowed host has both frames of reference at hand, and passing the wrong one
+/// yields a plausible ray.
+///
+/// **Allowed while tiles render**, unlike every setting: it only reads a camera
+/// and a resolution that no call can change during a frame.
+///
+/// # Safety
+///
+/// `ctx` is a live handle, and `out` must cover three writable floats.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn scg_pixel_ray(ctx: *mut ScgContext, x: u32, y: u32, out: *mut f32) -> i32 {
+    let ray = |core: entry::Core<'_>| {
+        if out.is_null() {
+            return Err(AbiError::NULL);
+        }
+        let ray = core.shared().pixel_ray(x, y)?;
+        let axes = [ray.x, ray.y, ray.z];
+        // SAFETY: précondition de la fonction — `out` couvre trois flottants
+        // inscriptibles, et le tableau source ne le recouvre pas.
+        unsafe { ptr::copy_nonoverlapping(axes.as_ptr(), out, axes.len()) };
+        Ok(())
+    };
+
+    // SAFETY: précondition de la fonction — `ctx` est nul ou un handle vivant.
+    unsafe { entry::with_context(ctx, ray) }
+}
+
 /// Submits a batch of triangles to the frame being recorded.
 ///
 /// `model` carries the object into world space; the engine composes the view

@@ -124,7 +124,7 @@ android_build = for cible in $(CIBLES_ANDROID); do \
 
 .PHONY: build lib lib-wasm lib-android run example web test native-libs fmt fmt-fix lint lint-doc-tests \
         lint-android-versions lint-wasm-bindgen lint-enveloppes lint-intrinseques etat-verif bornes-verif plate-verif sorties-verif \
-        dispositions-verif java-verif nostd test-arm test-linux-arm test-wasi msrv bench bench-wasi stubs \
+        dispositions-verif java-verif codes-verif nostd test-arm test-linux-arm test-wasi msrv bench bench-wasi stubs \
         conform conform-arm conform-linux-arm conform-wasi conform-x86 conform-update conform-images mesh header header-verif audit deny doc doc-verif hosts host-c host-cpp host-web host-go \
         host-android demo-c demo-cpp clean tools
 
@@ -276,7 +276,7 @@ HOST_OUT = $(abspath $(SORTIE))/host-$(host_dir_$*)
 #
 # Une scène ajoutée ici est une scène à écrire dans les cinq hôtes, et c'est
 # voulu : c'est ce qui rend leur comparaison possible.
-HOST_SCENES := arete texture texture-bilineaire gamma lumiere lumiere-surbrillance brouillard lumieres maillage composite salles trace collision selection normale
+HOST_SCENES := arete texture texture-bilineaire gamma lumiere lumiere-surbrillance brouillard lumieres maillage composite salles trace collision selection normale rayon
 
 # Les fichiers que les scènes chargent, passés à chaque hôte. Un seul endroit :
 # la liste était recopiée sur quatre recettes, et une scène ajoutée y manquait
@@ -1175,6 +1175,38 @@ lint-intrinseques:
 	compte=$$(echo "$(INTRINSEQUES)" | wc -w); \
 	echo "lint-intrinseques : $$compte familles cherchees dans $$(echo $$sources | wc -w) fichiers, aucune trouvee"
 
+# `docs/abi.md` veut qu'une liaison juge un appel par son signe : negatif est un
+# echec, zero un succes sans rien a signaler, positif un succes dont l'hote peut
+# ne rien faire. La forme `!= SCG_OK` traite donc un statut en erreur, et elle
+# n'est jamais juste — une assertion de code exact s'ecrit `== SCG_OK`, et un
+# test d'echec `< 0`. C'est ce qui rend la classe grepable sans faux positif.
+#
+# **Les cinq hotes sont ce qu'un auteur de liaison recopie**, et c'est pour cela
+# que le controle porte sur eux et non sur la frontiere.
+#
+# **Hors commentaire**, comme `lint-intrinseques` : un jugement n'est jamais dans
+# un commentaire, et la regle elle-meme a besoin de pouvoir se citer la ou un
+# auteur de liaison la lira.
+# Le qualificatif est quelconque et facultatif : les quatre hotes ecrivent la
+# meme constante de quatre facons — `SCG_OK` en C et C++, `C.SCG_OK` en Go,
+# `scg.SCG_OK` en JavaScript, `Screengine.OK` en Java. Un motif qui n'admettait
+# que `C.` laissait passer les deux dernieres, et c'est l'hote web qui l'a dit.
+CODES_OK = '!=+[[:space:]]*([A-Za-z_][A-Za-z0-9_]*\.)*(SCG_OK|Screengine\.OK)'
+
+codes-verif:
+	@sources=$$(find hosts -type f \( -name '*.c' -o -name '*.cpp' -o -name '*.go' \
+	  -o -name '*.java' -o -name '*.js' \) | sort); \
+	if [ -z "$$sources" ]; then \
+	  echo "codes-verif : aucune source d hote trouvee, la recherche n a pas abouti"; exit 1; \
+	fi; \
+	fautifs=$$(grep -nE $(CODES_OK) $$sources \
+	  | grep -vE "^[^:]*:[0-9]+:[[:space:]]*(//|\*)" || true); \
+	if [ -n "$$fautifs" ]; then \
+	  echo "codes-verif : un code de retour juge autrement que par son signe :"; \
+	  echo "$$fautifs"; exit 1; \
+	fi; \
+	echo "codes-verif : $$(echo $$sources | wc -w) fichiers d hote, aucun jugement par egalite"
+
 # Les cibles qu'un contrôle traverse au-delà de celle du poste, et le seul
 # endroit où du code propre à une autre architecture se compile ici : `neon.rs`
 # sur `aarch64`, les chemins wasm, et la largeur de pointeur de `i686`. En
@@ -1204,7 +1236,7 @@ CIBLES_PLAY = $(CIBLES_LINUX_ARM) $(CIBLE_WASM)
 # leur plancher n'est pas sous notre contrôle, et l'y faire entrer donnerait une
 # contrainte qu'une montée de dépendance casserait sans qu'on puisse rien.
 
-lint: lint-doc-tests lint-android-versions lint-wasm-bindgen lint-enveloppes lint-intrinseques etat-verif bornes-verif plate-verif sorties-verif dispositions-verif java-verif
+lint: lint-doc-tests lint-android-versions lint-wasm-bindgen lint-enveloppes lint-intrinseques etat-verif bornes-verif plate-verif sorties-verif dispositions-verif java-verif codes-verif
 	cargo clippy --workspace --all-targets --all-features -- -D warnings
 	for cible in $(CIBLES_CROISEES); do \
 	  cargo clippy -p screengine -p screengine-ffi --lib --target $$cible -- -D warnings || exit 1; \

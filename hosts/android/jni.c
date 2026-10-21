@@ -693,6 +693,30 @@ static jint sweep_margin(JNIEnv *env, jclass cls, jfloatArray half, jboolean rea
     return (jint)code;
 }
 
+/* scg_pixel_ray : du pixel vers le monde, l'inverse de la projection.
+ *
+ * Trois flottants écrits dans le tableau de l'appelant, comme `sweepMargin` et
+ * pour la même raison : Java n'a pas de pointeur à prêter, et une structure de
+ * trois flottants n'a aucune disposition publiée à reproduire.
+ *
+ * **Le tableau n'est pas mis à zéro ici** : la frontière n'écrit rien quand elle
+ * refuse, et c'est à l'appelant de décider ce qu'il fait de son tampon — la
+ * scène du rayon y écrit des zéros plutôt que de relire ce qu'il contenait. */
+static jint pixel_ray(JNIEnv *env, jclass cls, jlong ctx, jint x, jint y, jfloatArray out)
+{
+    (void)cls;
+    if (out == NULL || (*env)->GetArrayLength(env, out) != 3) {
+        return SCG_ERR_INVALID_ARGUMENT;
+    }
+    float ray[3] = {0.0f, 0.0f, 0.0f};
+    int32_t code = scg_pixel_ray((ScgContext *)(intptr_t)ctx, (uint32_t)x, (uint32_t)y, ray);
+    if (code < 0) {
+        return code;
+    }
+    (*env)->SetFloatArrayRegion(env, out, 0, 3, ray);
+    return (jint)code;
+}
+
 /* scg_world_pick : le balayage d'une boîte d'étendue nulle, avec son filtre.
  *
  * Même résultat et mêmes trente-six octets que `worldSweep` : c'est la même
@@ -1339,6 +1363,7 @@ static const JNINativeMethod METHODS[] = {
     {"clearFog", "(J)I", (void *)clear_fog},
     {"setGrade", "(J[FI)I", (void *)set_grade},
     {"setCamera", "(J[F)I", (void *)set_camera},
+    {"pixelRay", "(JII[F)I", (void *)pixel_ray},
     {"clearGrade", "(J)I", (void *)clear_grade},
     {"setLights", "(J[F[B)I", (void *)set_lights},
 };

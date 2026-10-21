@@ -7,6 +7,8 @@
 //! d'une scène, et chacune a son équivalent exact dans l'ABI C : ce que l'API
 //! Rust permet de décrire, une liaison le décrit aussi.
 
+use crate::error::{Argument, Error, Result};
+use crate::math::projection::Projection;
 use crate::math::{Affine3, Angle, Quat, Vec3};
 
 /// L'orientation des axes de vue que donne le quaternion identité.
@@ -84,8 +86,57 @@ impl Camera {
     /// termes étant des produits par zéro —, si bien qu'une caméra neutre rend
     /// une permutation d'axes et rien de plus.
     pub fn view(&self) -> Affine3 {
+        self.basis().inverse_rigid()
+    }
+
+    /// La base de vue dans le monde : l'aller de [`Camera::view`], non inversé.
+    ///
+    /// Un seul site pour les deux sens, parce qu'une seconde composition
+    /// finirait par ne plus décrire la même caméra que celle-ci — et ce qui s'en
+    /// déduit, un rayon de curseur par exemple, désignerait alors autre chose
+    /// que ce que l'image montre.
+    fn basis(&self) -> Affine3 {
         let pose = Affine3::from_rotation_translation(self.orientation.normalize(), self.position);
-        pose.product(VIEW_BASIS).inverse_rigid()
+        pose.product(VIEW_BASIS)
+    }
+
+    /// La direction de monde que désigne le centre du pixel `(x, y)` d'une image
+    /// de `width × height`, unitaire.
+    ///
+    /// L'inverse de la projection, pour désigner à la souris : le segment d'une
+    /// interrogation par rayon se forme en partant de [`Camera::position`] et en
+    /// ajoutant ce vecteur multiplié par la portée voulue. C'est la seule
+    /// opération qui remonte de l'image vers le monde, et aucun hôte ne peut la
+    /// refaire sans recopier deux conventions du moteur — le rapport d'aspect
+    /// porté par la largeur seule, et la base de vue ci-dessus.
+    ///
+    /// **Unitaire, et c'est ce qui rend la portée utilisable** : la direction
+    /// brute a pour profondeur un, donc une longueur qui croît vers les bords de
+    /// l'image. Multipliée par une portée, elle atteindrait plus loin au coin
+    /// qu'au centre, et une sélection porterait plus loin là où l'on vise de
+    /// travers. La normalisation passe par la table du noyau, donc sans libm et
+    /// au bit près.
+    ///
+    /// **Elle prend sa résolution plutôt qu'un contexte**, parce que c'est dans
+    /// la boucle de mise à jour qu'on désigne — avant l'image, où un hôte Rust
+    /// n'a pas de contexte sous la main. [`Context::pixel_ray`] est la façade
+    /// qui fournit la sienne, et la frontière C n'expose que celle-là, un hôte C
+    /// tenant toujours son contexte.
+    ///
+    /// Un pixel hors de `width × height` rend [`Argument::Pixel`] : le calcul
+    /// marcherait, mais un hôte à fenêtre a deux repères sous la main et
+    /// confondre les deux donnerait un rayon plausible.
+    ///
+    /// [`Context::pixel_ray`]: crate::Context::pixel_ray
+    pub fn pixel_ray(&self, width: u32, height: u32, x: u32, y: u32) -> Result<Vec3> {
+        if x >= width || y >= height {
+            return Err(Error::InvalidArgument(Argument::Pixel));
+        }
+        let projection = Projection::new(width, height, self.fov_y, self.near)?;
+        Ok(self
+            .basis()
+            .transform_vector(projection.ray(x, y))
+            .normalize())
     }
 }
 

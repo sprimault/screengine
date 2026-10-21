@@ -2261,6 +2261,96 @@ function renderPicks(engine, worldBytes, list) {
   return engine.hashBytes(digest);
 }
 
+/**
+ * Les pixels de la scène `rayon`, dans l'ordre contractuel de l'empreinte.
+ *
+ * Les deux derniers débordent, un sur chaque axe : leur refus entre dans
+ * l'empreinte, sans quoi elle ne dirait que l'accord quand le calcul a lieu.
+ */
+const RAY_PIXELS = [
+  [0, 0],
+  [319, 0],
+  [0, 179],
+  [319, 179],
+  [160, 90],
+  [37, 151],
+  [283, 22],
+  [111, 64],
+  [320, 179],
+  [319, 180],
+];
+
+/**
+ * Remonte du pixel vers le monde, l'inverse de la projection.
+ *
+ * La seule scène qui remonte — les autres descendent, des sommets vers des
+ * pixels ou d'un segment vers un contact —, et la seule qui éprouve
+ * `scg_pixel_ray`. Treize octets par pixel : l'acceptation, puis trois
+ * flottants.
+ *
+ * **Toutes les valeurs de la caméra sont des fractions dyadiques**, et c'est cet
+ * hôte qui l'impose : il écrit ses flottants depuis des nombres à double
+ * précision, donc une décimale quelconque y subirait deux arrondis successifs là
+ * où les quatre autres n'en subissent qu'un. Le quaternion n'est pas unitaire,
+ * la normalisation appartenant au moteur.
+ *
+ * Les zéros d'un refus sont **écrits et non relus** : la frontière n'écrit rien
+ * quand elle refuse, donc hacher le tampon reviendrait à hacher ce qu'il
+ * contenait avant.
+ *
+ * @param {scg.Engine} engine le module instancié
+ * @returns {number | null} l'empreinte, ou `null` sur un échec
+ */
+function renderRays(engine) {
+  const e = engine.exports;
+  const out = engine.alloc(4);
+  const config = engine.alloc(scg.CONFIG_SIZE);
+  engine.writeConfig(config, {
+    maxWidth: 320,
+    maxHeight: 180,
+    width: 320,
+    height: 180,
+    tileSize: TILE,
+  });
+  if (e.scg_create(config, out) < 0) {
+    check(false, "le contexte de la scène du rayon se crée");
+    return null;
+  }
+  const ctx = engine.readU32(out);
+  engine.free(config, scg.CONFIG_SIZE);
+
+  const camera = engine.alloc(scg.CAMERA_SIZE);
+  engine.writeCamera(camera, {
+    position: [1.5, -2.25, 0.75],
+    orientation: [0.25, 0.0, 0.5, 1.0],
+    fovY: 1.0,
+    nearPlane: 0.125,
+  });
+  if (e.scg_set_camera(ctx, camera) < 0) {
+    check(false, "la caméra de la scène du rayon se règle");
+    return null;
+  }
+  engine.free(camera, scg.CAMERA_SIZE);
+
+  const ray = engine.alloc(3 * 4);
+  const digest = new Uint8Array(RAY_PIXELS.length * 13);
+  let written = 0;
+  for (const [x, y] of RAY_PIXELS) {
+    engine.bytes().fill(0, ray, ray + 3 * 4);
+    const code = e.scg_pixel_ray(ctx, x, y, ray);
+    digest[written] = code < 0 ? 1 : 0;
+    if (code >= 0) {
+      digest.set(engine.bytes().subarray(ray, ray + 12), written + 1);
+    }
+    written += 13;
+  }
+
+  engine.free(ray, 3 * 4);
+  engine.free(out, 4);
+  e.scg_destroy(ctx);
+  return engine.hashBytes(digest);
+}
+
 /** Toutes les vérifications, puis l'empreinte sur la sortie standard. */
 async function main() {
   const [wasmPath, headerPath, meshPath, worldPath, collisionPath, sweepsPath, picksPath] =
@@ -2320,8 +2410,10 @@ async function main() {
   const sweeps = renderSweeps(engine, collision, new Uint8Array(await readFile(sweepsPath)));
   const picks = renderPicks(engine, collision, new Uint8Array(await readFile(picksPath)));
   const shaded = renderShaded(engine);
+  const rays = renderRays(engine);
   if (
     failures > 0 ||
+    rays === null ||
     shaded === null ||
     picks === null ||
     sweeps === null ||
@@ -2343,7 +2435,7 @@ async function main() {
 
   process.stdout.write(
     `${hash}\n${textured}\n${bilinear}\n${graded}\n${lit}\n${overbright}\n${fog}\n${lights}\n` +
-      `${mesh}\n${composite}\n${rooms}\n${trace}\n${sweeps}\n${picks}\n${shaded}\n`,
+      `${mesh}\n${composite}\n${rooms}\n${trace}\n${sweeps}\n${picks}\n${shaded}\n${rays}\n`,
   );
   return 0;
 }

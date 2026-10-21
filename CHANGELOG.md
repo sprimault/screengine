@@ -76,6 +76,9 @@ publié, et explique les conventions du dépôt à qui y contribue.
   relâchées ou approximatives, et les minimums et maximums flottants, cherchés là
   où clippy ne les voit pas — une intrinsèque sous `cfg` n'est compilée que sur
   la passe de sa cible.
+- **`scg_pixel_ray` rend la direction de monde que désigne un pixel**, unitaire :
+  l'inverse de la projection, qu'aucun des deux chemins n'offrait et qu'un hôte
+  devait réécrire pour désigner à la souris.
 
 ### Corrigé
 
@@ -129,6 +132,9 @@ publié, et explique les conventions du dépôt à qui y contribue.
   approximate families, plus the floating-point minimums and maximums, searched
   where clippy cannot see them — an intrinsic behind a `cfg` is only compiled on
   its own target's pass.
+- **`scg_pixel_ray` returns the world direction a pixel points at**, of unit
+  length: the inverse of the projection, which neither path offered and which a
+  host had to rewrite to pick with a cursor.
 
 ### Fixed
 

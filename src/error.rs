@@ -93,6 +93,14 @@ pub enum Argument {
     TileIndex,
     /// Une région qui déborde de l'image.
     Region,
+    /// Un pixel hors de la résolution interne courante.
+    ///
+    /// Distincte de [`Argument::Region`], et le refus est ce qui compte : un
+    /// hôte à fenêtre a deux repères sous la main, celui de la fenêtre et celui
+    /// de l'image, et passer le premier là où le second est attendu rendrait un
+    /// rayon plausible mais faux. Le calcul, lui, marcherait sur n'importe quel
+    /// pixel.
+    Pixel,
     /// Un tampon de travail plus court que la région qu'il doit porter.
     ScratchLength,
     /// Plus de triangles soumis que la capacité réservée à la création.
@@ -458,6 +466,9 @@ impl Error {
                 "invalid tile index: must be less than the tile count of the frame"
             }
             Self::InvalidArgument(Argument::Region) => "invalid region: must lie within the image",
+            Self::InvalidArgument(Argument::Pixel) => {
+                "invalid pixel: must lie within the internal resolution"
+            }
             Self::InvalidArgument(Argument::ScratchLength) => {
                 "scratch buffer too short: needs one word per pixel of the region"
             }

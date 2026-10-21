@@ -1808,7 +1808,7 @@ static uint64_t render_sweeps(int *ok, const char *world_path, const char *sweep
              * c'est lui qui rend le déplacement libre, l'hôte n'a pas à le
              * fabriquer. */
             uint32_t cell = 0;
-            if (scg_world_locate(world, from, &cell) != SCG_OK) {
+            if (scg_world_locate(world, from, &cell) < 0) {
                 check(0, "la cellule de depart se cherche");
                 break;
             }
@@ -1881,6 +1881,86 @@ static uint64_t render_sweeps(int *ok, const char *world_path, const char *sweep
     return *ok ? hash : 0;
 }
 
+/* La caméra de la scène `rayon`, et sa résolution.
+ *
+ * Toutes ces valeurs sont des fractions dyadiques, donc exactement
+ * représentables : elles ne s'arrondissent nulle part, ce qui est ce qui permet
+ * aux cinq hôtes de partir des mêmes bits sans dépendre de leur conversion de
+ * décimales. Le quaternion n'est pas unitaire — la normalisation fait partie de
+ * ce que la scène fige, et elle appartient au moteur. */
+enum { RAY_WIDTH = 320, RAY_HEIGHT = 180 };
+
+/* Les pixels de la scène, dans l'ordre contractuel de l'empreinte.
+ *
+ * Les deux derniers débordent, un sur chaque axe : leur refus entre dans
+ * l'empreinte, sans quoi elle ne dirait que l'accord quand le calcul a lieu. */
+static const uint32_t RAY_PIXELS[10][2] = {
+    {0, 0},     {319, 0},  {0, 179},  {319, 179}, {160, 90},
+    {37, 151},  {283, 22}, {111, 64}, {320, 179}, {319, 180},
+};
+
+/* La scène `rayon` : du pixel vers le monde, l'inverse de la projection.
+ *
+ * La seule scène qui remonte — les autres descendent, des sommets vers des
+ * pixels ou d'un segment vers un contact —, et la seule qui éprouve
+ * `scg_pixel_ray`. Treize octets par pixel : l'acceptation, puis trois
+ * flottants.
+ *
+ * Les zéros d'un refus sont **écrits et non relus** : la frontière n'écrit rien
+ * quand elle refuse, donc hacher le tampon reviendrait à hacher ce qu'il
+ * contenait avant. */
+static uint64_t render_rays(int *ok)
+{
+    ScgContextConfig config;
+    ScgContext *ctx = NULL;
+    ScgCamera camera;
+    uint64_t hash = 0xcbf29ce484222325u;
+
+    memset(&config, 0, sizeof config);
+    config.max_width = config.width = RAY_WIDTH;
+    config.max_height = config.height = RAY_HEIGHT;
+    config.tile_size = TILE;
+
+    *ok = 0;
+    if (scg_create(&config, &ctx) < 0) {
+        check(0, "le contexte de la scene du rayon se cree");
+        return 0;
+    }
+
+    memset(&camera, 0, sizeof camera);
+    camera.position[0] = 1.5f;
+    camera.position[1] = -2.25f;
+    camera.position[2] = 0.75f;
+    camera.orientation[0] = 0.25f;
+    camera.orientation[1] = 0.0f;
+    camera.orientation[2] = 0.5f;
+    camera.orientation[3] = 1.0f;
+    camera.fov_y = 1.0f;
+    camera.near_plane = 0.125f;
+    if (scg_set_camera(ctx, &camera) < 0) {
+        check(0, "la camera de la scene du rayon se regle");
+        scg_destroy(ctx);
+        return 0;
+    }
+
+    for (size_t i = 0; i < sizeof RAY_PIXELS / sizeof RAY_PIXELS[0]; i++) {
+        float ray[3] = {0.0f, 0.0f, 0.0f};
+        int32_t code = scg_pixel_ray(ctx, RAY_PIXELS[i][0], RAY_PIXELS[i][1], ray);
+
+        hash = absorb(hash, code < 0 ? 1u : 0u, 1);
+        if (code < 0) {
+            ray[0] = ray[1] = ray[2] = 0.0f;
+        }
+        for (int axis = 0; axis < 3; axis++) {
+            hash = absorb_float(hash, ray[axis]);
+        }
+    }
+
+    *ok = 1;
+    scg_destroy(ctx);
+    return hash;
+}
+
 /* La scène `selection` : le même décor que la collision, interrogé au rayon.
  *
  * Ce qu'elle ajoute à la précédente est le **filtre**, et c'est la seule chose
@@ -1935,7 +2015,7 @@ static uint64_t render_picks(int *ok, const char *world_path, const char *picks_
                               | ((uint32_t)record[26] << 16) | ((uint32_t)record[27] << 24);
 
             uint32_t cell = 0;
-            if (scg_world_locate(world, from, &cell) != SCG_OK) {
+            if (scg_world_locate(world, from, &cell) < 0) {
                 check(0, "la cellule de depart du rayon se cherche");
                 break;
             }
@@ -2046,9 +2126,12 @@ int main(int argc, char **argv)
     int shaded_ok = 0;
     uint64_t shaded = render_shaded(&shaded_ok);
 
+    int rays_ok = 0;
+    uint64_t rays = render_rays(&rays_ok);
+
     if (failures > 0 || !ok || !textured_ok || !bilinear_ok || !graded_ok || !lit_ok
         || !overbright_ok || !fog_ok || !lights_ok || !mesh_ok || !composite_ok || !rooms_ok
-        || !trace_ok || !sweeps_ok || !picks_ok || !shaded_ok) {
+        || !trace_ok || !sweeps_ok || !picks_ok || !shaded_ok || !rays_ok) {
         fprintf(stderr, "%d vérification(s) en échec\n", failures);
         return 1;
     }
@@ -2067,5 +2150,6 @@ int main(int argc, char **argv)
     printf("%016llx\n", (unsigned long long)sweeps);
     printf("%016llx\n", (unsigned long long)picks);
     printf("%016llx\n", (unsigned long long)shaded);
+    printf("%016llx\n", (unsigned long long)rays);
     return 0;
 }

@@ -296,6 +296,26 @@ impl Projection {
         &self.frustum
     }
 
+    /// La direction, en espace de vue, que désigne le centre du pixel `(x, y)`.
+    ///
+    /// L'inverse de l'aller : `to_vertex` écrit
+    /// `center + scale * vue / profondeur`, donc poser la profondeur à un et
+    /// résoudre rend ces deux divisions. Le `+ 0,5` est le centre du pixel, le
+    /// même demi-pas que `center_x` porte à l'aller — le prendre au coin
+    /// désignerait un rayon décalé d'un demi-pixel sur toute l'image, ce qu'une
+    /// sélection ne montre qu'en bord de surface.
+    ///
+    /// La profondeur est un et non `near` : le résultat est une direction, pas
+    /// un point du plan proche, et un facteur commun aux trois composantes ne
+    /// change pas ce qu'elle désigne.
+    pub fn ray(&self, x: u32, y: u32) -> Vec3 {
+        Vec3::new(
+            (x as f32 + 0.5 - self.center_x) / self.scale_x,
+            (y as f32 + 0.5 - self.center_y) / self.scale_y,
+            1.0,
+        )
+    }
+
     /// Porte un point de l'espace de vue en espace de clip.
     ///
     /// Rend `None` sur une coordonnée non finie ou démesurée : c'est le seul

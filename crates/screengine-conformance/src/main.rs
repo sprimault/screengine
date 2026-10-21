@@ -18,6 +18,7 @@
 
 mod hash;
 mod picks;
+mod rays;
 mod sweeps;
 
 use std::path::{Path, PathBuf};
@@ -815,6 +816,17 @@ enum Scene {
     /// Elle joue chaque rayon **deux fois**, par la traversée et par la force
     /// brute, et exige les mêmes bits : le théorème de l'étape 7 transposé.
     Selection,
+    /// **Du pixel vers le monde**, l'inverse de la projection.
+    ///
+    /// La seule scène qui remonte : les autres descendent, des sommets vers des
+    /// pixels ou d'un segment vers un contact, et aucune n'éprouvait donc
+    /// `scg_pixel_ray`. Elle n'a pas de second chemin à confronter — il n'existe
+    /// pas de force brute de l'inverse d'une projection —, et ce qu'elle fige
+    /// est l'accord des cinq hôtes avec le chemin Rust.
+    ///
+    /// **Deux de ses pixels débordent**, et leur refus entre dans l'empreinte :
+    /// sans eux, elle ne dirait que l'accord quand le calcul a lieu.
+    Rays,
 }
 
 /// La matrice qui place la caisse : deux rotations composées, puis cinq unités
@@ -1378,7 +1390,7 @@ struct Query {
 
 impl Scene {
     /// Toutes les scènes, dans l'ordre où `--check` les rejoue.
-    const ALL: [Self; 30] = [
+    const ALL: [Self; 31] = [
         Self::Edge,
         Self::Guard,
         Self::Lateral,
@@ -1408,6 +1420,7 @@ impl Scene {
         Self::Collision,
         Self::Trace,
         Self::Selection,
+        Self::Rays,
         Self::Composite,
     ];
 
@@ -1464,6 +1477,7 @@ impl Scene {
             Self::Collision => "collision",
             Self::Trace => "trace",
             Self::Selection => "selection",
+            Self::Rays => "rayon",
         }
     }
 
@@ -1488,6 +1502,10 @@ impl Scene {
             Self::Selection => Some(Query {
                 digest: picks::digest,
                 report: picks::report,
+            }),
+            Self::Rays => Some(Query {
+                digest: rays::digest,
+                report: rays::report,
             }),
             _ => None,
         }
@@ -1729,7 +1747,7 @@ impl Scene {
             // `render_all` l'a déjà détournée avant d'arriver ici. Le cas est
             // écrit plutôt que laissé à un joker, pour qu'une scène d'image
             // ajoutée plus tard ne passe pas par lui en silence.
-            Self::Collision | Self::Selection => Ok(()),
+            Self::Collision | Self::Selection | Self::Rays => Ok(()),
             // Le même quadrilatère que `arete`, tourné autour de l'axe de
             // visée. L'axe passe par son centre, donc il reste dans le champ et
             // garde sa fuite en perspective ; ce qui change, c'est
