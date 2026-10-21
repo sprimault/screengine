@@ -371,10 +371,29 @@ fn une_texture_relachee_par_l_hote_ne_se_libere_pas_dans_l_image_suivante() {
 
     // L'image suivante, mesurée : elle ne soumet rien et ne doit rien rendre à
     // l'allocateur.
+    //
+    // **Elle ne porte aucune géométrie, et ce n'est pas un raccourci** : une
+    // image ne peut pas à la fois travailler et porter une libération en
+    // attente, puisque la soumission qui lui donnerait de la géométrie appelle
+    // le règlement et solde la libération avant qu'elle commence. C'est le seul
+    // régime où la mesure a un sujet.
     let seen = allocations(|| {
         context.frame_end(&mut pixels, width).expect("image rendue");
     });
     assert_eq!(seen, 0, "{seen} mouvement(s) d'allocateur dans l'image");
+
+    // **Et la libération a bien lieu, juste après.** Sans cette seconde moitié,
+    // le zéro ci-dessus serait indistinguable d'un zéro obtenu parce qu'il n'y
+    // avait rien à rendre : le cas passerait sur un moteur qui ne libère jamais,
+    // comme sur un moteur qui libère au bon moment. Le premier réglage hors
+    // image règle la table close, et c'est là que les mégaoctets partent.
+    let apres = allocations(|| {
+        context.set_filter(Filter::Dither).expect("hors image");
+    });
+    assert!(
+        apres >= 1,
+        "la libération n'a eu lieu nulle part : rien n'était en attente, et la mesure ci-dessus ne portait sur rien"
+    );
 }
 
 /// Aucune image soumise depuis un maillage n'alloue.

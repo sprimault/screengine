@@ -89,6 +89,11 @@ publié, et explique les conventions du dépôt à qui y contribue.
 - **La clause de mémoire de l'hôte Go était fausse** : les structures d'appel
   restent en mémoire Go le temps de l'appel, et seul ce que le moteur retient ou
   remplit en volume passe par `calloc`.
+- **Une normale non finie refuse le lot par les deux chemins** : le noyau ne la
+  vérifiait pas, si bien que l'API Rust acceptait ce que l'ABI refusait déjà.
+- **Un réglage rend la mémoire d'une texture relâchée** au lieu d'attendre la
+  soumission suivante : huit réglages ne soldaient pas la table d'une image
+  close.
 - **Une douzaine de chiffres annoncés dans la documentation étaient faux** :
   cellules et lumières d'un décor, scènes de la conformance, contrôles entraînés
   par le lint. Le chiffre est retiré partout où rien ne le vérifiait.
@@ -122,6 +127,10 @@ publié, et explique les conventions du dépôt à qui y contribue.
 - **The Go host's memory clause was wrong**: call structures stay in Go memory
   for the duration of the call, and only what the engine keeps or fills in bulk
   goes through `calloc`.
+- **A non-finite normal rejects the batch on both paths**: the core did not check
+  it, so the Rust API accepted what the ABI already refused.
+- **A setting returns a released texture's memory** instead of waiting for the
+  next submission: eight settings did not settle a closed frame's table.
 - **A dozen numbers stated in the documentation were wrong**: a scene's cells and
   lights, the conformance scenes, the checks the lint pulls in. The number is now
   gone wherever nothing verified it.

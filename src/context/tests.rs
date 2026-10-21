@@ -1042,6 +1042,49 @@ fn un_lot_a_normales_refuse_une_position_non_finie_non_indexee() {
     assert_eq!(ctx.triangles.len(), 0);
 }
 
+/// Une normale non finie refuse le lot, et le chemin Rust le fait lui-même.
+///
+/// **C'était le seul rempart posé sur une seule des deux voies** : la frontière
+/// C le tenait par `check_finite_uvn`, le noyau ne vérifiait que les positions,
+/// et un appelant Rust soumettait donc une normale `NaN` que l'ABI refusait. Le
+/// contrat dit pourtant qu'un composant non fini refuse le lot entier, et
+/// `git.md` veut qu'un désaccord entre lui et le code se corrige dans le code.
+///
+/// La normale est posée sur un sommet **référencé** : c'est là que la
+/// transformation l'aurait lue, et le refus n'a rien à voir avec la validation
+/// de tranche que `submit_shaded` ajoute par ailleurs.
+#[test]
+fn un_lot_refuse_une_normale_non_finie() {
+    for mauvaise in [f32::NAN, f32::INFINITY, f32::NEG_INFINITY] {
+        let mut ctx = small();
+        let mut vertices = ahead_uv2(0.0, 0.0, 0.0, 0.0);
+        vertices[1].normal = Vec3::new(0.0, mauvaise, 1.0);
+        assert_eq!(
+            ctx.submit_shaded(Affine3::IDENTITY, &vertices, &one(), None),
+            Err(Error::InvalidArgument(Argument::VertexCoordinate)),
+            "normale {mauvaise}"
+        );
+        assert_eq!(ctx.triangles.len(), 0);
+    }
+}
+
+/// Une normale nulle est valide, et veut dire « pas de normale ».
+///
+/// Le pendant du cas ci-dessus, et il le borne : sans lui, refuser la normale
+/// nulle passerait les deux. C'est ce que `VertexUv2::normal` documente — une
+/// normale absente et une normale dégénérée reçoivent le même traitement.
+#[test]
+fn un_lot_accepte_une_normale_nulle() {
+    let mut ctx = small();
+    let mut vertices = ahead_uv2(0.0, 0.0, 0.0, 0.0);
+    vertices[1].normal = Vec3::ZERO;
+    assert_eq!(
+        ctx.submit_shaded(Affine3::IDENTITY, &vertices, &one(), None),
+        Ok(())
+    );
+    assert_eq!(ctx.triangles.len(), 1);
+}
+
 /// Une lightmap unie et claire, pour les cas où seul le chemin compte.
 ///
 /// Pas tout à fait blanche : à 255 la combinaison rend le texel intact et une

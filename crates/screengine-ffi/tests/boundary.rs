@@ -1351,19 +1351,29 @@ fn refuse_de_changer_la_camera_apres_une_soumission() {
     unsafe { scg_destroy(ctx) };
 }
 
-/// Une coordonnée de texture non finie refuse le lot, et un sommet nul aussi :
-/// les deux contrôles de la frontière valent pour le chemin texturé.
+/// Une coordonnée non finie refuse le lot **même sur un sommet qu'aucun
+/// triangle n'indexe**, et une texture nulle le refuse aussi.
+///
+/// **C'est là que la façade se distingue du noyau, et nulle part ailleurs.** Le
+/// cas posait d'abord le `NaN` sur les trois sommets du triangle : les deux
+/// couches le refusaient, avec le même code et un message contenant « finite »
+/// toutes les deux, si bien qu'il passait encore après le retrait de
+/// `check_finite`. Ce que la frontière ajoute est la validation de la tranche
+/// **entière** — le noyau ne voit que les sommets qu'il résout —, donc le `NaN`
+/// va sur le quatrième, et le message attendu est celui de la frontière mot
+/// pour mot.
 #[test]
 fn refuse_un_sommet_texture_non_fini() {
     let ctx = create(&sane());
     let texture = load(&desc(2, 2), &[0x40; 16]);
-    let vertices = [ScgVertexUv {
-        x: f32::NAN,
+    let bon = ScgVertexUv {
+        x: 0.0,
         y: 0.0,
         z: 0.0,
         u: 0.0,
         v: 0.0,
-    }; 3];
+    };
+    let vertices = [bon, bon, bon, ScgVertexUv { x: f32::NAN, ..bon }];
     let triangles = [ScgTriangle {
         i0: 0,
         i1: 1,
@@ -1388,14 +1398,18 @@ fn refuse_un_sommet_texture_non_fini() {
             ctx,
             &identity,
             vertices.as_ptr(),
-            3,
+            4,
             triangles.as_ptr(),
             1,
             texture,
         )
     };
     assert_eq!(code, SCG_ERR_INVALID_ARGUMENT);
-    assert!(last_error(ctx).contains("finite"));
+    assert_eq!(
+        last_error(ctx),
+        "vertex coordinates must be finite numbers",
+        "le refus doit venir de la frontière, pas du noyau"
+    );
 
     // SAFETY: mêmes préconditions ; le handle nul est refusé, pas déréférencé.
     let null_texture = unsafe {
@@ -1403,7 +1417,7 @@ fn refuse_un_sommet_texture_non_fini() {
             ctx,
             &identity,
             vertices.as_ptr(),
-            3,
+            4,
             triangles.as_ptr(),
             1,
             ptr::null(),

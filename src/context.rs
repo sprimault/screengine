@@ -594,7 +594,7 @@ impl Context {
     /// même image des tuiles lues autrement — une image que rien ne décrit, et
     /// qui dépendrait de l'ordre où l'hôte a pris ses tuiles.
     pub fn set_filter(&mut self, filter: Filter) -> Result<()> {
-        self.require_recording()?;
+        self.require_outside_frame()?;
         self.filter = filter;
         Ok(())
     }
@@ -627,7 +627,7 @@ impl Context {
     ///
     /// Refusé pendant le rendu, comme tout réglage que les tuiles lisent.
     pub fn set_simd(&mut self, simd: SimdPath) -> Result<()> {
-        self.require_recording()?;
+        self.require_outside_frame()?;
         if !simd.available() {
             return Err(Error::InvalidArgument(Argument::SimdPath));
         }
@@ -653,7 +653,7 @@ impl Context {
     /// dont les tuiles n'auraient pas toutes le même réglage n'est décrite par
     /// rien.
     pub fn set_overbright(&mut self, overbright: u32) -> Result<()> {
-        self.require_recording()?;
+        self.require_outside_frame()?;
         if overbright > MAX_OVERBRIGHT {
             return Err(Error::InvalidArgument(Argument::Overbright));
         }
@@ -674,7 +674,7 @@ impl Context {
     ///
     /// Refusé pendant le rendu, comme les autres réglages d'image.
     pub fn set_fog(&mut self, color: Color, start: f32, end: f32) -> Result<()> {
-        self.require_recording()?;
+        self.require_outside_frame()?;
         self.fog.set(color.packed(), self.camera.near, start, end)?;
         self.fog_range = (start, end);
         Ok(())
@@ -682,7 +682,7 @@ impl Context {
 
     /// Éteint le brouillard.
     pub fn clear_fog(&mut self) -> Result<()> {
-        self.require_recording()?;
+        self.require_outside_frame()?;
         self.fog.clear();
         Ok(())
     }
@@ -705,7 +705,7 @@ impl Context {
     /// Refusée pendant le rendu, comme tout réglage que les tuiles d'une même
     /// image doivent partager.
     pub fn set_grade(&mut self, gamma: f32, gains: [f32; 3], offsets: [f32; 3]) -> Result<()> {
-        self.require_recording()?;
+        self.require_outside_frame()?;
         self.grade.set(gamma, gains, offsets)
     }
 
@@ -715,7 +715,7 @@ impl Context {
     /// hôte qui remet sa courbe à plat en fin de niveau n'a pas à se souvenir
     /// s'il l'avait réglée.
     pub fn clear_grade(&mut self) -> Result<()> {
-        self.require_recording()?;
+        self.require_outside_frame()?;
         self.grade.clear();
         Ok(())
     }
@@ -741,7 +741,7 @@ impl Context {
     ///
     /// Refusé pendant le rendu, comme les autres réglages d'image.
     pub fn set_lights(&mut self, lights: &[Light]) -> Result<()> {
-        self.require_recording()?;
+        self.require_outside_frame()?;
         if lights.len() > MAX_LIGHTS {
             return Err(Error::InvalidArgument(Argument::LightCapacity));
         }
@@ -981,6 +981,28 @@ impl Context {
             RECORDING => Ok(()),
             _ => Err(Error::InvalidState),
         }
+    }
+
+    /// Hors image, **et la table d'une image close rendue à l'allocateur**.
+    ///
+    /// **Le règlement ne peut pas vivre dans [`Context::require_recording`]**, et
+    /// c'est la seule raison pour laquelle il y a deux gardes : `begin` appelle
+    /// le premier, et la libération y serait à l'intérieur de la frontière
+    /// d'image — ce que l'invariant interdit.
+    ///
+    /// **Six réglages ne réglaient rien** — filtre, chemin SIMD, surbrillance,
+    /// brouillard, courbe, lumières —, si bien qu'un hôte qui rendait une image
+    /// puis changeait son filtre gardait les mégaoctets d'une texture relâchée
+    /// jusqu'à sa prochaine soumission. La documentation de
+    /// [`Context::release_closed_textures`] annonçait pourtant qu'un réglage
+    /// suffisait, et c'est un cas qui a rendu l'écart visible.
+    ///
+    /// Les soumissions atteignent le même état par leur propre route : elles
+    /// règlent après avoir validé leur matrice, et cet ordre est le leur.
+    fn require_outside_frame(&mut self) -> Result<()> {
+        self.require_recording()?;
+        self.settle();
+        Ok(())
     }
 
     /// Refuse un réglage qui vaut pour l'image entière quand l'image en cours
@@ -2016,8 +2038,15 @@ impl Context {
             // refuse, pas ce que la caméra en fait. Un sommet fini que la
             // matrice porte à l'infini reste une condition de vue, et son
             // triangle disparaît plus bas sans erreur.
+            //
+            // **La normale est refusée au même titre**, et c'est le noyau qui
+            // doit le faire : la frontière C le faisait seule, si bien que le
+            // chemin Rust acceptait ce que l'ABI refusait — et le contrat dit
+            // qu'un composant non fini refuse le lot entier. Une normale
+            // **nulle** reste valide : elle veut dire « pas de normale ».
             if corners.iter().any(|c| {
-                !c.position.x.is_finite() || !c.position.y.is_finite() || !c.position.z.is_finite()
+                !finite(&[c.position.x, c.position.y, c.position.z])
+                    || !finite(&[c.normal.x, c.normal.y, c.normal.z])
             }) {
                 return Err(Error::InvalidArgument(Argument::VertexCoordinate));
             }
