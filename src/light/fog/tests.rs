@@ -17,6 +17,12 @@ const NEAR: f32 = 0.1;
 /// bits du facteur : à huit, le plein rendrait la couleur du brouillard à une
 /// unité près, et cet écart d'un seul niveau entre la géométrie lointaine et
 /// le fond est exactement la couture d'horizon.
+///
+/// **L'arrondi n'a pas à être varié ici**, et c'est ce que le cas voisin établit :
+/// les bouts sont exacts pour tout arrondi sous 256, par le budget de seize bits
+/// d'une voie. Boucler sur les seize valeurs du tramage décrirait ce régime sans
+/// rien garder — aucune mutation plausible ne ferait échouer cette boucle sur
+/// son assertion plutôt que sur un débordement.
 #[test]
 fn le_melange_est_exact_aux_deux_bouts() {
     let fog = rgba(0x40, 0x60, 0x90, 0);
@@ -27,6 +33,29 @@ fn le_melange_est_exact_aux_deux_bouts() {
             blend(pixel, fog, FULL, 128) & 0x00FF_FFFF,
             fog & 0x00FF_FFFF
         );
+    }
+}
+
+/// Les seize arrondis du tramage tiennent sous 256, et c'est de là que vient
+/// l'exactitude des deux bouts.
+///
+/// **C'est la précondition, et elle n'était gardée par rien** : les cas
+/// n'employaient que l'arrondi fixe 128, alors que le rasteriseur appelle
+/// `blend` avec `dither(x, y)`. Un arrondi qui atteindrait 256 ne rendrait pas
+/// une couleur à un niveau près — il ferait déborder une voie sur sa voisine,
+/// chacune valant au plus `255 · 256 + 255`. Le défaut serait une couleur fausse
+/// sur un pixel sur seize, pas une couture.
+///
+/// La borne vaut donc pour la table **et** pour toute valeur qu'on lui
+/// substituerait : elle est la condition du calcul, pas une propriété de ces
+/// seize nombres-là.
+#[test]
+fn les_arrondis_du_tramage_tiennent_dans_une_voie() {
+    for y in 0..4 {
+        for x in 0..4 {
+            let bias = dither(x, y);
+            assert!(bias < 256, "l'arrondi de ({x}, {y}) vaut {bias}");
+        }
     }
 }
 

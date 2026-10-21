@@ -2767,6 +2767,19 @@ chemin n'est acceptable.
   observer, c'est que son forçage a été accepté. Une fonction d'interrogation
   pourra s'ajouter sans changer la version d'ABI, comme celle qui rendrait le
   rectangle d'une tuile.
+
+  **Le chemin Rust ne le dit pas davantage, et c'est voulu** : `SimdPath` y
+  répond bien à `resolve` et `available`, mais le rectangle d'une tuile n'est
+  atteignable par aucun des deux chemins — il vit dans un `Grid` que le noyau ne
+  réexporte pas. Les deux restent donc au même niveau, ce que « deux chemins,
+  aucun de seconde classe » demande, et c'est pourquoi l'absence se lit comme une
+  capacité non offerte plutôt que comme un oubli de propagation.
+
+  **Ce qui rouvrirait la question** est un hôte qui calculerait ce rectangle
+  lui-même, à partir du côté de tuile et de l'index : c'est le signal qui a
+  déjà servi une fois, et aucun des cinq hôtes ne le donne aujourd'hui. Vérifié,
+  et à revérifier plutôt qu'à supposer : une capacité ajoutée sans demande est un
+  nom publié pour toujours.
 - **Elle ne crée aucun thread**, et ne change rien à la concurrence : le rendu
   des tuiles en parallèle est acquis depuis l'étape 1, et c'est l'hôte qui le
   conduit depuis ses propres threads.

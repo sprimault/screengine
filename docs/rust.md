@@ -504,7 +504,13 @@ aux fonctions de bord.
   La normale passe par le même lerp, puis se renormalise : une normale interpolée
   n'est plus unitaire.
 - **L'atténuation d'une lumière dynamique se calcule dans cet ordre**, qui est
-  contractuel parce qu'il est celui de la cuisson :
+  contractuel pour lui-même et **non par ressemblance avec la cuisson** : celle-ci
+  divise par le rayon là où ce chemin multiplie par une réciproque calculée une
+  fois, et l'écart est assumé plutôt que corrigé — voir « L'atténuation, et le
+  terme qui s'y ajoute », qui dit pourquoi aligner les deux arithmétiques
+  déplacerait les empreintes de lightmaps pour des bits qu'aucune image ne
+  montre. Ce qui est figé ici est l'ordre de ce chemin-ci, et les empreintes le
+  tiennent :
   1. une fois par lot — les positions des lumières en espace de vue, la
      réciproque du rayon au carré, et la matrice `signe(det) · Cof` de la partie
      linéaire, avec son déterminant ;

@@ -72,9 +72,15 @@ publié, et explique les conventions du dépôt à qui y contribue.
   frontière contre ceux que le cas passe en revue, les structures `#[repr(C)]`
   contre les assertions de disposition du header, et les constantes du pont Java
   contre ce que le header en dit — cette dernière sans NDK ni appareil.
+- **Un contrôle des intrinsèques non déterministes** : quatorze familles
+  fusionnées, relâchées ou approximatives, cherchées là où clippy ne les voit
+  pas — une intrinsèque sous `cfg` n'est compilée que sur la passe de sa cible.
 
 ### Corrigé
 
+- **`test-archive` réutilisait son répertoire de sortie** : deux paquets
+  éprouvés à la suite partageaient leurs exécutables, et le second annonçait ses
+  empreintes conformes en ayant chargé la bibliothèque du premier.
 - **Le contrat promettait `SCG_ERR_INVALID_STATE` sur un calcul de lightmaps
   pendant une image**, qu'aucun code ne rend. Le calcul comme la reprise d'un
   cache l'énoncent désormais en précondition.
@@ -111,9 +117,15 @@ publié, et explique les conventions du dépôt à qui y contribue.
   those the case reviews, the `#[repr(C)]` structs against the header's layout
   assertions, and the Java bridge's constants against what the header says — the
   last one without an NDK or a device.
+- **A check for non-deterministic intrinsics**: fourteen fused, relaxed or
+  approximate families, searched where clippy cannot see them — an intrinsic
+  behind a `cfg` is only compiled on its own target's pass.
 
 ### Fixed
 
+- **`test-archive` reused its output directory**: two packages tested in a row
+  shared their executables, and the second reported matching fingerprints while
+  having loaded the first one's library.
 - **The contract promised `SCG_ERR_INVALID_STATE` for lightmaps computed during
   a frame**, which no code returns. Computing and restoring a cache now state it
   as a precondition.

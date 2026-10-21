@@ -923,8 +923,22 @@ fn to_f32(v: Vec3d) -> Vec3 {
     Vec3::new(v.x as f32, v.y as f32, v.z as f32)
 }
 
-/// Le plus grand de deux nombres, par comparaison écrite.
-fn max(a: f64, b: f64) -> f64 {
+/// Le plus petit de deux nombres, par comparaison et non par `f64::min`.
+///
+/// **Celle de la bibliothèque est interdite**, et pour la raison du
+/// déterminisme : `min` et `max` ne traitent pas `NaN` de la même façon en SSE
+/// et en NEON, et `clippy.toml` les refuse pour cela. Une comparaison écrite
+/// rend les mêmes bits partout, `NaN` compris — elle rend alors `b`.
+pub(super) fn min(a: f64, b: f64) -> f64 {
+    if a < b { a } else { b }
+}
+
+/// Le plus grand de deux nombres, par comparaison et non par `f64::max`.
+///
+/// Même raison que [`min`], et une seule pour le module comme [`abs`] : les deux
+/// vivaient aussi dans `shape`, à l'identique, et chaque copie est une occasion
+/// de les relâcher vers la bibliothèque du système.
+pub(super) fn max(a: f64, b: f64) -> f64 {
     if a > b { a } else { b }
 }
 

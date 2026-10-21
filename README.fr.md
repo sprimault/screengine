@@ -178,7 +178,8 @@ make demo-cpp  # le même, depuis l'hôte C++
 
 Le noyau est `no_std` et n'a aucune dépendance. Un dépôt fraîchement cloné
 compile sans rien installer d'autre qu'une chaîne Rust ; seul `screengine-play`
-porte des dépendances : `winit`, `softbuffer` et `png`.
+porte des dépendances — `winit`, `softbuffer`, `png` et `web-time`, auxquelles
+s'ajoute la famille `wasm-bindgen` quand il est construit pour le web.
 
 L'hôte wasm demande Node et la cible `wasm32-unknown-unknown`, que
 `make tools` installe ; l'hôte Android demande NDK, SDK, émulateur et
