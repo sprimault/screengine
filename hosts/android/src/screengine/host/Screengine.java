@@ -748,6 +748,28 @@ public final class Screengine {
     static native int setCamera(long ctx, float[] camera);
 
     /**
+     * La direction de monde que désigne le centre d'un pixel, unitaire.
+     *
+     * <p>L'inverse de la projection : le segment d'une interrogation par rayon se
+     * forme en partant de la position de la caméra et en ajoutant ce vecteur
+     * multiplié par la portée voulue.
+     *
+     * <p>Les coordonnées sont celles de l'image, jamais de la fenêtre. Un pixel
+     * au niveau de la résolution interne ou au-delà est refusé, et ce refus est
+     * l'objet : une vue Android a les deux repères sous la main.
+     *
+     * <p>Trois flottants écrits dans le tableau de l'appelant, comme
+     * {@link #sweepMargin} : rien n'est écrit quand l'appel refuse.
+     *
+     * @param ctx handle, ou 0
+     * @param x l'abscisse du pixel, dans la résolution interne
+     * @param y son ordonnée
+     * @param out trois flottants à remplir
+     * @return le code de retour
+     */
+    static native int pixelRay(long ctx, int x, int y, float[] out);
+
+    /**
      * {@code scg_set_fog}.
      *
      * <p>Les trois canaux sont des entiers et non des octets : Java n'a pas

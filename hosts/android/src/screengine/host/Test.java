@@ -174,7 +174,7 @@ public final class Test {
         check(texture != 0, "la texture se charge sans contexte");
 
         long[] out = {0};
-        if (texture == 0 || Screengine.create(sceneConfig(), out) != Screengine.OK) {
+        if (texture == 0 || Screengine.create(sceneConfig(), out) < 0) {
             check(false, "création du contexte texturé");
             return null;
         }
@@ -243,7 +243,7 @@ public final class Test {
         check(texture != 0, "le damier des pans se charge");
 
         long[] out = {0};
-        if (texture == 0 || Screengine.create(sceneConfig(), out) != Screengine.OK) {
+        if (texture == 0 || Screengine.create(sceneConfig(), out) < 0) {
             check(false, "création du contexte à normales");
             return null;
         }
@@ -313,7 +313,7 @@ public final class Test {
         check(texture != 0, "la texture de la scène étalonnée se charge");
 
         long[] out = {0};
-        if (texture == 0 || Screengine.create(sceneConfig(), out) != Screengine.OK) {
+        if (texture == 0 || Screengine.create(sceneConfig(), out) < 0) {
             check(false, "création du contexte étalonné");
             return null;
         }
@@ -368,7 +368,7 @@ public final class Test {
      */
     private static String renderLights() {
         long[] out = {0};
-        if (Screengine.create(sceneConfig(), out) != Screengine.OK) {
+        if (Screengine.create(sceneConfig(), out) < 0) {
             check(false, "création du contexte éclairé");
             return null;
         }
@@ -452,7 +452,7 @@ public final class Test {
         check(texture != 0, "la texture du sol embrumé se charge");
 
         long[] out = {0};
-        if (texture == 0 || Screengine.create(sceneConfig(), out) != Screengine.OK) {
+        if (texture == 0 || Screengine.create(sceneConfig(), out) < 0) {
             check(false, "création du contexte embrumé");
             return null;
         }
@@ -540,7 +540,7 @@ public final class Test {
 
         long[] out = {0};
         if (texture == 0 || lightmap == 0
-                || Screengine.create(sceneConfig(), out) != Screengine.OK) {
+                || Screengine.create(sceneConfig(), out) < 0) {
             check(false, "création du contexte éclairé");
             return null;
         }
@@ -743,7 +743,7 @@ public final class Test {
         block.put(fill).clear();
 
         long[] out = {0};
-        if (Screengine.create(sceneConfig(), out) != Screengine.OK) {
+        if (Screengine.create(sceneConfig(), out) < 0) {
             check(false, "création du contexte de rendu");
             return null;
         }
@@ -801,7 +801,7 @@ public final class Test {
         config[3] = 1;
 
         long[] out = {0};
-        if (Screengine.create(config, out) != Screengine.OK) {
+        if (Screengine.create(config, out) < 0) {
             check(false, "création du contexte redimensionnable");
             return;
         }
@@ -874,7 +874,7 @@ public final class Test {
         check(texture != 0, "le damier des faces se charge");
 
         long[] out = {0};
-        if (texture == 0 || Screengine.create(sceneConfig(), out) != Screengine.OK) {
+        if (texture == 0 || Screengine.create(sceneConfig(), out) < 0) {
             check(false, "création du contexte du maillage");
             Screengine.meshDestroy(mesh);
             return null;
@@ -1002,7 +1002,7 @@ public final class Test {
 
         long[] out = {0};
         if (sides == 0 || emblem == 0 || shadow == 0
-                || Screengine.create(sceneConfig(), out) != Screengine.OK) {
+                || Screengine.create(sceneConfig(), out) < 0) {
             check(false, "création du contexte de la composite");
             Screengine.meshDestroy(mesh);
             return null;
@@ -1170,7 +1170,7 @@ public final class Test {
         }
 
         long[] out = {0};
-        if (lighting == 0 || Screengine.create(sceneConfig(), out) != Screengine.OK) {
+        if (lighting == 0 || Screengine.create(sceneConfig(), out) < 0) {
             check(false, "création du contexte du décor");
             Screengine.worldDestroy(world);
             Screengine.lightingDestroy(lighting);
@@ -1426,6 +1426,81 @@ public final class Test {
     }
 
     /**
+     * Les pixels de la scène {@code rayon}, dans l'ordre contractuel de
+     * l'empreinte.
+     *
+     * <p>Les deux derniers débordent, un sur chaque axe : leur refus entre dans
+     * l'empreinte, sans quoi elle ne dirait que l'accord quand le calcul a lieu.
+     */
+    private static final int[][] RAY_PIXELS = {
+        {0, 0}, {319, 0}, {0, 179}, {319, 179}, {160, 90},
+        {37, 151}, {283, 22}, {111, 64}, {320, 179}, {319, 180},
+    };
+
+    /**
+     * La caméra de la scène {@code rayon} : neuf flottants, dans l'ordre que le
+     * pont attend.
+     *
+     * <p>Toutes ces valeurs sont des fractions dyadiques, donc exactement
+     * représentables : elles ne s'arrondissent nulle part, et les cinq hôtes
+     * partent des mêmes bits. Le quaternion n'est pas unitaire, la normalisation
+     * appartenant au moteur.
+     */
+    private static final float[] RAY_CAMERA = {
+        1.5f, -2.25f, 0.75f,
+        0.25f, 0.0f, 0.5f, 1.0f,
+        1.0f, 0.125f,
+    };
+
+    /**
+     * Remonte du pixel vers le monde, l'inverse de la projection.
+     *
+     * <p>La seule scène qui remonte — les autres descendent, des sommets vers des
+     * pixels ou d'un segment vers un contact —, et la seule qui éprouve
+     * {@code scg_pixel_ray}. Treize octets par pixel : l'acceptation, puis trois
+     * flottants.
+     *
+     * <p>Les zéros d'un refus sont <b>écrits et non relus</b> : le pont n'écrit
+     * rien quand l'appel refuse, donc hacher le tableau reviendrait à hacher ce
+     * qu'il contenait avant.
+     *
+     * @return l'empreinte en hexadécimal, ou {@code null} sur un échec
+     */
+    private static String renderRays() {
+        long[] out = new long[1];
+        int[] config = {320, 180, 320, 180, TILE, 0, 0, 0};
+        if (Screengine.create(config, out) < 0) {
+            check(false, "le contexte de la scène du rayon se crée");
+            return null;
+        }
+        long ctx = out[0];
+        if (Screengine.setCamera(ctx, RAY_CAMERA) < 0) {
+            check(false, "la caméra de la scène du rayon se règle");
+            Screengine.destroy(ctx);
+            return null;
+        }
+
+        long hash = 0xcbf29ce484222325L;
+        float[] ray = new float[3];
+        for (int[] pixel : RAY_PIXELS) {
+            int code = Screengine.pixelRay(ctx, pixel[0], pixel[1], ray);
+            if (code < 0) {
+                ray[0] = ray[1] = ray[2] = 0.0f;
+            }
+            hash = (hash ^ (code < 0 ? 1 : 0)) * 0x100000001b3L;
+            for (float axis : ray) {
+                int bits = Float.floatToRawIntBits(axis);
+                for (int shift = 0; shift < 32; shift += 8) {
+                    hash = (hash ^ ((bits >>> shift) & 0xFF)) * 0x100000001b3L;
+                }
+            }
+        }
+
+        Screengine.destroy(ctx);
+        return String.format("%016x", hash);
+    }
+
+    /**
      * La taille d'un enregistrement de la liste de rayons : six flottants puis le
      * filtre.
      */
@@ -1598,11 +1673,13 @@ public final class Test {
         String sweeps = renderSweeps(args[0] + "/collision.world", args[0] + "/collision.sweeps");
         String picks = renderPicks(args[0] + "/collision.world", args[0] + "/selection.picks");
         String shaded = renderShaded();
+        String rays = renderRays();
 
         if (failures > 0 || hash == null || textured == null || bilinear == null
                 || graded == null || lit == null || overbright == null || fog == null
                 || lights == null || mesh == null || composite == null || rooms == null
-                || trace == null || sweeps == null || picks == null || shaded == null) {
+                || trace == null || sweeps == null || picks == null || shaded == null
+                || rays == null) {
             System.err.println(failures + " vérification(s) en échec");
             System.exit(1);
         }
@@ -1621,6 +1698,7 @@ public final class Test {
         System.out.println(sweeps);
         System.out.println(picks);
         System.out.println(shaded);
+        System.out.println(rays);
         System.exit(0);
     }
 }

@@ -2066,6 +2066,88 @@ fn un_centre_non_fini_refuse_le_lot() {
     assert_eq!(ctx.triangles.len(), 0, "le lot refusé n'a rien laissé");
 }
 
+/// Le rayon d'un pixel reprojeté retombe sur ce pixel.
+///
+/// **L'aller-retour, et non une seconde écriture de la formule** : comparer
+/// `pixel_ray` à un calcul recopié ici validerait la copie, pas la convention.
+/// Un signe inversé dans la base de vue, un demi-pas oublié ou un rapport
+/// d'aspect porté par la hauteur passent tous le premier contrôle et échouent
+/// celui-ci.
+///
+/// Les quatre coins et le centre, sur une caméra qui n'est ni à l'origine ni
+/// d'orientation neutre : une caméra neutre rend une permutation d'axes, où
+/// trois erreurs de signe sur quatre ne se voient pas.
+#[test]
+fn un_rayon_de_pixel_reprojete_retombe_sur_son_pixel() {
+    use crate::math::fixed::SUBPIXEL_SCALE;
+
+    let mut ctx = Context::new(sane()).expect("configuration saine");
+    let camera = Camera {
+        position: Vec3::new(3.0, -7.0, 2.0),
+        orientation: Quat::from_axis_angle(
+            Vec3::new(0.0, 0.0, 1.0),
+            Angle::from_radians(core::f32::consts::FRAC_PI_4),
+        ),
+        ..Camera::DEFAULT
+    };
+    ctx.set_camera(camera).expect("caméra valide");
+
+    let view = camera.view();
+    for (x, y) in [(0, 0), (639, 0), (0, 359), (639, 359), (320, 180)] {
+        let ray = ctx.pixel_ray(x, y).expect("pixel dans l'image");
+        // Une portée quelconque au-delà du plan proche : la direction étant
+        // unitaire, le point tombe à cette distance de l'œil.
+        let point = camera.position + ray * 12.5;
+        let projected = ctx
+            .projection
+            .to_clip(view.transform_point(point), 0.0, 0.0, 0.0, 0.0, [0.0; 3])
+            .map(|v| ctx.projection.to_vertex(v))
+            .expect("le point est devant la caméra");
+
+        // **Le sous-pixel, et non le pixel** : la troncature au pixel efface un
+        // décalage d'un demi-pas, qui est précisément la faute que le `+ 0,5`
+        // évite. Le centre du pixel `x` est en `x + 0,5`, donc à
+        // `16x + 8` sous-pixels, et la tolérance de deux unités ne couvre que
+        // l'arrondi de la normalisation.
+        let centre = |p: u32| p as i32 * SUBPIXEL_SCALE + SUBPIXEL_SCALE / 2;
+        let (dx, dy) = (
+            (projected.x - centre(x)).abs(),
+            (projected.y - centre(y)).abs(),
+        );
+        assert!(
+            dx <= 2 && dy <= 2,
+            "le rayon du pixel ({x}, {y}) reprojette en ({}, {}) au lieu de ({}, {})",
+            projected.x,
+            projected.y,
+            centre(x),
+            centre(y)
+        );
+    }
+}
+
+/// Un pixel hors de la résolution courante se refuse.
+///
+/// La résolution est abaissée d'abord : un pixel qui tenait dans l'image à la
+/// création et plus dans la résolution courante est le cas qu'un hôte rencontre
+/// réellement, et il échouerait si le contrôle portait sur le maximum.
+#[test]
+fn un_pixel_hors_de_l_image_refuse_le_rayon() {
+    let mut ctx = Context::new(sane()).expect("configuration saine");
+    ctx.set_resolution(320, 180).expect("sous le maximum");
+
+    assert!(
+        ctx.pixel_ray(319, 179).is_ok(),
+        "le dernier pixel est dedans"
+    );
+    for (x, y) in [(320, 179), (319, 180)] {
+        assert_eq!(
+            ctx.pixel_ray(x, y),
+            Err(Error::InvalidArgument(Argument::Pixel)),
+            "le pixel ({x}, {y}) déborde"
+        );
+    }
+}
+
 /// L'étendue peinte d'une image, en pixels, sur chaque axe.
 fn etendue(pixels: &[u8]) -> (usize, usize) {
     let peint = |i: usize| pixels[i * BYTES_PER_PIXEL] != 0;

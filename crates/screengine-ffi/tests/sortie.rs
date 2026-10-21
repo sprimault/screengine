@@ -36,7 +36,7 @@ use screengine_ffi::*;
 /// ce que cette clause existe pour empêcher. Plus nombreux que les fonctions,
 /// parce que six d'entre elles ont deux paramètres de sortie — un tampon et sa
 /// longueur, ou deux identifiants —, chacun éprouvé à part.
-const APPELS: usize = 47;
+const APPELS: usize = 48;
 
 /// Le compteur des paramètres de sortie passés en revue.
 struct Sorties {
@@ -159,6 +159,9 @@ fn aucun_refus_n_ecrit_sa_sortie() {
         });
         v.intact("scg_mesh_bounds", [0xdead_u32 as f32; 6], |out| {
             scg_mesh_bounds(ptr::null(), 0, out.cast::<f32>())
+        });
+        v.intact("scg_pixel_ray", [0xdead_u32 as f32; 3], |out| {
+            scg_pixel_ray(ptr::null_mut(), 0, 0, out.cast::<f32>())
         });
         v.intact("scg_mesh_texture_name buf", [0xaa_u8; 8], |out| {
             scg_mesh_texture_name(ptr::null(), 0, out.cast::<c_char>(), 8, &mut jetable_len)

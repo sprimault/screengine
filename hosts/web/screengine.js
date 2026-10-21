@@ -260,6 +260,7 @@ export const EXPORTS = [
   "scg_create",
   "scg_destroy",
   "scg_set_camera",
+  "scg_pixel_ray",
   "scg_submit",
   "scg_frame_begin",
   "scg_frame_tile",

@@ -66,6 +66,21 @@ Arrêtés. Ils découlent des invariants du projet et ne se rediscutent pas ici.
   fonction, y compris celles qui ne rendent rien, passe par l'enveloppe.
 - **On ajoute des fonctions, on ne modifie jamais une signature publiée.** Un hôte
   compilé contre un `screengine.h` d'il y a six mois doit continuer à se lier.
+- **L'état du contexte ne se relit pas.** Aucune fonction ne rend la caméra, la
+  résolution, le filtrage, le chemin résolu, la surintensité, le brouillard, la
+  courbe de sortie ni les lumières ; aucune ne dit si une image est en cours.
+  L'hôte vient de poser ces réglages, et l'état se montre **par les codes de
+  retour** — un appel hors séquence rend `SCG_ERR_INVALID_STATE`, et c'est une
+  réponse plus sûre qu'un drapeau qu'un autre thread rendrait périmé entre la
+  lecture et l'usage.
+
+  **Le chemin Rust les rend, et l'asymétrie est assumée.** La règle des deux
+  chemins veut que tout ce que le premier *permet* se fasse aussi par le second ;
+  relire ce qu'on vient d'écrire ne permet rien de nouveau. Chacune de ces
+  interrogations **pourra s'ajouter sans changer la version d'ABI**, et la
+  condition est nommée : qu'un hôte en montre l'usage — une liaison qui expose un
+  objet de réglage, un éditeur qui réaffiche l'état du moteur. Pas une symétrie
+  de principe, qui ferait entrer onze fonctions que personne n'appelle.
 - **Le moteur n'ouvre rien.** Cartes, maillages et textures arrivent en blocs
   d'octets. Le moteur n'a ni chemin de fichier, ni horloge, ni thread.
 - **L'environnement flottant de l'hôte est préservé.** Chaque point d'entrée
@@ -1200,9 +1215,8 @@ Huit fonctions ajoutées, trois structures nouvelles, aucune constante :
   taille d'avant est trop court, et le moteur ne peut pas s'en apercevoir — il
   ne reçoit pas sa longueur. Le nombre de tuiles change aussi : un hôte
   rappelle `scg_frame_begin` au lieu de réutiliser le compte de l'image
-  précédente. Écartée : une fonction qui rendrait la résolution courante ;
-  l'hôte vient de la fixer, et elle pourra s'ajouter sans changer la version
-  d'ABI.
+  précédente. Aucune fonction ne rend la résolution courante, par la clause de
+  relecture des principes, qui vaut pour les huit réglages.
 - **La courbe de sortie se règle par `scg_set_grade`**, en un seul appel :
   `ScgGrade` porte le gamma, trois gains et trois décalages, trente-six octets,
   décalages de 0 à 32 identiques sur les quatre cibles. Un appel plutôt que
@@ -2509,14 +2523,16 @@ rouvrirait.
 
 ### Étape 8
 
-**Quatre fonctions, deux structures, quatre constantes, un champ réservé employé,
-aucun code d'erreur nouveau et aucun statut nouveau.** Aucune signature publiée,
-aucune structure, aucune précondition ne bouge : `SCG_ABI_VERSION` reste à **1**,
-et `version_format` non plus.
+**Deux structures, quatre constantes, un champ réservé employé, aucun code
+d'erreur nouveau et aucun statut nouveau.** Aucune signature publiée, aucune
+structure, aucune précondition ne bouge : `SCG_ABI_VERSION` reste à **1**, et
+`version_format` non plus.
 
-La quatrième est `scg_world_pick_brute`, ajoutée après la publication de l'étape
-et décrite avec son jumeau à l'étape 7, section « L'oracle » : les deux chemins
-bruts ne se séparent pas, et deux descriptions de la même paire divergeraient.
+**Deux fonctions sont arrivées après la publication de l'étape**, et chacune est
+décrite là où on la cherche : `scg_world_pick_brute` à l'étape 7, section
+« L'oracle », avec son jumeau — les deux chemins bruts ne se séparent pas, et
+deux descriptions de la même paire divergeraient —, et `scg_pixel_ray` plus bas,
+section « L'interrogation », avec le rayon qu'elle sert à former.
 
 Le contrat est figé avant le premier tracé, pour la raison dite en tête de
 document — et pour une seconde, propre à cette étape : la **règle de sortie du
@@ -2654,6 +2670,36 @@ rendu, et refuse le lot entier — même clause que les triangles.
   avec ce que l'ABI lui donne déjà. Le tampon d'identifiants qui l'aurait rendue
   immédiate est écarté — voir « Ce que l'étape ne fait pas ».
 
+**`scg_pixel_ray` donne le segment, et elle est arrivée après la publication de
+l'étape** — décrite ici parce que c'est là qu'on la cherche.
+
+```c
+/* du pixel au monde : l'inverse de la projection, pour former le segment */
+int32_t scg_pixel_ray(ScgContext *ctx, uint32_t x, uint32_t y, float out[3]);
+```
+
+- **Elle ferme un trou de capacité, et c'est le seul de ce genre relevé** :
+  `scg_world_pick` prend un segment en coordonnées de monde, et rien ne disait
+  comment l'obtenir d'un curseur. Un hôte devait recopier deux conventions du
+  moteur — le rapport d'aspect porté par la largeur seule, et la base de vue de
+  « Repères » —, et un exemple du dépôt le faisait à la main.
+- **Elle prend un contexte**, à la différence des trois autres fonctions
+  d'interrogation : la caméra et la résolution interne sont de lui, et les lui
+  faire passer en paramètres laisserait un hôte désigner selon une résolution qui
+  n'est plus celle de l'image.
+- **La direction est unitaire**, et c'est ce qui rend la portée utilisable : la
+  direction brute a pour profondeur un, donc une longueur qui croît vers les
+  bords de l'image, et multipliée par une portée elle atteindrait plus loin au
+  coin qu'au centre.
+- **Les coordonnées sont celles de l'image, jamais de la fenêtre.** Un pixel au
+  niveau de la résolution interne ou au-delà rend `SCG_ERR_INVALID_ARGUMENT`, et
+  ce refus est l'objet : un hôte à fenêtre a les deux repères sous la main, et
+  passer le mauvais rendrait un rayon plausible. Écartée pour cela : la tolérance
+  d'un pixel hors de l'image, que le calcul accepterait sans rien signaler.
+- **Permise pendant le rendu des tuiles**, à la différence de tout réglage : elle
+  ne lit qu'une caméra et une résolution qu'aucun appel ne peut changer pendant
+  une image.
+
 #### Modifier une carte
 
 **Aucune fonction nouvelle, et c'est le résultat de l'étape, pas un manque.**
@@ -2789,15 +2835,9 @@ chemin n'est acceptable.
 
 - **Elle ne dit pas quel chemin tourne.** Aucune fonction ne rend le chemin
   résolu, et il n'y en a pas besoin pour le contrat : ce qu'un hôte peut
-  observer, c'est que son forçage a été accepté. Une fonction d'interrogation
-  pourra s'ajouter sans changer la version d'ABI, comme celle qui rendrait le
-  rectangle d'une tuile.
-
-  **Le chemin Rust, lui, le rend** : `SimdPath::resolve` et
-  `SimdPath::available` répondent à la question, et aucune fonction de l'ABI n'en
-  fait autant. C'est donc une asymétrie entre les deux chemins — le contrat n'en
-  a pas besoin, la règle des deux chemins la relève —, et la fonction
-  d'interrogation ci-dessus est ce qui la fermerait.
+  observer, c'est que son forçage a été accepté. C'est la clause de relecture
+  des principes, et `SimdPath::resolve` et `SimdPath::available` sont les deux
+  membres du chemin Rust qu'elle couvre ici.
 
   **Le rectangle d'une tuile est l'autre cas, et il n'est pas le même** : aucun
   des deux chemins ne l'atteint, il vit dans un `Grid` que le noyau ne réexporte
@@ -2837,7 +2877,10 @@ noms ne le sont pas.
 - **Juger un appel par le signe de son code, jamais par `!= 0`.** Un code positif
   est un succès accompagné d'un statut, et un statut qu'une liaison ne connaît pas
   se traite comme `SCG_OK` — l'ignorer est toujours correct. Les hôtes du dépôt
-  ont dû être corrigés sur ce point à l'étape 5, en trente-neuf endroits.
+  ont dû être corrigés sur ce point à l'étape 5, puis **une seconde fois** : la
+  forme fautive était revenue dans quatre de leurs cinq langages, et un fichier
+  jugeait le même appel des deux façons. Un contrôle la refuse désormais, ce que
+  la relecture ne faisait pas.
 - **Copier le message de `scg_last_error` immédiatement.** Le prochain appel sur
   le même contexte l'invalide.
 - **Ramener un code inconnu à sa catégorie**, `(-code) / 100`, plutôt que de le

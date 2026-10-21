@@ -793,6 +793,15 @@ impl Context {
         (self.width, self.height)
     }
 
+    /// La direction de monde que désigne le centre du pixel `(x, y)`, unitaire.
+    ///
+    /// La façade de [`Camera::pixel_ray`], qui porte le calcul et sa
+    /// justification, sur la résolution courante plutôt qu'une qu'on lui passe —
+    /// celle qu'on passerait pourrait ne plus être celle de l'image.
+    pub fn pixel_ray(&self, x: u32, y: u32) -> Result<Vec3> {
+        self.camera.pixel_ray(self.width, self.height, x, y)
+    }
+
     /// Vérifie qu'une sortie peut recevoir l'image entière à la résolution
     /// courante.
     ///

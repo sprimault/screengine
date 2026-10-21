@@ -98,6 +98,7 @@ fn chaque_argument_refuse_a_son_message() {
         Argument::SimdPath,
         Argument::Camera,
         Argument::Matrix,
+        Argument::Pixel,
     ];
     for (i, a) in arguments.iter().enumerate() {
         let error = Error::InvalidArgument(*a);
@@ -140,11 +141,12 @@ fn chaque_argument_refuse_a_son_message() {
         Argument::SimdPath => 23,
         Argument::Camera => 24,
         Argument::Matrix => 25,
+        Argument::Pixel => 26,
     };
     for (i, a) in arguments.iter().enumerate() {
         assert_eq!(rank(*a), i, "{a:?} n'est pas à sa place");
     }
-    assert_eq!(arguments.len(), 26, "une variante manque à la liste");
+    assert_eq!(arguments.len(), 27, "une variante manque à la liste");
 }
 
 /// Même règle pour un bloc refusé : un seul code, et un message par cause.

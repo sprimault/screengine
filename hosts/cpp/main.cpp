@@ -1003,7 +1003,7 @@ uint64_t render_sweeps(bool &ok, const char *world_path, const char *sweeps_path
     }
 
     ScgWorld *world = nullptr;
-    if (scg_world_load(world_bytes.data(), world_bytes.size(), &world) != SCG_OK) {
+    if (scg_world_load(world_bytes.data(), world_bytes.size(), &world) < 0) {
         check(false, "le decor de collision se charge");
         return 0;
     }
@@ -1039,7 +1039,7 @@ uint64_t render_sweeps(bool &ok, const char *world_path, const char *sweeps_path
         // Zéro veut dire « nulle part », et se passe tel quel : c'est le
         // balayage qui rend le déplacement libre, pas l'hôte qui le fabrique.
         uint32_t cell = 0;
-        if (scg_world_locate(world, from, &cell) != SCG_OK) {
+        if (scg_world_locate(world, from, &cell) < 0) {
             check(false, "la cellule de depart se cherche");
             return 0;
         }
@@ -1629,7 +1629,7 @@ uint64_t render_picks(bool &ok, const char *world_path, const char *picks_path)
     }
 
     ScgWorld *world = nullptr;
-    if (scg_world_load(world_bytes.data(), world_bytes.size(), &world) != SCG_OK) {
+    if (scg_world_load(world_bytes.data(), world_bytes.size(), &world) < 0) {
         check(false, "le decor de selection se charge");
         return 0;
     }
@@ -1663,7 +1663,7 @@ uint64_t render_picks(bool &ok, const char *world_path, const char *picks_path)
                                 | (static_cast<uint32_t>(record[27]) << 24);
 
         uint32_t cell = 0;
-        if (scg_world_locate(world, from, &cell) != SCG_OK) {
+        if (scg_world_locate(world, from, &cell) < 0) {
             check(false, "la cellule de depart du rayon se cherche");
             return 0;
         }
@@ -1686,6 +1686,76 @@ uint64_t render_picks(bool &ok, const char *world_path, const char *picks_path)
         hash = absorb(hash, hit.cell_id, 4);
         hash = absorb(hash, static_cast<uint32_t>(status), 1);
         hash = absorb(hash, filter, 4);
+    }
+
+    ok = true;
+    return hash;
+}
+
+/// La scène `rayon` : du pixel vers le monde, l'inverse de la projection.
+///
+/// La seule scène qui remonte — les autres descendent, des sommets vers des
+/// pixels ou d'un segment vers un contact —, et la seule qui éprouve
+/// `scg_pixel_ray`. Treize octets par pixel : l'acceptation, puis trois
+/// flottants.
+///
+/// Toutes les valeurs de la caméra sont des fractions dyadiques, donc
+/// exactement représentables : elles ne s'arrondissent nulle part, et les cinq
+/// hôtes partent des mêmes bits sans dépendre de leur lecture de décimales. Le
+/// quaternion n'est pas unitaire, la normalisation appartenant au moteur.
+///
+/// Les zéros d'un refus sont **écrits et non relus** : la frontière n'écrit rien
+/// quand elle refuse, donc hacher le tampon reviendrait à hacher ce qu'il
+/// contenait avant.
+uint64_t render_rays(bool &ok)
+{
+    ok = false;
+    ScgContextConfig config{};
+    config.max_width = config.width = 320;
+    config.max_height = config.height = 180;
+    config.tile_size = TILE;
+
+    ScgContext *ctx = nullptr;
+    if (scg_create(&config, &ctx) < 0) {
+        check(false, "le contexte de la scène du rayon se crée");
+        return 0;
+    }
+    const std::unique_ptr<ScgContext, decltype(&scg_destroy)> guard(ctx, &scg_destroy);
+
+    ScgCamera camera{};
+    camera.position[0] = 1.5f;
+    camera.position[1] = -2.25f;
+    camera.position[2] = 0.75f;
+    camera.orientation[0] = 0.25f;
+    camera.orientation[1] = 0.0f;
+    camera.orientation[2] = 0.5f;
+    camera.orientation[3] = 1.0f;
+    camera.fov_y = 1.0f;
+    camera.near_plane = 0.125f;
+    if (scg_set_camera(ctx, &camera) < 0) {
+        check(false, "la caméra de la scène du rayon se règle");
+        return 0;
+    }
+
+    // Les deux derniers débordent, un sur chaque axe : leur refus entre dans
+    // l'empreinte, sans quoi elle ne dirait que l'accord quand le calcul a lieu.
+    static constexpr uint32_t PIXELS[10][2] = {
+        {0, 0},    {319, 0},  {0, 179},  {319, 179}, {160, 90},
+        {37, 151}, {283, 22}, {111, 64}, {320, 179}, {319, 180},
+    };
+
+    uint64_t hash = 0xcbf29ce484222325u;
+    for (const auto &pixel : PIXELS) {
+        float ray[3] = {0.0f, 0.0f, 0.0f};
+        const int32_t code = scg_pixel_ray(ctx, pixel[0], pixel[1], ray);
+
+        hash = absorb(hash, code < 0 ? 1u : 0u, 1);
+        if (code < 0) {
+            ray[0] = ray[1] = ray[2] = 0.0f;
+        }
+        for (const float axis : ray) {
+            hash = absorb_float(hash, axis);
+        }
     }
 
     ok = true;
@@ -1769,9 +1839,12 @@ int main(int argc, char **argv)
     bool shaded_ok = false;
     const uint64_t shaded = render_shaded(shaded_ok);
 
+    bool rays_ok = false;
+    const uint64_t rays = render_rays(rays_ok);
+
     if (failures > 0 || !ok || !textured_ok || !bilinear_ok || !graded_ok || !lit_ok
         || !overbright_ok || !fog_ok || !lights_ok || !mesh_ok || !composite_ok || !rooms_ok
-        || !trace_ok || !sweeps_ok || !picks_ok || !shaded_ok) {
+        || !trace_ok || !sweeps_ok || !picks_ok || !shaded_ok || !rays_ok) {
         std::fprintf(stderr, "%d vérification(s) en échec\n", failures);
         return 1;
     }
@@ -1790,5 +1863,6 @@ int main(int argc, char **argv)
     std::printf("%016llx\n", static_cast<unsigned long long>(sweeps));
     std::printf("%016llx\n", static_cast<unsigned long long>(picks));
     std::printf("%016llx\n", static_cast<unsigned long long>(shaded));
+    std::printf("%016llx\n", static_cast<unsigned long long>(rays));
     return 0;
 }

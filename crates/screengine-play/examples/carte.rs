@@ -43,8 +43,8 @@ use std::sync::Arc;
 
 use screengine_play::screengine::Angle;
 use screengine_play::{
-    Affine3, Camera, Color, DepthMode, FreeCamera, KeyCode, Lightmaps, Line, Mesh, Output, Play,
-    Point, SimdPath, Surfaces, Texture, Vec3, World, load_png, sweep_skin,
+    Affine3, Color, DepthMode, FreeCamera, KeyCode, Lightmaps, Line, Mesh, Output, Play, Point,
+    SimdPath, Surfaces, Texture, Vec3, World, load_png, sweep_skin,
 };
 
 /// La carte du dépôt, celle que les cinq autres hôtes chargent.
@@ -299,24 +299,6 @@ enum Aim {
     Crate(usize),
 }
 
-/// La direction que désigne un pixel du curseur, en coordonnées de monde.
-///
-/// L'inverse exact de la projection du moteur, qui porte le rapport d'aspect par
-/// la largeur seule : un même facteur sur les deux axes, et aucune correction
-/// d'aspect à écrire ici. Le repère de vue est celui de `docs/abi.md` — X à
-/// droite, Y en bas, Z devant —, ramené au monde par la base de la caméra.
-fn aim_ray(camera: &Camera, pixel: (u32, u32)) -> Vec3 {
-    let (width, height) = (RESOLUTION.0 as f32, RESOLUTION.1 as f32);
-    let half = Angle::from_radians(camera.fov_y).half();
-    let scale = (height * 0.5) * (half.cos() / half.sin());
-    let x = (pixel.0 as f32 + 0.5 - width * 0.5) / scale;
-    let y = (pixel.1 as f32 + 0.5 - height * 0.5) / scale;
-    // X de vue ↦ −Y monde, Y de vue ↦ −Z monde, Z de vue ↦ +X monde.
-    let local = Vec3::new(1.0, -x, -y);
-    Affine3::from_rotation_translation(camera.orientation.normalize(), Vec3::ZERO)
-        .transform_vector(local)
-}
-
 /// Où un rayon entre dans une boîte alignée, en fraction du trajet.
 ///
 /// Les trois couples de plans, pris par leur intersection : la forme la plus
@@ -350,7 +332,13 @@ fn ray_box(from: Vec3, span: Vec3, centre: Vec3, half: Vec3) -> Option<f32> {
 fn aimed(scene: &Scene, pixel: (u32, u32)) -> Option<Aim> {
     let camera = scene.camera.camera();
     let from = camera.position;
-    let span = aim_ray(&camera, pixel) * PICK_REACH;
+    // **La portée est désormais une distance** : le moteur rend une direction
+    // unitaire, là où l'inverse écrit à la main ici avait pour profondeur un et
+    // atteignait donc plus loin vers les bords de l'image.
+    let span = camera
+        .pixel_ray(RESOLUTION.0, RESOLUTION.1, pixel.0, pixel.1)
+        .ok()?
+        * PICK_REACH;
 
     // **Toutes les surfaces, non solides comprises** : une sélection doit
     // pouvoir désigner une grille ou une vitre, que la collision traverse par
