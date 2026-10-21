@@ -175,8 +175,9 @@ make demo-cpp  # the same, from the C++ host
 ```
 
 The core is `no_std` and has no dependencies. A fresh clone builds with nothing
-installed beyond a Rust toolchain; only `screengine-play` carries dependencies,
-`winit`, `softbuffer` and `png`.
+installed beyond a Rust toolchain; only `screengine-play` carries dependencies —
+`winit`, `softbuffer`, `png` and `web-time`, plus the `wasm-bindgen` family when
+built for the web.
 
 The wasm host needs Node and the `wasm32-unknown-unknown` target, which
 `make tools` installs; the Android host needs the NDK, SDK, emulator and

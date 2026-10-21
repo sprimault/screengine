@@ -51,13 +51,22 @@ ABIS := arm64-v8a armeabi-v7a x86_64
 # Les scènes que chaque palier rend, dans l'ordre. Le Makefile racine en tient
 # la liste et **passe ce nombre** : les deux ont divergé une fois, à l'ajout
 # d'une scène, et l'échec n'est apparu qu'au bout d'une construction Android
-# complète. La valeur ci-dessous ne sert qu'à un appel direct, hors du Makefile
-# racine.
+# complète.
+#
+# **Le défaut s'est reproduit, et il était écrit là** : cette ligne portait un
+# `?= 14` resté à quatorze après l'entrée d'une quinzième scène. Sans effet par
+# le Makefile racine, qui le surcharge — donc invisible —, et faux dès qu'on
+# appelle ce Makefile seul. Un nombre écrit à la main n'avait aucune chance de
+# suivre, et un `?= 15` n'en aurait pas plus.
+#
+# Il se dérive donc de la même source, par la facilité `print-` du Makefile
+# racine. Le sous-appel n'a lieu que si le nombre n'a pas été passé : `?=` définit
+# une variable récursive, que le racine renseigne déjà.
 #
 # Un seul nombre pour les cinq paliers : ceux qui rendraient un nombre
 # différent de scènes ne se compareraient plus ligne à ligne, et la divergence
 # passerait pour une égalité.
-SCENE_COUNT ?= 14
+SCENE_COUNT ?= $(words $(shell $(MAKE) -s -C ../.. print-HOST_SCENES))
 
 # Le maillage versionné que les cinq hôtes chargent. Les deux premiers paliers
 # le lisent depuis le dépôt ; le troisième et le quatrième depuis l'appareil, où

@@ -12,6 +12,23 @@
 //! Ce contrôle vit ici plutôt que dans le noyau, qui n'a pas `std` pour lire un
 //! fichier, et plutôt que dans la frontière, parce que la liste protège les
 //! trois crates dont les calculs entrent dans une empreinte.
+//!
+//! **Ce qui reste non gardé, et c'est tranché plutôt que laissé ouvert.** Deux
+//! listes écrites à la main tiennent cet invariant : celle de `clippy.toml` et
+//! la [`REQUIRED`] de ce fichier. Une famille libm que **personne** n'aurait
+//! listée passerait donc les deux — c'est le résidu, et il est irréductible sans
+//! une source extérieure énumérant les méthodes flottantes de `std`.
+//!
+//! Les deux fermetures envisagées ne valent pas leur prix. Inspecter les
+//! symboles du rlib par `nm` demanderait le composant `llvm-tools` sur chaque
+//! machine, pour une dépendance d'outillage de plus. Et `make nostd` ne peut pas
+//! servir de filet : il compile sans éditer de liens, donc un appel à `sinf` sur
+//! une cible qui n'a pas de libm ne se manifesterait pas.
+//!
+//! Ce qui couvre le résidu en pratique est ailleurs : `lint-intrinseques`
+//! cherche les intrinsèques que `clippy.toml` ne peut pas voir, et une empreinte
+//! de conformance qui divergerait entre deux plateformes dirait qu'un calcul
+//! dépend de la cible. La liste n'est pas le seul filet, elle est le premier.
 
 /// Le fichier de lints, lu depuis la racine du dépôt.
 const CLIPPY_TOML: &str = include_str!("../../../clippy.toml");

@@ -86,11 +86,41 @@ impl Level {
 /// c'est ce qui permet de la dimensionner une fois, et ce qui garde les niveaux
 /// voisins proches en mémoire, le rendu passant de l'un à l'autre d'un segment
 /// de seize pixels au suivant.
+///
+/// **Ses accesseurs ne servent pas tous à un hôte, et la distinction s'écrit
+/// plutôt que de se deviner.** Tous les modules du noyau étant privés, un `pub`
+/// sur une méthode de ce type *est* de la surface publique — y compris pour une
+/// primitive qui n'est publique que par conséquence.
+///
+/// - **Ce qu'un hôte lit** : [`Texture::width`], [`Texture::height`],
+///   [`Texture::level_count`] et [`Texture::level_texels`], pour connaître ou
+///   réexporter ce qu'il a chargé. [`Texture::masked`] est du même ordre, utile à
+///   du code qui reçoit une texture qu'il n'a pas chargée lui-même — celui qui
+///   l'a chargée a choisi entre les deux constructeurs et le sait déjà.
+/// - **Les primitives d'échantillonnage du rasteriseur** :
+///   [`Texture::level_size`], [`Texture::texel`] et [`Texture::bilinear`]. Elles
+///   décrivent le repli, le recentrage d'un demi-texel et le mélange, et un hôte
+///   n'a aucune raison de les appeler — le rendu les emploie pour lui. Hors du
+///   noyau, seuls les cas qui valident le décodage s'en servent.
+///
+/// **Aucune n'est à retirer pour autant** : les restreindre maintenant serait une
+/// rupture, et le coût de les laisser est ce paragraphe.
 pub struct Texture {
     /// Tous les niveaux bout à bout, chacun en lignes jointives, un texel par
     /// `u32` dans l'ordre mémoire des pixels de sortie.
     texels: Vec<u32>,
+    /// Où chaque niveau commence dans `texels`, et ses dimensions.
+    ///
+    /// **Un tableau de taille fixe plutôt qu'une `Vec`** : la profondeur d'une
+    /// chaîne est bornée par la taille maximale d'une texture, donc connue à la
+    /// compilation, et une seconde allocation par texture ne paierait que son
+    /// indirection. Les entrées au-delà de `count` valent [`Level::EMPTY`].
     levels: [Level; MAX_LEVELS],
+    /// Le nombre de niveaux réellement remplis, de un à [`MAX_LEVELS`].
+    ///
+    /// Jamais zéro : un chargement accepté porte au moins son niveau zéro, et
+    /// c'est ce qui permet au repli de `level` sur `count - 1` de ne jamais
+    /// déborder.
     count: usize,
     /// Vrai si ses texels portent une transparence binaire.
     ///
@@ -295,11 +325,18 @@ impl Texture {
     }
 }
 
-/// Bits du poids d'un mélange bilinéaire, et le demi-texel du recentrage.
+/// Bits du poids d'un mélange bilinéaire.
 ///
 /// Huit bits : de quoi mélanger deux octets sans perdre de marche, et le
 /// produit de deux canaux empaquetés tient encore dans un `u32`.
 pub(crate) const WEIGHT_BITS: u32 = 8;
+
+/// Le demi-texel que le bilinéaire retranche avant d'échantillonner.
+///
+/// **Sa propre déclaration et non une mention dans celle du poids** : les deux
+/// nombres ne viennent pas du même endroit — celui-là est la moitié d'un texel
+/// en 16.16, donc dérivé de [`UV_BITS`], et il bougerait avec la précision des
+/// coordonnées sans que les huit bits de poids changent.
 pub(crate) const HALF_TEXEL: i32 = 1 << (UV_BITS - 1);
 
 /// Mélange deux texels, `t` sur huit bits pour le second.

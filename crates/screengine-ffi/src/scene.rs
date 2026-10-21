@@ -529,6 +529,10 @@ pub struct ScgLight {
     /// would be a value the engine ignores. The byte exists to keep the
     /// structure free of implicit padding, and a later version may give it a
     /// meaning — which is why zero is required rather than merely advised.
+    ///
+    /// **The requirement holds in both directions**, this structure being the
+    /// one that crosses both ways: a light you pass is refused when the byte is
+    /// set, and a light `scg_world_light` fills has it zeroed.
     pub _reserved: u8,
 }
 

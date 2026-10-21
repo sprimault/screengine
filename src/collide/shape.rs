@@ -20,7 +20,7 @@
 
 use crate::math::Vec3d;
 
-use super::{abs, set_axis};
+use super::{abs, max, min, set_axis};
 
 /// Ce qu'un balayage retient d'un contact.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -403,16 +403,6 @@ fn plane_axes(normal: Vec3d) -> (usize, usize) {
     } else {
         (0, 1)
     }
-}
-
-/// Le plus petit de deux nombres, par comparaison écrite.
-fn min(a: f64, b: f64) -> f64 {
-    if a < b { a } else { b }
-}
-
-/// Le plus grand de deux nombres, par comparaison écrite.
-fn max(a: f64, b: f64) -> f64 {
-    if a > b { a } else { b }
 }
 
 #[cfg(test)]

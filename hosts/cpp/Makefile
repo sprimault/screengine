@@ -43,9 +43,20 @@ why-not:
 
 # La DLL est copiée à côté de l'exécutable : c'est le premier endroit où Windows
 # la cherche, et le seul qui ne dépende ni du PATH ni du répertoire courant.
-$(EXE): main.cpp $(IMPLIB) $(DLL) $(INCLUDE)/screengine.h build.cmd
+#
+# **Une cible, et non un `cp` glissé dans la recette de l'exécutable** : une
+# copie qui ne se fait qu'en reconstruisant autre chose manque dès que
+# l'exécutable est à jour et que le répertoire de sortie a été vidé — et
+# l'exécutable ne trouve plus sa bibliothèque à l'exécution. C'est la forme que
+# l'hôte Go porte déjà, et elle valait pour celui-ci aussi.
+DLLCOPY := $(OUT)/$(notdir $(DLL))
+
+$(DLLCOPY): $(DLL)
 	@mkdir -p $(OUT)
 	cp $(DLL) $(OUT)/
+
+$(EXE): main.cpp $(IMPLIB) $(DLL) $(INCLUDE)/screengine.h build.cmd
+	@mkdir -p $(OUT)
 	./build.cmd "$$(cygpath -w $@)" "$$(cygpath -w $(OUT))" "$$(cygpath -w $(IMPLIB))" "$$(cygpath -w $(INCLUDE))" main.cpp
 
 DEMO := $(OUT)/screengine-demo-cpp.exe
@@ -100,7 +111,9 @@ endif
 
 .PHONY: all run why-not why-not-demo demo demo-run
 
-all: $(EXE)
+# `DLLCOPY` est vide hors de Windows, où le rpath remplace la copie : la ligne
+# dit donc la même chose sur les deux plateformes.
+all: $(EXE) $(DLLCOPY)
 
 # L'hôte de démonstration : il ouvre une fenêtre, donc il ne fait partie
 # d'aucun contrôle — `make test` ne le construit pas, et rien ne le lance en
@@ -111,5 +124,8 @@ demo-run: $(DEMO)
 	@$(DEMO) "$(WORLD)" "$(MESH)"
 
 # Écrit l'empreinte sur la sortie standard, les échecs sur la sortie d'erreur.
-run: $(EXE)
+#
+# Par `all` et non par `$(EXE)` : la DLL recopiée en fait partie, et l'hôte ne
+# démarrerait pas sans elle. Même raison que chez l'hôte Go.
+run: all
 	@$(EXE) "$(MESH)" "$(WORLD)" "$(COLLISION)" "$(SWEEPS)" "$(PICKS)"

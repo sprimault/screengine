@@ -123,7 +123,7 @@ android_build = for cible in $(CIBLES_ANDROID); do \
 -include makefile.local
 
 .PHONY: build lib lib-wasm lib-android run example web test native-libs fmt fmt-fix lint lint-doc-tests \
-        lint-android-versions lint-wasm-bindgen lint-enveloppes etat-verif bornes-verif plate-verif sorties-verif \
+        lint-android-versions lint-wasm-bindgen lint-enveloppes lint-intrinseques etat-verif bornes-verif plate-verif sorties-verif \
         dispositions-verif java-verif nostd test-arm test-linux-arm test-wasi msrv bench bench-wasi stubs \
         conform conform-arm conform-linux-arm conform-wasi conform-x86 conform-update conform-images mesh header header-verif audit deny doc doc-verif hosts host-c host-cpp host-web host-go \
         host-android demo-c demo-cpp clean tools
@@ -476,7 +476,21 @@ test-paquet: lib lib-wasm
 # Phony, et donc jouée une fois pour tous les hôtes de l'appel : un fichier
 # daterait de l'exécution précédente et ferait comparer l'archive à des
 # empreintes d'avant le dernier changement.
+#
+# **Le répertoire de sortie est effacé d'abord, et c'est un faux vert qui l'a
+# imposé.** `ARCHIVE_OUT` ne dépend pas de `PAQUET` : deux paquets éprouvés à la
+# suite y partageaient leurs exécutables et leurs bibliothèques recopiées, si
+# bien que le second voyait un exécutable à jour, ne reliait pas, et chargeait la
+# bibliothèque du premier. Vu le 2026-10-20 sur les archives de la 1.6.0 — le
+# paquet **windows_x86** a annoncé toutes ses empreintes identiques alors que la
+# DLL chargée était celle de x64, son en-tête PE le disait. Le défaut le plus
+# coûteux de sa classe : un contrôle qui réussit pour le mauvais binaire.
+#
+# C'est la même raison que l'effacement de `paquet`, et elle valait des deux
+# côtés : ce qui est monté par dessus un précédent ne se distingue pas de ce qui
+# vient d'être monté.
 archive-empreintes:
+	@rm -rf $(ARCHIVE_OUT)
 	@mkdir -p $(ARCHIVE_OUT)
 	@: > $(ARCHIVE_OUT)/rust.txt
 	@for scene in $(HOST_SCENES); do \
@@ -702,6 +716,13 @@ ETAT_ANNONCES = 4
 # propres termes — « quatre octets par pixel » —, et `TILE_SIZES`, un tableau de
 # deux valeurs dont une constante ne dirait rien que son nom ne dise déjà, un
 # `SCG_TILE_SIZE_32` valant 32.
+#
+# **Le pont Java déclare `BYTES_PER_PIXEL` chez lui**, et `java-verif` l'exempte
+# pour cela. C'est le motif qui rouvre d'ordinaire une question de surface — un
+# hôte qui écrit une valeur à la main —, et il ne la rouvre pas ici : le format
+# du tampon est figé par l'ABI, donc le 4 écrit chez l'hôte est juste et le
+# restera. Une constante publiée serait un confort, pas la prévention d'un
+# défaut, et un nom publié ne se retire jamais.
 BORNES_HORS = BYTES_PER_PIXEL TILE_SIZES
 
 # Combien de bornes le header doit publier, et **c'est un contrôle, pas un
@@ -1058,6 +1079,49 @@ java-verif:
 	      compte, exemptes }' \
 	  include/screengine.h hosts/android/src/screengine/host/Screengine.java
 
+# Les intrinsèques que l'invariant du déterminisme nomme une par une : fusionnées,
+# relâchées, approximatives.
+#
+# Les deux premières familles changent les bits selon la cible, la troisième
+# selon le fondeur. Les noms sont des préfixes, pour attraper les suffixes de
+# largeur et de type — `vfmaq_f32` comme `vfma_f32`.
+INTRINSEQUES = vfma vfms vrsqrte vrsqrts vrecpe vrecps fmadd fmsub fnmadd fnmsub _rsqrt_ _rcp_ relaxed_ mul_add
+
+# Aucune intrinsèque fusionnée, relâchée ou approximative dans le noyau ni à la
+# frontière.
+#
+# **Une recherche de texte, et c'est un choix contre le plus évident.**
+# `clippy.toml` interdit déjà `f32::mul_add` et `f64::mul_add`, et `libm.rs`
+# vérifie que sa liste couvre les deux largeurs : la voie naturelle serait d'y
+# ajouter les intrinsèques. Elle ne tient pas — une intrinsèque vit sous un
+# `cfg` d'architecture, donc clippy ne la voit que sur la passe de sa cible. Une
+# ligne retirée de `CIBLES_CROISEES` ferait disparaître la garde en silence, et
+# c'est exactement la forme de défaut que ce dépôt a déjà payée. Un `grep` voit
+# `neon.rs` depuis Windows.
+#
+# **Les lignes de commentaire sont sautées, et il le faut** : trois docstrings du
+# noyau nomment ces intrinsèques pour dire qu'elles sont interdites — « Jamais de
+# `mul_add` », « ni `rsqrtps` ou `vrsqrte` ». Les accuser rendrait la cible
+# inutilisable, et retirer les phrases perdrait ce qu'elles expliquent.
+#
+# Ce qu'elle ne peut pas voir : une intrinsèque appelée par un nom réexporté. Le
+# `use core::arch::…` la nommerait quand même, et c'est ce que la recherche
+# attrape.
+lint-intrinseques:
+	@sources=$$(find src crates/screengine-ffi/src -name '*.rs' | sort); \
+	if [ -z "$$sources" ]; then \
+	  echo "lint-intrinseques : aucune source trouvee, la recherche n a pas abouti"; exit 1; \
+	fi; \
+	motif=$$(echo "$(INTRINSEQUES)" | tr ' ' '|'); \
+	fautives=$$(grep -nE "$$motif" $$sources \
+	  | grep -vE "^[^:]*:[0-9]+:[[:space:]]*(//|\*)" || true); \
+	if [ -n "$$fautives" ]; then \
+	  echo "lint-intrinseques : intrinseque(s) non deterministe(s) hors commentaire :"; \
+	  echo "$$fautives"; exit 1; \
+	fi; \
+	compte=$$(echo "$(INTRINSEQUES)" | wc -w); \
+	echo "lint-intrinseques : $$compte familles cherchees dans $$(echo $$sources | wc -w) fichiers, aucune trouvee"
+
 # Les cibles qu'un contrôle traverse au-delà de celle du poste, et le seul
 # endroit où du code propre à une autre architecture se compile ici : `neon.rs`
 # sur `aarch64`, les chemins wasm, et la largeur de pointeur de `i686`. En
@@ -1087,7 +1151,7 @@ CIBLES_PLAY = $(CIBLES_LINUX_ARM) $(CIBLE_WASM)
 # leur plancher n'est pas sous notre contrôle, et l'y faire entrer donnerait une
 # contrainte qu'une montée de dépendance casserait sans qu'on puisse rien.
 
-lint: lint-doc-tests lint-android-versions lint-wasm-bindgen lint-enveloppes etat-verif bornes-verif plate-verif sorties-verif dispositions-verif java-verif
+lint: lint-doc-tests lint-android-versions lint-wasm-bindgen lint-enveloppes lint-intrinseques etat-verif bornes-verif plate-verif sorties-verif dispositions-verif java-verif
 	cargo clippy --workspace --all-targets --all-features -- -D warnings
 	for cible in $(CIBLES_CROISEES); do \
 	  cargo clippy -p screengine -p screengine-ffi --lib --target $$cible -- -D warnings || exit 1; \
