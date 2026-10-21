@@ -113,6 +113,30 @@ enum Pass {
     /// n'est pas wasm, et jamais parce que la machine manquerait de quelque
     /// chose.
     Simd128,
+    /// Les cinq mêmes, **en tuiles de 32**.
+    ///
+    /// **C'est le produit des deux invariants, que rien ne croisait.** Les six
+    /// passes de découpage tournent en [`SimdPath::Auto`], donc par le jeu le
+    /// plus large de la machine : celui-là est bien éprouvé aux deux côtés de
+    /// tuile. Les autres variantes ne l'étaient qu'à 64, et c'est précisément
+    /// là qu'une d'elles peut différer — la longueur d'une ligne décide du
+    /// reste de boucle, et un décalage faux ne se voit que sur l'un des deux
+    /// restes. Le diagnostic de la variante AVX2 l'a montré en creux : la
+    /// divergence s'annonçait entre « tuiles de 32 » et « tuiles de 64 », deux
+    /// passes toutes deux fausses.
+    ///
+    /// Cinq passes de plus et non un second axe calculé : elles se sautent
+    /// chacune comme sa jumelle, et un nom distinct dans un message de
+    /// divergence vaut mieux qu'un couple à déchiffrer.
+    Scalar32,
+    /// La jumelle de [`Pass::Sse2`], en tuiles de 32.
+    Sse232,
+    /// La jumelle de [`Pass::Avx2`], en tuiles de 32.
+    Avx232,
+    /// La jumelle de [`Pass::Neon`], en tuiles de 32.
+    Neon32,
+    /// La jumelle de [`Pass::Simd128`], en tuiles de 32.
+    Simd12832,
 }
 
 impl Pass {
@@ -133,7 +157,7 @@ impl Pass {
     /// lignes et donc par le reste de boucle. Le nom du chemin fautif
     /// n'apparaissait nulle part. Avec le scalaire en tête, c'est lui qui est
     /// nommé.
-    const ALL: [Self; 11] = [
+    const ALL: [Self; 16] = [
         Self::Scalar,
         Self::Tiles32,
         Self::Tiles64,
@@ -145,6 +169,11 @@ impl Pass {
         Self::Avx2,
         Self::Neon,
         Self::Simd128,
+        Self::Scalar32,
+        Self::Sse232,
+        Self::Avx232,
+        Self::Neon32,
+        Self::Simd12832,
     ];
 
     /// Le chemin de remplissage que cette passe force.
@@ -155,11 +184,11 @@ impl Pass {
     /// d'une variante.
     fn simd(self) -> SimdPath {
         match self {
-            Self::Scalar => SimdPath::Scalar,
-            Self::Sse2 => SimdPath::Sse2,
-            Self::Avx2 => SimdPath::Avx2,
-            Self::Neon => SimdPath::Neon,
-            Self::Simd128 => SimdPath::Simd128,
+            Self::Scalar | Self::Scalar32 => SimdPath::Scalar,
+            Self::Sse2 | Self::Sse232 => SimdPath::Sse2,
+            Self::Avx2 | Self::Avx232 => SimdPath::Avx2,
+            Self::Neon | Self::Neon32 => SimdPath::Neon,
+            Self::Simd128 | Self::Simd12832 => SimdPath::Simd128,
             _ => SimdPath::Auto,
         }
     }
@@ -215,6 +244,14 @@ impl Pass {
             Self::Scalar | Self::Sse2 | Self::Avx2 | Self::Neon | Self::Simd128 => {
                 simd_label(self.simd())
             }
+            // Les jumelles portent leur découpage dans leur nom : deux passes
+            // homonymes dans un message de divergence laisseraient chercher
+            // laquelle des deux a diverge.
+            Self::Scalar32 => "chemin scalaire en tuiles de 32",
+            Self::Sse232 => "chemin SSE2 en tuiles de 32",
+            Self::Avx232 => "chemin AVX2 en tuiles de 32",
+            Self::Neon32 => "chemin NEON en tuiles de 32",
+            Self::Simd12832 => "chemin simd128 en tuiles de 32",
         }
     }
 
@@ -229,7 +266,14 @@ impl Pass {
             | Self::Avx2
             | Self::Neon
             | Self::Simd128 => 64,
-            Self::Tiles32 | Self::Shuffled | Self::Threads => 32,
+            Self::Tiles32
+            | Self::Shuffled
+            | Self::Threads
+            | Self::Scalar32
+            | Self::Sse232
+            | Self::Avx232
+            | Self::Neon32
+            | Self::Simd12832 => 32,
         }
     }
 
@@ -289,7 +333,12 @@ impl Pass {
             | Self::Sse2
             | Self::Avx2
             | Self::Neon
-            | Self::Simd128 => frame.end(&mut Rows::new(pixels, width)),
+            | Self::Simd128
+            | Self::Scalar32
+            | Self::Sse232
+            | Self::Avx232
+            | Self::Neon32
+            | Self::Simd12832 => frame.end(&mut Rows::new(pixels, width)),
             Self::Whole => {
                 let mut color = vec![0u32; width as usize * height as usize];
                 let mut depth = color.clone();

@@ -41,6 +41,103 @@ fn un_sommet_non_fini_est_refuse() {
     }
 }
 
+/// Un sommet à normale quelconque, que les tests dérivent.
+fn vertex_uvn() -> ScgVertexUvN {
+    ScgVertexUvN {
+        x: 1.0,
+        y: 2.0,
+        z: 3.0,
+        u: 4.0,
+        v: 5.0,
+        nx: 0.0,
+        ny: 0.0,
+        nz: 1.0,
+    }
+}
+
+/// Les six composantes qu'un sommet à normale fait vérifier, et les deux qu'il
+/// laisse à une autre couche.
+///
+/// **Ce rempart n'avait aucun cas, et c'est lui qui refusait seul une normale
+/// non finie** avant que le noyau ne le fasse aussi. Le test dit donc aussi ce
+/// que cette couche **ne** couvre pas : `u` et `v` passent ici, le noyau les
+/// bornant par `MAX_TEXEL_COORD` — poser un cas qui les attendrait refusés
+/// l'aurait fait rougir pour la mauvaise raison.
+#[test]
+fn un_sommet_a_normale_non_fini_est_refuse() {
+    assert_eq!(check_finite_uvn(&[vertex_uvn()]), Ok(()));
+    for mauvais in [f32::NAN, f32::INFINITY, f32::NEG_INFINITY] {
+        for pose in [
+            |v: &mut ScgVertexUvN, m: f32| v.x = m,
+            |v: &mut ScgVertexUvN, m: f32| v.y = m,
+            |v: &mut ScgVertexUvN, m: f32| v.z = m,
+            |v: &mut ScgVertexUvN, m: f32| v.nx = m,
+            |v: &mut ScgVertexUvN, m: f32| v.ny = m,
+            |v: &mut ScgVertexUvN, m: f32| v.nz = m,
+        ] {
+            let mut v = vertex_uvn();
+            pose(&mut v, mauvais);
+            assert_eq!(
+                check_finite_uvn(&[vertex_uvn(), v]),
+                Err(AbiError::VERTEX_NOT_FINITE)
+            );
+        }
+        for pose in [
+            |v: &mut ScgVertexUvN, m: f32| v.u = m,
+            |v: &mut ScgVertexUvN, m: f32| v.v = m,
+        ] {
+            let mut v = vertex_uvn();
+            pose(&mut v, mauvais);
+            assert_eq!(check_finite_uvn(&[v]), Ok(()));
+        }
+    }
+}
+
+/// Un sommet éclairé fait vérifier sa position, et rien d'autre ici.
+///
+/// Même absence de cas que son voisin à normale, et **le partage des couches est
+/// ce que ce test épingle** : les quatre coordonnées passent ici, le noyau les
+/// bornant par `MAX_TEXEL_COORD` sous `Argument::TextureCoordinate` — un `NaN`
+/// y tombe aussi. Les attendre refusées ici aurait fait rougir le cas pour la
+/// mauvaise raison, et c'est l'erreur que sa première écriture a commise.
+#[test]
+fn un_sommet_eclaire_non_fini_est_refuse() {
+    let bon = ScgVertexUv2 {
+        x: 1.0,
+        y: 2.0,
+        z: 3.0,
+        u: 4.0,
+        v: 5.0,
+        u2: 6.0,
+        v2: 7.0,
+    };
+    assert_eq!(check_finite_uv2(&[bon]), Ok(()));
+    for mauvais in [f32::NAN, f32::INFINITY, f32::NEG_INFINITY] {
+        for pose in [
+            |v: &mut ScgVertexUv2, m: f32| v.x = m,
+            |v: &mut ScgVertexUv2, m: f32| v.y = m,
+            |v: &mut ScgVertexUv2, m: f32| v.z = m,
+        ] {
+            let mut v = bon;
+            pose(&mut v, mauvais);
+            assert_eq!(
+                check_finite_uv2(&[bon, v]),
+                Err(AbiError::VERTEX_NOT_FINITE)
+            );
+        }
+        for pose in [
+            |v: &mut ScgVertexUv2, m: f32| v.u = m,
+            |v: &mut ScgVertexUv2, m: f32| v.v = m,
+            |v: &mut ScgVertexUv2, m: f32| v.u2 = m,
+            |v: &mut ScgVertexUv2, m: f32| v.v2 = m,
+        ] {
+            let mut v = bon;
+            pose(&mut v, mauvais);
+            assert_eq!(check_finite_uv2(&[v]), Ok(()));
+        }
+    }
+}
+
 /// Une caméra de composantes finies, que les tests dérivent.
 fn camera() -> ScgCamera {
     ScgCamera {

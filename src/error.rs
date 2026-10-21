@@ -116,7 +116,13 @@ pub enum Argument {
     /// rendrait une pose extrapolée sans le dire, et extrapoler est une
     /// décision de jeu — le moteur n'en prend aucune.
     FrameFactor,
-    /// Une coordonnée de sommet non finie dans un lot soumis.
+    /// Une coordonnée ou une normale de sommet non finie dans un lot soumis.
+    ///
+    /// **La normale y est comptée**, et non dans une variante à elle : c'est
+    /// une composante du sommet comme les autres, le contrat la refuse « comme
+    /// une coordonnée », et la frontière rend un seul message pour les deux. Une
+    /// normale **nulle** est en revanche valide, et veut dire « pas de
+    /// normale » — voir [`VertexUv2::normal`](crate::VertexUv2).
     ///
     /// Distincte d'un sommet simplement démesuré, qui fait disparaître son
     /// triangle sans erreur : celui-là dépend de la caméra et de la matrice
@@ -468,7 +474,7 @@ impl Error {
                 "invalid projection: the vertical field of view must be within ]0, pi[ radians, and the near plane positive and finite"
             }
             Self::InvalidArgument(Argument::VertexCoordinate) => {
-                "vertex coordinate is not finite: NaN and infinities are rejected, and the whole batch with them"
+                "vertex coordinate or normal is not finite: NaN and infinities are rejected, and the whole batch with them"
             }
             Self::InvalidArgument(Argument::Camera) => {
                 "camera position and orientation must be finite numbers"

@@ -964,15 +964,22 @@ fn les_references_et_les_scenes_portent_les_memes_noms() {
     );
 }
 
-/// Chaque chemin de remplissage que le noyau porte est forcé par une passe.
+/// Chaque chemin de remplissage que le noyau porte est forcé **aux deux côtés
+/// de tuile**.
 ///
 /// **Le contrôle est le `match` ci-dessous, pas les assertions** : il est
 /// exhaustif, donc une variante ajoutée à [`SimdPath`] ne compile plus tant
-/// qu'elle n'a pas sa ligne, et sa ligne ne peut nommer qu'une passe. Sans lui,
-/// une variante nouvelle compilerait, serait nommée par `simd_label` et ne
-/// serait jouée par aucune scène. Ce n'est pas une précaution : la
+/// qu'elle n'a pas sa ligne, et sa ligne ne peut nommer que ses deux passes.
+/// Sans lui, une variante nouvelle compilerait, serait nommée par `simd_label`
+/// et ne serait jouée par aucune scène. Ce n'est pas une précaution : la
 /// documentation de [`Pass::Sse2`] raconte qu'en cassant son décalage, toutes
 /// les empreintes restaient conformes.
+///
+/// **Les deux côtés et non un seul** : l'invariant veut que l'image ne dépende
+/// ni du découpage ni du chemin, et c'est leur **produit** que rien ne croisait.
+/// Les six passes de découpage tournent en `Auto`, donc le jeu le plus large de
+/// la machine est bien éprouvé aux deux côtés ; les autres variantes ne
+/// l'étaient qu'à 64, là où la longueur d'une ligne décide du reste de boucle.
 ///
 /// [`SimdPath::Auto`] est le seul chemin sans passe, et il n'en est pas un : il
 /// en désigne un, que `resolve` rend et que la ligne des passes affiche.
@@ -981,16 +988,17 @@ fn les_references_et_les_scenes_portent_les_memes_noms() {
 /// à qui l'on donnerait `None` pour faire taire le compilateur compilerait, et
 /// c'est lui qui tomberait alors.
 #[test]
-fn chaque_chemin_de_remplissage_est_force_par_une_passe() {
-    /// La passe qui force ce chemin, pour chacun de ceux qui en sont un.
-    fn passe_de(chemin: SimdPath) -> Option<Pass> {
+fn chaque_chemin_de_remplissage_est_force_aux_deux_decoupages() {
+    /// Les deux passes qui forcent ce chemin, pour chacun de ceux qui en sont
+    /// un : à 64 puis à 32.
+    fn passes_de(chemin: SimdPath) -> Option<[Pass; 2]> {
         match chemin {
             SimdPath::Auto => None,
-            SimdPath::Scalar => Some(Pass::Scalar),
-            SimdPath::Sse2 => Some(Pass::Sse2),
-            SimdPath::Avx2 => Some(Pass::Avx2),
-            SimdPath::Neon => Some(Pass::Neon),
-            SimdPath::Simd128 => Some(Pass::Simd128),
+            SimdPath::Scalar => Some([Pass::Scalar, Pass::Scalar32]),
+            SimdPath::Sse2 => Some([Pass::Sse2, Pass::Sse232]),
+            SimdPath::Avx2 => Some([Pass::Avx2, Pass::Avx232]),
+            SimdPath::Neon => Some([Pass::Neon, Pass::Neon32]),
+            SimdPath::Simd128 => Some([Pass::Simd128, Pass::Simd12832]),
         }
     }
 
@@ -1000,19 +1008,27 @@ fn chaque_chemin_de_remplissage_est_force_par_une_passe() {
         .collect();
 
     for pass in forcantes.iter().copied() {
-        assert_eq!(
-            passe_de(pass.simd()),
-            Some(pass),
+        let paire = passes_de(pass.simd()).expect("un chemin forcé n'est pas Auto");
+        assert!(
+            paire.contains(&pass),
             "la passe « {} » force un chemin que la table ne lui rend pas",
             pass.name()
+        );
+        let [large, etroite] = paire;
+        assert_eq!(large.tile_size(), 64, "« {} » n'est pas à 64", large.name());
+        assert_eq!(
+            etroite.tile_size(),
+            32,
+            "« {} » n'est pas à 32",
+            etroite.name()
         );
     }
 
     assert_eq!(
         forcantes.len(),
-        5,
-        "cinq chemins de remplissage sont forcés par une passe, {} le sont — \
-         une variante de SimdPath est arrivée sans la sienne",
+        10,
+        "cinq chemins de remplissage sont forcés à deux découpages chacun, {} passes le font — \
+         une variante de SimdPath est arrivée sans les siennes",
         forcantes.len()
     );
 }
