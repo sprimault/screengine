@@ -24,9 +24,26 @@ on:
 permissions:
   contents: read
 
+# Un passage par référence, et **l'annulation ne vaut pas pour `master`**.
+#
+# Sur une branche de pull request, annuler le passage en cours est juste : un
+# nouveau push rend le commit précédent sans intérêt, et ça rend une quinzaine
+# de minutes de runner. Sur `master`, annuler veut dire qu'un commit **n'est
+# jamais construit**, et rien ne le signale — le tableau des exécutions montre
+# une annulation, que personne ne lit comme un trou de vérification.
+#
+# Vu le 2026-10-21 : un passage relancé à la main sur le commit d'un lot fusionné
+# a été annulé par la fusion suivante, avec le message « Canceling since a higher
+# priority waiting request for CI-refs/heads/master exists ». Deux fusions à
+# moins de treize minutes d'écart suffisent, et six lots ont été fusionnés ce
+# jour-là.
+#
+# À faux, les passages de `master` se mettent en file au lieu de s'annuler :
+# chacun est construit, dans l'ordre. C'est le comportement qu'on veut d'une
+# branche dont chaque commit est un candidat de publication.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.ref != 'refs/heads/master' }}
 
 env:
   CARGO_TERM_COLOR: always
