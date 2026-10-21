@@ -105,6 +105,10 @@ publié, et explique les conventions du dépôt à qui y contribue.
   par le lint. Le chiffre est retiré partout où rien ne le vérifiait.
 - **Le coût de la présentation sur wasm était énoncé trois fois avec trois
   valeurs** ; il ne l'est plus qu'une, là où la mesure est attribuée.
+- **Trois clauses fausses de la documentation** : la liste des contrôles que
+  `make lint` entraîne, le nombre de passes de conformance, et une clause du
+  contrat qui se contredisait sur ce que chaque chemin expose du jeu
+  d'instructions résolu.
 
 ***
 
@@ -148,6 +152,10 @@ publié, et explique les conventions du dépôt à qui y contribue.
   gone wherever nothing verified it.
 - **The cost of presentation on wasm was stated three times with three values**;
   it is now stated once, where the measurement is attributed.
+- **Three incorrect clauses in the documentation**: the list of checks `make
+  lint` drives, the number of conformance passes, and a contract clause that
+  contradicted itself about what each path exposes of the resolved instruction
+  set.
 
 ## [1.6.0] — 2026-10-20 — Ce que la surface gardait pour elle
 

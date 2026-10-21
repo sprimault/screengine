@@ -688,7 +688,7 @@ la création du contexte rend une erreur plutôt que de déborder en silence.
 | Index de brouillard | exposant et mantisse de la profondeur, par `leading_zeros`, table de 2048 entrées | indexer linéairement une profondeur 0.32 est inutilisable : tout le monde visible vit sous 2²⁶. La table se remplit **linéairement en distance** — un brouillard linéaire en `near/w`, pourtant gratuit, atteint 56 % à un dixième de sa rampe et cesse d'être un indice de profondeur. L'index se prend comme celui du mipmap, et le reste de quantification se trame par la même table ordonnée, transposée pour ne pas se corréler avec celle des texels |
 | Atténuation d'une lumière dynamique | `(1 − d²/r²)²` en `f32`, **par sommet**, portée par un plan comme les autres attributs | l'atténuation a besoin d'une distance, et il n'existe aucune distance du côté entier du pipeline : la racine inverse du noyau vit avant la projection. Le carré s'annule en `r` **avec une dérivée nulle**, donc sans l'anneau visible que `1 − d²/r²` seule dessine à son bord. Aucune racine n'est appelée |
 | Courbe de sortie | table de **256 entrées de huit bits par canal**, `(x·gain)^(1/gamma)` saturé puis quantifié, remplie au réglage | le pixel ne paie que trois lectures, et rien du calcul qui les a produites — lequel emploie le `f64` et l'`exp2` du noyau, ce que seul un calcul hors image peut se permettre. L'état neutre est la **vacuité de la table**, et non un réglage d'identité : la recopie se monomorphise sur ce choix, si bien qu'une scène sans courbe ne teste rien par pixel. Le gain sature avant le gamma, pour ne pas écrêter deux fois |
-| Fenêtre de portail | rectangle de **pixels entiers**, obtenu par min/max des sommets 28.4 du portail projeté puis arrondi **vers l'extérieur** | elle ne borne que la boucle, jamais les valeurs : l'image est identique avec ou sans elle, exactement comme elle l'est indépendamment des tuiles. C'est ce qui fait qu'une fenêtre n'a besoin d'aucun format nouveau — elle est de la même nature qu'un rectangle de tuile, et les six passes de conformance l'éprouvent déjà |
+| Fenêtre de portail | rectangle de **pixels entiers**, obtenu par min/max des sommets 28.4 du portail projeté puis arrondi **vers l'extérieur** | elle ne borne que la boucle, jamais les valeurs : l'image est identique avec ou sans elle, exactement comme elle l'est indépendamment des tuiles. C'est ce qui fait qu'une fenêtre n'a besoin d'aucun format nouveau — elle est de la même nature qu'un rectangle de tuile, et les passes de conformance l'éprouvent déjà |
 
 - **Tout s'évalue en coordonnées globales.** Une fonction de bord ou un attribut
   en un pixel se calcule à partir des sommets et de la position du pixel dans
@@ -2276,11 +2276,12 @@ mesure : un compteur, une empreinte, une durée.
   `master` rouge entre les deux, et une branche protégée dont la conformance est
   rouge est une fenêtre où tout autre contrôle qui tombe ne se distingue plus.
 - **Une option de rendu qui change l'image prend une scène, jamais une passe.**
-  Les passes d'une scène ne diffèrent que par le découpage et doivent rendre la
-  même empreinte : c'est tout leur objet. Un filtrage qui rend délibérément une
-  autre image a donc besoin de sa propre référence, elle-même vérifiée dans les
-  six passes, et sa géométrie se partage au texel près avec la scène qu'elle
-  double — sans quoi une divergence ne serait plus attribuable à l'option.
+  Les passes d'une scène ne diffèrent que par le découpage et par le chemin de
+  remplissage, et doivent rendre la même empreinte : c'est tout leur objet. Un
+  filtrage qui rend délibérément une autre image a donc besoin de sa propre
+  référence, elle-même vérifiée dans toutes les passes, et sa géométrie se
+  partage au texel près avec la scène qu'elle double — sans quoi une divergence
+  ne serait plus attribuable à l'option.
 - **Avant de figer une référence nouvelle ou de la mettre à jour, regarder
   l'image**, par `make conform-images`. Une empreinte dit qu'une image a changé,
   jamais qu'elle est juste : une scène rendue noire, à l'envers ou filtrée

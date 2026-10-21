@@ -2768,11 +2768,16 @@ chemin n'est acceptable.
   pourra s'ajouter sans changer la version d'ABI, comme celle qui rendrait le
   rectangle d'une tuile.
 
-  **Le chemin Rust ne le dit pas davantage, et c'est voulu** : `SimdPath` y
-  répond bien à `resolve` et `available`, mais le rectangle d'une tuile n'est
-  atteignable par aucun des deux chemins — il vit dans un `Grid` que le noyau ne
-  réexporte pas. Les deux restent donc au même niveau, ce que « deux chemins,
-  aucun de seconde classe » demande, et c'est pourquoi l'absence se lit comme une
+  **Le chemin Rust, lui, le rend** : `SimdPath::resolve` et
+  `SimdPath::available` répondent à la question, et aucune fonction de l'ABI n'en
+  fait autant. C'est donc une asymétrie entre les deux chemins — le contrat n'en
+  a pas besoin, la règle des deux chemins la relève —, et la fonction
+  d'interrogation ci-dessus est ce qui la fermerait.
+
+  **Le rectangle d'une tuile est l'autre cas, et il n'est pas le même** : aucun
+  des deux chemins ne l'atteint, il vit dans un `Grid` que le noyau ne réexporte
+  pas. Les deux restent au même niveau sur celui-là, ce que « deux chemins, aucun
+  de seconde classe » demande, et c'est pourquoi son absence se lit comme une
   capacité non offerte plutôt que comme un oubli de propagation.
 
   **Ce qui rouvrirait la question** est un hôte qui calculerait ce rectangle

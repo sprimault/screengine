@@ -53,8 +53,9 @@ des bornes du noyau avec les constantes du header, celle de la liste plate de
 l'étage d'accueil avec le cas qui la nomme, celle des paramètres de sortie de la
 frontière avec ceux que le cas passe en revue, celle des structures `#[repr(C)]`
 avec les assertions de disposition du header, celle des constantes que le pont
-Java recopie avec ce que le header en dit, et l'enveloppe `entry::` de chaque
-point d'entrée.
+Java recopie avec ce que le header en dit, l'absence d'intrinsèque fusionnée,
+relâchée ou approximative dans le noyau et à la frontière, et l'enveloppe
+`entry::` de chaque point d'entrée.
 L'intégration continue appelle `make tools`, qui installe les outils aux
 versions épinglées ici.
 
