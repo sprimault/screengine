@@ -564,6 +564,50 @@ pub unsafe extern "C" fn scg_submit(
 
 /// La tranche d'un tableau reçu de l'hôte, vide pour un compte nul.
 ///
+/// Rend au tas le handle opaque d'une ressource, un pointeur nul ne faisant
+/// rien.
+///
+/// **Les quatre libérations de l'ABI avaient le même corps au nom du handle
+/// près.** C'est l'enveloppe qui rend l'extraction obligatoire et pas seulement
+/// souhaitable : `entry::nothing` doit être là — une panique dans un
+/// destructeur traverserait la frontière —, et c'est précisément le genre de
+/// ligne qui manque sur la libération écrite en dernier.
+///
+/// # Safety
+///
+/// `handle` est nul, ou vient de `Box::into_raw` et n'a pas encore été repris.
+unsafe fn destroy<T>(handle: *mut T) {
+    entry::nothing(|| {
+        if handle.is_null() {
+            return;
+        }
+        // SAFETY: précondition de la fonction — le handle vient de
+        // `Box::into_raw` et n'a pas encore été rendu.
+        drop(unsafe { Box::from_raw(handle) });
+    });
+}
+
+/// Résout un rang dans le tableau de textures que l'hôte a passé.
+///
+/// **Cinq soumissions prenaient la même chaîne**, chacune avec son bloc `unsafe`
+/// et son commentaire. Le rang vient du moteur, le tableau de l'appelant, et une
+/// entrée nulle dit « pas de texture » — ce que les trois maillons expriment
+/// ensemble et aucun seul. Un chemin ajouté sans résolution ne compilerait pas ;
+/// un chemin ajouté avec une résolution **différente** — un rang non vérifié —
+/// passait.
+///
+/// # Safety
+///
+/// Chaque entrée de `slots` est nulle, ou un handle de texture vivant.
+unsafe fn slot_texture(slots: &[*const ScgTexture], rang: u32) -> Option<&Arc<Texture>> {
+    slots
+        .get(rang as usize)
+        // SAFETY: précondition de la fonction — chaque entrée du tableau est
+        // nulle ou un handle vivant.
+        .and_then(|handle| unsafe { handle.as_ref() })
+        .map(|texture| &texture.inner)
+}
+
 /// # Safety
 ///
 /// `ptr` couvre `count` éléments lisibles, ou `count` est nul.
@@ -952,14 +996,9 @@ pub unsafe extern "C" fn scg_texture_load(
 /// yet destroyed.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn scg_texture_destroy(texture: *mut ScgTexture) {
-    entry::nothing(|| {
-        if texture.is_null() {
-            return;
-        }
-        // SAFETY: précondition de la fonction — le handle vient de
-        // `Box::into_raw` dans `scg_texture_load` et n'a pas encore été rendu.
-        drop(unsafe { Box::from_raw(texture) });
-    });
+    // SAFETY: précondition de la fonction — le handle est nul, ou vient de
+    // `Box::into_raw` dans `scg_texture_load` et n'a pas encore été rendu.
+    unsafe { destroy(texture) };
 }
 
 /// Submits a batch of triangles dressed with a texture.
@@ -1266,6 +1305,20 @@ fn depth_mode(depth: u32) -> Result<DepthMode, AbiError> {
     }
 }
 
+/// Traduit le filtre de surfaces d'une interrogation.
+///
+/// Même forme que [`depth_mode`] et pour la même raison : zéro n'y vaut pas
+/// défaut, et un mode inconnu est refusé plutôt que rabattu sur le plus
+/// probable. Les deux interrogations le prenaient à l'identique, ce qui fait de
+/// ce patron sa troisième occurrence et non sa seconde.
+fn pick_filter(filter: u32) -> Result<Surfaces, AbiError> {
+    match filter {
+        SCG_PICK_SOLID => Ok(Surfaces::Solid),
+        SCG_PICK_ALL => Ok(Surfaces::All),
+        _ => Err(AbiError::PICK_FILTER),
+    }
+}
+
 /// Submits a batch of triangles whose vertices carry a normal.
 ///
 /// Same contract as `scg_submit_textured`, with two differences. The first is the
@@ -1483,14 +1536,9 @@ pub unsafe extern "C" fn scg_mesh_load(
 /// destroyed.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn scg_mesh_destroy(mesh: *mut ScgMesh) {
-    entry::nothing(|| {
-        if mesh.is_null() {
-            return;
-        }
-        // SAFETY: précondition de la fonction — le handle vient de
-        // `Box::into_raw` dans `scg_mesh_load` et n'a pas encore été rendu.
-        drop(unsafe { Box::from_raw(mesh) });
-    });
+    // SAFETY: précondition de la fonction — le handle est nul, ou vient de
+    // `Box::into_raw` dans `scg_mesh_load` et n'a pas encore été rendu.
+    unsafe { destroy(mesh) };
 }
 
 /// Writes the number of texture slots the mesh asks for to `out`.
@@ -1559,14 +1607,11 @@ pub unsafe extern "C" fn scg_submit_mesh(
         let slots = unsafe { slice_of(textures, texture_count) };
 
         core.exclusive()?
-            .submit_mesh(model, &mesh.inner, |slot| {
-                // SAFETY: précondition de la fonction — chaque entrée du tableau
-                // est nulle ou un handle vivant. Le compte ayant été vérifié
-                // égal, `get` ne rend jamais `None` ici.
-                slots
-                    .get(slot as usize)
-                    .and_then(|handle| unsafe { handle.as_ref() })
-                    .map(|texture| &texture.inner)
+            // SAFETY: précondition de la fonction — chaque entrée du tableau est
+            // nulle ou un handle vivant. Le compte ayant été vérifié égal, le
+            // rang est toujours dans les bornes.
+            .submit_mesh(model, &mesh.inner, |slot| unsafe {
+                slot_texture(slots, slot)
             })
             .map_err(AbiError::from)
     };
@@ -1694,14 +1739,9 @@ pub unsafe extern "C" fn scg_submit_mesh_frame(
             .submit_mesh_frame(
                 model,
                 &mesh.inner,
-                |slot| {
-                    // SAFETY: mêmes préconditions que `scg_submit_mesh`, et le
-                    // compte a été vérifié égal.
-                    slots
-                        .get(slot as usize)
-                        .and_then(|handle| unsafe { handle.as_ref() })
-                        .map(|texture| &texture.inner)
-                },
+                // SAFETY: mêmes préconditions que `scg_submit_mesh`, et le
+                // compte a été vérifié égal.
+                |slot| unsafe { slot_texture(slots, slot) },
                 frame_a,
                 frame_b,
                 t,
@@ -1976,14 +2016,9 @@ pub unsafe extern "C" fn scg_world_load(
 /// destroyed.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn scg_world_destroy(world: *mut ScgWorld) {
-    entry::nothing(|| {
-        if world.is_null() {
-            return;
-        }
-        // SAFETY: précondition de la fonction — le handle vient de
-        // `Box::into_raw` dans `scg_world_load` et n'a pas encore été rendu.
-        drop(unsafe { Box::from_raw(world) });
-    });
+    // SAFETY: précondition de la fonction — le handle est nul, ou vient de
+    // `Box::into_raw` dans `scg_world_load` et n'a pas encore été rendu.
+    unsafe { destroy(world) };
 }
 
 /// Writes the number of materials the map asks for to `out`.
@@ -2062,15 +2097,11 @@ pub unsafe extern "C" fn scg_submit_world(
         let slots = unsafe { slice_of(textures, texture_count) };
 
         core.exclusive()?
-            .submit_world(model, &world.inner, |material| {
-                // SAFETY: précondition de la fonction — chaque entrée du tableau
-                // est nulle ou un handle vivant. Le compte ayant été vérifié
-                // égal et le rang venant du chargement, `get` ne rend jamais
-                // `None` ici.
-                slots
-                    .get(material as usize)
-                    .and_then(|handle| unsafe { handle.as_ref() })
-                    .map(|texture| &texture.inner)
+            // SAFETY: précondition de la fonction — chaque entrée du tableau est
+            // nulle ou un handle vivant. Le compte ayant été vérifié égal et le
+            // rang venant du chargement, il est toujours dans les bornes.
+            .submit_world(model, &world.inner, |material| unsafe {
+                slot_texture(slots, material)
             })
             .map_err(AbiError::from)
     };
@@ -2131,13 +2162,8 @@ pub unsafe extern "C" fn scg_submit_world_lit(
             .submit_world_lit(
                 model,
                 &world.inner,
-                |material| {
-                    // SAFETY: mêmes préconditions que `scg_submit_world`.
-                    slots
-                        .get(material as usize)
-                        .and_then(|handle| unsafe { handle.as_ref() })
-                        .map(|texture| &texture.inner)
-                },
+                // SAFETY: mêmes préconditions que `scg_submit_world`.
+                |material| unsafe { slot_texture(slots, material) },
                 lighting.map(|lighting| &lighting.inner),
             )
             .map_err(AbiError::from)
@@ -2191,14 +2217,9 @@ pub unsafe extern "C" fn scg_lighting_create(
 /// been destroyed yet.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn scg_lighting_destroy(lighting: *mut ScgLighting) {
-    entry::nothing(|| {
-        if lighting.is_null() {
-            return;
-        }
-        // SAFETY: précondition de la fonction — le handle vient de
-        // `Box::into_raw` et n'a pas encore été repris.
-        drop(unsafe { Box::from_raw(lighting) });
-    });
+    // SAFETY: précondition de la fonction — le handle est nul, ou vient de
+    // `Box::into_raw` dans `scg_lighting_create` et n'a pas encore été repris.
+    unsafe { destroy(lighting) };
 }
 
 /// Computes the lightmaps of one cell, named by its stable identifier.
@@ -2655,13 +2676,8 @@ pub unsafe extern "C" fn scg_submit_world_visible(
                 &world.inner,
                 cell_id,
                 lighting.map(|lighting| &lighting.inner),
-                |material| {
-                    // SAFETY: mêmes préconditions que `scg_submit_world`.
-                    slots
-                        .get(material as usize)
-                        .and_then(|handle| unsafe { handle.as_ref() })
-                        .map(|texture| &texture.inner)
-                },
+                // SAFETY: mêmes préconditions que `scg_submit_world`.
+                |material| unsafe { slot_texture(slots, material) },
             )
             .map_err(AbiError::from)?;
 
@@ -3088,11 +3104,7 @@ pub unsafe extern "C" fn scg_world_pick(
         if out.is_null() {
             return Err(AbiError::NULL);
         }
-        let surfaces = match filter {
-            SCG_PICK_SOLID => Surfaces::Solid,
-            SCG_PICK_ALL => Surfaces::All,
-            _ => return Err(AbiError::PICK_FILTER),
-        };
+        let surfaces = pick_filter(filter)?;
         // SAFETY: précondition de la fonction — le pointeur est nul ou vise un
         // handle vivant.
         let world = unsafe { world.as_ref() }.ok_or(AbiError::NULL)?;
@@ -3166,11 +3178,7 @@ pub unsafe extern "C" fn scg_world_pick_brute(
         if out.is_null() {
             return Err(AbiError::NULL);
         }
-        let surfaces = match filter {
-            SCG_PICK_SOLID => Surfaces::Solid,
-            SCG_PICK_ALL => Surfaces::All,
-            _ => return Err(AbiError::PICK_FILTER),
-        };
+        let surfaces = pick_filter(filter)?;
         // SAFETY: précondition de la fonction — le pointeur est nul ou vise un
         // handle vivant.
         let world = unsafe { world.as_ref() }.ok_or(AbiError::NULL)?;
