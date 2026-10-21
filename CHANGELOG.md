@@ -115,6 +115,10 @@ publié, et explique les conventions du dépôt à qui y contribue.
 - **Un échec d'allocation du rangement d'un atlas ou de la cuisson avortait le
   processus** au lieu de rendre `SCG_ERR_OUT_OF_MEMORY`. La cuisson n'alloue en
   outre plus une fois par rayon d'ombre.
+- **Le contrat ne publiait pas le prototype de `scg_lightmap_fault`**, seule
+  fonction exportée dans ce cas, et sa clause de concurrence énumérait trois
+  fonctions sans handle au lieu d'en donner le critère. La clause SemVer des
+  deux `CONTRIBUTING` décrivait encore le régime du `0.x`.
 
 ***
 
@@ -168,6 +172,10 @@ publié, et explique les conventions du dépôt à qui y contribue.
 - **An allocation failure while packing an atlas or baking aborted the process**
   instead of returning `SCG_ERR_OUT_OF_MEMORY`. Baking also no longer allocates
   once per shadow ray.
+- **The contract did not publish `scg_lightmap_fault`'s prototype**, the only
+  exported function in that case, and its concurrency clause listed three
+  handle-free functions instead of stating the criterion. Both `CONTRIBUTING`
+  files still described the `0.x` SemVer regime.
 
 ## [1.6.0] — 2026-10-20 — Ce que la surface gardait pour elle
 

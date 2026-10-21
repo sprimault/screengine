@@ -95,7 +95,7 @@ impl Grade {
     /// la convention qu'un intégrateur attend quand il lit ce mot. Il tient
     /// dans `]0, 8]`, les gains dans `[0, 4]`, les décalages dans `[-1, 1]`, et
     /// tout ce qui sort de là — ou n'est pas fini — rend
-    /// [`Argument::Grade`](crate::error::Argument::Grade) sans rien changer.
+    /// [`Argument::Grade`] sans rien changer.
     pub fn set(
         &mut self,
         gamma: f32,
