@@ -59,16 +59,29 @@ jobs:
           rustup default stable
 
       # cbindgen, cargo-deny et wasm-bindgen-cli se compilent depuis les
-      # sources : plusieurs minutes à chaque exécution sans cache. La clé suit le
-      # Makefile, qui porte les versions épinglées : une version relevée invalide
-      # le cache.
+      # sources : plusieurs minutes à chaque exécution sans cache.
+      #
+      # **La clé porte les trois versions épinglées, et non le hachage du
+      # `Makefile`.** Celui-ci la faisait changer dès qu'un lot ajoutait un
+      # contrôle ou un commentaire, donc à chaque exécution d'une série : les
+      # outils se recompilaient alors depuis les sources, et `cargo-audit`, que
+      # `make tools` n'épingle délibérément pas, a fini par franchir à lui seul
+      # le plafond du job d'audit. Les versions se lisent par `print-` plutôt
+      # que se recopier.
+      - name: Versions des outils
+        id: outils
+        run: |
+          versions=$(make -s print-CBINDGEN_VERSION print-CARGO_DENY_VERSION \
+            print-WASM_BINDGEN_VERSION | paste -sd '-')
+          echo "versions=$versions" >> "$GITHUB_OUTPUT"
+
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             ~/.cargo/bin
             ~/.cargo/.crates.toml
             ~/.cargo/.crates2.json
-          key: outils-${{ runner.os }}-${{ hashFiles('Makefile') }}
+          key: outils-${{ runner.os }}-${{ steps.outils.outputs.versions }}
 
       - name: Outils
         run: make tools
@@ -294,16 +307,26 @@ jobs:
           rustup toolchain install stable --profile minimal
           rustup default stable
 
+      # Même clé que le job de vérification, pour la raison dite là-bas : c'est
+      # ici que le hachage du `Makefile` a coûté le plus cher.
+      - name: Versions des outils
+        id: outils
+        run: |
+          versions=$(make -s print-CBINDGEN_VERSION print-CARGO_DENY_VERSION \
+            print-WASM_BINDGEN_VERSION | paste -sd '-')
+          echo "versions=$versions" >> "$GITHUB_OUTPUT"
+
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             ~/.cargo/bin
             ~/.cargo/.crates.toml
             ~/.cargo/.crates2.json
-          key: outils-${{ runner.os }}-${{ hashFiles('Makefile') }}
+          key: outils-${{ runner.os }}-${{ steps.outils.outputs.versions }}
 
       # cargo-audit n'est pas épinglé : make tools le remet à jour quand une
-      # version plus récente existe, cache ou pas.
+      # version plus récente existe, cache ou pas — donc une montée de sa version
+      # recompile, cette clé-ci n'y changeant rien.
       - name: Outils
         run: make tools
 
