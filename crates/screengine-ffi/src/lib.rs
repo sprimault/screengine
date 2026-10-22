@@ -177,16 +177,16 @@ pub unsafe extern "C" fn scg_destroy(ctx: *mut ScgContext) {
 /// is NULL or points to a readable `ScgCamera`.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn scg_set_camera(ctx: *mut ScgContext, camera: *const ScgCamera) -> i32 {
-    let set = |mut core: entry::Core<'_>| {
+    let set = |context: &mut Context| {
         // SAFETY: précondition de la fonction — le pointeur est nul ou vise une
         // structure lisible, que rien d'autre ne modifie pendant l'appel.
         let camera = unsafe { camera.as_ref() }.ok_or(AbiError::NULL)?;
-        core.exclusive()?.set_camera(camera.to_core()?)?;
+        context.set_camera(camera.to_core()?)?;
         Ok(())
     };
 
     // SAFETY: précondition de la fonction — `ctx` est nul ou un handle vivant.
-    unsafe { entry::with_context(ctx, set) }
+    unsafe { entry::with_exclusive(ctx, set) }
 }
 
 /// Sets the internal resolution, from the next frames on.
@@ -213,13 +213,13 @@ pub unsafe extern "C" fn scg_set_camera(ctx: *mut ScgContext, camera: *const Scg
 /// `ctx` is a live handle used by no other thread during the call.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn scg_set_resolution(ctx: *mut ScgContext, width: u32, height: u32) -> i32 {
-    let set = |mut core: entry::Core<'_>| {
-        core.exclusive()?.set_resolution(width, height)?;
+    let set = |context: &mut Context| {
+        context.set_resolution(width, height)?;
         Ok(())
     };
 
     // SAFETY: précondition de la fonction — `ctx` est nul ou un handle vivant.
-    unsafe { entry::with_context(ctx, set) }
+    unsafe { entry::with_exclusive(ctx, set) }
 }
 
 /// Sets the output curve applied while each tile is copied out.
@@ -239,17 +239,17 @@ pub unsafe extern "C" fn scg_set_resolution(ctx: *mut ScgContext, width: u32, he
 /// is NULL or points to a readable `ScgGrade`.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn scg_set_grade(ctx: *mut ScgContext, grade: *const ScgGrade) -> i32 {
-    let set = |mut core: entry::Core<'_>| {
+    let set = |context: &mut Context| {
         // SAFETY: précondition de la fonction — le pointeur est nul ou vise une
         // structure lisible, que rien d'autre ne modifie pendant l'appel.
         let grade = unsafe { grade.as_ref() }.ok_or(AbiError::NULL)?;
         let (gamma, gains, offsets) = grade.to_core()?;
-        core.exclusive()?.set_grade(gamma, gains, offsets)?;
+        context.set_grade(gamma, gains, offsets)?;
         Ok(())
     };
 
     // SAFETY: précondition de la fonction — `ctx` est nul ou un handle vivant.
-    unsafe { entry::with_context(ctx, set) }
+    unsafe { entry::with_exclusive(ctx, set) }
 }
 
 /// Returns the output to its neutral state.
@@ -263,13 +263,13 @@ pub unsafe extern "C" fn scg_set_grade(ctx: *mut ScgContext, grade: *const ScgGr
 /// `ctx` is a live handle used by no other thread during the call.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn scg_clear_grade(ctx: *mut ScgContext) -> i32 {
-    let clear = |mut core: entry::Core<'_>| {
-        core.exclusive()?.clear_grade()?;
+    let clear = |context: &mut Context| {
+        context.clear_grade()?;
         Ok(())
     };
 
     // SAFETY: précondition de la fonction — `ctx` est nul ou un handle vivant.
-    unsafe { entry::with_context(ctx, clear) }
+    unsafe { entry::with_exclusive(ctx, clear) }
 }
 
 /// Sets how textures are sampled from the next frames on.
@@ -292,13 +292,13 @@ pub unsafe extern "C" fn scg_clear_grade(ctx: *mut ScgContext) -> i32 {
 /// `ctx` is a live handle used by no other thread during the call.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn scg_set_filter(ctx: *mut ScgContext, filter: u32) -> i32 {
-    let set = |mut core: entry::Core<'_>| {
-        core.exclusive()?.set_filter(scene::filter_of(filter)?)?;
+    let set = |context: &mut Context| {
+        context.set_filter(scene::filter_of(filter)?)?;
         Ok(())
     };
 
     // SAFETY: précondition de la fonction — `ctx` est nul ou un handle vivant.
-    unsafe { entry::with_context(ctx, set) }
+    unsafe { entry::with_exclusive(ctx, set) }
 }
 
 /// Picks which instruction set fills triangles, from the next frames on.
@@ -331,13 +331,13 @@ pub unsafe extern "C" fn scg_set_filter(ctx: *mut ScgContext, filter: u32) -> i3
 /// `ctx` is a live handle used by no other thread during the call.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn scg_set_simd(ctx: *mut ScgContext, path: u32) -> i32 {
-    let set = |mut core: entry::Core<'_>| {
-        core.exclusive()?.set_simd(scene::simd_path_of(path)?)?;
+    let set = |context: &mut Context| {
+        context.set_simd(scene::simd_path_of(path)?)?;
         Ok(())
     };
 
     // SAFETY: précondition de la fonction — `ctx` est nul ou un handle vivant.
-    unsafe { entry::with_context(ctx, set) }
+    unsafe { entry::with_exclusive(ctx, set) }
 }
 
 /// Sets how much lit surfaces are brightened, from the next frames on.
@@ -360,13 +360,13 @@ pub unsafe extern "C" fn scg_set_simd(ctx: *mut ScgContext, path: u32) -> i32 {
 /// `ctx` is a live handle used by no other thread during the call.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn scg_set_overbright(ctx: *mut ScgContext, shift: u32) -> i32 {
-    let set = |mut core: entry::Core<'_>| {
-        core.exclusive()?.set_overbright(shift)?;
+    let set = |context: &mut Context| {
+        context.set_overbright(shift)?;
         Ok(())
     };
 
     // SAFETY: précondition de la fonction — `ctx` est nul ou un handle vivant.
-    unsafe { entry::with_context(ctx, set) }
+    unsafe { entry::with_exclusive(ctx, set) }
 }
 
 /// Turns on distance fog, from the next frames on.
@@ -402,14 +402,14 @@ pub unsafe extern "C" fn scg_set_fog(
     start: f32,
     end: f32,
 ) -> i32 {
-    let set = |mut core: entry::Core<'_>| {
+    let set = |context: &mut Context| {
         let color = screengine::Color::new(r, g, b, 0xFF);
-        core.exclusive()?.set_fog(color, start, end)?;
+        context.set_fog(color, start, end)?;
         Ok(())
     };
 
     // SAFETY: précondition de la fonction — `ctx` est nul ou un handle vivant.
-    unsafe { entry::with_context(ctx, set) }
+    unsafe { entry::with_exclusive(ctx, set) }
 }
 
 /// Turns distance fog off, from the next frames on.
@@ -426,13 +426,13 @@ pub unsafe extern "C" fn scg_set_fog(
 /// `ctx` is a live handle used by no other thread during the call.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn scg_clear_fog(ctx: *mut ScgContext) -> i32 {
-    let clear = |mut core: entry::Core<'_>| {
-        core.exclusive()?.clear_fog()?;
+    let clear = |context: &mut Context| {
+        context.clear_fog()?;
         Ok(())
     };
 
     // SAFETY: précondition de la fonction — `ctx` est nul ou un handle vivant.
-    unsafe { entry::with_context(ctx, clear) }
+    unsafe { entry::with_exclusive(ctx, clear) }
 }
 
 /// Replaces the dynamic lights of the frames to come.
@@ -468,7 +468,7 @@ pub unsafe extern "C" fn scg_set_lights(
     lights: *const ScgLight,
     count: u32,
 ) -> i32 {
-    let set = |mut core: entry::Core<'_>| {
+    let set = |context: &mut Context| {
         // SAFETY: précondition de la fonction — le pointeur couvre son nombre
         // d'éléments, et un nombre nul autorise un pointeur nul.
         let lights = unsafe { slice_of(lights, count) };
@@ -485,12 +485,12 @@ pub unsafe extern "C" fn scg_set_lights(
         for (slot, light) in core_lights.iter_mut().zip(lights) {
             *slot = light.to_core()?;
         }
-        core.exclusive()?.set_lights(&core_lights[..lights.len()])?;
+        context.set_lights(&core_lights[..lights.len()])?;
         Ok(())
     };
 
     // SAFETY: précondition de la fonction — `ctx` est nul ou un handle vivant.
-    unsafe { entry::with_context(ctx, set) }
+    unsafe { entry::with_exclusive(ctx, set) }
 }
 
 /// Writes to `out` the world direction the centre of pixel `(x, y)` points at:
@@ -568,7 +568,7 @@ pub unsafe extern "C" fn scg_submit(
     triangles: *const ScgTriangle,
     triangle_count: u32,
 ) -> i32 {
-    let submit = |mut core: entry::Core<'_>| {
+    let submit = |context: &mut Context| {
         // SAFETY: précondition de la fonction — le pointeur est nul ou vise une
         // matrice lisible.
         let model = unsafe { model.as_ref() }.ok_or(AbiError::NULL)?;
@@ -583,7 +583,7 @@ pub unsafe extern "C" fn scg_submit(
             )
         };
         scene::check_finite(vertices)?;
-        core.exclusive()?
+        context
             .submit_each(model, triangles.len(), |i| {
                 let triangle = triangles[i];
                 let mut corners = [Vec3::ZERO; 3];
@@ -603,7 +603,7 @@ pub unsafe extern "C" fn scg_submit(
     };
 
     // SAFETY: précondition de la fonction — `ctx` est nul ou un handle vivant.
-    unsafe { entry::with_context(ctx, submit) }
+    unsafe { entry::with_exclusive(ctx, submit) }
 }
 
 /// La tranche d'un tableau reçu de l'hôte, vide pour un compte nul.
@@ -791,8 +791,14 @@ pub unsafe extern "C" fn scg_frame_tile(
 /// # Safety
 ///
 /// `ctx` is a live handle, `color` and `depth` each point to `scratch` writable
-/// `uint32_t`, and `pixels` points to a writable buffer of at least
-/// `stride × height × 4` bytes.
+/// `uint32_t` and **do not overlap each other**, and `pixels` points to a
+/// writable buffer of at least `stride × height × 4` bytes.
+///
+/// The single `scratch` length for both does not mean one buffer serves both:
+/// the engine takes an exclusive view of each, so passing the same pointer twice
+/// is undefined behaviour before a byte is written. It is a precondition and not
+/// an error case — the engine cannot see it, and the call that would prove a
+/// check works is itself undefined.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn scg_frame_region(
     ctx: *mut ScgContext,
@@ -895,11 +901,16 @@ pub unsafe extern "C" fn scg_frame_end(ctx: *mut ScgContext, pixels: *mut u8, st
 /// that resumes on another thread of a pool will find it empty.
 ///
 /// **That slot's lifetime is shorter than the context one's**: every entry point
-/// clears it on the way in, whichever it is and whether it takes a context or
-/// not. So it is valid until the **next call of any kind on the same thread**,
-/// where the context message survives until the next call on that same context.
-/// A host that calls anything between the failure and the read gets the empty
-/// string, not a stale message.
+/// clears it on the way in, whether it takes a context or not — every one but
+/// the two the contract exempts from the wrapper, `scg_abi_version` and this
+/// function, which compute nothing and so write no message. So it is valid until
+/// the **next call that can fail, on the same thread**, where the context message
+/// survives until the next call on that same context. A host that calls anything
+/// else between the failure and the read gets the empty string, not a stale
+/// message.
+///
+/// The two exemptions are what make this readable at all: a reader that cleared
+/// the slot would erase the message it was called to fetch.
 ///
 /// Allowed on a faulted context, so the host can learn the cause.
 ///
@@ -1075,7 +1086,7 @@ pub unsafe extern "C" fn scg_submit_textured(
     triangle_count: u32,
     texture: *const ScgTexture,
 ) -> i32 {
-    let submit = |mut core: entry::Core<'_>| {
+    let submit = |context: &mut Context| {
         // SAFETY: précondition de la fonction — chaque pointeur est nul ou vise
         // une valeur lisible.
         let model = unsafe { model.as_ref() }.ok_or(AbiError::NULL)?;
@@ -1091,7 +1102,7 @@ pub unsafe extern "C" fn scg_submit_textured(
             )
         };
         scene::check_finite_uv(vertices)?;
-        core.exclusive()?
+        context
             .submit_each_uv(model, triangles.len(), Some(&texture.inner), |i| {
                 let triangle = triangles[i];
                 let mut corners = [VertexUv::untextured(Vec3::ZERO); 3];
@@ -1111,7 +1122,7 @@ pub unsafe extern "C" fn scg_submit_textured(
     };
 
     // SAFETY: précondition de la fonction — `ctx` est nul ou un handle vivant.
-    unsafe { entry::with_context(ctx, submit) }
+    unsafe { entry::with_exclusive(ctx, submit) }
 }
 
 /// Submits a batch of triangles that **multiply** the buffer instead of
@@ -1151,7 +1162,7 @@ pub unsafe extern "C" fn scg_submit_blended(
     texture: *const ScgTexture,
     blend: u32,
 ) -> i32 {
-    let submit = |mut core: entry::Core<'_>| {
+    let submit = |context: &mut Context| {
         if blend != SCG_BLEND_MODULATE {
             return Err(AbiError::BLEND_MODE);
         }
@@ -1170,7 +1181,7 @@ pub unsafe extern "C" fn scg_submit_blended(
             )
         };
         scene::check_finite_uv(vertices)?;
-        core.exclusive()?
+        context
             .submit_each_blended(model, triangles.len(), texture.map(|t| &t.inner), |i| {
                 let triangle = triangles[i];
                 let mut corners = [VertexUv::untextured(Vec3::ZERO); 3];
@@ -1190,7 +1201,7 @@ pub unsafe extern "C" fn scg_submit_blended(
     };
 
     // SAFETY: précondition de la fonction — `ctx` est nul ou un handle vivant.
-    unsafe { entry::with_context(ctx, submit) }
+    unsafe { entry::with_exclusive(ctx, submit) }
 }
 
 /// Submits quads the engine orients on the camera.
@@ -1228,7 +1239,7 @@ pub unsafe extern "C" fn scg_submit_sprites(
     texture: *const ScgTexture,
     orientation: u32,
 ) -> i32 {
-    let submit = |mut core: entry::Core<'_>| {
+    let submit = |context: &mut Context| {
         let orientation = match orientation {
             SCG_SPRITE_AXIAL => SpriteOrientation::Axial,
             SCG_SPRITE_FACING => SpriteOrientation::Facing,
@@ -1243,7 +1254,7 @@ pub unsafe extern "C" fn scg_submit_sprites(
         // SAFETY: précondition de la fonction — `sprites` couvre son nombre
         // d'éléments.
         let sprites = unsafe { slice_of(sprites, sprite_count) };
-        core.exclusive()?
+        context
             .submit_each_sprite(
                 model,
                 sprites.len(),
@@ -1255,7 +1266,7 @@ pub unsafe extern "C" fn scg_submit_sprites(
     };
 
     // SAFETY: précondition de la fonction — `ctx` est nul ou un handle vivant.
-    unsafe { entry::with_context(ctx, submit) }
+    unsafe { entry::with_exclusive(ctx, submit) }
 }
 
 /// Submits lines to draw, in the space `model` carries.
@@ -1290,13 +1301,12 @@ pub unsafe extern "C" fn scg_submit_lines(
     line_count: u32,
     depth: u32,
 ) -> i32 {
-    let submit = |mut core: entry::Core<'_>| {
+    let submit = |context: &mut Context| {
         // **L'état d'abord, les arguments ensuite** : la convention de la
         // frontière, écrite dans `docs/abi.md`. Ces deux soumissions étaient les
         // seules à l'inverse, et pendant le rendu un mode fautif y rendait
         // `SCG_ERR_INVALID_ARGUMENT` là où les huit réglages rendaient
         // `SCG_ERR_INVALID_STATE`.
-        let context = core.exclusive()?;
         let depth = depth_mode(depth)?;
         // SAFETY: précondition de la fonction — `model` est nul ou lisible.
         let model = unsafe { model.as_ref() }.ok_or(AbiError::NULL)?;
@@ -1313,7 +1323,7 @@ pub unsafe extern "C" fn scg_submit_lines(
     };
 
     // SAFETY: précondition de la fonction — `ctx` est nul ou un handle vivant.
-    unsafe { entry::with_context(ctx, submit) }
+    unsafe { entry::with_exclusive(ctx, submit) }
 }
 
 /// Submits points to draw, in the space `model` carries.
@@ -1333,9 +1343,8 @@ pub unsafe extern "C" fn scg_submit_points(
     point_count: u32,
     depth: u32,
 ) -> i32 {
-    let submit = |mut core: entry::Core<'_>| {
+    let submit = |context: &mut Context| {
         // L'état d'abord, comme la soumission de lignes et pour la même raison.
-        let context = core.exclusive()?;
         let depth = depth_mode(depth)?;
         // SAFETY: précondition de la fonction — `model` est nul ou lisible.
         let model = unsafe { model.as_ref() }.ok_or(AbiError::NULL)?;
@@ -1349,7 +1358,7 @@ pub unsafe extern "C" fn scg_submit_points(
     };
 
     // SAFETY: précondition de la fonction — `ctx` est nul ou un handle vivant.
-    unsafe { entry::with_context(ctx, submit) }
+    unsafe { entry::with_exclusive(ctx, submit) }
 }
 
 /// La constante d'ABI traduite en mode du noyau, ou le refus.
@@ -1413,7 +1422,7 @@ pub unsafe extern "C" fn scg_submit_shaded(
     triangle_count: u32,
     texture: *const ScgTexture,
 ) -> i32 {
-    let submit = |mut core: entry::Core<'_>| {
+    let submit = |context: &mut Context| {
         // SAFETY: précondition de la fonction — chaque pointeur est nul ou vise
         // une valeur lisible.
         let model = unsafe { model.as_ref() }.ok_or(AbiError::NULL)?;
@@ -1429,7 +1438,7 @@ pub unsafe extern "C" fn scg_submit_shaded(
             )
         };
         scene::check_finite_uvn(vertices)?;
-        core.exclusive()?
+        context
             .submit_each_shaded(model, triangles.len(), texture.map(|t| &t.inner), |i| {
                 let triangle = triangles[i];
                 let mut corners = [VertexUv2::unlit(VertexUv::untextured(Vec3::ZERO)); 3];
@@ -1449,7 +1458,7 @@ pub unsafe extern "C" fn scg_submit_shaded(
     };
 
     // SAFETY: précondition de la fonction — `ctx` est nul ou un handle vivant.
-    unsafe { entry::with_context(ctx, submit) }
+    unsafe { entry::with_exclusive(ctx, submit) }
 }
 
 /// Submits a batch of triangles lit by a lightmap.
@@ -1489,7 +1498,7 @@ pub unsafe extern "C" fn scg_submit_lit(
     texture: *const ScgTexture,
     lightmap: *const ScgTexture,
 ) -> i32 {
-    let submit = |mut core: entry::Core<'_>| {
+    let submit = |context: &mut Context| {
         // SAFETY: précondition de la fonction — chaque pointeur est nul ou vise
         // une valeur lisible.
         let model = unsafe { model.as_ref() }.ok_or(AbiError::NULL)?;
@@ -1507,7 +1516,7 @@ pub unsafe extern "C" fn scg_submit_lit(
             )
         };
         scene::check_finite_uv2(vertices)?;
-        core.exclusive()?
+        context
             .submit_each_lit(
                 model,
                 triangles.len(),
@@ -1533,7 +1542,7 @@ pub unsafe extern "C" fn scg_submit_lit(
     };
 
     // SAFETY: précondition de la fonction — `ctx` est nul ou un handle vivant.
-    unsafe { entry::with_context(ctx, submit) }
+    unsafe { entry::with_exclusive(ctx, submit) }
 }
 
 /// Loads a mesh from a block of bytes.
@@ -1648,7 +1657,7 @@ pub unsafe extern "C" fn scg_submit_mesh(
     textures: *const *const ScgTexture,
     texture_count: u32,
 ) -> i32 {
-    let submit = |mut core: entry::Core<'_>| {
+    let submit = |context: &mut Context| {
         // SAFETY: précondition de la fonction — chaque pointeur est nul ou vise
         // une valeur lisible.
         let model = unsafe { model.as_ref() }.ok_or(AbiError::NULL)?;
@@ -1665,7 +1674,7 @@ pub unsafe extern "C" fn scg_submit_mesh(
         // d'éléments, le cas vide étant traité par `slice_of`.
         let slots = unsafe { slice_of(textures, texture_count) };
 
-        core.exclusive()?
+        context
             // SAFETY: précondition de la fonction — chaque entrée du tableau est
             // nulle ou un handle vivant. Le compte ayant été vérifié égal, le
             // rang est toujours dans les bornes.
@@ -1676,7 +1685,7 @@ pub unsafe extern "C" fn scg_submit_mesh(
     };
 
     // SAFETY: précondition de la fonction — `ctx` est nul ou un handle vivant.
-    unsafe { entry::with_context(ctx, submit) }
+    unsafe { entry::with_exclusive(ctx, submit) }
 }
 
 /// Reads the name of one texture slot, in two steps.
@@ -1774,7 +1783,7 @@ pub unsafe extern "C" fn scg_submit_mesh_frame(
     frame_b: u32,
     t: f32,
 ) -> i32 {
-    let submit = |mut core: entry::Core<'_>| {
+    let submit = |context: &mut Context| {
         // SAFETY: précondition de la fonction — chaque pointeur est nul ou vise
         // une valeur lisible.
         let model = unsafe { model.as_ref() }.ok_or(AbiError::NULL)?;
@@ -1791,7 +1800,7 @@ pub unsafe extern "C" fn scg_submit_mesh_frame(
         // d'éléments, le cas vide étant traité par `slice_of`.
         let slots = unsafe { slice_of(textures, texture_count) };
 
-        core.exclusive()?
+        context
             .submit_mesh_frame(
                 model,
                 &mesh.inner,
@@ -1806,7 +1815,7 @@ pub unsafe extern "C" fn scg_submit_mesh_frame(
     };
 
     // SAFETY: précondition de la fonction — `ctx` est nul ou un handle vivant.
-    unsafe { entry::with_context(ctx, submit) }
+    unsafe { entry::with_exclusive(ctx, submit) }
 }
 
 /// Writes the number of animation frames the mesh carries to `out`.
@@ -2143,7 +2152,7 @@ pub unsafe extern "C" fn scg_submit_world(
     textures: *const *const ScgTexture,
     texture_count: u32,
 ) -> i32 {
-    let submit = |mut core: entry::Core<'_>| {
+    let submit = |context: &mut Context| {
         // SAFETY: précondition de la fonction — chaque pointeur est nul ou vise
         // une valeur lisible.
         let model = unsafe { model.as_ref() }.ok_or(AbiError::NULL)?;
@@ -2160,7 +2169,7 @@ pub unsafe extern "C" fn scg_submit_world(
         // d'éléments, le cas vide étant traité par `slice_of`.
         let slots = unsafe { slice_of(textures, texture_count) };
 
-        core.exclusive()?
+        context
             // SAFETY: précondition de la fonction — chaque entrée du tableau est
             // nulle ou un handle vivant. Le compte ayant été vérifié égal et le
             // rang venant du chargement, il est toujours dans les bornes.
@@ -2171,7 +2180,7 @@ pub unsafe extern "C" fn scg_submit_world(
     };
 
     // SAFETY: précondition de la fonction — `ctx` est nul ou un handle vivant.
-    unsafe { entry::with_context(ctx, submit) }
+    unsafe { entry::with_exclusive(ctx, submit) }
 }
 
 /// Submits a whole map with its lightmaps, one batch per surface.
@@ -2202,7 +2211,7 @@ pub unsafe extern "C" fn scg_submit_world_lit(
     texture_count: u32,
     lighting: *const ScgLighting,
 ) -> i32 {
-    let submit = |mut core: entry::Core<'_>| {
+    let submit = |context: &mut Context| {
         // SAFETY: précondition de la fonction — chaque pointeur est nul ou vise
         // une valeur lisible.
         let model = unsafe { model.as_ref() }.ok_or(AbiError::NULL)?;
@@ -2222,7 +2231,7 @@ pub unsafe extern "C" fn scg_submit_world_lit(
         // d'éléments, le cas vide étant traité par `slice_of`.
         let slots = unsafe { slice_of(textures, texture_count) };
 
-        core.exclusive()?
+        context
             .submit_world_lit(
                 model,
                 &world.inner,
@@ -2234,7 +2243,7 @@ pub unsafe extern "C" fn scg_submit_world_lit(
     };
 
     // SAFETY: précondition de la fonction — `ctx` est nul ou un handle vivant.
-    unsafe { entry::with_context(ctx, submit) }
+    unsafe { entry::with_exclusive(ctx, submit) }
 }
 
 /// Creates the holder of a map's computed lightmaps, without computing any.
@@ -2713,7 +2722,7 @@ pub unsafe extern "C" fn scg_submit_world_visible(
     lighting: *const ScgLighting,
     cell_id: u32,
 ) -> i32 {
-    let submit = |mut core: entry::Core<'_>| {
+    let submit = |context: &mut Context| {
         // SAFETY: précondition de la fonction — chaque pointeur est nul ou vise
         // une valeur lisible.
         let model = unsafe { model.as_ref() }.ok_or(AbiError::NULL)?;
@@ -2733,8 +2742,7 @@ pub unsafe extern "C" fn scg_submit_world_visible(
         // d'éléments, le cas vide étant traité par `slice_of`.
         let slots = unsafe { slice_of(textures, texture_count) };
 
-        let seen = core
-            .exclusive()?
+        let seen = context
             .submit_world_visible(
                 model,
                 &world.inner,
@@ -2753,7 +2761,7 @@ pub unsafe extern "C" fn scg_submit_world_visible(
     };
 
     // SAFETY: précondition de la fonction — `ctx` est nul ou un handle vivant.
-    unsafe { entry::with_context(ctx, submit) }
+    unsafe { entry::with_exclusive(ctx, submit) }
 }
 
 /// Writes the number of static lights the map carries to `out`.

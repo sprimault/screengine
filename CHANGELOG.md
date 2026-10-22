@@ -63,6 +63,22 @@ publié, et explique les conventions du dépôt à qui y contribue.
 
 ## [Non publié]
 
+### Corrigé
+
+- **Un argument fautif pendant une image rendait encore deux codes différents**
+  selon la fonction : treize points d'entrée rendaient
+  `SCG_ERR_INVALID_ARGUMENT` là où le contrat promet `SCG_ERR_INVALID_STATE`.
+  La 1.7.0 n'avait corrigé que les deux soumissions de tracé.
+
+***
+
+### Fixed
+
+- **A faulty argument during a frame still returned two different codes**
+  depending on the function: thirteen entry points returned
+  `SCG_ERR_INVALID_ARGUMENT` where the contract promises
+  `SCG_ERR_INVALID_STATE`. 1.7.0 had only fixed the two drawing submissions.
+
 ## [1.7.0] — 2026-10-22 — Ce que rien ne gardait
 
 ### Ajouté

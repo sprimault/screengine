@@ -386,11 +386,43 @@ impl Outcome for i32 {
     }
 }
 
+/// Enveloppe un appel exclusif en prenant l'exclusivité **avant** son corps.
+///
+/// **C'est elle qui tient la clause « entre deux erreurs, l'état passe avant
+/// l'argument »**, et elle la tient structurellement : le corps ne reçoit un
+/// `&mut Context` qu'une fois l'état vérifié, donc aucune conversion d'argument
+/// ne peut le précéder. [`with_context`] laissait cet ordre au corps, et le
+/// résultat est que treize points d'entrée rendaient `SCG_ERR_INVALID_ARGUMENT`
+/// pendant une image là où le contrat promet `SCG_ERR_INVALID_STATE` — relevé le
+/// 2026-10-22, alors qu'un commentaire affirmait que deux soumissions étaient
+/// les seules à l'inverse.
+///
+/// Tout réglage et toute soumission passent par ici. Ce qui reste sur
+/// [`with_context`] se compte sur trois : les deux conduites d'image, dont
+/// l'ordre inverse est voulu et écrit dans le contrat, et le seul appel qui lit
+/// en partage.
+///
+/// # Safety
+///
+/// `ctx` est nul, ou un handle rendu par `scg_create` et pas encore détruit.
+pub(crate) unsafe fn with_exclusive<T, F>(ctx: *mut ScgContext, f: F) -> i32
+where
+    T: Outcome,
+    F: FnOnce(&mut Context) -> Result<T, AbiError>,
+{
+    // SAFETY: précondition de la fonction, reportée telle quelle.
+    unsafe { with_context(ctx, |mut core| f(core.exclusive()?)) }
+}
+
 /// Enveloppe un appel qui porte sur un contexte, hors rendu d'une tuile.
 ///
 /// Son message va dans le contexte. Il ne s'exécute pas en même temps qu'un
 /// autre appel sur le même contexte ; seule la fin d'image peut croiser des
 /// tuiles, qu'elle refuse d'attendre.
+///
+/// **Préférer [`with_exclusive`]**, qui prend l'exclusivité avant le corps :
+/// celle-ci laisse l'ordre au corps, et ne se justifie que pour les trois appels
+/// dont l'ordre est le leur.
 ///
 /// # Safety
 ///

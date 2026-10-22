@@ -46,12 +46,14 @@ pub const SCG_ERR_FAULTED: i32 = -6;
 // lisent les `#define` du header, JavaScript et PHP, n'évaluent pas un nom.
 pub const SCG_ERR_POISONED: i32 = -6;
 
-/// A lookup by stable identifier found nothing.
+/// A lookup by stable identifier found nothing — a cell, a surface, a material.
 ///
-/// Returned by `scg_submit_world_visible` when no cell carries the given
-/// identifier. The file is well formed and the call is well shaped: it is the
-/// reference that finds no target, which is neither a malformation nor a bad
-/// argument.
+/// The file is well formed and the call is well shaped: it is the reference that
+/// finds no target, which is neither a malformation nor a bad argument.
+///
+/// No list of producers here. Several entry points return it, the set grows with
+/// every accessor keyed on an identifier, and a list in prose drifts while
+/// nothing checks it.
 pub const SCG_ERR_UNKNOWN_RESOURCE: i32 = -100;
 
 /// Success, and traversal stopped at one of its bounds.
