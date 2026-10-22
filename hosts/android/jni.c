@@ -355,10 +355,6 @@ static void texture_destroy(JNIEnv *env, jclass cls, jlong texture)
 }
 
 /*
- * scg_submit_textured : mêmes tableaux que `submit`, les sommets portant cinq
- * `float` au lieu de trois.
- */
-/*
  * scg_mesh_load, le bloc recopié depuis le tableau Java.
  *
  * Le fichier vient du système de fichiers de l'appareil, lu côté Java : le

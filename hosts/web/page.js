@@ -62,17 +62,6 @@ function status(text) {
   document.getElementById("status").textContent = text;
 }
 
-/**
- * Un damier de `side` texels, ses cases de `cell`.
- *
- * Le même motif que la suite de conformance, teinte pour teinte : la page
- * montre le décor de la scène de référence, et une teinte inventée ici en
- * ferait une autre image.
- *
- * @param {number} side côté en texels
- * @param {number} cell côté d'une case
- * @returns {Uint8Array}
- */
 /** Côté de la planche de la créature et de sa tache, en texels. */
 const SPRITE_SIDE = 64;
 

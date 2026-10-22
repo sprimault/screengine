@@ -273,6 +273,12 @@ HOST_OUT = $(abspath $(SORTIE))/host-$(host_dir_$*)
 #                         scg_submit_shaded, et le seul qui fasse remplir
 #                         ScgVertexUvN par un hôte. Sa taille était comparée au
 #                         header, ses décalages par personne
+#   rayon                 la seule qui remonte de l'image vers le monde : le
+#                         chemin de scg_pixel_ray, que l'inverse de la
+#                         projection n'empruntait nulle part ailleurs. Deux de
+#                         ses pixels débordent, donc l'empreinte fige aussi que
+#                         les cinq hôtes les refusent — et non seulement que le
+#                         calcul concorde quand il a lieu
 #
 # Une scène ajoutée ici est une scène à écrire dans les cinq hôtes, et c'est
 # voulu : c'est ce qui rend leur comparaison possible.
@@ -1351,6 +1357,47 @@ deps-verif:
 	done; \
 	echo "deps-verif : le noyau tient en un paquet, la frontiere en deux"
 
+# **Deux blocs de documentation colles sont un bloc attache a rien.**
+#
+# Dans ce depot une declaration suit toujours le sien, donc une fermeture `*/`
+# immediatement suivie d'une ouverture `/*` designe un bloc dont la declaration
+# a disparu — et celle qui suit se retrouve, elle, sans documentation. C'est ce
+# qui est arrive a `fingerprint` dans l'hote web : sa documentation etait la,
+# devant le bloc d'une autre methode, et la regle du projet veut toute
+# declaration documentee.
+#
+# Trois sites le portaient, dans trois langages, donc la regle de trois s'y
+# applique — et la classe se ferme mecaniquement la ou la relecture l'avait
+# laissee passer trois fois.
+#
+# Les deux autres formes qu'un bloc orphelin peut prendre ne sont pas cherchees :
+# un bloc suivi d'une ligne vide, qui est un commentaire de section legitime, et
+# un bloc en fin de fichier, qu'aucun des trois n'etait. Le motif cherche est
+# celui qui s'est produit.
+#
+# BLOCS_RACINE est surchargeable pour que la garde du vide s'eprouve :
+# `BLOCS_RACINE=docs` ne rend aucun fichier des langages cherches. Pas
+# `include`, qui en rend un — son header, cherche comme tout `.h`.
+BLOCS_RACINE ?= hosts
+
+blocs-verif:
+	@sources=$$(find $(BLOCS_RACINE) -type f \( -name '*.c' -o -name '*.cpp' \
+	  -o -name '*.h' -o -name '*.js' -o -name '*.java' -o -name '*.go' \) \
+	  -not -path '*/build/*' -not -path '*/node_modules/*' | sort); \
+	if [ -z "$$sources" ]; then \
+	  echo "blocs-verif : aucune source d hote trouvee, la recherche n a pas abouti"; \
+	  exit 1; \
+	fi; \
+	fautifs=$$(awk '\
+	  prev ~ /^[[:space:]]*\*\/[[:space:]]*$$/ && /^[[:space:]]*\/\*/ \
+	    { print FILENAME ":" FNR } \
+	  { prev = $$0 }' $$sources); \
+	if [ -n "$$fautifs" ]; then \
+	  echo "blocs-verif : bloc(s) de documentation attache(s) a rien :"; \
+	  echo "$$fautifs" | sed 's/^/  /'; exit 1; \
+	fi; \
+	echo "blocs-verif : $$(echo $$sources | wc -w) fichiers d hote, aucun bloc orphelin"
+
 # **Toute declaration du header apparait dans `docs/abi.md`**, qui fait foi.
 #
 # Proposé par le sceptique d'un audit et resté non livré : le site qu'il avait
@@ -1433,7 +1480,7 @@ CIBLES_PLAY = $(CIBLES_LINUX_ARM) $(CIBLE_WASM)
 # leur plancher n'est pas sous notre contrôle, et l'y faire entrer donnerait une
 # contrainte qu'une montée de dépendance casserait sans qu'on puisse rien.
 
-lint: lint-doc-tests lint-android-versions lint-wasm-bindgen lint-enveloppes lint-intrinseques etat-verif bornes-verif plate-verif sorties-verif dispositions-verif java-verif codes-verif frontiere-verif etage-verif contrat-verif alloc-verif deps-verif
+lint: lint-doc-tests lint-android-versions lint-wasm-bindgen lint-enveloppes lint-intrinseques etat-verif bornes-verif plate-verif sorties-verif dispositions-verif java-verif codes-verif frontiere-verif etage-verif contrat-verif alloc-verif deps-verif blocs-verif
 	cargo clippy --workspace --all-targets --all-features -- -D warnings
 	for cible in $(CIBLES_CROISEES); do \
 	  cargo clippy -p screengine -p screengine-ffi --lib --target $$cible -- -D warnings || exit 1; \

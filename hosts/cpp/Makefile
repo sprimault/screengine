@@ -16,10 +16,17 @@ INCLUDE := ../../include
 # dépôt.
 MESH    ?= ../../hosts/caisse.mesh
 
-# Le décor que l'hôte de démonstration parcourt, et la racine de SDL3, que
-# `makefile.local` porte : une dépendance système ne s'installe pas au même
-# endroit d'un poste à l'autre, et le projet n'en impose aucun.
-WORLD   ?= ../../hosts/couloir.world
+# Le décor que les deux exécutables reçoivent : la démonstration le parcourt, et
+# la scène `salles` en hache le rendu. **C'est le second qui fixe la valeur** —
+# le défaut désignait le couloir, que les hôtes ne parcourent plus, et une
+# empreinte calculée sur lui diverge de la référence. L'appel depuis la racine
+# surcharge la variable, si bien que l'écart ne se voyait qu'en lançant la cible
+# d'ici.
+WORLD   ?= ../../hosts/salles.world
+
+# La racine de SDL3, que `makefile.local` porte : une dépendance système ne
+# s'installe pas au même endroit d'un poste à l'autre, et le projet n'en impose
+# aucun.
 SDL3    ?=
 
 # Le décor de collision et les deux listes que les scènes `collision` et
