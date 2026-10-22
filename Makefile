@@ -124,7 +124,7 @@ android_build = for cible in $(CIBLES_ANDROID); do \
 
 .PHONY: build lib lib-wasm lib-android run example web test native-libs fmt fmt-fix lint lint-doc-tests \
         lint-android-versions lint-wasm-bindgen lint-enveloppes lint-intrinseques etat-verif bornes-verif plate-verif sorties-verif \
-        dispositions-verif java-verif codes-verif frontiere-verif etage-verif contrat-verif nostd test-arm test-linux-arm test-wasi msrv bench bench-wasi stubs \
+        dispositions-verif java-verif codes-verif frontiere-verif etage-verif contrat-verif alloc-verif nostd test-arm test-linux-arm test-wasi msrv bench bench-wasi stubs \
         conform conform-arm conform-linux-arm conform-wasi conform-x86 conform-update conform-images mesh header header-verif audit deny doc doc-verif hosts host-c host-cpp host-web host-go \
         host-android demo-c demo-cpp clean tools
 
@@ -1261,6 +1261,45 @@ etage-verif:
 	fi; \
 	echo "etage-verif : $$(echo $$sources | wc -w) fichiers du noyau, aucune mention de l etage"
 
+# **Aucune allocation infaillible dont la taille vient de l'hote**, dans la
+# frontiere.
+#
+# Ces formes paniquent par `handle_alloc_error`, qui **avorte le processus** : un
+# `abort` n'est pas un depliage, donc le `catch_unwind` de chaque point d'entree
+# ne le voit pas, et `SCG_ERR_OUT_OF_MEMORY` n'a jamais de cas. Le noyau a ferme
+# cette classe par `buffer::reserved` ; la frontiere l'avait laissee ouverte, et
+# `scg_lightmap_fault` reservait ses coins sur un compte que le contrat declare
+# non borne.
+#
+# **Le critere est « une taille qui vient de l'hote », pas « une allocation »**,
+# et c'est lui qui laisse les cinq `Box::new` des handles dehors : leur taille
+# est celle d'une structure, fixe et minuscule, et un echec y signifie que le
+# processus est deja mort. Ce qui entre dans la classe est ce qu'un compte, une
+# longueur ou une tranche d'hote dimensionne.
+#
+# **Hors fichiers de test**, qui vivent chacun dans leur propre `tests.rs` : un
+# cas a le droit de construire ses donnees sans ceremonie, et il ne traverse
+# aucune frontiere.
+#
+# La parade est `try_reserve_exact` suivi de
+# `.map_err(|_| AbiError::from(CoreError::OutOfMemory))?`, les deux conversions
+# existant deja.
+ALLOC_HOTE = 'with_capacity|vec!\[|\.collect\(\)|String::from|\.to_owned\(\)|format!'
+
+alloc-verif:
+	@sources=$$(find crates/screengine-ffi/src -name '*.rs' ! -name 'tests.rs' | sort); \
+	if [ -z "$$sources" ]; then \
+	  echo "alloc-verif : aucune source de la frontiere trouvee, la recherche n a pas abouti"; \
+	  exit 1; \
+	fi; \
+	fautives=$$(grep -nE $(ALLOC_HOTE) $$sources \
+	  | grep -vE "^[^:]*:[0-9]+:[[:space:]]*(//|\*)" || true); \
+	if [ -n "$$fautives" ]; then \
+	  echo "alloc-verif : allocation(s) infaillible(s) a taille d hote dans la frontiere :"; \
+	  echo "$$fautives"; exit 1; \
+	fi; \
+	echo "alloc-verif : $$(echo $$sources | wc -w) fichiers de la frontiere, aucune allocation infaillible"
+
 # **Toute declaration du header apparait dans `docs/abi.md`**, qui fait foi.
 #
 # Proposé par le sceptique d'un audit et resté non livré : le site qu'il avait
@@ -1343,7 +1382,7 @@ CIBLES_PLAY = $(CIBLES_LINUX_ARM) $(CIBLE_WASM)
 # leur plancher n'est pas sous notre contrôle, et l'y faire entrer donnerait une
 # contrainte qu'une montée de dépendance casserait sans qu'on puisse rien.
 
-lint: lint-doc-tests lint-android-versions lint-wasm-bindgen lint-enveloppes lint-intrinseques etat-verif bornes-verif plate-verif sorties-verif dispositions-verif java-verif codes-verif frontiere-verif etage-verif contrat-verif
+lint: lint-doc-tests lint-android-versions lint-wasm-bindgen lint-enveloppes lint-intrinseques etat-verif bornes-verif plate-verif sorties-verif dispositions-verif java-verif codes-verif frontiere-verif etage-verif contrat-verif alloc-verif
 	cargo clippy --workspace --all-targets --all-features -- -D warnings
 	for cible in $(CIBLES_CROISEES); do \
 	  cargo clippy -p screengine -p screengine-ffi --lib --target $$cible -- -D warnings || exit 1; \

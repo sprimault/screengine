@@ -61,8 +61,10 @@ relâchée ou approximative dans le noyau et à la frontière, l'enveloppe
 `entry::` de chaque point d'entrée, l'absence de code de retour jugé
 autrement que par son signe dans les hôtes, l'absence de callback et de pointeur
 rendu hors des deux exemptions que le contrat nomme, l'absence de mention de
-l'étage d'accueil dans le noyau, et la présence dans `docs/abi.md` de chaque
-déclaration du header — fonctions, constantes, structures et handles.
+l'étage d'accueil dans le noyau, la présence dans `docs/abi.md` de chaque
+déclaration du header — fonctions, constantes, structures et handles —, et
+l'absence dans la frontière d'allocation infaillible dont la taille vient de
+l'hôte.
 L'intégration continue appelle `make tools`, qui installe les outils aux
 versions épinglées ici.
 
