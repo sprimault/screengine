@@ -128,12 +128,7 @@ pub fn digest() -> Result<u64, String> {
     let mut bytes = Vec::new();
     for (index, pick) in all().into_iter().enumerate() {
         let filter = surfaces(pick.filter);
-        let cell = world.locate(pick.from);
-        let fast = if cell == 0 {
-            None
-        } else {
-            world.pick(cell, pick.from, pick.to, filter)
-        };
+        let fast = play(&world, &pick);
         let slow = world.pick_brute(pick.from, pick.to, filter);
 
         if let Some(fast) = &fast
@@ -149,6 +144,21 @@ pub fn digest() -> Result<u64, String> {
         absorb(&published, status, pick.filter, &mut bytes);
     }
     Ok(hash::of(&bytes))
+}
+
+/// Joue une interrogation comme un hôte la joue : localiser, puis interroger.
+///
+/// Trois sites écrivaient cette séquence, dont celui qui sert d'oracle aux cas :
+/// une garde de couverture mesurait alors une copie de ce que l'empreinte
+/// calcule. Le filtre se traduit ici, et l'appelant qui en a besoin pour le
+/// chemin brut le garde à part — c'est la seule chose que les deux chemins
+/// partagent.
+fn play(world: &World, pick: &Pick) -> Option<Hit> {
+    let cell = world.locate(pick.from);
+    if cell == 0 {
+        return None;
+    }
+    world.pick(cell, pick.from, pick.to, surfaces(pick.filter))
 }
 
 /// Ce que la frontière publie d'une interrogation : un résultat et un statut.
@@ -287,12 +297,7 @@ pub fn report() -> Result<String, String> {
         "# rayon : depart -> arrivee | filtre | fraction | normale | surface | cellule | etat\n",
     );
     for (index, pick) in all().into_iter().enumerate() {
-        let cell = world.locate(pick.from);
-        let found = if cell == 0 {
-            None
-        } else {
-            world.pick(cell, pick.from, pick.to, surfaces(pick.filter))
-        };
+        let found = play(&world, &pick);
         let (hit, status) = publish(found, pick.to);
         let state = match status {
             STATUS_START_SOLID => "depart-solide",

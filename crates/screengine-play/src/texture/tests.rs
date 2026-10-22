@@ -80,6 +80,40 @@ fn un_png_rgba_garde_ses_texels() {
     assert_eq!(texture.texel(0, 1, 1), rgba(0xA0, 0xB0, 0xC0, 0x00));
 }
 
+/// Le chargement masqué porte le drapeau jusqu'à la texture, là où l'ordinaire
+/// ne le porte pas.
+///
+/// **C'est la seule différence entre les deux fonctions publiques**, leur corps
+/// étant commun, et aucun cas ne nommait la seconde : les dix autres passent
+/// tous par `load_png`, si bien qu'un `decode` qui aurait ignoré son argument
+/// les laissait tous verts. L'accesseur du noyau sert d'oracle — il est public
+/// et éprouvé chez lui, donc la mutation rougit sur l'assertion et non sur une
+/// couleur.
+///
+/// Les texels sont les mêmes des deux côtés, le masque décidant du dessin et non
+/// du décodage : c'est le drapeau, et lui seul, que ce cas garde.
+#[test]
+fn le_chargement_masque_porte_son_drapeau() {
+    let pixels = [
+        0x10, 0x20, 0x30, 0xFF, //
+        0x40, 0x50, 0x60, 0x00, //
+        0x70, 0x80, 0x90, 0xFF, //
+        0xA0, 0xB0, 0xC0, 0x00,
+    ];
+    let png = encode(2, 2, ColorType::Rgba, &pixels);
+
+    let ordinaire = load_png(&png).unwrap();
+    let masquee = load_png_masked(&png).unwrap();
+
+    assert!(!ordinaire.masked(), "load_png a rendu une texture masquée");
+    assert!(masquee.masked(), "load_png_masked n'a pas masqué");
+    assert_eq!(
+        masquee.texel(0, 1, 0),
+        ordinaire.texel(0, 1, 0),
+        "le masque a changé un texel"
+    );
+}
+
 /// Une image sans canal alpha devient opaque plutôt que transparente : un alpha
 /// nul par défaut donnerait des surfaces invisibles sans rien signaler.
 #[test]

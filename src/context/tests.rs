@@ -1566,6 +1566,35 @@ fn le_brouillard_s_eteint_et_suit_le_plan_proche() {
     );
 }
 
+/// La courbe de sortie s'annonce, s'applique et se retire sans trace.
+///
+/// `has_grade` n'avait ni appelant ni cas, là où sa jumelle du brouillard en a
+/// trois : un accesseur qui rendrait toujours la même réponse ne se voyait
+/// nulle part. L'image encadre l'accesseur plutôt que de le croire — sans elle,
+/// un `clear_grade` qui ne viderait pas sa table laisserait le cas vert.
+#[test]
+fn la_courbe_de_sortie_s_annonce_et_se_retire() {
+    let mut ctx = small();
+    assert!(!ctx.has_grade());
+    let neutre = render(&mut ctx);
+
+    // **Un décalage, et non un gain** : l'image de ce contexte est un fond que
+    // rien n'a peint, donc noire, et un gain multiplicatif y est exactement
+    // invisible. Le cas serait resté vert sans rien éprouver.
+    ctx.set_grade(1.0, [1.0, 1.0, 1.0], [0.25, 0.0, 0.0])
+        .expect("courbe valide");
+    assert!(ctx.has_grade());
+    let corrige = render(&mut ctx);
+    assert!(corrige != neutre, "la courbe n'a rien changé à l'image");
+
+    ctx.clear_grade().expect("retrait");
+    assert!(!ctx.has_grade());
+    assert!(
+        render(&mut ctx) == neutre,
+        "la sortie n'est pas revenue à la neutralité"
+    );
+}
+
 /// Un lot éclairé prend **deux** entrées de la table pour un seul triangle :
 /// la sienne et celle de sa lightmap, qui vivent dans la même table.
 ///
