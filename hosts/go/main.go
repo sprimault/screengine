@@ -57,6 +57,7 @@ func main() {
 	picks, picksOK := renderPicks(os.Args[3], os.Args[5])
 	shaded, shadedOK := renderShaded()
 	rays, raysOK := renderRays()
+	pose, poseOK := renderPose()
 
 	rendered := []struct {
 		hash uint64
@@ -66,6 +67,7 @@ func main() {
 		{lit, litOK}, {overbright, overbrightOK}, {fog, fogOK}, {lights, lightsOK},
 		{mesh, meshOK}, {composite, compositeOK}, {rooms, roomsOK}, {trace, traceOK},
 		{sweeps, sweepsOK}, {picks, picksOK}, {shaded, shadedOK}, {rays, raysOK},
+		{pose, poseOK},
 	}
 
 	for _, scene := range rendered {

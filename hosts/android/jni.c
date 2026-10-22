@@ -713,6 +713,141 @@ static jint pixel_ray(JNIEnv *env, jclass cls, jlong ctx, jint x, jint y, jfloat
     return (jint)code;
 }
 
+/* Lit un `ScgQuat` depuis un tableau Java de quatre flottants.
+ *
+ * Même disposition des deux côtés — quatre `float`, la partie réelle en
+ * dernier —, donc la copie est directe. Elle reste une copie : Java déplace ses
+ * objets, et un pointeur dans son tas ne survivrait pas à l'appel. */
+static int read_quat(JNIEnv *env, jfloatArray array, ScgQuat *out)
+{
+    float values[4];
+    if (array == NULL || (*env)->GetArrayLength(env, array) != 4) {
+        return 0;
+    }
+    (*env)->GetFloatArrayRegion(env, array, 0, 4, values);
+    out->x = values[0];
+    out->y = values[1];
+    out->z = values[2];
+    out->w = values[3];
+    return 1;
+}
+
+/* Écrit un `ScgQuat` dans un tableau Java de quatre flottants. */
+static void write_quat(JNIEnv *env, jfloatArray array, const ScgQuat *q)
+{
+    const float values[4] = {q->x, q->y, q->z, q->w};
+    (*env)->SetFloatArrayRegion(env, array, 0, 4, values);
+}
+
+/* scg_quat_from_axis_angle : la rotation d'un angle autour d'un axe.
+ *
+ * **L'angle traverse en `jint` parce que Java n'a pas d'entier non signé**, et
+ * la conversion vers `uint32_t` garde le motif de bits : un angle au-delà d'un
+ * demi-tour arrive négatif côté Java et désigne pourtant le bon tour. C'est la
+ * seule façon de porter l'angle binaire dans ce langage, et c'est pourquoi la
+ * documentation Java dit de le traiter comme un motif, pas comme un nombre. */
+static jint quat_from_axis_angle(JNIEnv *env, jclass cls, jfloatArray axis, jint angle,
+                                 jfloatArray out)
+{
+    (void)cls;
+    float values[3];
+    ScgQuat q;
+    int32_t code;
+
+    if (axis == NULL || (*env)->GetArrayLength(env, axis) != 3) {
+        return SCG_ERR_INVALID_ARGUMENT;
+    }
+    if (out == NULL || (*env)->GetArrayLength(env, out) != 4) {
+        return SCG_ERR_INVALID_ARGUMENT;
+    }
+    (*env)->GetFloatArrayRegion(env, axis, 0, 3, values);
+    code = scg_quat_from_axis_angle(values, (uint32_t)angle, &q);
+    if (code < 0) {
+        return (jint)code;
+    }
+    write_quat(env, out, &q);
+    return (jint)code;
+}
+
+/* scg_quat_product : la rotation `a` suivie de la rotation `b`. */
+static jint quat_product(JNIEnv *env, jclass cls, jfloatArray a, jfloatArray b, jfloatArray out)
+{
+    (void)cls;
+    ScgQuat qa, qb, product;
+    int32_t code;
+
+    if (!read_quat(env, a, &qa) || !read_quat(env, b, &qb)) {
+        return SCG_ERR_INVALID_ARGUMENT;
+    }
+    if (out == NULL || (*env)->GetArrayLength(env, out) != 4) {
+        return SCG_ERR_INVALID_ARGUMENT;
+    }
+    code = scg_quat_product(&qa, &qb, &product);
+    if (code < 0) {
+        return (jint)code;
+    }
+    write_quat(env, out, &product);
+    return (jint)code;
+}
+
+/* scg_mat4_from_rotation_translation : la matrice modèle d'une pose.
+ *
+ * Seize flottants écrits dans le tableau de l'appelant, par colonnes : c'est la
+ * disposition que `submit` attend, et la même que le tableau `model` que les
+ * autres ponts reçoivent déjà. */
+static jint mat4_from_rotation_translation(JNIEnv *env, jclass cls, jfloatArray q,
+                                           jfloatArray translation, jfloatArray out)
+{
+    (void)cls;
+    float t[3];
+    ScgQuat rotation;
+    ScgMat4 m;
+    int32_t code;
+
+    if (!read_quat(env, q, &rotation)) {
+        return SCG_ERR_INVALID_ARGUMENT;
+    }
+    if (translation == NULL || (*env)->GetArrayLength(env, translation) != 3) {
+        return SCG_ERR_INVALID_ARGUMENT;
+    }
+    if (out == NULL || (*env)->GetArrayLength(env, out) != 16) {
+        return SCG_ERR_INVALID_ARGUMENT;
+    }
+    (*env)->GetFloatArrayRegion(env, translation, 0, 3, t);
+    code = scg_mat4_from_rotation_translation(&rotation, t, &m);
+    if (code < 0) {
+        return (jint)code;
+    }
+    (*env)->SetFloatArrayRegion(env, out, 0, 16, m.m);
+    return (jint)code;
+}
+
+/* scg_mat4_product : la matrice `a` suivie de la matrice `b`. */
+static jint mat4_product(JNIEnv *env, jclass cls, jfloatArray a, jfloatArray b, jfloatArray out)
+{
+    (void)cls;
+    ScgMat4 ma, mb, product;
+    int32_t code;
+
+    if (a == NULL || (*env)->GetArrayLength(env, a) != 16) {
+        return SCG_ERR_INVALID_ARGUMENT;
+    }
+    if (b == NULL || (*env)->GetArrayLength(env, b) != 16) {
+        return SCG_ERR_INVALID_ARGUMENT;
+    }
+    if (out == NULL || (*env)->GetArrayLength(env, out) != 16) {
+        return SCG_ERR_INVALID_ARGUMENT;
+    }
+    (*env)->GetFloatArrayRegion(env, a, 0, 16, ma.m);
+    (*env)->GetFloatArrayRegion(env, b, 0, 16, mb.m);
+    code = scg_mat4_product(&ma, &mb, &product);
+    if (code < 0) {
+        return (jint)code;
+    }
+    (*env)->SetFloatArrayRegion(env, out, 0, 16, product.m);
+    return (jint)code;
+}
+
 /* scg_world_pick : le balayage d'une boîte d'étendue nulle, avec son filtre.
  *
  * Même résultat et mêmes trente-six octets que `worldSweep` : c'est la même
@@ -1362,6 +1497,10 @@ static const JNINativeMethod METHODS[] = {
     {"pixelRay", "(JII[F)I", (void *)pixel_ray},
     {"clearGrade", "(J)I", (void *)clear_grade},
     {"setLights", "(J[F[B)I", (void *)set_lights},
+    {"quatFromAxisAngle", "([FI[F)I", (void *)quat_from_axis_angle},
+    {"quatProduct", "([F[F[F)I", (void *)quat_product},
+    {"mat4FromRotationTranslation", "([F[F[F)I", (void *)mat4_from_rotation_translation},
+    {"mat4Product", "([F[F[F)I", (void *)mat4_product},
 };
 
 /* Enregistre les méthodes ; un échec empêche le chargement de la bibliothèque. */

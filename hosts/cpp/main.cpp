@@ -1692,6 +1692,108 @@ uint64_t render_picks(bool &ok, const char *world_path, const char *picks_path)
     return hash;
 }
 
+/// Absorbe un quaternion, composante par composante.
+uint64_t absorb_quat(uint64_t hash, const ScgQuat &q)
+{
+    for (const float value : {q.x, q.y, q.z, q.w}) {
+        hash = absorb_float(hash, value);
+    }
+    return hash;
+}
+
+/// Absorbe une matrice, sa dernière ligne comprise.
+///
+/// Les seize coefficients et non les douze qui portent la transformation : la
+/// dernière ligne est ce qu'une soumission refuserait plus tard, loin de sa
+/// cause, et c'est ici qu'elle se compare.
+uint64_t absorb_mat4(uint64_t hash, const ScgMat4 &m)
+{
+    for (const float value : m.m) {
+        hash = absorb_float(hash, value);
+    }
+    return hash;
+}
+
+/// La scène `pose` : ce qu'un hôte compose avant d'avoir une scène.
+///
+/// La seule qui ne crée aucun contexte et ne touche à aucun tampon — elle
+/// n'appelle que les quatre fonctions de rotation. C'est le seul chemin qui les
+/// atteigne, et avant elles un hôte orientait sa caméra avec la trigonométrie
+/// de son langage : deux liaisons rendaient alors deux images.
+///
+/// **L'angle est un entier, et c'est ce que la scène fige en premier.** Un tour
+/// vaut 2³² ; convertir des radians ici rendrait une autre empreinte sans sortir
+/// du contrat.
+///
+/// Chaque étage entre dans l'empreinte — les quaternions, leurs produits dans
+/// les deux sens, les matrices, puis les leurs —, sans quoi elle dirait qu'un
+/// résultat a dévié sans dire lequel des quatre appels.
+uint64_t render_pose(bool &ok)
+{
+    ok = false;
+
+    // Aucun axe n'est unitaire, et le dernier est nul : le contrat promet alors
+    // l'identité plutôt qu'un refus, et c'est une clause qu'un hôte ne vérifie
+    // qu'en la hachant avec les autres.
+    static constexpr float AXES[3][3] = {
+        {0.0f, 0.0f, 2.0f},
+        {0.5f, -1.5f, 0.25f},
+        {0.0f, 0.0f, 0.0f},
+    };
+    // Le troisième ne tombe sur aucune entrée de la table du moteur : trois
+    // angles tabulés ne diraient rien de l'interpolation entre deux d'entre
+    // elles.
+    static constexpr uint32_t ANGLES[3] = {1u << 30, 1u << 29, 0x12345678u};
+    static constexpr float TRANSLATION[3] = {1.5f, -2.25f, 0.75f};
+
+    uint64_t hash = 0xcbf29ce484222325u;
+
+    ScgQuat rotations[3]{};
+    for (std::size_t i = 0; i < 3; ++i) {
+        if (scg_quat_from_axis_angle(AXES[i], ANGLES[i], &rotations[i]) < 0) {
+            check(false, "le quaternion de la scène de pose se construit");
+            return 0;
+        }
+        hash = absorb_quat(hash, rotations[i]);
+    }
+
+    // Les deux sens, parce que le produit n'est pas commutatif : un hôte qui
+    // inverserait ses arguments passerait sans cela.
+    for (const auto &a : rotations) {
+        for (const auto &b : rotations) {
+            ScgQuat product{};
+            if (scg_quat_product(&a, &b, &product) < 0) {
+                check(false, "le produit de quaternions de la scène de pose se calcule");
+                return 0;
+            }
+            hash = absorb_quat(hash, product);
+        }
+    }
+
+    ScgMat4 matrices[3]{};
+    for (std::size_t i = 0; i < 3; ++i) {
+        if (scg_mat4_from_rotation_translation(&rotations[i], TRANSLATION, &matrices[i]) < 0) {
+            check(false, "la matrice de la scène de pose se construit");
+            return 0;
+        }
+        hash = absorb_mat4(hash, matrices[i]);
+    }
+
+    for (const auto &a : matrices) {
+        for (const auto &b : matrices) {
+            ScgMat4 product{};
+            if (scg_mat4_product(&a, &b, &product) < 0) {
+                check(false, "le produit de matrices de la scène de pose se calcule");
+                return 0;
+            }
+            hash = absorb_mat4(hash, product);
+        }
+    }
+
+    ok = true;
+    return hash;
+}
+
 /// La scène `rayon` : du pixel vers le monde, l'inverse de la projection.
 ///
 /// La seule scène qui remonte — les autres descendent, des sommets vers des
@@ -1842,9 +1944,12 @@ int main(int argc, char **argv)
     bool rays_ok = false;
     const uint64_t rays = render_rays(rays_ok);
 
+    bool pose_ok = false;
+    const uint64_t pose = render_pose(pose_ok);
+
     if (failures > 0 || !ok || !textured_ok || !bilinear_ok || !graded_ok || !lit_ok
         || !overbright_ok || !fog_ok || !lights_ok || !mesh_ok || !composite_ok || !rooms_ok
-        || !trace_ok || !sweeps_ok || !picks_ok || !shaded_ok || !rays_ok) {
+        || !trace_ok || !sweeps_ok || !picks_ok || !shaded_ok || !rays_ok || !pose_ok) {
         std::fprintf(stderr, "%d vérification(s) en échec\n", failures);
         return 1;
     }
@@ -1864,5 +1969,6 @@ int main(int argc, char **argv)
     std::printf("%016llx\n", static_cast<unsigned long long>(picks));
     std::printf("%016llx\n", static_cast<unsigned long long>(shaded));
     std::printf("%016llx\n", static_cast<unsigned long long>(rays));
+    std::printf("%016llx\n", static_cast<unsigned long long>(pose));
     return 0;
 }

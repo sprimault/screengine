@@ -18,6 +18,7 @@
 
 mod hash;
 mod picks;
+mod pose;
 mod rays;
 mod sweeps;
 
@@ -827,6 +828,18 @@ enum Scene {
     /// **Deux de ses pixels débordent**, et leur refus entre dans l'empreinte :
     /// sans eux, elle ne dirait que l'accord quand le calcul a lieu.
     Rays,
+    /// **La pose avant la scène** : ce qu'un hôte compose pour orienter.
+    ///
+    /// La seule qui ne touche ni au monde ni au tampon — elle ne charge rien et
+    /// ne rend rien. C'est le chemin des quatre fonctions de rotation, et il
+    /// n'existait pas avant elles : un hôte qui animait une pose la calculait
+    /// avec la trigonométrie de son langage, donc deux liaisons rendaient deux
+    /// images.
+    ///
+    /// **L'angle binaire est ce qu'elle fige en premier.** Une liaison qui
+    /// convertirait des radians au passage obtiendrait d'autres bits, ce que
+    /// l'entier existe pour empêcher.
+    Pose,
 }
 
 /// La matrice qui place la caisse : deux rotations composées, puis cinq unités
@@ -1390,7 +1403,7 @@ struct Query {
 
 impl Scene {
     /// Toutes les scènes, dans l'ordre où `--check` les rejoue.
-    const ALL: [Self; 31] = [
+    const ALL: [Self; 32] = [
         Self::Edge,
         Self::Guard,
         Self::Lateral,
@@ -1421,6 +1434,7 @@ impl Scene {
         Self::Trace,
         Self::Selection,
         Self::Rays,
+        Self::Pose,
         Self::Composite,
     ];
 
@@ -1478,6 +1492,7 @@ impl Scene {
             Self::Trace => "trace",
             Self::Selection => "selection",
             Self::Rays => "rayon",
+            Self::Pose => "pose",
         }
     }
 
@@ -1506,6 +1521,10 @@ impl Scene {
             Self::Rays => Some(Query {
                 digest: rays::digest,
                 report: rays::report,
+            }),
+            Self::Pose => Some(Query {
+                digest: pose::digest,
+                report: pose::report,
             }),
             _ => None,
         }
@@ -1747,7 +1766,7 @@ impl Scene {
             // `render_all` l'a déjà détournée avant d'arriver ici. Le cas est
             // écrit plutôt que laissé à un joker, pour qu'une scène d'image
             // ajoutée plus tard ne passe pas par lui en silence.
-            Self::Collision | Self::Selection | Self::Rays => Ok(()),
+            Self::Collision | Self::Selection | Self::Rays | Self::Pose => Ok(()),
             // Le même quadrilatère que `arete`, tourné autour de l'axe de
             // visée. L'axe passe par son centre, donc il reste dans le champ et
             // garde sa fuite en perspective ; ce qui change, c'est

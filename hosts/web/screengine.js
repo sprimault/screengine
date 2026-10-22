@@ -325,6 +325,10 @@ export const EXPORTS = [
   "scg_world_surface_material",
   "scg_sweep_skin",
   "scg_sweep_reach",
+  "scg_quat_from_axis_angle",
+  "scg_quat_product",
+  "scg_mat4_from_rotation_translation",
+  "scg_mat4_product",
   "scg_lighting_create",
   "scg_lighting_destroy",
   "scg_lighting_build",
@@ -382,6 +386,14 @@ export const CAMERA_SIZE = 36;
 
 /** Taille de `ScgTriangle` : trois `uint32_t` puis quatre `uint8_t`. */
 export const TRIANGLE_SIZE = 16;
+
+/**
+ * Taille de `ScgQuat` : quatre `float`, la partie réelle en dernier.
+ *
+ * Même disposition que le champ `orientation` d'une `ScgCamera`, que cette
+ * liaison écrit déjà : seize octets, décalages 0/4/8/12, sans bourrage.
+ */
+export const QUAT_SIZE = 16;
 
 /**
  * Taille de `ScgSprite` : dix `float`, un angle, puis quatre canaux.

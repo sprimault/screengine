@@ -889,6 +889,7 @@ function checkLayout(header) {
     ScgLight: scg.LIGHT_SIZE,
     ScgTextureDesc: scg.TEXTURE_DESC_SIZE,
     ScgTriangle: scg.TRIANGLE_SIZE,
+    ScgQuat: scg.QUAT_SIZE,
     ScgMat4: scg.MAT4_SIZE,
     ScgGrade: scg.GRADE_SIZE,
     ScgCamera: scg.CAMERA_SIZE,
@@ -2351,6 +2352,128 @@ function renderRays(engine) {
   return engine.hashBytes(digest);
 }
 
+/**
+ * Les axes de la scène `pose`, dont aucun n'est unitaire.
+ *
+ * Le dernier est nul : le contrat promet alors l'identité plutôt qu'un refus,
+ * et c'est une clause qu'un hôte ne vérifie qu'en la hachant avec les autres.
+ */
+const POSE_AXES = [
+  [0.0, 0.0, 2.0],
+  [0.5, -1.5, 0.25],
+  [0.0, 0.0, 0.0],
+];
+
+/**
+ * Les angles, en unités de tour sur 2³².
+ *
+ * Le troisième ne tombe sur aucune entrée de la table du moteur : trois angles
+ * tabulés ne diraient rien de l'interpolation entre deux d'entre elles.
+ */
+const POSE_ANGLES = [1 << 30, 1 << 29, 0x12345678];
+
+/** La translation que chaque matrice porte. */
+const POSE_TRANSLATION = [1.5, -2.25, 0.75];
+
+/**
+ * Compose des poses, sans contexte ni tampon de pixels.
+ *
+ * La seule scène qui ne crée aucun contexte — elle n'appelle que les quatre
+ * fonctions de rotation, le seul chemin qui les atteigne. Avant elles, un hôte
+ * orientait sa caméra avec la trigonométrie de son langage, et deux liaisons
+ * rendaient deux images.
+ *
+ * **L'angle est un entier, et c'est ce que la scène fige en premier.** Un tour
+ * vaut 2³² ; le convertir depuis des radians ici rendrait une autre empreinte
+ * sans sortir du contrat — et c'est cet hôte qui le dirait, ses nombres étant
+ * à double précision.
+ *
+ * Chaque étage entre dans l'empreinte, sans quoi elle dirait qu'un résultat a
+ * dévié sans dire lequel des quatre appels.
+ *
+ * @param {scg.Engine} engine le module instancié
+ * @returns {number | null} l'empreinte, ou `null` sur un échec
+ */
+function renderPose(engine) {
+  const e = engine.exports;
+  const axis = engine.alloc(3 * 4);
+  const translation = engine.alloc(3 * 4);
+  const quats = engine.alloc(3 * scg.QUAT_SIZE);
+  const mats = engine.alloc(3 * scg.MAT4_SIZE);
+  const scratchQuat = engine.alloc(scg.QUAT_SIZE);
+  const scratchMat = engine.alloc(scg.MAT4_SIZE);
+
+  const floats = (ptr, values) => {
+    const view = new DataView(engine.memory.buffer, ptr, values.length * 4);
+    values.forEach((value, i) => view.setFloat32(i * 4, value, true));
+  };
+  floats(translation, POSE_TRANSLATION);
+
+  const digest = [];
+  const absorb = (ptr, size) => {
+    digest.push(...engine.bytes().subarray(ptr, ptr + size));
+  };
+
+  let ok = true;
+  POSE_AXES.forEach((values, i) => {
+    floats(axis, values);
+    const slot = quats + i * scg.QUAT_SIZE;
+    if (e.scg_quat_from_axis_angle(axis, POSE_ANGLES[i], slot) < 0) {
+      check(false, "le quaternion de la scène de pose se construit");
+      ok = false;
+      return;
+    }
+    absorb(slot, scg.QUAT_SIZE);
+  });
+
+  // Les deux sens, parce que le produit n'est pas commutatif : un hôte qui
+  // inverserait ses arguments passerait sans cela.
+  for (let i = 0; ok && i < 3; i++) {
+    for (let j = 0; ok && j < 3; j++) {
+      const a = quats + i * scg.QUAT_SIZE;
+      const b = quats + j * scg.QUAT_SIZE;
+      if (e.scg_quat_product(a, b, scratchQuat) < 0) {
+        check(false, "le produit de quaternions de la scène de pose se calcule");
+        ok = false;
+        break;
+      }
+      absorb(scratchQuat, scg.QUAT_SIZE);
+    }
+  }
+
+  for (let i = 0; ok && i < 3; i++) {
+    const slot = mats + i * scg.MAT4_SIZE;
+    const rotation = quats + i * scg.QUAT_SIZE;
+    if (e.scg_mat4_from_rotation_translation(rotation, translation, slot) < 0) {
+      check(false, "la matrice de la scène de pose se construit");
+      ok = false;
+      break;
+    }
+    absorb(slot, scg.MAT4_SIZE);
+  }
+
+  for (let i = 0; ok && i < 3; i++) {
+    for (let j = 0; ok && j < 3; j++) {
+      const a = mats + i * scg.MAT4_SIZE;
+      const b = mats + j * scg.MAT4_SIZE;
+      if (e.scg_mat4_product(a, b, scratchMat) < 0) {
+        check(false, "le produit de matrices de la scène de pose se calcule");
+        ok = false;
+        break;
+      }
+      absorb(scratchMat, scg.MAT4_SIZE);
+    }
+  }
+
+  engine.free(scratchMat, scg.MAT4_SIZE);
+  engine.free(scratchQuat, scg.QUAT_SIZE);
+  engine.free(mats, 3 * scg.MAT4_SIZE);
+  engine.free(quats, 3 * scg.QUAT_SIZE);
+  engine.free(translation, 3 * 4);
+  engine.free(axis, 3 * 4);
+  return ok ? engine.hashBytes(Uint8Array.from(digest)) : null;
+}
+
 /** Toutes les vérifications, puis l'empreinte sur la sortie standard. */
 async function main() {
   const [wasmPath, headerPath, meshPath, worldPath, collisionPath, sweepsPath, picksPath] =
@@ -2411,8 +2534,10 @@ async function main() {
   const picks = renderPicks(engine, collision, new Uint8Array(await readFile(picksPath)));
   const shaded = renderShaded(engine);
   const rays = renderRays(engine);
+  const pose = renderPose(engine);
   if (
     failures > 0 ||
+    pose === null ||
     rays === null ||
     shaded === null ||
     picks === null ||
@@ -2435,7 +2560,8 @@ async function main() {
 
   process.stdout.write(
     `${hash}\n${textured}\n${bilinear}\n${graded}\n${lit}\n${overbright}\n${fog}\n${lights}\n` +
-      `${mesh}\n${composite}\n${rooms}\n${trace}\n${sweeps}\n${picks}\n${shaded}\n${rays}\n`,
+      `${mesh}\n${composite}\n${rooms}\n${trace}\n${sweeps}\n${picks}\n${shaded}\n${rays}\n` +
+      `${pose}\n`,
   );
   return 0;
 }

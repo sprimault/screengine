@@ -387,6 +387,14 @@ impl Play {
     /// du moteur, dont l'image est ensuite recopiée dans la fenêtre. Les deux
     /// partagent `state`.
     ///
+    /// **`render` soumet, et n'ouvre jamais d'image.** L'image est celle de
+    /// cette boucle, qui l'ouvre avant le rappel et la referme après : un
+    /// `frame_begin` ou un `frame_end` appelé là jette la scène que le rappel
+    /// vient de soumettre. Le type ne l'interdit pas, et il ne le peut pas — la
+    /// `Frame` emprunte le contexte, donc elle est tombée avant que le rappel ne
+    /// reçoive le sien, et l'état d'après est indiscernable d'un rappel sage.
+    /// C'est donc une clause, et c'est ici qu'elle se lit.
+    ///
     /// Les réglages invalides et la configuration refusée par le moteur sont
     /// rendus avant qu'aucune fenêtre ne s'ouvre.
     pub fn run<S, U, R>(self, state: S, update: U, render: R) -> Result<(), Error>
@@ -408,6 +416,10 @@ impl Play {
     /// **Une méthode de plus plutôt qu'un paramètre de plus à [`run`](Self::run)**
     /// : un programme qui n'écrit rien par-dessus n'a pas à porter un rappel
     /// vide, et c'est la forme minimale qui fait la valeur de cet étage.
+    ///
+    /// **`render` soumet, et n'ouvre jamais d'image** — même clause que pour
+    /// [`run`](Self::run), et pour la même raison : c'est cette boucle qui
+    /// possède l'image, et rien dans le type ne peut l'imposer au rappel.
     pub fn run_with_output<S, U, R, O>(
         self,
         state: S,

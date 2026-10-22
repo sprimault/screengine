@@ -39,9 +39,9 @@ use std::slice;
 use std::sync::Arc;
 
 use screengine::{
-    Argument, Context, DepthMode, Error as CoreError, Lightmap, LightmapFault, Lightmaps, Mesh,
-    Rect, SpriteOrientation, Surfaces, Sweep, Texture, Vec3, VertexUv, VertexUv2, Visibility,
-    World, lightmap_fault,
+    Affine3, Angle, Argument, Context, DepthMode, Error as CoreError, Lightmap, LightmapFault,
+    Lightmaps, Mesh, Quat, Rect, SpriteOrientation, Surfaces, Sweep, Texture, Vec3, VertexUv,
+    VertexUv2, Visibility, World, lightmap_fault,
 };
 
 use entry::AbiError;
@@ -54,8 +54,8 @@ pub use scene::{
     SCG_PICK_ALL, SCG_PICK_SOLID, SCG_SIMD_AUTO, SCG_SIMD_AVX2, SCG_SIMD_NEON, SCG_SIMD_SCALAR,
     SCG_SIMD_SIMD128, SCG_SIMD_SSE2, SCG_SPRITE_AXIAL, SCG_SPRITE_FACING, SCG_TEXTURE_FORMAT_RGBA8,
     SCG_TEXTURE_FORMAT_RGBA8_MASKED, ScgCamera, ScgGrade, ScgLight, ScgLine, ScgMat4, ScgPoint,
-    ScgSprite, ScgSweepHit, ScgTextureDesc, ScgTriangle, ScgVertex, ScgVertexUv, ScgVertexUv2,
-    ScgVertexUvN,
+    ScgQuat, ScgSprite, ScgSweepHit, ScgTextureDesc, ScgTriangle, ScgVertex, ScgVertexUv,
+    ScgVertexUv2, ScgVertexUvN,
 };
 // Les bornes d'entrée ont rejoint cette liste après coup : `cbindgen` lit la
 // source de `status`, donc le header les portait déjà, mais rien ne les nommait
@@ -3145,6 +3145,157 @@ pub unsafe extern "C" fn scg_sweep_reach(half_extents: *const f32, out: *mut f32
         let half = unsafe { read_extents(half_extents) }?;
         // SAFETY: précondition — `out` vise un `float` inscriptible.
         unsafe { out.write(screengine::sweep_reach(half)) };
+        Ok(())
+    })
+}
+
+/// Writes to `out` the rotation of `angle` about `axis`.
+///
+/// **The angle is binary, not radians: a full turn is 2³², so one unit is a
+/// turn divided by 2³².** Converting degrees or radians is the caller's step,
+/// and that is the point — the conversion from a float to this integer
+/// saturates differently on a scalar path and on SSE, so the engine keeps it
+/// out of its own arithmetic. A host that animates a pose should carry the
+/// binary angle and add to it, where wrapping is exact and free, rather than
+/// accumulate radians and convert each frame.
+///
+/// **This is what makes a rotation reproducible across languages.** Computing
+/// it with the host's own `sin` and `cos` does not give the same bits twice:
+/// the engine's sine comes from its own tables, and the whole point of the
+/// bit-exact guarantee is that two bindings render the same image. Every
+/// function here delegates to the engine and adds nothing.
+///
+/// `axis` need not be unit; it is normalised. A zero or degenerate axis yields
+/// the identity rather than an error: there is no rotation to describe, and
+/// refusing would make a host branch on a case it cannot always foresee.
+///
+/// # Safety
+///
+/// `axis` must point to three readable floats and `out` to a writable
+/// `ScgQuat`. Their **values** are checked, not assumed: a coordinate that is
+/// not finite is refused with `SCG_ERR_INVALID_ARGUMENT`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn scg_quat_from_axis_angle(
+    axis: *const f32,
+    angle: u32,
+    out: *mut ScgQuat,
+) -> i32 {
+    entry::without_context(|| {
+        if out.is_null() {
+            return Err(AbiError::NULL);
+        }
+        // SAFETY: précondition de la fonction — trois flottants lisibles, dont
+        // le fini est vérifié. Le même lecteur que les positions, l'axe étant
+        // une direction de monde et non une étendue.
+        let axis = unsafe { read_point(axis) }?;
+        let q = Quat::from_axis_angle(axis, Angle(angle));
+        // SAFETY: précondition — `out` vise un `ScgQuat` inscriptible.
+        unsafe { out.write(ScgQuat::from_core(q)) };
+        Ok(())
+    })
+}
+
+/// Writes to `out` the rotation `a` followed by the rotation `b`.
+///
+/// The order is the one a reader expects of a composition of poses, not the
+/// algebraic one: applying the result turns by `a` first. Neither argument need
+/// be unit, and the result is not normalised — compose freely, the engine
+/// normalises where it consumes a pose.
+///
+/// # Safety
+///
+/// `a`, `b` and `out` must each point to a readable — writable for `out` —
+/// `ScgQuat`. A component that is not finite is refused with
+/// `SCG_ERR_INVALID_ARGUMENT`. `out` may alias `a` or `b`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn scg_quat_product(
+    a: *const ScgQuat,
+    b: *const ScgQuat,
+    out: *mut ScgQuat,
+) -> i32 {
+    entry::without_context(|| {
+        if a.is_null() || b.is_null() || out.is_null() {
+            return Err(AbiError::NULL);
+        }
+        // SAFETY: précondition de la fonction — deux `ScgQuat` lisibles. Les
+        // deux lectures précèdent l'écriture, donc `out` peut viser l'un d'eux.
+        let (a, b) = unsafe { (a.read(), b.read()) };
+        let product = b.to_core()?.product(a.to_core()?);
+        // SAFETY: précondition — `out` vise un `ScgQuat` inscriptible.
+        unsafe { out.write(ScgQuat::from_core(product)) };
+        Ok(())
+    })
+}
+
+/// Writes to `out` the model matrix of a rotation and a translation.
+///
+/// This is the matrix a submission takes, built the way the engine builds it.
+/// Writing it by hand is where a binding's own trigonometry creeps back in,
+/// and where two languages stop rendering the same image.
+///
+/// The quaternion need not be unit; it is normalised here. The last row of the
+/// result is exactly `0, 0, 0, 1`, which is what a submission requires.
+///
+/// # Safety
+///
+/// `q` must point to a readable `ScgQuat`, `translation` to three readable
+/// floats, and `out` to a writable `ScgMat4`. Values that are not finite are
+/// refused with `SCG_ERR_INVALID_ARGUMENT`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn scg_mat4_from_rotation_translation(
+    q: *const ScgQuat,
+    translation: *const f32,
+    out: *mut ScgMat4,
+) -> i32 {
+    entry::without_context(|| {
+        if q.is_null() || out.is_null() {
+            return Err(AbiError::NULL);
+        }
+        // SAFETY: précondition de la fonction — un `ScgQuat` lisible.
+        let rotation = unsafe { q.read() }.to_core()?;
+        // SAFETY: précondition — trois flottants lisibles, dont le fini est
+        // vérifié.
+        let t = unsafe { read_point(translation) }?;
+        let m = Affine3::from_rotation_translation(rotation, t);
+        // SAFETY: précondition — `out` vise un `ScgMat4` inscriptible.
+        unsafe { out.write(ScgMat4::from_core(m)) };
+        Ok(())
+    })
+}
+
+/// Writes to `out` the matrix `a` followed by the matrix `b`.
+///
+/// Same reading order as `scg_quat_product`: a point goes through `a` first.
+/// This is how a host composes a placement with a local transform without
+/// multiplying matrices itself — four lines of host code that two languages
+/// would not agree on at the last bit.
+///
+/// **Neither is the view matrix.** The engine composes its camera itself, and a
+/// matrix passed to a submission is the model matrix alone; folding a view into
+/// it would be treated as a rigid transform and silently misrender.
+///
+/// # Safety
+///
+/// `a`, `b` and `out` must each point to a readable — writable for `out` —
+/// `ScgMat4`. A matrix that is not finite, or whose last row is not exactly
+/// `0, 0, 0, 1`, is refused with `SCG_ERR_INVALID_ARGUMENT`. `out` may alias
+/// `a` or `b`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn scg_mat4_product(
+    a: *const ScgMat4,
+    b: *const ScgMat4,
+    out: *mut ScgMat4,
+) -> i32 {
+    entry::without_context(|| {
+        if a.is_null() || b.is_null() || out.is_null() {
+            return Err(AbiError::NULL);
+        }
+        // SAFETY: précondition de la fonction — deux `ScgMat4` lisibles. Les
+        // deux lectures précèdent l'écriture, donc `out` peut viser l'un d'eux.
+        let (a, b) = unsafe { (a.read(), b.read()) };
+        let product = b.to_core()?.product(a.to_core()?);
+        // SAFETY: précondition — `out` vise un `ScgMat4` inscriptible.
+        unsafe { out.write(ScgMat4::from_core(product)) };
         Ok(())
     })
 }

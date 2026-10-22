@@ -279,10 +279,15 @@ HOST_OUT = $(abspath $(SORTIE))/host-$(host_dir_$*)
 #                         ses pixels débordent, donc l'empreinte fige aussi que
 #                         les cinq hôtes les refusent — et non seulement que le
 #                         calcul concorde quand il a lieu
+#   pose                  la seule qui ne touche ni au monde ni au tampon : les
+#                         quatre fonctions de rotation, que rien n'atteignait.
+#                         Elle fige l'angle binaire autant que le calcul — une
+#                         liaison qui convertirait des radians au passage
+#                         rendrait une autre empreinte sans sortir du contrat
 #
 # Une scène ajoutée ici est une scène à écrire dans les cinq hôtes, et c'est
 # voulu : c'est ce qui rend leur comparaison possible.
-HOST_SCENES := arete texture texture-bilineaire gamma lumiere lumiere-surbrillance brouillard lumieres maillage composite salles trace collision selection normale rayon
+HOST_SCENES := arete texture texture-bilineaire gamma lumiere lumiere-surbrillance brouillard lumieres maillage composite salles trace collision selection normale rayon pose
 
 # Les fichiers que les scènes chargent, passés à chaque hôte. Un seul endroit :
 # la liste était recopiée sur quatre recettes, et une scène ajoutée y manquait
