@@ -2538,7 +2538,20 @@ pub unsafe extern "C" fn scg_lightmap_fault(
         // par point porte en outre le refus du non fini, que le noyau suppose
         // écarté : sa documentation dit qu'au-delà une faute est rendue, mais
         // pas laquelle.
-        let mut points = Vec::with_capacity(corner_count as usize);
+        // **`try_reserve_exact` et non `Vec::with_capacity`**, pour la raison
+        // que `buffer::reserved` écrit côté noyau : le compte vient de l'hôte et
+        // le contrat ne le borne pas, donc un échec d'allocation est atteignable
+        // — et `with_capacity` y passe par `handle_alloc_error`, qui **avorte le
+        // processus de l'hôte**. Un `abort` n'est pas un dépliage, donc
+        // `catch_unwind` ne le voit pas : la panique ne traverse pas la
+        // frontière, le processus meurt avant.
+        //
+        // C'est la classe que le noyau avait fermée sans qu'elle le soit ici, et
+        // `alloc-verif` la ferme désormais pour toute la frontière.
+        let mut points: Vec<Vec3> = Vec::new();
+        points
+            .try_reserve_exact(corner_count as usize)
+            .map_err(|_| AbiError::from(CoreError::OutOfMemory))?;
         for index in 0..corner_count as usize {
             // SAFETY: précondition — `corner_count` triplets lisibles d'affilée.
             points.push(unsafe { read_point(corners.add(index * 3)) }?);

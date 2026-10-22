@@ -65,19 +65,19 @@ publié, et explique les conventions du dépôt à qui y contribue.
 
 ### Corrigé
 
-- **Un argument fautif pendant une image rendait encore deux codes différents**
-  selon la fonction : treize points d'entrée rendaient
-  `SCG_ERR_INVALID_ARGUMENT` là où le contrat promet `SCG_ERR_INVALID_STATE`.
-  La 1.7.0 n'avait corrigé que les deux soumissions de tracé.
+- **Un argument fautif pendant une image rend `SCG_ERR_INVALID_STATE`**, sur
+  tous les points d'entrée et non sur deux.
+- **`scg_lightmap_fault` rend `SCG_ERR_OUT_OF_MEMORY`** sur un échec
+  d'allocation, au lieu d'avorter le processus de l'hôte.
 
 ***
 
 ### Fixed
 
-- **A faulty argument during a frame still returned two different codes**
-  depending on the function: thirteen entry points returned
-  `SCG_ERR_INVALID_ARGUMENT` where the contract promises
-  `SCG_ERR_INVALID_STATE`. 1.7.0 had only fixed the two drawing submissions.
+- **A faulty argument during a frame returns `SCG_ERR_INVALID_STATE`**, on every
+  entry point and not on two.
+- **`scg_lightmap_fault` returns `SCG_ERR_OUT_OF_MEMORY`** on an allocation
+  failure, instead of aborting the host process.
 
 ## [1.7.0] — 2026-10-22 — Ce que rien ne gardait
 
