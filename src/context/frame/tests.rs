@@ -364,6 +364,13 @@ fn l_ordre_des_tuiles_ne_change_rien() {
 /// index pris depuis le **haut** d'une région rendait encore la bonne image. La
 /// grille le déplace aussi, et vingt-trois n'est pas plus multiple de quatre que
 /// treize.
+///
+/// **Et la scène trace**, parce qu'une région qui porte un segment prend son
+/// brouillard par un autre chemin : appliqué au tampon de travail avant les
+/// segments, pour que le tracé passe après lui. Sans tracé, ce chemin-là
+/// n'était éprouvé par aucun découpage désaligné, et son index pris depuis le
+/// coin d'une région serait resté invisible — les comparaisons de tuiles n'y
+/// voient rien, les tailles de tuile étant multiples de quatre.
 #[test]
 fn des_regions_desalignees_rendent_l_image_entiere() {
     const BAND: u32 = 13;
@@ -373,6 +380,7 @@ fn des_regions_desalignees_rendent_l_image_entiere() {
         for seed in 1..=12 {
             let mut context = context(32);
             scene(&mut context, seed);
+            trace(&mut context, DepthMode::Tested);
             let expected = reference(&mut context);
 
             let mut out = pixels();
@@ -852,24 +860,40 @@ fn trace(context: &mut Context, depth: DepthMode) {
 ///
 /// Les deux modes de profondeur, parce qu'ils ne traversent pas le même code :
 /// l'un lit le tampon de profondeur de la tuile, l'autre l'ignore.
+///
+/// **Et deux graines, parce qu'une tuile qui porte un segment prend son
+/// brouillard par un autre chemin** : le tracé devant passer après le
+/// brouillard, celui-ci est appliqué au tampon de travail avant les segments au
+/// lieu de l'être pendant la recopie. Seule une graine sur trois allume le
+/// brouillard, et la seule que ce test employait n'en était pas une : le chemin
+/// n'était donc exécuté par aucun test ni aucune scène.
+///
+/// Ce que la graine ajoute ici est la **cohérence des deux chemins**, et elle
+/// la tient par un biais qui ne se commande pas : les tuiles que le tirage
+/// laisse sans segment prennent la recopie ordinaire, les autres le tampon de
+/// travail, et la région les prend toutes par le second. Un tirage qui
+/// couvrirait toutes les tuiles de segments les alignerait et rendrait la
+/// comparaison aveugle — d'où le cas qui compare les deux chemins directement.
 #[test]
 fn le_trace_par_tuiles_rend_la_region() {
     for depth in [DepthMode::Tested, DepthMode::Always] {
-        for tile_size in [32, 64] {
-            let mut context = context(tile_size);
-            scene(&mut context, 11);
-            trace(&mut context, depth);
+        for seed in [10, 11] {
+            for tile_size in [32, 64] {
+                let mut context = context(tile_size);
+                scene(&mut context, seed);
+                trace(&mut context, depth);
 
-            let attendu = reference(&mut context);
-            let mut tiled = pixels();
-            open(&mut context)
-                .end(&mut Rows::new(&mut tiled, W))
-                .expect("image");
+                let attendu = reference(&mut context);
+                let mut tiled = pixels();
+                open(&mut context)
+                    .end(&mut Rows::new(&mut tiled, W))
+                    .expect("image");
 
-            assert!(
-                tiled == attendu,
-                "tracé en tuiles de {tile_size}, mode {depth:?}"
-            );
+                assert!(
+                    tiled == attendu,
+                    "tracé en tuiles de {tile_size}, mode {depth:?}, graine {seed}"
+                );
+            }
         }
     }
 }
@@ -880,17 +904,89 @@ fn le_trace_par_tuiles_rend_la_region() {
 /// Sans ce contrôle, un tracé qui n'allumerait rien rendrait les deux chemins
 /// égaux et le théorème serait vert en ne mesurant rien — le mode de panne le
 /// plus discret qui soit, puisqu'il se présente comme un succès.
+///
+/// **Un contexte neuf par image, et c'est ce qui le rend mordant** : posée deux
+/// fois sur le même contexte, la scène ne rend pas deux fois la même image. Les
+/// plans d'éclairage d'une image close ne se vident que par la soumission
+/// suivante, que ce helper contourne en écrivant dans les listes ; le second
+/// jeu s'ajoutait donc au premier, et vingt-sept mille pixels sur trente mille
+/// différaient sans qu'aucun segment y soit pour rien. L'inégalité attendue
+/// était vraie avant même le tracé.
 #[test]
 fn le_trace_change_l_image() {
-    let mut context = context(64);
-    scene(&mut context, 11);
-    let sans = reference(&mut context);
-
-    scene(&mut context, 11);
-    trace(&mut context, DepthMode::Always);
-    let avec = reference(&mut context);
+    let sans = {
+        let mut context = context(64);
+        scene(&mut context, 11);
+        reference(&mut context)
+    };
+    let avec = {
+        let mut context = context(64);
+        scene(&mut context, 11);
+        trace(&mut context, DepthMode::Always);
+        reference(&mut context)
+    };
 
     assert!(sans != avec, "le tracé n'a allumé aucun pixel");
+}
+
+/// **Le brouillard appliqué avant le tracé est celui de la recopie**, au bit
+/// près.
+///
+/// Le théorème du lot ne tient ce chemin que par un biais du tirage — les
+/// tuiles restées sans segment prennent la recopie ordinaire, et c'est leur
+/// désaccord avec les autres qui s'y voit. Ici les deux chemins se comparent
+/// directement, sur l'image entière et sans dépendre d'aucune répartition.
+///
+/// Le segment est donc choisi pour **déclencher le chemin sans peindre un seul
+/// pixel** : sa profondeur est nulle et il teste, or le test est strict dans
+/// l'autre sens — un pixel que rien n'a peint garde une profondeur nulle, et
+/// `0 <= 0` l'occulte déjà. L'image doit alors être exactement celle que la
+/// recopie rend seule.
+///
+/// La seconde moitié est le témoin : sans elle, un segment qui n'entrerait pas
+/// dans la liste de la région rendrait l'égalité vraie par absence, et le cas
+/// garderait le vide.
+#[test]
+fn le_brouillard_du_trace_rend_celui_de_la_recopie() {
+    // La graine est prise dans la famille qui allume le brouillard : sans lui,
+    // les deux chemins ne font ni l'un ni l'autre quelque chose.
+    let occulte = Segment {
+        x0: 0,
+        y0: 0,
+        z0: 0,
+        x1: W as i32 * SUBPIXEL_SCALE,
+        y1: H as i32 * SUBPIXEL_SCALE,
+        z1: 0,
+        color: Color::new(0xE0, 0x40, 0x30, 0xFF).packed(),
+        tested: true,
+        point: false,
+    };
+
+    // Un contexte neuf par image : le brouillard que la graine allume vit dans
+    // le contexte, et une seconde scène posée sur un contexte déjà rendu ne
+    // rend pas la même image que la première.
+    let rendu = |segment: Option<Segment>| {
+        let mut context = context(64);
+        scene(&mut context, 10);
+        if let Some(segment) = segment {
+            context.segments.clear();
+            context.segments.push(segment);
+        }
+        reference(&mut context)
+    };
+
+    let sans = rendu(None);
+    assert!(
+        rendu(Some(occulte)) == sans,
+        "le brouillard du tracé n'est pas celui de la recopie"
+    );
+    assert!(
+        rendu(Some(Segment {
+            tested: false,
+            ..occulte
+        })) != sans,
+        "le segment n'entre pas dans la liste rendue"
+    );
 }
 
 /// La capacité de tracé est une limite rendue, et elle est **à elle** : un lot

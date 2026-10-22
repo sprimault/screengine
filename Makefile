@@ -1160,8 +1160,24 @@ INTRINSEQUES = vfma vfms vrsqrte vrsqrts vrecpe vrecps fmadd fmsub fnmadd fnmsub
 # partout. Un motif plus large — `_min_` seul — les accuserait, et la cible
 # deviendrait inutilisable : c'est la raison pour laquelle elle ne cherchait
 # aucun minimum avant, et la distinction est ce qui permet de l'ajouter.
+#
+# **Les trois crates dont les calculs entrent dans une empreinte**, et pas deux :
+# la conformance engendre les scènes dont l'empreinte fait foi, donc une
+# intrinsèque non déterministe y vaut exactement ce qu'elle vaut dans le noyau.
+# Elle manquait à cette portée là où `clippy.toml` l'a toujours couverte.
+#
+# **`src` seul, et `tests/` dehors** : `crates/screengine-conformance/tests/libm.rs`
+# *est* la liste des méthodes interdites, écrite en littéraux de chaîne, et le
+# filtre ci-dessous ne saute que les commentaires. Une portée plus large
+# l'accuserait de porter ce qu'il existe pour interdire. Aucun test n'engendre
+# de scène figée, donc rien ne se perd.
+#
+# `benches/` et `crates/screengine-play` restent dehors pour la raison que
+# `crates/screengine-play/clippy.toml` écrit déjà : rien de ce qu'ils calculent
+# n'entre dans une empreinte.
 lint-intrinseques:
-	@sources=$$(find src crates/screengine-ffi/src -name '*.rs' | sort); \
+	@sources=$$(find src crates/screengine-ffi/src crates/screengine-conformance/src \
+	  -name '*.rs' | sort); \
 	if [ -z "$$sources" ]; then \
 	  echo "lint-intrinseques : aucune source trouvee, la recherche n a pas abouti"; exit 1; \
 	fi; \
@@ -1300,6 +1316,41 @@ alloc-verif:
 	fi; \
 	echo "alloc-verif : $$(echo $$sources | wc -w) fichiers de la frontiere, aucune allocation infaillible"
 
+# **Le noyau n'a aucune dependance, la frontiere n'a que lui**, et c'est le
+# second invariant qui le veut.
+#
+# `nostd` ne le garde pas, et c'est ce qui rend cette cible necessaire : il
+# refuse une dependance qui reclame `std`, et laisse entrer sans un mot celle
+# qui s'en passe — or une dependance qu'on ajouterait ici serait justement de ce
+# genre. Rien d'autre ne regarde l'arbre : ni `lint`, ni `test`, ni `deny`, qui
+# juge des licences et des avis de ce qui est deja la.
+#
+# **L'arbre se lit en `--edges normal`** : ce qui ne sert qu'aux tests et aux
+# bancs n'entre pas dans la bibliotheque publiee. Le noyau n'a d'ailleurs pas
+# de `dev-dependencies` non plus, mais l'ecrire ici le dirait du mauvais
+# endroit — cette cible repond de ce qui est livre.
+#
+# Deux nœuds pour la frontiere, et c'est le compte juste : elle-meme et le
+# noyau. ATTENDU est surchargeable pour que la garde s'eprouve — `ATTENDU=0`
+# fait refuser un arbre pourtant sain.
+DEPS_PAQUETS = screengine:1 screengine-ffi:2
+
+deps-verif:
+	@for cas in $(DEPS_PAQUETS); do \
+	  paquet=$${cas%%:*}; attendu=$${cas##*:}; \
+	  arbre=$$(cargo tree -p $$paquet --edges normal --prefix none --no-dedupe \
+	    | sed 's/ .*//' | grep -v '^$$' | sort -u); \
+	  if [ -z "$$arbre" ]; then \
+	    echo "deps-verif : arbre vide pour $$paquet, la lecture n a pas abouti"; exit 1; \
+	  fi; \
+	  compte=$$(echo "$$arbre" | wc -l); \
+	  if [ "$$compte" != "$${ATTENDU-$$attendu}" ]; then \
+	    echo "deps-verif : $$paquet porte $$compte paquet(s), $${ATTENDU-$$attendu} attendu(s) :"; \
+	    echo "$$arbre" | sed 's/^/  /'; exit 1; \
+	  fi; \
+	done; \
+	echo "deps-verif : le noyau tient en un paquet, la frontiere en deux"
+
 # **Toute declaration du header apparait dans `docs/abi.md`**, qui fait foi.
 #
 # Proposé par le sceptique d'un audit et resté non livré : le site qu'il avait
@@ -1382,7 +1433,7 @@ CIBLES_PLAY = $(CIBLES_LINUX_ARM) $(CIBLE_WASM)
 # leur plancher n'est pas sous notre contrôle, et l'y faire entrer donnerait une
 # contrainte qu'une montée de dépendance casserait sans qu'on puisse rien.
 
-lint: lint-doc-tests lint-android-versions lint-wasm-bindgen lint-enveloppes lint-intrinseques etat-verif bornes-verif plate-verif sorties-verif dispositions-verif java-verif codes-verif frontiere-verif etage-verif contrat-verif alloc-verif
+lint: lint-doc-tests lint-android-versions lint-wasm-bindgen lint-enveloppes lint-intrinseques etat-verif bornes-verif plate-verif sorties-verif dispositions-verif java-verif codes-verif frontiere-verif etage-verif contrat-verif alloc-verif deps-verif
 	cargo clippy --workspace --all-targets --all-features -- -D warnings
 	for cible in $(CIBLES_CROISEES); do \
 	  cargo clippy -p screengine -p screengine-ffi --lib --target $$cible -- -D warnings || exit 1; \

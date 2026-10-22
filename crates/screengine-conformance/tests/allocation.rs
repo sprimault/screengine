@@ -20,9 +20,9 @@ use std::cell::Cell;
 use std::sync::Arc;
 
 use screengine::{
-    Affine3, Angle, BYTES_PER_PIXEL, Color, Config, Context, DepthMode, Filter, Light, Lightmaps,
-    Line, Mesh, Point, Rect, Rows, Sprite, SpriteOrientation, Texture, Triangle, Vec3, VertexUv,
-    VertexUv2, World,
+    Affine3, Angle, BYTES_PER_PIXEL, Camera, Color, Config, Context, DepthMode, Filter, Light,
+    Lightmaps, Line, Mesh, Point, Quat, Rect, Rows, SimdPath, Sprite, SpriteOrientation, Texture,
+    Triangle, Vec3, VertexUv, VertexUv2, World,
 };
 
 /// Le décor versionné que les hôtes parcourent, intégré à la compilation.
@@ -234,6 +234,48 @@ fn le_compteur_voit_une_liberation() {
         seen >= 2,
         "{seen} : l'allocation et sa libération attendues"
     );
+}
+
+/// Le compteur voit une réallocation.
+///
+/// **C'est le bras qui porte la classe de défaut que ce fichier existe pour
+/// attraper** : une `Vec` qui grandit en cours d'image n'appelle ni `alloc` ni
+/// `dealloc`, elle appelle `realloc`. Sans ce témoin, les mesures voisines
+/// resteraient vertes alors que le seul bras qui les intéresse aurait cessé de
+/// compter.
+///
+/// La capacité est prise hors mesure et la croissance demandée dedans, pour que
+/// le compte soit exactement l'appel qu'on cherche. Un compte de deux désignerait
+/// un allocateur qui alloue et recopie au lieu de réallouer : le témoin rougirait
+/// en disant quoi chercher.
+#[test]
+fn le_compteur_voit_une_reallocation() {
+    let mut buffer = Vec::<u8>::with_capacity(64);
+    let seen = allocations(|| {
+        buffer.reserve(4096);
+    });
+    std::hint::black_box(&buffer);
+    assert_eq!(seen, 1, "{seen} : la réallocation attendue, et elle seule");
+}
+
+/// Le compteur voit une allocation mise à zéro.
+///
+/// Quatrième et dernier bras de `GlobalAlloc`. Un `vec![0u8; n]` l'emprunte par
+/// la spécialisation que la bibliothèque standard réserve aux éléments nuls, et
+/// c'est par là que passent les tampons du contexte : le tampon de couleur, le
+/// z-buffer, les lignes de l'atlas.
+///
+/// L'égalité à un vaut preuve que ce bras compte **et** que c'est bien celui-là
+/// qui est emprunté : par `alloc`, le compte serait le même, donc c'est la mise
+/// à zéro retirée du compteur qui rougit ici, vérifiée en la retirant.
+#[test]
+fn le_compteur_voit_une_allocation_mise_a_zero() {
+    let mut buffer = Vec::new();
+    let seen = allocations(|| {
+        buffer = vec![0u8; 4096];
+    });
+    std::hint::black_box(&buffer);
+    assert_eq!(seen, 1, "{seen} : la mise à zéro attendue, et elle seule");
 }
 
 /// Une texture et toute sa chaîne de mipmaps tiennent dans une allocation, et
@@ -592,6 +634,77 @@ fn aucun_changement_de_resolution_n_alloue() {
         }
     });
     assert_eq!(seen, 0, "{seen} allocation(s) en changeant de résolution");
+}
+
+/// Aucun réglage reposé entre deux images n'alloue.
+///
+/// Les mesures voisines tournent à état figé : elles soumettent et rendent, et
+/// aucune ne traverse les réglages qu'un hôte repose dans sa boucle — neuf
+/// appels, dont seuls `set_lights` et `set_resolution` étaient mesurés. Deux des
+/// sept autres remplissent une table de mille vingt-quatre entrées, le
+/// brouillard et la courbe de sortie, et ce sont les deux dont une version qui
+/// reconstruirait son `Vec` au lieu de le vider coûterait une image.
+///
+/// **`set_camera` est le premier de la liste, et pour une raison qui lui est
+/// propre** : il refait la table du brouillard quand le plan proche a bougé,
+/// donc c'est le seul chemin par lequel un remplissage de table peut arriver en
+/// pleine boucle sans que l'hôte ait reposé de brouillard. Le brouillard est
+/// donc réglé avant lui, et le plan proche change à chaque tour : sans cela, le
+/// refait ne serait pas traversé.
+#[test]
+fn aucun_reglage_n_alloue() {
+    let (width, height) = (320, 180);
+    let mut context = Context::new(Config {
+        max_width: width,
+        max_height: height,
+        width,
+        height,
+        tile_size: 64,
+        max_triangles: 0,
+        max_lines: 0,
+    })
+    .expect("configuration valide");
+    let mut pixels = vec![0u8; width as usize * height as usize * BYTES_PER_PIXEL];
+
+    // Hors mesure : la première image de ce contexte, pour que rien de
+    // paresseux ne vienne s'imputer aux réglages.
+    context
+        .submit(Affine3::IDENTITY, &VERTICES, &TRIANGLES)
+        .expect("scène soumise");
+    context.frame_end(&mut pixels, width).expect("image rendue");
+
+    let seen = allocations(|| {
+        for tour in 0..3 {
+            context
+                .set_fog(Color::new(0x40, 0x50, 0x60, 0xFF), 4.0, 24.0)
+                .expect("hors image");
+            context
+                .set_camera(Camera {
+                    position: Vec3::new(1.0, 0.0, 0.5),
+                    orientation: Quat::IDENTITY,
+                    fov_y: 1.0,
+                    near: 0.125 + tour as f32 * 0.0625,
+                })
+                .expect("hors image");
+            context
+                .set_grade(2.2, [1.0, 0.9, 1.1], [0.0, 0.0, 0.0])
+                .expect("hors image");
+            context.set_overbright(1).expect("sous le maximum");
+            context.set_filter(Filter::Bilinear).expect("hors image");
+            context.set_simd(SimdPath::Scalar).expect("toujours portée");
+            context
+                .pixel_ray(width / 2, height / 2)
+                .expect("dans l'image");
+            context.clear_fog().expect("hors image");
+            context.clear_grade().expect("hors image");
+
+            context
+                .submit(Affine3::IDENTITY, &VERTICES, &TRIANGLES)
+                .expect("scène soumise");
+            context.frame_end(&mut pixels, width).expect("image rendue");
+        }
+    });
+    assert_eq!(seen, 0, "{seen} allocation(s) en reposant les réglages");
 }
 
 /// Des tuiles rendues sur d'autres threads n'allouent pas davantage : chaque
