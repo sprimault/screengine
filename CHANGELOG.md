@@ -71,6 +71,8 @@ publié, et explique les conventions du dépôt à qui y contribue.
 
 ## [Non publié]
 
+## [1.8.0] — 2026-10-22 — La rotation déterministe
+
 ### Ajouté
 
 - **Quatre fonctions de rotation** — `scg_quat_from_axis_angle`,
