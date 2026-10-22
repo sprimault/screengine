@@ -490,8 +490,17 @@ toutes les autres cibles.
   démêler de ce qu'il montre du moteur.
   Écarté : TypeScript, que Node exécute désormais sans compilation mais qu'un
   navigateur ne lit pas — la page exigerait alors un compilateur, donc npm.
-  La page a été vue dans un navigateur avant la 0.0.0 ; l'intégration continue
-  n'en fait tourner que le test sous Node.
+
+  **Vue dans un navigateur le 2026-10-22** : les deux fichiers servis et chargés,
+  le décor rendu avec son maillage, son sprite et son brouillard, la caméra
+  déplacée aux flèches, aucun message de console. L'intégration continue n'en
+  fait tourner que le test sous Node, donc rien de cela n'y est vérifié.
+
+  **Le compteur d'images de la page ne se lit pas depuis un onglet qui n'est pas
+  au premier plan** : il compte les passages de `requestAnimationFrame`, que les
+  navigateurs ramènent à un par seconde dès que l'onglet passe en arrière-plan.
+  C'est ce qu'il affichait pendant le relevé ci-dessus, et ce chiffre ne dit rien
+  du moteur. Une cadence se mesure par `make bench`, du dedans.
 - **`make test-wasi` et `make conform-wasi` exécutent le noyau sur une cible
   wasm**, par `hosts/web/wasi-run.mjs` et le `node:wasi` de Node. Rien n'y
   tournait : `make lint` compile pour `wasm32-unknown-unknown` sans rien
@@ -975,12 +984,19 @@ l'ABI Android x86_64 restant couverte par son hôte sur émulateur.
   ici — et ne verrait rien de la bibliothèque standard.
 - **L'archive est éprouvée avant d'être publiée**, par `make test-archive
   PAQUET=<répertoire décompressé>` : la cible déduit de `lib/` les hôtes que ce
-  paquet permet de lier — C contre la statique, C++ contre la dynamique, Node
-  contre le module wasm —, les construit contre le seul contenu du paquet et
-  compare leurs empreintes à celles du chemin Rust. Sous Linux, le SONAME et
+  paquet permet de lier — C contre la statique, C++ et Go contre la dynamique,
+  Node contre le module wasm —, les construit contre le seul contenu du paquet
+  et compare leurs empreintes à celles du chemin Rust. Sous Linux, le SONAME et
   l'entrée `DT_NEEDED` se vérifient en plus. L'archive Android n'a pas d'hôte à
   lier : son architecture, son SONAME et son alignement de pages se lisent dans
   l'en-tête ELF, sans rien exécuter.
+
+  **La liste déduite se vérifie avant d'être employée**, par `make paquet-verif
+  PAQUET=<répertoire> ATTENDUS=<hôtes>` : un paquet qui aurait perdu une
+  bibliothèque donnerait une liste plus courte, et les hôtes restants
+  passeraient. La vérification vient entre le montage et l'épreuve, parce que
+  les prérequis de `test-archive` sont cette liste même, donc déjà expansés
+  quand sa recette parle.
 
   La cible vit dans le `Makefile` et non dans le workflow **parce que la liste
   des scènes y vit déjà** : recopiée là où elle ne tourne qu'au tag, elle a
@@ -992,12 +1008,21 @@ l'ABI Android x86_64 restant couverte par son hôte sur émulateur.
   `Makefile` pour la raison qui y a déjà fait descendre `test-archive` — une
   disposition écrite au seul endroit qui ne tourne qu'au tag n'est vérifiée que
   par la publication elle-même.
-- **`make test-paquet` monte les deux paquets de la machine et les éprouve**,
-  hors de toute publication : le natif puis celui de wasm. Deux et non un, parce
-  qu'aucune archive ne mêle le module wasm aux bibliothèques natives, et qu'un
-  paquet qui les mêlerait ferait éprouver une disposition que personne ne
-  télécharge. Elle reste hors de la liste d'avant-publication : elle construit en
-  `release-ffi`, dont la LTO complète se paierait à chaque passage.
+- **`make test-paquet` monte trois paquets et les éprouve**, hors de toute
+  publication : le natif, celui de wasm, puis un paquet volontairement illisible.
+  Les deux premiers sont séparés parce qu'aucune archive ne mêle le module wasm
+  aux bibliothèques natives, et qu'un paquet qui les mêlerait ferait éprouver une
+  disposition que personne ne télécharge. Elle reste hors de la liste
+  d'avant-publication : elle construit en `release-ffi`, dont la LTO complète se
+  paierait à chaque passage.
+
+  **Le troisième est ce qui rend les deux autres concluants**, et c'est
+  `paquet-casse` : deux paquets qui passent sont le régime où `test-archive` a
+  menti une fois en reliant les binaires du paquet précédent, pas la preuve qu'il
+  ne mente plus. Celui-ci porte les mêmes noms de fichiers et des bibliothèques
+  vides, le paquet entier daté du passé comme une archive que `tar` vient
+  d'extraire — le seul régime où le défaut s'est produit. Son échec est ce que la
+  cible vérifie.
 - **Le tag se pose directement**, `vX.Y.Z`, sans tag d'essai préalable : le
   brouillon est déjà le moment où l'on relit avant de rendre visible, et ce que
   le workflow ferait de plus est ce que la liste fixe a vérifié avant le commit.

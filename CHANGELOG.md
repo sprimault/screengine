@@ -56,6 +56,14 @@ de mémoire un mois de travail. **Elle prend son numéro et sa date au moment du
 tag**, faute de quoi la publication cherche une section qui n'existe pas et
 s'arrête.
 
+**Un lot dont rien ne change pour celui qui appelle n'y écrit rien**, et c'est la
+règle et non un oubli : ce fichier se lit pour savoir si une version concerne
+son intégration, et une entrée qui ne le concerne pas lui coûte la lecture des
+autres. Le critère se pose en une question — est-ce que cela change ce qu'un
+hôte appelle, reçoit ou voit ? Une signature, un code de retour, un format de
+fichier, le rendu d'une scène inchangée : oui. Un contrôle ajouté, un cas rendu
+mordant, une documentation corrigée : non.
+
 Chaque section est **bilingue, français d'abord, séparé par `***`** — les notes
 de version sont ce que lit un auteur de liaison étranger avant de savoir s'il
 doit reprendre son travail. Ce préambule reste en français : il n'est jamais

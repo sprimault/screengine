@@ -37,12 +37,22 @@ premier fichier.
 
 **`benches/` porte la référence de performance**, prise avant que l'étape 3
 touche au remplissage — une régression ne s'attribue pas sans mesure d'avant.
-Trois cas, et chacun répond à une question que les autres ne posent pas : un
-quadrilatère texturé plein cadre, qui isole la boucle de pixels ; une scène
-chargée, qui donne le coût réel avec la répartition et la recopie ; et la
-**pente** du chargement d'une carte, sur des décors engendrés, parce que le terme
-qui domine à l'échelle du dépôt n'est pas celui qui domine à l'échelle d'un
-niveau — le classement des arêtes est quadratique en surfaces d'une même cellule.
+Chaque fichier répond à une question que les autres ne posent pas :
+
+- `remplissage.rs` — un quadrilatère texturé plein cadre, qui isole la boucle de
+  pixels, et une scène de six cents triangles, qui donne le coût réel avec la
+  répartition et la recopie. La première dit *où* une régression est tombée, la
+  seconde dit *si* elle compte ;
+- `carte.rs` — le chargement d'une carte, ponctuel, et sa soumission, par image,
+  dont la traversée par portails sépare les deux phases ;
+- `chargement.rs` — la **pente** de ce chargement, sur des décors engendrés,
+  parce que le terme qui domine à l'échelle du dépôt n'est pas celui qui domine à
+  l'échelle d'un niveau : le classement des arêtes est quadratique en surfaces
+  d'une même cellule ;
+- `soumission.rs` — ce que coûte le parcours du tableau de sommets, et sur quels
+  appels. Né d'un correctif : la validation que la frontière confiait au noyau se
+  paie sur les cinq soumissions qui indexent.
+
 Harnais maison, `#[bench]` n'existant qu'en nightly et le noyau n'admettant
 aucune dépendance.
 
@@ -265,7 +275,7 @@ l'hôte gardant sa fenêtre, sa boucle et ses entrées.
   n'alloue pas —, ni dans le code d'ABI, qui ne distingue pas les malformations
   entre elles. Elle sert l'appelant **Rust**, qui lit la variante.
 
-  **Quatre variantes restent muettes, et chacune a sa raison** : `Truncated`,
+  **Les variantes qui restent muettes ont toutes la même raison** : `Truncated`,
   `Signature`, `Kind`, `Length`, `Section*`, `NonFinite`, `NonUtf8` et `Count`
   décrivent le **conteneur** — il n'y a pas d'élément à nommer avant d'avoir pu
   lire la table des sections. `Element::None` n'est donc pas leur cas : il est

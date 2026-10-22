@@ -873,16 +873,6 @@ export class Screengine {
   }
 
   /**
-   * FNV-1a 64 bits dans la forme de la conformance : largeur et hauteur en
-   * `u32` poids faible en tête, puis la zone utile ligne par ligne, alpha compris.
-   *
-   * @param {number} ptr début du tampon de pixels
-   * @param {number} width largeur en pixels
-   * @param {number} height hauteur en pixels
-   * @param {number} stride pas de ligne en pixels
-   * @returns {string} seize chiffres hexadécimaux minuscules
-   */
-  /**
    * FNV-1a 64 bits sur une suite d'octets quelconque.
    *
    * Le pendant de {@link fingerprint} pour ce qui n'est pas une image : la
@@ -902,6 +892,16 @@ export class Screengine {
     return hash.toString(16).padStart(16, "0");
   }
 
+  /**
+   * FNV-1a 64 bits dans la forme de la conformance : largeur et hauteur en
+   * `u32` poids faible en tête, puis la zone utile ligne par ligne, alpha compris.
+   *
+   * @param {number} ptr début du tampon de pixels
+   * @param {number} width largeur en pixels
+   * @param {number} height hauteur en pixels
+   * @param {number} stride pas de ligne en pixels
+   * @returns {string} seize chiffres hexadécimaux minuscules
+   */
   fingerprint(ptr, width, height, stride) {
     const bytes = this.bytes();
     let hash = FNV_OFFSET;
