@@ -25,7 +25,12 @@ fn in_world(x: f32, y: f32, z: f32) -> Vec3 {
 /// Ici plutôt qu'à côté de l'écriture, qui va champ par champ et n'a pas à la
 /// connaître : c'est l'uniformité qui a de la valeur, pas le nombre, et elle se
 /// perdrait au premier cas particulier réintroduit.
-const RECORD: usize = 37;
+///
+/// **Trente-sept pour le résultat, huit pour les deux marges.** Le nombre valait
+/// trente-sept, celui du seul absorbeur que le cas rejouait : il annonçait donc
+/// garder la taille de ce que les cinq hôtes hachent, et en gardait les quatre
+/// cinquièmes.
+const RECORD: usize = 45;
 
 /// Joue les balayages et range leurs résultats à côté de leur description.
 fn played() -> Vec<(Sweep, Option<Hit>)> {
@@ -33,12 +38,7 @@ fn played() -> Vec<(Sweep, Option<Hit>)> {
     all()
         .into_iter()
         .map(|sweep| {
-            let cell = world.locate(sweep.from);
-            let hit = if cell == 0 {
-                None
-            } else {
-                world.sweep(cell, sweep.half, sweep.from, sweep.to)
-            };
+            let hit = play(&world, &sweep);
             (sweep, hit)
         })
         .collect()
@@ -227,14 +227,7 @@ fn chaque_enregistrement_fait_la_meme_taille() {
 
     let mut bytes = Vec::new();
     for sweep in &sweeps {
-        let cell = world.locate(sweep.from);
-        let found = if cell == 0 {
-            None
-        } else {
-            world.sweep(cell, sweep.half, sweep.from, sweep.to)
-        };
-        let (hit, status) = publish(found, sweep.to);
-        absorb(&hit, status, &mut bytes);
+        absorb_record(sweep, play(&world, sweep), &mut bytes);
     }
 
     assert_eq!(bytes.len(), sweeps.len() * RECORD);

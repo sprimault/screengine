@@ -17,12 +17,7 @@ fn played() -> Vec<(Pick, Option<Hit>)> {
     all()
         .into_iter()
         .map(|pick| {
-            let cell = world.locate(pick.from);
-            let hit = if cell == 0 {
-                None
-            } else {
-                world.pick(cell, pick.from, pick.to, surfaces(pick.filter))
-            };
+            let hit = play(&world, &pick);
             (pick, hit)
         })
         .collect()

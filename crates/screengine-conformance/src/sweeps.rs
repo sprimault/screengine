@@ -411,12 +411,7 @@ pub fn digest() -> Result<u64, String> {
 
     let mut bytes = Vec::new();
     for (index, sweep) in all().into_iter().enumerate() {
-        let cell = world.locate(sweep.from);
-        let fast = if cell == 0 {
-            None
-        } else {
-            world.sweep(cell, sweep.half, sweep.from, sweep.to)
-        };
+        let fast = play(&world, &sweep);
         let slow = world.sweep_brute(sweep.half, sweep.from, sweep.to);
 
         if let Some(fast) = &fast
@@ -430,11 +425,38 @@ pub fn digest() -> Result<u64, String> {
 
         // Le départ sans cellule entre dans l'empreinte comme les autres : c'est
         // un cas que la carte produit, pas un trou dans la liste.
-        let (published, status) = publish(fast, sweep.to);
-        absorb(&published, status, &mut bytes);
-        absorb_margins(sweep.half, &mut bytes);
+        absorb_record(&sweep, fast, &mut bytes);
     }
     Ok(hash::of(&bytes))
+}
+
+/// Joue un balayage comme un hôte le joue : localiser, puis interroger.
+///
+/// **Quatre sites écrivaient cette séquence**, dont deux la reconstruisaient
+/// pour s'en faire un oracle — les gardes de couverture mesuraient alors une
+/// copie, et non ce que l'empreinte calcule. Un départ hors cellule se résout
+/// ici plutôt que chez chaque appelant : c'est la frontière qui porte ce cas, et
+/// la conformance rend le même résultat sans le distinguer.
+fn play(world: &World, sweep: &Sweep) -> Option<Hit> {
+    let cell = world.locate(sweep.from);
+    if cell == 0 {
+        return None;
+    }
+    world.sweep(cell, sweep.half, sweep.from, sweep.to)
+}
+
+/// Écrit dans l'empreinte tout ce qu'un balayage y met.
+///
+/// **Les marges en font partie**, et c'est ce qui manquait au cas qui garde la
+/// taille d'un enregistrement : il rejouait l'absorbeur du résultat sans son
+/// voisin, mesurait trente-sept octets là où l'empreinte en hache
+/// quarante-cinq, et restait vert sur une mutation de la taille réelle. Les deux
+/// écritures vivent donc ensemble, là où le seul appelant qui les voulait
+/// séparées n'existe pas.
+fn absorb_record(sweep: &Sweep, found: Option<Hit>, bytes: &mut Vec<u8>) {
+    let (published, status) = publish(found, sweep.to);
+    absorb(&published, status, bytes);
+    absorb_margins(sweep.half, bytes);
 }
 
 /// Ce que la frontière publie d'un balayage : un résultat, et un statut.
@@ -638,12 +660,7 @@ pub fn report() -> Result<String, String> {
          | marge | portee\n",
     );
     for (index, sweep) in all().into_iter().enumerate() {
-        let cell = world.locate(sweep.from);
-        let found = if cell == 0 {
-            None
-        } else {
-            world.sweep(cell, sweep.half, sweep.from, sweep.to)
-        };
+        let found = play(&world, &sweep);
         // Le rapport montre ce que l'empreinte hache, statut compris : un texte
         // qui dirait autre chose ne servirait plus à instruire un écart.
         let (hit, status) = publish(found, sweep.to);

@@ -118,6 +118,29 @@ fn le_produit_de_quaternions_est_celui_des_rotations() {
     }
 }
 
+/// Le conjugué défait la rotation du quaternion dont il vient.
+///
+/// `conjugate` n'avait, dans tout le dépôt, que sa déclaration — et c'est un
+/// item public depuis la 1.7.0, donc il reste.
+///
+/// **Ce que ce cas ne peut pas attraper, et c'est de la géométrie, pas une
+/// faiblesse** : porter la négation sur la composante réelle au lieu des trois
+/// autres rend l'opposé du conjugué, qui décrit la **même rotation**. Vérifié en
+/// le faisant, le cas reste vert. Il mord sur une composante oubliée des trois,
+/// qui est la faute qu'on écrit vraiment.
+#[test]
+fn le_conjugue_defait_la_rotation() {
+    let mut rng = Rng::new(31);
+    for _ in 0..10_000 {
+        let q = Quat::from_axis_angle(vector(&mut rng), Angle(rng.next() as u32));
+        let p = vector(&mut rng);
+        let rotation = |q| Affine3::from_rotation_translation(q, Vec3::ZERO);
+        let back = rotation(q.conjugate()).transform_point(rotation(q).transform_point(p));
+        let d = back - p;
+        assert!(d.dot(d) < 1.0e-6, "{back:?} {p:?}");
+    }
+}
+
 /// La normalisation rend une longueur un, et le vecteur nul pour une longueur
 /// négligeable plutôt qu'un NaN.
 #[test]

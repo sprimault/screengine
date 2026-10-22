@@ -98,3 +98,53 @@ fn coord_tient_ses_bornes_les_atteint_et_se_rejoue() {
     assert_eq!(suite(42), suite(42), "la graine ne rejoue pas sa suite");
     assert_ne!(suite(42), suite(43), "deux graines rendent la même suite");
 }
+
+/// `unit_f32` tient `[0, 1)`, le parcourt, s'y convertit sans perte et se
+/// rejoue.
+///
+/// Même raison que pour son voisin : c'est l'instrument de trente-huit tirages
+/// du noyau, dont les positions des scènes dont l'empreinte fait foi.
+///
+/// **La propriété qui lui est propre est l'exactitude**, que sa documentation
+/// annonce et que rien ne mesurait : vingt-quatre bits tiennent dans la mantisse
+/// d'un `f32`, donc chaque valeur est un multiple exact de 2⁻²⁴ et l'aller-retour
+/// par l'entier la rend intacte. C'est ce qui sépare un diviseur en puissance de
+/// deux d'un diviseur en `2²⁴ − 1` — la confusion naturelle, celle qui ferait
+/// atteindre un —, et le second déplacerait toutes les empreintes sans sortir de
+/// l'intervalle annoncé.
+#[test]
+fn unit_f32_tient_son_intervalle_sans_perte_et_se_rejoue() {
+    const SCALE: f32 = (1u32 << 24) as f32;
+
+    let mut rng = Rng::new(0x5EED_0000_0000_0003);
+    let mut vus = [false; 8];
+    for _ in 0..1024 {
+        let value = rng.unit_f32();
+        assert!(
+            (0.0..1.0).contains(&value),
+            "unit_f32 est sorti de [0, 1) : {value}"
+        );
+        let scaled = value * SCALE;
+        assert_eq!(
+            scaled,
+            (scaled as u32) as f32,
+            "{value} ne se représente pas en vingt-quatre bits"
+        );
+        vus[(value * 8.0) as usize] = true;
+    }
+    assert!(
+        vus.iter().all(|seen| *seen),
+        "unit_f32 n'atteint pas {vus:?}"
+    );
+
+    let suite = |seed| {
+        let mut rng = Rng::new(seed);
+        let mut out = [0f32; 16];
+        for slot in &mut out {
+            *slot = rng.unit_f32();
+        }
+        out
+    };
+    assert_eq!(suite(42), suite(42), "la graine ne rejoue pas sa suite");
+    assert_ne!(suite(42), suite(43), "deux graines rendent la même suite");
+}
