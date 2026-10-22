@@ -143,17 +143,26 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+      # **Le même plafond d'installation qu'en intégration continue, et pour une
+      # raison plus forte** : c'est ce job qui produit les archives d'une version
+      # publiée. Dix minutes, la même valeur partout, le critère étant « son
+      # travail est d'installer » — `Go` ne lit qu'une version, la cible 32 bits
+      # et Android installent puis travaillent. Voir le commentaire de `ci.yml`,
+      # qui porte le raisonnement ; il n'est pas recopié ici.
       - name: Chaîne Rust
+        timeout-minutes: 10
         run: |
           rustup toolchain install stable --profile minimal
           rustup default stable
 
       - name: GNU Make
         if: runner.os == 'Windows'
+        timeout-minutes: 10
         run: choco install make --no-progress
 
       # make test lance l'hôte wasm, sur chaque entrée de la matrice.
       - name: Cible wasm
+        timeout-minutes: 10
         run: rustup target add "$(make -s print-CIBLE_WASM)"
 
       # `make test` lance aussi l'hôte Go, sur chaque entrée de la matrice.
@@ -177,6 +186,7 @@ jobs:
       # versions de son Makefile, qemu-user, et KVM pour l'émulateur.
       - name: Android
         if: matrix.cible == 'android'
+        timeout-minutes: 12
         run: |
           [ -e /dev/kvm ] || { echo "KVM absent du runner" >&2; exit 1; }
           sudo chmod 666 /dev/kvm
@@ -198,8 +208,12 @@ jobs:
       # L'hôte Android tourne une fois, sur l'entrée qui publie sa bibliothèque,
       # émulateur démarré. Les autres entrées le retirent : Windows n'a pas
       # d'émulateur, et le repasser sous Linux ne vérifierait rien de plus.
+      # Elle installe son propre paquet `emulator` avant de créer l'appareil,
+      # donc elle télécharge aussi — c'est l'étape qui s'était arrêtée
+      # vingt-trois minutes dans `ci.yml`, et elle y porte le même plafond.
       - name: Tests et conformance
         if: matrix.cible == 'android'
+        timeout-minutes: 15
         uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
         with:
           api-level: ${{ env.API_LEVEL }}

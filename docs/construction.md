@@ -832,7 +832,8 @@ publiées. Ce qui suit est ce que chaque langage impose au chargement.
 ## Intégration continue
 
 `.github/workflows/ci.yml`, sur chaque push et chaque pull request vers `master`,
-et chaque semaine pour l'audit :
+et **chaque semaine, entier** — ce passage-là construit la branche même sans
+push, et c'est de lui que dépend la clause de la fin de section :
 
 | Job | Plateforme | Contrôles |
 |---|---|---|
@@ -864,12 +865,23 @@ blocage de trente-deux serait passé dessous sans rien dire. Les étapes qui
 téléchargent en portent donc un propre, bien plus court — ce qui nomme la panne
 au lieu de laisser le job expirer sans raison affichée.
 
-**Elles sont deux dans ce job, et la seconde n'en avait pas** : celle qui
-installe le NDK, les outils et la plateforme, et celle de l'émulateur, qui
-installe son propre paquet avant de créer l'appareil. C'est la seconde qui s'est
-arrêtée vingt-trois minutes, et le job entier avait expiré à sa place. « L'étape
-qui télécharge » se lit donc au pluriel : chaque étape qui va sur le réseau
-porte son plafond, et une étape ajoutée qui télécharge en demande un.
+**Le critère est « son travail est d'installer »**, et il décide des cas limites :
+une étape qui installe puis travaille — la conformance 32 bits, la version
+minimale — relève du plafond de son job, que son travail domine ; une étape qui
+ne lit qu'une version n'en demande pas. Les deux étapes Android gardent le leur,
+calibré sur ce qu'elles font plutôt que sur ce qu'elles téléchargent : la seconde
+installe son propre paquet avant de créer l'appareil, et c'est elle qui s'est
+arrêtée vingt-trois minutes, le job entier ayant expiré à sa place.
+
+**Dix minutes pour les autres, la même valeur partout**, dans les deux
+workflows : une installation qui dépasse dix minutes sur un runner est une panne
+de réseau, pas une charge. Calibrer chacune donnerait une dizaine de nombres à
+tenir justes, et ils dériveraient comme un décompte — ce document en portait un,
+faux dans les deux sens.
+
+**Le workflow de publication les porte aussi**, et la raison y est plus forte
+qu'en intégration continue : c'est son job qui produit les archives d'une version
+publiée.
 
 **Un push de fusion peut ne déclencher aucun passage, et rien ne le dit.** Vu
 une fois le 2026-10-21 : la fusion avait lieu, `master` avançait d'un commit, et
@@ -881,6 +893,14 @@ et la cause reste inconnue.
 de permission : le cas à attraper est celui où aucun passage n'existe, donc où
 personne ne pose la question. Un travail qui interrogerait l'historique des
 exécutions ne verrait que les commits pour lesquels il tourne.
+
+**Et un commit de `master` pouvait aussi n'être jamais construit par annulation**,
+ce qu'une première correction croyait avoir fermé en mettant `cancel-in-progress`
+à faux : un groupe de concurrence n'admet **qu'un seul passage en attente**, et un
+nouveau venu annule celui qui attendait. Le groupe porte donc le SHA sur `master`,
+si bien que chaque commit y a le sien, que rien n'attend et que rien n'est
+annulé. Écarté : `queue: max`, refusé en combinaison avec l'annulation que les
+branches de pull request gardent.
 
 Deux choses bornent la conséquence sans la supprimer. Le passage **hebdomadaire**
 du `schedule` construit `master` même sans push, donc la branche n'attend jamais
