@@ -124,6 +124,10 @@ SCREENGINE_LAYOUT_ASSERT(offsetof(ScgCamera, orientation) == 12, "orientation mo
 SCREENGINE_LAYOUT_ASSERT(offsetof(ScgCamera, fov_y) == 28, "fov_y moved");
 SCREENGINE_LAYOUT_ASSERT(offsetof(ScgCamera, near_plane) == 32, "near_plane moved");
 SCREENGINE_LAYOUT_ASSERT(sizeof(ScgMat4) == 64, "ScgMat4 changed size");
+SCREENGINE_LAYOUT_ASSERT(sizeof(ScgQuat) == 16, "ScgQuat changed size");
+SCREENGINE_LAYOUT_ASSERT(offsetof(ScgQuat, y) == 4, "ScgQuat.y moved");
+SCREENGINE_LAYOUT_ASSERT(offsetof(ScgQuat, z) == 8, "ScgQuat.z moved");
+SCREENGINE_LAYOUT_ASSERT(offsetof(ScgQuat, w) == 12, "ScgQuat.w moved");
 #undef SCREENGINE_LAYOUT_ASSERT
 #endif
 #endif"""

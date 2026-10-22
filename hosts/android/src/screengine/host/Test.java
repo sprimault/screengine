@@ -1501,6 +1501,115 @@ public final class Test {
     }
 
     /**
+     * Les axes de la scène {@code pose}, dont aucun n'est unitaire.
+     *
+     * <p>Le dernier est nul : le contrat promet alors l'identité plutôt qu'un
+     * refus, et c'est une clause qu'un hôte ne vérifie qu'en la hachant avec les
+     * autres.
+     */
+    private static final float[][] POSE_AXES = {
+        {0.0f, 0.0f, 2.0f},
+        {0.5f, -1.5f, 0.25f},
+        {0.0f, 0.0f, 0.0f},
+    };
+
+    /**
+     * Les angles, en unités de tour sur 2³².
+     *
+     * <p>Le troisième ne tombe sur aucune entrée de la table du moteur : trois
+     * angles tabulés ne diraient rien de l'interpolation entre deux d'entre
+     * elles.
+     */
+    private static final int[] POSE_ANGLES = {1 << 30, 1 << 29, 0x12345678};
+
+    /** La translation que chaque matrice porte. */
+    private static final float[] POSE_TRANSLATION = {1.5f, -2.25f, 0.75f};
+
+    /**
+     * Compose des poses, sans contexte ni tampon de pixels.
+     *
+     * <p>La seule scène qui ne crée aucun contexte — elle n'appelle que les
+     * quatre fonctions de rotation, le seul chemin qui les atteigne. Avant
+     * elles, un hôte orientait sa caméra avec la trigonométrie de son langage,
+     * et deux liaisons rendaient deux images : c'est exactement ce que la
+     * démonstration de cet hôte fait encore avec {@code Math.sin}, faute d'avoir
+     * eu l'appel.
+     *
+     * <p><b>L'angle est un entier, et c'est ce que la scène fige en premier.</b>
+     * Un tour vaut 2³² ; le convertir depuis des radians rendrait une autre
+     * empreinte sans sortir du contrat.
+     *
+     * @return l'empreinte en hexadécimal, ou {@code null} sur un échec
+     */
+    private static String renderPose() {
+        float[][] rotations = new float[3][4];
+        float[][] matrices = new float[3][16];
+        long hash = 0xcbf29ce484222325L;
+
+        for (int i = 0; i < POSE_AXES.length; i++) {
+            if (Screengine.quatFromAxisAngle(POSE_AXES[i], POSE_ANGLES[i], rotations[i]) < 0) {
+                check(false, "le quaternion de la scène de pose se construit");
+                return null;
+            }
+            hash = absorbFloats(hash, rotations[i]);
+        }
+
+        // Les deux sens, parce que le produit n'est pas commutatif : un hôte qui
+        // inverserait ses arguments passerait sans cela.
+        float[] product = new float[4];
+        for (float[] a : rotations) {
+            for (float[] b : rotations) {
+                if (Screengine.quatProduct(a, b, product) < 0) {
+                    check(false, "le produit de quaternions de la scène de pose se calcule");
+                    return null;
+                }
+                hash = absorbFloats(hash, product);
+            }
+        }
+
+        for (int i = 0; i < rotations.length; i++) {
+            int code =
+                    Screengine.mat4FromRotationTranslation(
+                            rotations[i], POSE_TRANSLATION, matrices[i]);
+            if (code < 0) {
+                check(false, "la matrice de la scène de pose se construit");
+                return null;
+            }
+            hash = absorbFloats(hash, matrices[i]);
+        }
+
+        float[] matProduct = new float[16];
+        for (float[] a : matrices) {
+            for (float[] b : matrices) {
+                if (Screengine.mat4Product(a, b, matProduct) < 0) {
+                    check(false, "le produit de matrices de la scène de pose se calcule");
+                    return null;
+                }
+                hash = absorbFloats(hash, matProduct);
+            }
+        }
+
+        return String.format("%016x", hash);
+    }
+
+    /**
+     * Absorbe des flottants dans l'empreinte, chacun par ses bits.
+     *
+     * @param hash l'état courant
+     * @param values les flottants à absorber
+     * @return l'état suivant
+     */
+    private static long absorbFloats(long hash, float[] values) {
+        for (float value : values) {
+            int bits = Float.floatToRawIntBits(value);
+            for (int shift = 0; shift < 32; shift += 8) {
+                hash = (hash ^ ((bits >>> shift) & 0xFF)) * 0x100000001b3L;
+            }
+        }
+        return hash;
+    }
+
+    /**
      * La taille d'un enregistrement de la liste de rayons : six flottants puis le
      * filtre.
      */
@@ -1674,12 +1783,13 @@ public final class Test {
         String picks = renderPicks(args[0] + "/collision.world", args[0] + "/selection.picks");
         String shaded = renderShaded();
         String rays = renderRays();
+        String pose = renderPose();
 
         if (failures > 0 || hash == null || textured == null || bilinear == null
                 || graded == null || lit == null || overbright == null || fog == null
                 || lights == null || mesh == null || composite == null || rooms == null
                 || trace == null || sweeps == null || picks == null || shaded == null
-                || rays == null) {
+                || rays == null || pose == null) {
             System.err.println(failures + " vérification(s) en échec");
             System.exit(1);
         }
@@ -1699,6 +1809,7 @@ public final class Test {
         System.out.println(picks);
         System.out.println(shaded);
         System.out.println(rays);
+        System.out.println(pose);
         System.exit(0);
     }
 }

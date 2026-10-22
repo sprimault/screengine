@@ -156,6 +156,16 @@ impl AbiError {
         message: "model matrix must be finite, with last row exactly 0, 0, 0, 1",
     };
 
+    /// Une composante de quaternion n'est pas finie.
+    ///
+    /// Distinct de `CAMERA_NOT_FINITE`, qui couvre une pose entière : ici
+    /// l'appelant tient un quaternion seul, et c'est tout ce que sa correction
+    /// a sous la main.
+    pub(crate) const QUATERNION: Self = Self {
+        code: SCG_ERR_INVALID_ARGUMENT,
+        message: "quaternion components must be finite numbers",
+    };
+
     /// Le format de pixels d'une texture n'est pas celui que le moteur lit.
     ///
     /// Refusé ici parce que le noyau n'a pas de format : il reçoit des texels

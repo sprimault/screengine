@@ -969,6 +969,18 @@ typedef struct ScgMat4 { float m[16]; } ScgMat4;
   l'ordre mémoire des pixels. Écarté : un `uint32_t`, qui rouvrirait à chaque
   liaison la question de l'ordre des canaux — celle-là même que le format des
   pixels tranche plus haut.
+- **`fov_y` et `near_plane` n'ont pas de valeur par défaut publiée**, là où le
+  chemin Rust en porte deux. Les cinq hôtes écrivent donc π/3 et un dixième à la
+  main, et ce n'est pas un oubli de propagation : le contrat garde les flottants
+  hors du header — un `#define` de flottant n'a ni type ni précision garantis
+  d'un compilateur à l'autre, et une liaison qui le relirait en double puis le
+  convertirait n'obtiendrait pas toujours les mêmes bits. La parade ne serait
+  donc pas une constante mais un point d'entrée, et rien ne se perd à attendre
+  qu'une liaison le demande : ces deux valeurs se lisent ici, et une caméra qui
+  ne les reprend pas n'est pas fautive pour autant.
+
+  **Ce qui rouvrirait la question** est une liaison qui demanderait à partir du
+  réglage du moteur sans le recopier — le signal qui a déjà servi deux fois.
 - **Les indices ne sont pas facultatifs.** Un hôte sans géométrie indexée écrit
   `0, 1, 2` puis `3, 4, 5` ; le moteur n'a pas deux chemins à tenir, et le lot
   reste un seul franchissement de la frontière.
@@ -2900,6 +2912,75 @@ chemin n'est acceptable.
 - **Elle ne crée aucun thread**, et ne change rien à la concurrence : le rendu
   des tuiles en parallèle est acquis depuis l'étape 1, et c'est l'hôte qui le
   conduit depuis ses propres threads.
+
+### La rotation déterministe
+
+**Quatre fonctions qui ne dépendent d'aucune étape**, décrites ici parce qu'un
+auteur de liaison les cherche au moment où il compose une pose, pas au moment
+où il lit une étape.
+
+```c
+int32_t scg_quat_from_axis_angle(const float axis[3], uint32_t angle,
+                                 ScgQuat *out);
+int32_t scg_quat_product(const ScgQuat *a, const ScgQuat *b, ScgQuat *out);
+int32_t scg_mat4_from_rotation_translation(const ScgQuat *q,
+                                           const float translation[3],
+                                           ScgMat4 *out);
+int32_t scg_mat4_product(const ScgMat4 *a, const ScgMat4 *b, ScgMat4 *out);
+```
+
+`SCG_ABI_VERSION` reste à **1** : quatre fonctions s'ajoutent, une structure
+aussi, et aucune signature publiée ne bouge.
+
+**Ce qu'elles corrigent est une dissymétrie entre les deux chemins.** L'API Rust
+rend une rotation déterministe ; la frontière n'en offrait aucune, si bien qu'un
+hôte non-Rust qui animait une pose la calculait avec la trigonométrie de son
+langage — et deux liaisons cessaient de rendre la même image, ce que l'invariant
+du déterminisme promet justement. Mesuré avant l'ajout : quatre des cinq hôtes
+écrivaient `sin(angle / 2)` et `cos(angle / 2)` à la main pour leur caméra, le
+cinquième n'ayant pas de démonstration à fenêtre.
+
+**L'angle est binaire : un tour vaut 2³², donc une unité vaut un tour divisé par
+2³².** C'est la décision qui porte le reste, et elle est de même nature que la
+virgule fixe après la projection — la conversion d'un flottant vers un entier
+sature autrement en scalaire et en SSE, donc le moteur la garde hors de son
+arithmétique. Un hôte qui anime une pose porte cet entier et lui ajoute son pas :
+le repliement y est exact et gratuit, là où des radians accumulés dérivent.
+
+**Écarté : les radians à la frontière.** Ils rendraient l'appel plus familier et
+replaceraient l'arrondi chez l'appelant, c'est-à-dire exactement là où le
+déterminisme se perd — chaque liaison convertirait avec sa propre bibliothèque.
+Le chemin Rust porte `Angle::from_radians` pour qui veut cette conversion ; elle
+se fait alors une fois, du côté qui l'a demandée.
+
+**Écarté : rendre la structure par valeur.** L'invariant interdit qu'une
+structure soit rendue par valeur ou par pointeur vers la mémoire du moteur.
+Chacune de ces fonctions remplit donc une structure que l'hôte possède, comme
+`scg_world_light` et les interrogations de balayage.
+
+**Écarté : exposer le sinus et le cosinus eux-mêmes.** Ils sont le moyen, pas la
+capacité, et un hôte qui les appellerait reconstruirait la composition de
+rotations que ces quatre fonctions portent — avec ses propres erreurs d'ordre.
+Ce qui est exposé est ce qu'un hôte veut obtenir.
+
+**`scg_mat4_product` ne compose pas la vue.** La matrice d'une soumission est
+celle du modèle seule ; le moteur compose la caméra lui-même, et une vue repliée
+dans ce produit serait traitée comme une transformation rigide et rendrait faux
+sans le dire. C'est la clause de `ROADMAP.md` sur la matrice modèle, et elle ne
+bouge pas.
+
+**Préconditions.** Les pointeurs visent des structures lisibles, et `out` une
+structure inscriptible ; `out` peut viser l'un des arguments, les lectures
+précédant l'écriture. Ce que les **valeurs** peuvent avoir de fautif est vérifié
+et refusé par `SCG_ERR_INVALID_ARGUMENT` : une composante non finie, une matrice
+dont la dernière ligne n'est pas exactement `0, 0, 0, 1`. Un axe nul ou
+dégénéré rend l'identité plutôt qu'une erreur — il n'y a pas de rotation à
+décrire, et refuser ferait brancher l'hôte sur un cas qu'il ne prévoit pas
+toujours. Aucune valeur d'angle n'est fautive : tout `uint32_t` est un angle.
+
+**Aucune des quatre ne normalise sa sortie**, et `ScgQuat` n'a pas à être
+unitaire en entrée : le moteur normalise là où il consomme une pose, et une
+liaison qui normaliserait d'abord obtiendrait d'autres bits.
 
 ### Étapes suivantes
 

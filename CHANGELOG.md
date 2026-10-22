@@ -71,6 +71,14 @@ publié, et explique les conventions du dépôt à qui y contribue.
 
 ## [Non publié]
 
+### Ajouté
+
+- **Quatre fonctions de rotation** — `scg_quat_from_axis_angle`,
+  `scg_quat_product`, `scg_mat4_from_rotation_translation`, `scg_mat4_product` —
+  et la structure `ScgQuat`. Un hôte qui orientait une caméra la calculait avec
+  la trigonométrie de son langage, donc sans obtenir les mêmes bits qu'un autre.
+  L'angle est un entier, un tour valant 2³².
+
 ### Corrigé
 
 - **Un argument fautif pendant une image rend `SCG_ERR_INVALID_STATE`**, sur
@@ -79,6 +87,14 @@ publié, et explique les conventions du dépôt à qui y contribue.
   d'allocation, au lieu d'avorter le processus de l'hôte.
 
 ***
+
+### Added
+
+- **Four rotation functions** — `scg_quat_from_axis_angle`,
+  `scg_quat_product`, `scg_mat4_from_rotation_translation`, `scg_mat4_product` —
+  and the `ScgQuat` struct. A host orienting a camera computed it with its own
+  language's trigonometry, so without obtaining the same bits as another. The
+  angle is an integer, a full turn being 2³².
 
 ### Fixed
 

@@ -154,6 +154,58 @@ impl ScgCamera {
     }
 }
 
+/// A rotation, stored `x, y, z, w` — the real part last.
+///
+/// Sixteen bytes, offsets 0/4/8/12 on every target, with no padding.
+///
+/// It need not be unit: the engine normalises it wherever it consumes one, and
+/// a binding that normalised it first would obtain different bits.
+///
+/// Same layout and same field order as the `orientation` of [`ScgCamera`],
+/// which is four bare floats: a host that already fills one writes this the
+/// same way. The named fields exist because this type is a result as well as an
+/// argument, and a result that an array indexes is a result whose components
+/// can be swapped without the compiler saying anything.
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct ScgQuat {
+    /// Component along i.
+    pub x: f32,
+    /// Component along j.
+    pub y: f32,
+    /// Component along k.
+    pub z: f32,
+    /// Real part.
+    pub w: f32,
+}
+
+impl ScgQuat {
+    /// Le quaternion du noyau, ou une erreur sur une composante non finie.
+    ///
+    /// Le fini se vérifie ici et non chez l'appelant : un quaternion non fini
+    /// se normalise en quaternion nul, dont la matrice n'a plus de sens, et
+    /// aucun appel en aval ne le signalerait.
+    pub(crate) fn to_core(self) -> Result<Quat, AbiError> {
+        if ![self.x, self.y, self.z, self.w]
+            .iter()
+            .all(|v| v.is_finite())
+        {
+            return Err(AbiError::QUATERNION);
+        }
+        Ok(Quat::new(self.x, self.y, self.z, self.w))
+    }
+
+    /// Le quaternion du noyau, rangé dans la structure de l'hôte.
+    pub(crate) fn from_core(q: Quat) -> Self {
+        Self {
+            x: q.x,
+            y: q.y,
+            z: q.z,
+            w: q.w,
+        }
+    }
+}
+
 /// A 4x4 model matrix, column-major: `m[column * 4 + row]`.
 ///
 /// The last row — `m[3]`, `m[7]`, `m[11]`, `m[15]` — must be exactly
@@ -185,6 +237,23 @@ impl ScgMat4 {
                 m[12], m[13], m[14],
             ],
         })
+    }
+
+    /// La transformation du noyau, rangée dans la 4×4 de l'hôte.
+    ///
+    /// La dernière ligne est écrite ici, et c'est le pendant exact du contrôle
+    /// ci-dessus : le noyau n'a que douze coefficients, donc la 4×4 que l'hôte
+    /// relit ne peut venir que d'ici.
+    pub(crate) fn from_core(a: Affine3) -> Self {
+        let m = &a.m;
+        Self {
+            m: [
+                m[0], m[1], m[2], 0.0, //
+                m[3], m[4], m[5], 0.0, //
+                m[6], m[7], m[8], 0.0, //
+                m[9], m[10], m[11], 1.0,
+            ],
+        }
     }
 }
 

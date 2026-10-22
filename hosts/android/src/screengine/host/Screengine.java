@@ -770,6 +770,66 @@ public final class Screengine {
     static native int pixelRay(long ctx, int x, int y, float[] out);
 
     /**
+     * {@code scg_quat_from_axis_angle}.
+     *
+     * <p><b>L'angle est un motif de bits, pas un nombre.</b> Un tour vaut 2³²,
+     * donc la moitié des angles arrive ici négative — Java n'ayant pas d'entier
+     * non signé, le pont transmet les trente-deux bits tels quels. Ajouter un
+     * pas à cet entier reste exact et se replie tout seul ; le convertir depuis
+     * des radians rendrait d'autres bits que les quatre autres hôtes.
+     *
+     * <p>L'axe n'a pas à être unitaire. Un axe nul rend l'identité, ce qui est
+     * une clause du contrat et non un effet de bord.
+     *
+     * @param axis trois flottants, une direction de monde
+     * @param angle l'angle binaire, un tour valant 2³²
+     * @param out quatre flottants à remplir : x, y, z, w
+     * @return le code de retour
+     */
+    static native int quatFromAxisAngle(float[] axis, int angle, float[] out);
+
+    /**
+     * {@code scg_quat_product} : la rotation {@code a} suivie de {@code b}.
+     *
+     * <p>L'ordre est celui d'une composition de poses, pas celui de l'algèbre :
+     * le résultat tourne d'abord par {@code a}.
+     *
+     * @param a quatre flottants
+     * @param b quatre flottants
+     * @param out quatre flottants à remplir
+     * @return le code de retour
+     */
+    static native int quatProduct(float[] a, float[] b, float[] out);
+
+    /**
+     * {@code scg_mat4_from_rotation_translation}.
+     *
+     * <p>Seize flottants par colonnes, la disposition que {@link #submit}
+     * attend. L'écrire à la main est l'endroit où la trigonométrie du langage
+     * revient, et où deux liaisons cessent de rendre la même image.
+     *
+     * @param q quatre flottants, pas nécessairement unitaires
+     * @param translation trois flottants
+     * @param out seize flottants à remplir
+     * @return le code de retour
+     */
+    static native int mat4FromRotationTranslation(float[] q, float[] translation, float[] out);
+
+    /**
+     * {@code scg_mat4_product} : la matrice {@code a} suivie de {@code b}.
+     *
+     * <p>Aucune des deux n'est la matrice de vue : le moteur compose sa caméra
+     * lui-même, et une vue repliée ici serait prise pour une transformation
+     * rigide.
+     *
+     * @param a seize flottants
+     * @param b seize flottants
+     * @param out seize flottants à remplir
+     * @return le code de retour
+     */
+    static native int mat4Product(float[] a, float[] b, float[] out);
+
+    /**
      * {@code scg_set_fog}.
      *
      * <p>Les trois canaux sont des entiers et non des octets : Java n'a pas

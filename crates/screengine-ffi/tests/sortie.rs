@@ -36,7 +36,7 @@ use screengine_ffi::*;
 /// ce que cette clause existe pour empêcher. Plus nombreux que les fonctions,
 /// parce que six d'entre elles ont deux paramètres de sortie — un tampon et sa
 /// longueur, ou deux identifiants —, chacun éprouvé à part.
-const APPELS: usize = 48;
+const APPELS: usize = 52;
 
 /// Le compteur des paramètres de sortie passés en revue.
 struct Sorties {
@@ -297,13 +297,31 @@ fn aucun_refus_n_ecrit_sa_sortie() {
             )
         });
 
-        // Les quatre qui ne prennent aucun handle : leur refus vient de ce que leur
+        // Celles qui ne prennent aucun handle : leur refus vient de ce que leur
         // contrat exige de leurs arguments, jamais d'un pointeur de ressource.
         v.intact("scg_sweep_skin", 0xdead_u32 as f32, |out| {
             scg_sweep_skin(NEGATIF.as_ptr(), out)
         });
         v.intact("scg_sweep_reach", 0xdead_u32 as f32, |out| {
             scg_sweep_reach(NEGATIF.as_ptr(), out)
+        });
+        // Les quatre de la rotation : chacune refuse sur ce qu'elle lit, et
+        // l'axe non fini est la seule entrée que la première puisse refuser —
+        // un axe nul rend l'identité plutôt qu'une erreur, et l'angle binaire
+        // n'a pas de valeur fautive, tout `u32` étant un angle.
+        v.intact("scg_quat_from_axis_angle", quat_sentinelle(), |out| {
+            scg_quat_from_axis_angle(NON_FINI.as_ptr(), 0, out)
+        });
+        v.intact("scg_quat_product", quat_sentinelle(), |out| {
+            scg_quat_product(ptr::null(), ptr::null(), out)
+        });
+        v.intact(
+            "scg_mat4_from_rotation_translation",
+            mat4_sentinelle(),
+            |out| scg_mat4_from_rotation_translation(ptr::null(), POSITION.as_ptr(), out),
+        );
+        v.intact("scg_mat4_product", mat4_sentinelle(), |out| {
+            scg_mat4_product(ptr::null(), ptr::null(), out)
         });
         v.intact("scg_lightmap_fault", 0xdead_u32, |out| {
             // Moins de trois coins : la cinquième clause du repère se tromperait
@@ -330,6 +348,32 @@ const POSITION: [f32; 3] = [0.0, 0.0, 0.0];
 
 /// Une demi-étendue négative, que le balayage et ses deux mesures refusent.
 const NEGATIF: [f32; 3] = [-1.0, 1.0, 1.0];
+
+/// Un axe dont une composante n'est pas finie, que la rotation refuse.
+///
+/// Séparée de la précédente : un axe négatif est un axe, et la rotation
+/// l'accepte — ce qu'elle refuse est l'infini, qui ne se normalise pas.
+const NON_FINI: [f32; 3] = [f32::INFINITY, 0.0, 0.0];
+
+/// Un quaternion dont chaque composante est reconnaissable.
+fn quat_sentinelle() -> ScgQuat {
+    ScgQuat {
+        x: 1.0,
+        y: 2.0,
+        z: 3.0,
+        w: 4.0,
+    }
+}
+
+/// Une matrice dont chaque coefficient est reconnaissable, la dernière ligne
+/// comprise — c'est elle qu'une écriture partielle laisserait juste par hasard.
+fn mat4_sentinelle() -> ScgMat4 {
+    let mut m = [0.0f32; 16];
+    for (i, slot) in m.iter_mut().enumerate() {
+        *slot = i as f32 + 1.0;
+    }
+    ScgMat4 { m }
+}
 
 /// Une lumière dont chaque octet est reconnaissable.
 ///

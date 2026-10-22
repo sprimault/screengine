@@ -612,6 +612,115 @@ func renderPicks(worldPath, picksPath string) (uint64, bool) {
 	return hashBytes(digest), true
 }
 
+// Les axes de la scène `pose`, dont aucun n'est unitaire.
+//
+// Le dernier est nul : le contrat promet alors l'identité plutôt qu'un refus,
+// et c'est une clause qu'un hôte ne vérifie qu'en la hachant avec les autres.
+var poseAxes = [3][3]float32{
+	{0.0, 0.0, 2.0},
+	{0.5, -1.5, 0.25},
+	{0.0, 0.0, 0.0},
+}
+
+// Les angles, en unités de tour sur 2³².
+//
+// Le troisième ne tombe sur aucune entrée de la table du moteur : trois angles
+// tabulés ne diraient rien de l'interpolation entre deux d'entre elles.
+var poseAngles = [3]uint32{1 << 30, 1 << 29, 0x12345678}
+
+// La translation que chaque matrice porte.
+var poseTranslation = [3]float32{1.5, -2.25, 0.75}
+
+// Compose des poses, sans contexte ni tampon de pixels.
+//
+// La seule scène qui ne crée aucun contexte — elle n'appelle que les quatre
+// fonctions de rotation, le seul chemin qui les atteigne. Avant elles, un hôte
+// orientait sa caméra avec la trigonométrie de son langage, et deux liaisons
+// rendaient deux images.
+//
+// L'angle est un entier, et c'est ce que la scène fige en premier : un tour
+// vaut 2³², et le convertir depuis des radians ici rendrait une autre empreinte
+// sans sortir du contrat.
+//
+// Chaque étage entre dans l'empreinte, sans quoi elle dirait qu'un résultat a
+// dévié sans dire lequel des quatre appels.
+func renderPose() (uint64, bool) {
+	var rotations [3]C.ScgQuat
+	var matrices [3]C.ScgMat4
+	digest := make([]byte, 0, 3*16+9*16+3*64+9*64)
+
+	for i := range poseAxes {
+		axis := poseAxes[i]
+		code := C.scg_quat_from_axis_angle(
+			(*C.float)(&axis[0]), C.uint32_t(poseAngles[i]), &rotations[i])
+		if code < 0 {
+			check(false, "le quaternion de la scène de pose se construit")
+			return 0, false
+		}
+		digest = append(digest, quatBytes(&rotations[i])...)
+	}
+
+	// Les deux sens, parce que le produit n'est pas commutatif : un hôte qui
+	// inverserait ses arguments passerait sans cela.
+	for i := range rotations {
+		for j := range rotations {
+			var product C.ScgQuat
+			if C.scg_quat_product(&rotations[i], &rotations[j], &product) < 0 {
+				check(false, "le produit de quaternions de la scène de pose se calcule")
+				return 0, false
+			}
+			digest = append(digest, quatBytes(&product)...)
+		}
+	}
+
+	for i := range rotations {
+		code := C.scg_mat4_from_rotation_translation(
+			&rotations[i], (*C.float)(&poseTranslation[0]), &matrices[i])
+		if code < 0 {
+			check(false, "la matrice de la scène de pose se construit")
+			return 0, false
+		}
+		digest = append(digest, mat4Bytes(&matrices[i])...)
+	}
+
+	for i := range matrices {
+		for j := range matrices {
+			var product C.ScgMat4
+			if C.scg_mat4_product(&matrices[i], &matrices[j], &product) < 0 {
+				check(false, "le produit de matrices de la scène de pose se calcule")
+				return 0, false
+			}
+			digest = append(digest, mat4Bytes(&product)...)
+		}
+	}
+
+	return hashBytes(digest), true
+}
+
+// Les octets d'un quaternion, composante par composante.
+func quatBytes(q *C.ScgQuat) []byte {
+	out := make([]byte, 0, 16)
+	for _, value := range [4]float32{
+		float32(q.x), float32(q.y), float32(q.z), float32(q.w),
+	} {
+		out = binary.LittleEndian.AppendUint32(out, math.Float32bits(value))
+	}
+	return out
+}
+
+// Les octets d'une matrice, sa dernière ligne comprise.
+//
+// Les seize coefficients et non les douze qui portent la transformation : la
+// dernière ligne est ce qu'une soumission refuserait plus tard, loin de sa
+// cause, et c'est ici qu'elle se compare.
+func mat4Bytes(m *C.ScgMat4) []byte {
+	out := make([]byte, 0, 64)
+	for i := 0; i < 16; i++ {
+		out = binary.LittleEndian.AppendUint32(out, math.Float32bits(float32(m.m[i])))
+	}
+	return out
+}
+
 // Les pixels de la scène `rayon`, dans l'ordre contractuel de l'empreinte.
 //
 // Les deux derniers débordent, un sur chaque axe : leur refus entre dans

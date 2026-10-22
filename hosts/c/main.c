@@ -1740,6 +1740,28 @@ static uint64_t absorb_float(uint64_t hash, float value)
     return absorb(hash, bits, 4);
 }
 
+/* Absorbe un quaternion, composante par composante. */
+static uint64_t absorb_quat(uint64_t hash, const ScgQuat *q)
+{
+    hash = absorb_float(hash, q->x);
+    hash = absorb_float(hash, q->y);
+    hash = absorb_float(hash, q->z);
+    return absorb_float(hash, q->w);
+}
+
+/* Absorbe une matrice, sa dernière ligne comprise.
+ *
+ * Les seize coefficients et non les douze qui portent la transformation : la
+ * dernière ligne est ce qu'une soumission refuserait plus tard, loin de sa
+ * cause, et c'est ici qu'elle se compare. */
+static uint64_t absorb_mat4(uint64_t hash, const ScgMat4 *m)
+{
+    for (int i = 0; i < 16; i++) {
+        hash = absorb_float(hash, m->m[i]);
+    }
+    return hash;
+}
+
 /* La scène `collision` : la seule qui ne rende aucune image.
  *
  * **Elle rejoue une liste versionnée, elle ne l'engendre pas.** Le treillis de
@@ -1961,6 +1983,92 @@ static uint64_t render_rays(int *ok)
     return hash;
 }
 
+/* Les axes de la scène `pose`, dont aucun n'est unitaire.
+ *
+ * Le dernier est nul : le contrat promet alors l'identité plutôt qu'un refus,
+ * et c'est une clause qu'un hôte ne vérifie qu'en la hachant avec les autres. */
+static const float POSE_AXES[3][3] = {
+    {0.0f, 0.0f, 2.0f},
+    {0.5f, -1.5f, 0.25f},
+    {0.0f, 0.0f, 0.0f},
+};
+
+/* Les angles, en unités de tour sur 2^32.
+ *
+ * Le troisième ne tombe sur aucune entrée de la table du moteur : trois angles
+ * tabulés ne diraient rien de l'interpolation entre deux d'entre elles. */
+static const uint32_t POSE_ANGLES[3] = {1u << 30, 1u << 29, 0x12345678u};
+
+/* La translation que chaque matrice porte. */
+static const float POSE_TRANSLATION[3] = {1.5f, -2.25f, 0.75f};
+
+/* La scène `pose` : ce qu'un hôte compose avant d'avoir une scène.
+ *
+ * La seule qui ne crée aucun contexte et ne touche à aucun tampon — elle
+ * n'appelle que les quatre fonctions de rotation. C'est le seul chemin qui les
+ * atteigne, et avant elles un hôte orientait sa caméra avec la trigonométrie de
+ * son langage : deux liaisons rendaient alors deux images.
+ *
+ * **L'angle est un entier, et c'est ce que la scène fige en premier.** Un tour
+ * vaut 2^32 ; convertir des radians ici rendrait une autre empreinte sans
+ * sortir du contrat.
+ *
+ * Chaque étage entre dans l'empreinte — les quaternions, leurs produits dans
+ * les deux sens, les matrices, puis les leurs —, sans quoi elle dirait qu'un
+ * résultat a dévié sans dire lequel des quatre appels. */
+static uint64_t render_pose(int *ok)
+{
+    ScgQuat rotations[3];
+    ScgMat4 matrices[3];
+    uint64_t hash = 0xcbf29ce484222325u;
+    size_t i, j;
+
+    *ok = 0;
+    for (i = 0; i < 3; i++) {
+        if (scg_quat_from_axis_angle(POSE_AXES[i], POSE_ANGLES[i], &rotations[i]) < 0) {
+            check(0, "le quaternion de la scene de pose se construit");
+            return 0;
+        }
+        hash = absorb_quat(hash, &rotations[i]);
+    }
+
+    /* Les deux sens, parce que le produit n'est pas commutatif : un hôte qui
+     * inverserait ses arguments passerait sans cela. */
+    for (i = 0; i < 3; i++) {
+        for (j = 0; j < 3; j++) {
+            ScgQuat product;
+            if (scg_quat_product(&rotations[i], &rotations[j], &product) < 0) {
+                check(0, "le produit de quaternions de la scene de pose se calcule");
+                return 0;
+            }
+            hash = absorb_quat(hash, &product);
+        }
+    }
+
+    for (i = 0; i < 3; i++) {
+        if (scg_mat4_from_rotation_translation(&rotations[i], POSE_TRANSLATION,
+                                               &matrices[i]) < 0) {
+            check(0, "la matrice de la scene de pose se construit");
+            return 0;
+        }
+        hash = absorb_mat4(hash, &matrices[i]);
+    }
+
+    for (i = 0; i < 3; i++) {
+        for (j = 0; j < 3; j++) {
+            ScgMat4 product;
+            if (scg_mat4_product(&matrices[i], &matrices[j], &product) < 0) {
+                check(0, "le produit de matrices de la scene de pose se calcule");
+                return 0;
+            }
+            hash = absorb_mat4(hash, &product);
+        }
+    }
+
+    *ok = 1;
+    return hash;
+}
+
 /* La scène `selection` : le même décor que la collision, interrogé au rayon.
  *
  * Ce qu'elle ajoute à la précédente est le **filtre**, et c'est la seule chose
@@ -2129,9 +2237,12 @@ int main(int argc, char **argv)
     int rays_ok = 0;
     uint64_t rays = render_rays(&rays_ok);
 
+    int pose_ok = 0;
+    uint64_t pose = render_pose(&pose_ok);
+
     if (failures > 0 || !ok || !textured_ok || !bilinear_ok || !graded_ok || !lit_ok
         || !overbright_ok || !fog_ok || !lights_ok || !mesh_ok || !composite_ok || !rooms_ok
-        || !trace_ok || !sweeps_ok || !picks_ok || !shaded_ok || !rays_ok) {
+        || !trace_ok || !sweeps_ok || !picks_ok || !shaded_ok || !rays_ok || !pose_ok) {
         fprintf(stderr, "%d vérification(s) en échec\n", failures);
         return 1;
     }
@@ -2151,5 +2262,6 @@ int main(int argc, char **argv)
     printf("%016llx\n", (unsigned long long)picks);
     printf("%016llx\n", (unsigned long long)shaded);
     printf("%016llx\n", (unsigned long long)rays);
+    printf("%016llx\n", (unsigned long long)pose);
     return 0;
 }

@@ -934,6 +934,29 @@ typedef struct ScgSweepHit {
   uint32_t reserved1;
 } ScgSweepHit;
 
+// A rotation, stored `x, y, z, w` — the real part last.
+//
+// Sixteen bytes, offsets 0/4/8/12 on every target, with no padding.
+//
+// It need not be unit: the engine normalises it wherever it consumes one, and
+// a binding that normalised it first would obtain different bits.
+//
+// Same layout and same field order as the `orientation` of [`ScgCamera`],
+// which is four bare floats: a host that already fills one writes this the
+// same way. The named fields exist because this type is a result as well as an
+// argument, and a result that an array indexes is a result whose components
+// can be swapped without the compiler saying anything.
+typedef struct ScgQuat {
+  // Component along i.
+  float x;
+  // Component along j.
+  float y;
+  // Component along k.
+  float z;
+  // Real part.
+  float w;
+} ScgQuat;
+
 #ifdef __cplusplus
 extern "C" {
 #endif // __cplusplus
@@ -2401,6 +2424,84 @@ int32_t scg_sweep_skin(const float *half_extents, float *out);
 // which refuses the same domain with the same code.
 int32_t scg_sweep_reach(const float *half_extents, float *out);
 
+// Writes to `out` the rotation of `angle` about `axis`.
+//
+// **The angle is binary, not radians: a full turn is 2³², so one unit is a
+// turn divided by 2³².** Converting degrees or radians is the caller's step,
+// and that is the point — the conversion from a float to this integer
+// saturates differently on a scalar path and on SSE, so the engine keeps it
+// out of its own arithmetic. A host that animates a pose should carry the
+// binary angle and add to it, where wrapping is exact and free, rather than
+// accumulate radians and convert each frame.
+//
+// **This is what makes a rotation reproducible across languages.** Computing
+// it with the host's own `sin` and `cos` does not give the same bits twice:
+// the engine's sine comes from its own tables, and the whole point of the
+// bit-exact guarantee is that two bindings render the same image. Every
+// function here delegates to the engine and adds nothing.
+//
+// `axis` need not be unit; it is normalised. A zero or degenerate axis yields
+// the identity rather than an error: there is no rotation to describe, and
+// refusing would make a host branch on a case it cannot always foresee.
+//
+// # Safety
+//
+// `axis` must point to three readable floats and `out` to a writable
+// `ScgQuat`. Their **values** are checked, not assumed: a coordinate that is
+// not finite is refused with `SCG_ERR_INVALID_ARGUMENT`.
+int32_t scg_quat_from_axis_angle(const float *axis, uint32_t angle, struct ScgQuat *out);
+
+// Writes to `out` the rotation `a` followed by the rotation `b`.
+//
+// The order is the one a reader expects of a composition of poses, not the
+// algebraic one: applying the result turns by `a` first. Neither argument need
+// be unit, and the result is not normalised — compose freely, the engine
+// normalises where it consumes a pose.
+//
+// # Safety
+//
+// `a`, `b` and `out` must each point to a readable — writable for `out` —
+// `ScgQuat`. A component that is not finite is refused with
+// `SCG_ERR_INVALID_ARGUMENT`. `out` may alias `a` or `b`.
+int32_t scg_quat_product(const struct ScgQuat *a, const struct ScgQuat *b, struct ScgQuat *out);
+
+// Writes to `out` the model matrix of a rotation and a translation.
+//
+// This is the matrix a submission takes, built the way the engine builds it.
+// Writing it by hand is where a binding's own trigonometry creeps back in,
+// and where two languages stop rendering the same image.
+//
+// The quaternion need not be unit; it is normalised here. The last row of the
+// result is exactly `0, 0, 0, 1`, which is what a submission requires.
+//
+// # Safety
+//
+// `q` must point to a readable `ScgQuat`, `translation` to three readable
+// floats, and `out` to a writable `ScgMat4`. Values that are not finite are
+// refused with `SCG_ERR_INVALID_ARGUMENT`.
+int32_t scg_mat4_from_rotation_translation(const struct ScgQuat *q,
+                                           const float *translation,
+                                           struct ScgMat4 *out);
+
+// Writes to `out` the matrix `a` followed by the matrix `b`.
+//
+// Same reading order as `scg_quat_product`: a point goes through `a` first.
+// This is how a host composes a placement with a local transform without
+// multiplying matrices itself — four lines of host code that two languages
+// would not agree on at the last bit.
+//
+// **Neither is the view matrix.** The engine composes its camera itself, and a
+// matrix passed to a submission is the model matrix alone; folding a view into
+// it would be treated as a rigid transform and silently misrender.
+//
+// # Safety
+//
+// `a`, `b` and `out` must each point to a readable — writable for `out` —
+// `ScgMat4`. A matrix that is not finite, or whose last row is not exactly
+// `0, 0, 0, 1`, is refused with `SCG_ERR_INVALID_ARGUMENT`. `out` may alias
+// `a` or `b`.
+int32_t scg_mat4_product(const struct ScgMat4 *a, const struct ScgMat4 *b, struct ScgMat4 *out);
+
 // Picks the scene with a ray from `from` to `to`, starting in `from_cell`.
 //
 // **This is the sweep of a zero-extent box**, and one function for both: a ray
@@ -2659,6 +2760,10 @@ SCREENGINE_LAYOUT_ASSERT(offsetof(ScgCamera, orientation) == 12, "orientation mo
 SCREENGINE_LAYOUT_ASSERT(offsetof(ScgCamera, fov_y) == 28, "fov_y moved");
 SCREENGINE_LAYOUT_ASSERT(offsetof(ScgCamera, near_plane) == 32, "near_plane moved");
 SCREENGINE_LAYOUT_ASSERT(sizeof(ScgMat4) == 64, "ScgMat4 changed size");
+SCREENGINE_LAYOUT_ASSERT(sizeof(ScgQuat) == 16, "ScgQuat changed size");
+SCREENGINE_LAYOUT_ASSERT(offsetof(ScgQuat, y) == 4, "ScgQuat.y moved");
+SCREENGINE_LAYOUT_ASSERT(offsetof(ScgQuat, z) == 8, "ScgQuat.z moved");
+SCREENGINE_LAYOUT_ASSERT(offsetof(ScgQuat, w) == 12, "ScgQuat.w moved");
 #undef SCREENGINE_LAYOUT_ASSERT
 #endif
 #endif
