@@ -1745,6 +1745,27 @@ fn les_lumieres_s_arretent_au_plafond_du_moteur() {
         "une lumière au-delà du plafond a été acceptée"
     );
 
+    // **Le champ réservé non nul**, refusé par la frontière et non par le
+    // noyau : les champs réservés n'existent que parce que l'ABI est figée, et
+    // le noyau n'a pas à savoir qu'elle l'est. Ce refus n'était éprouvé que par
+    // trois hôtes — donc par la plateforme, pas par la frontière —, alors que
+    // c'est lui qui tient la promesse d'extensibilité : un hôte écrit avant
+    // qu'un champ serve doit obtenir le défaut en passant des zéros, et il ne
+    // l'obtiendra que si le moteur refuse tout le reste.
+    let mut marquee = lumiere(2.0);
+    marquee._reserved = 1;
+    assert_eq!(
+        // SAFETY: contexte vivant, la lumière est locale.
+        unsafe { scg_set_lights(ctx, &marquee, 1) },
+        SCG_ERR_INVALID_ARGUMENT,
+        "un champ réservé non nul a été accepté"
+    );
+    assert!(
+        last_error(ctx).contains("reserved"),
+        "le message ne nomme pas le champ réservé : {}",
+        last_error(ctx)
+    );
+
     // SAFETY: le handle est vivant et détruit une seule fois.
     unsafe { scg_destroy(ctx) };
 }
@@ -1944,17 +1965,67 @@ fn une_texture_nulle_est_acceptee_a_normales_et_refusee_au_chemin_texture() {
     unsafe { scg_destroy(ctx) };
 }
 
+/// Pendant une image, le rayon de pixel passe là où un réglage est refusé.
+///
+/// **C'est le seul appel sur le contexte que le rendu d'une image laisse
+/// passer**, et la clause du contrat le nomme désormais : il ne rend qu'une
+/// direction tirée de la caméra et de la résolution, que rien ne peut changer
+/// tant qu'une image est ouverte.
+///
+/// Elle n'était gardée par rien : aucun cas de cette frontière n'appelait
+/// `scg_pixel_ray`, et les cinq hôtes l'appellent hors image. Le réglage refusé
+/// juste à côté est ce qui rend le cas mordant — sans lui, un contexte qui
+/// n'aurait pas ouvert son image rendrait le même succès.
+#[test]
+fn le_rayon_de_pixel_passe_pendant_une_image() {
+    let ctx = create(&sane());
+    let mut tiles = 0;
+    let mut ray = [0.0f32; 3];
+
+    // SAFETY: `ctx` est vivant, le compteur est local, l'image se referme plus bas.
+    assert_eq!(unsafe { scg_frame_begin(ctx, &mut tiles) }, SCG_OK);
+
+    // SAFETY: handle vivant, tampon local de trois flottants.
+    let code = unsafe { scg_pixel_ray(ctx, 0, 0, ray.as_mut_ptr()) };
+    assert_eq!(code, SCG_OK, "le rayon de pixel pendant l'image");
+    assert!(
+        ray.iter().any(|v| *v != 0.0),
+        "le rayon rendu est nul : rien n'a été écrit"
+    );
+
+    // Et le voisin immédiat est refusé, ce qui prouve que l'image est bien
+    // ouverte et que le succès ci-dessus n'est pas celui d'un contexte au repos.
+    // SAFETY: mêmes préconditions.
+    let code = unsafe { scg_set_filter(ctx, SCG_FILTER_BILINEAR) };
+    assert_eq!(code, SCG_ERR_INVALID_STATE, "le filtrage pendant l'image");
+
+    let mut pixels = vec![0u8; 64 * 32 * 4];
+    // SAFETY: le tampon porte bien `stride × hauteur × 4` octets.
+    let fin = unsafe { scg_frame_end(ctx, pixels.as_mut_ptr(), 64) };
+    assert_eq!(fin, SCG_OK);
+
+    // SAFETY: le handle est vivant et détruit une seule fois.
+    unsafe { scg_destroy(ctx) };
+}
+
 /// Pendant une image, l'état est refusé **avant** l'argument.
 ///
-/// La convention de la frontière, et elle n'était tenue nulle part : les huit
-/// réglages prennent l'exclusivité avant de convertir leur argument, les deux
-/// soumissions de tracé le faisaient dans l'autre sens. Un hôte recevait donc
-/// `SCG_ERR_INVALID_ARGUMENT` ici et `SCG_ERR_INVALID_STATE` là pour la même
-/// faute double, et aucun document ne départageait.
+/// La convention de la frontière, et c'est `entry::with_exclusive` qui la tient
+/// désormais : elle prend l'exclusivité avant d'appeler le corps, donc aucune
+/// conversion d'argument ne peut la précéder. Tout réglage et toute soumission
+/// passent par elle.
 ///
-/// **Le mode est doublement fautif**, et c'est ce qui rend le cas mordant : zéro
-/// n'est pas un mode publié, donc les deux refus s'appliquent et un seul peut
-/// sortir.
+/// **Sa première version de ce cas n'éprouvait que les deux soumissions de
+/// tracé**, sur la foi d'un commentaire qui affirmait qu'elles étaient les
+/// seules à l'inverse. Elles ne l'étaient pas : treize points d'entrée
+/// convertissaient encore avant, et c'est l'audit suivant qui l'a dit. Les trois
+/// régimes ci-dessous sont ceux qu'il a mesurés, un par couche de conversion —
+/// une constante d'ABI traduite dans la frontière, un champ réservé refusé par
+/// une structure, et un contrôle de capacité porté par la frontière elle-même.
+///
+/// **Chaque entrée est doublement fautive**, et c'est ce qui rend le cas
+/// mordant : les deux refus s'appliquent, un seul peut sortir, et les deux
+/// assertions hors image prouvent que celui qui est masqué existe bien.
 #[test]
 fn l_etat_passe_avant_l_argument_pendant_une_image() {
     let ctx = create(&sane());
@@ -1980,18 +2051,58 @@ fn l_etat_passe_avant_l_argument_pendant_une_image() {
         "points, mode nul pendant l'image"
     );
 
+    // Le champ réservé non nul d'une structure, refusé par `to_core` : la
+    // conversion vivait avant l'exclusivité.
+    let mut grade = neutral_grade();
+    grade.reserved0 = 1;
+    // SAFETY: handle vivant, structure locale et lisible.
+    let code = unsafe { scg_set_grade(ctx, &grade) };
+    assert_eq!(
+        code, SCG_ERR_INVALID_STATE,
+        "courbe, champ réservé non nul pendant l'image"
+    );
+
+    // Une capacité dépassée, refusée par la frontière elle-même et non par une
+    // conversion : neuf lumières pour un maximum de huit.
+    let lights = [ScgLight {
+        x: 0.0,
+        y: 0.0,
+        z: 0.0,
+        radius: 32.0,
+        r: 0xFF,
+        g: 0xFF,
+        b: 0xFF,
+        _reserved: 0,
+    }; 9];
+    // SAFETY: handle vivant, tableau local, compte exact.
+    let code = unsafe { scg_set_lights(ctx, lights.as_ptr(), 9) };
+    assert_eq!(
+        code, SCG_ERR_INVALID_STATE,
+        "lumières, capacité dépassée pendant l'image"
+    );
+
     let mut pixels = vec![0u8; 64 * 32 * 4];
     // SAFETY: le tampon porte bien `stride × hauteur × 4` octets.
     let fin = unsafe { scg_frame_end(ctx, pixels.as_mut_ptr(), 64) };
     assert_eq!(fin, SCG_OK);
 
-    // Hors de l'image, le même mode rend bien le refus d'argument : le cas
-    // n'aurait rien prouvé si l'état masquait un mode que personne ne refuse.
+    // Hors de l'image, les mêmes entrées rendent bien le refus d'argument : le
+    // cas n'aurait rien prouvé si l'état masquait des fautes que personne ne
+    // refuse.
     // SAFETY: mêmes préconditions.
     let code = unsafe { scg_submit_lines(ctx, &model, lines.as_ptr(), 1, 0) };
+    assert_eq!(code, SCG_ERR_INVALID_ARGUMENT, "hors image, le mode sort");
+    // SAFETY: idem.
+    let code = unsafe { scg_set_grade(ctx, &grade) };
     assert_eq!(
         code, SCG_ERR_INVALID_ARGUMENT,
-        "hors image, l'argument sort"
+        "hors image, le champ réservé sort"
+    );
+    // SAFETY: idem.
+    let code = unsafe { scg_set_lights(ctx, lights.as_ptr(), 9) };
+    assert_eq!(
+        code, SCG_ERR_INVALID_ARGUMENT,
+        "hors image, la capacité sort"
     );
 
     // SAFETY: le handle est vivant et détruit une seule fois.

@@ -404,13 +404,17 @@ lire ici :
   après un point de suspension retombe sur un autre thread du pool et reçoit la
   chaîne vide, sans que rien ne le signale ;
 - **chaque point d'entrée vide l'emplacement en entrant**, pour qu'un thread
-  recyclé ne rende jamais le message d'une tâche précédente ;
+  recyclé ne rende jamais le message d'une tâche précédente — **chacun sauf les
+  deux que l'enveloppe exempte**, `scg_abi_version` et `scg_last_error`, qui ne
+  calculent rien et n'écrivent donc aucun message. L'exemption du second est ce
+  qui rend l'emplacement lisible : un lecteur qui le viderait effacerait le
+  message qu'on l'appelle pour lire ;
 - **sa durée de vie est donc plus courte que celle du message d'un contexte**,
   et c'est le seul endroit où les deux se comparent. Celui-ci vaut jusqu'au
   prochain appel **sur le même contexte** ; celui-là jusqu'au prochain appel
-  **de n'importe quelle sorte sur ce thread** — un appel sur un autre contexte
-  suffit à le vider, puisque tous passent par la même entrée. Le header le dit
-  désormais, là où un auteur de liaison le lira.
+  **qui peut échouer, sur ce thread** — un appel sur un autre contexte suffit à
+  le vider, puisque tous passent par la même entrée. Le header le dit désormais,
+  là où un auteur de liaison le lira.
 
 ### Après une panique
 
@@ -599,11 +603,18 @@ Arrêté :
   la lit qu'en partage, et il ne prend aucune ressource : il s'appelle depuis
   n'importe quel thread, sur le même handle, simultanément et sans limite. Voir
   « Étape 7 ».
-- **Une exception, et une seule : le rendu des tuiles.** Entre le début et la fin
-  d'une image, l'hôte peut rendre des tuiles d'index distincts depuis des threads
-  distincts. Aucun autre appel sur le contexte n'est permis pendant ce temps.
-  Chaque tuile écrit un rectangle disjoint du tampon de l'hôte : le partage du
-  tampon entre threads est sûr par construction.
+- **Une exception sur le contexte : le rendu des tuiles.** Entre le début et la
+  fin d'une image, l'hôte peut rendre des tuiles d'index distincts depuis des
+  threads distincts. Chaque tuile écrit un rectangle disjoint du tampon de
+  l'hôte : le partage du tampon entre threads est sûr par construction.
+
+  **Un seul autre appel est permis pendant ce temps, et il lit** :
+  `scg_pixel_ray`, qui ne rend qu'une direction tirée de la caméra et de la
+  résolution — deux choses qu'aucun appel ne peut changer tant qu'une image est
+  ouverte. Tout le reste est refusé par `SCG_ERR_INVALID_STATE`. La clause disait
+  « aucun autre appel » quand les tuiles étaient la seule exception, et elle
+  l'a affirmé un jour de trop : c'est l'arrivée de cet appel qui l'a rendue
+  fausse, pas un changement de la concurrence.
 - **Sur wasm, cette exception ne sert à rien** : une liaison JavaScript rend ses
   tuiles l'une après l'autre, sur un seul thread. Ce n'est pas une clause du
   moteur mais une limite de la plateforme, et rien du contrat ne change pour
@@ -680,6 +691,14 @@ int32_t scg_frame_end(ScgContext *ctx, uint8_t *pixels, uint32_t stride);
     région peut être l'image entière, et 2048 × 2048 pixels de couleur et de
     profondeur n'y tiendraient pas. Une seule longueur pour les deux, puisque le
     moteur les veut égales.
+
+    **Et ce sont deux tampons, qui ne se recouvrent pas** : la longueur unique ne
+    veut pas dire qu'un seul bloc puisse servir aux deux. Le moteur prend une vue
+    exclusive de chacun, donc passer deux fois le même pointeur est un
+    comportement indéfini avant qu'un octet soit écrit. C'est une **précondition
+    et non un cas d'erreur**, comme la validité d'un handle : le moteur ne peut
+    pas la voir, et l'appel qui prouverait un contrôle de recouvrement est
+    lui-même indéfini.
   - **Elle ne prend aucune tuile et ne dispense pas de les rendre.**
     `scg_frame_end` rend ensuite toutes celles que personne n'a prises, donc
     celles qui recouvrent la région **réécrivent** ce qu'elle y avait mis. Un
@@ -1596,7 +1615,9 @@ pas dans le second.
   cause ne l'est pas, et aucun code ne les sépare.
 - **`scg_world_locate` et `scg_world_track` ne prennent pas de contexte** et ne
   dessinent rien : ce sont des interrogations de la carte, appelables depuis
-  n'importe quel thread, dont l'erreur se lit par `scg_last_error(NULL)`.
+  n'importe quel thread par le critère que porte la docstring du handle
+  `ScgWorld` — toute fonction qui ne lit qu'une carte chargée —, et leur erreur
+  se lit par `scg_last_error(NULL)`.
   `scg_world_track` transporte la cellule quand le segment franchit un portail
   apparié, et rend `0` quand il sort par un portail non apparié ou par une
   surface. Le moteur ne se relocalise jamais de lui-même : c'est l'hôte qui

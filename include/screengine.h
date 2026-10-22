@@ -174,12 +174,14 @@
 // `SCG_ERR_FAULTED`.
 #define SCG_ERR_POISONED -6
 
-// A lookup by stable identifier found nothing.
+// A lookup by stable identifier found nothing — a cell, a surface, a material.
 //
-// Returned by `scg_submit_world_visible` when no cell carries the given
-// identifier. The file is well formed and the call is well shaped: it is the
-// reference that finds no target, which is neither a malformation nor a bad
-// argument.
+// The file is well formed and the call is well shaped: it is the reference that
+// finds no target, which is neither a malformation nor a bad argument.
+//
+// No list of producers here. Several entry points return it, the set grows with
+// every accessor keyed on an identifier, and a list in prose drifts while
+// nothing checks it.
 #define SCG_ERR_UNKNOWN_RESOURCE -100
 
 // Success, and traversal stopped at one of its bounds.
@@ -414,6 +416,17 @@ typedef struct ScgTexture ScgTexture;
 //
 // Created by `scg_world_load`, released by `scg_world_destroy`. It belongs to
 // no context: the same map may be submitted to several, from several threads.
+//
+// **Every function that only reads a loaded map is callable from any thread**,
+// on the same handle, simultaneously and without limit — the map is immutable
+// once loaded, and such a call takes no resource and holds no state. That is
+// the criterion, written once: it covers the sweeps, the ray queries, locating
+// and tracking a cell, and every accessor keyed on an identifier. The
+// per-function notes do not repeat it, and a function added later inherits it
+// by being of that kind rather than by being named here.
+//
+// What is **not** of that kind, and says so on its own declaration: anything
+// that takes a context, and `scg_lighting_build`, which fills a cache.
 typedef struct ScgWorld ScgWorld;
 
 // Configuration passed to `scg_create`.
@@ -1301,8 +1314,14 @@ int32_t scg_frame_tile(struct ScgContext *ctx, uint32_t index, uint8_t *pixels, 
 // # Safety
 //
 // `ctx` is a live handle, `color` and `depth` each point to `scratch` writable
-// `uint32_t`, and `pixels` points to a writable buffer of at least
-// `stride × height × 4` bytes.
+// `uint32_t` and **do not overlap each other**, and `pixels` points to a
+// writable buffer of at least `stride × height × 4` bytes.
+//
+// The single `scratch` length for both does not mean one buffer serves both:
+// the engine takes an exclusive view of each, so passing the same pointer twice
+// is undefined behaviour before a byte is written. It is a precondition and not
+// an error case — the engine cannot see it, and the call that would prove a
+// check works is itself undefined.
 int32_t scg_frame_region(struct ScgContext *ctx,
                          uint32_t x,
                          uint32_t y,
@@ -1351,11 +1370,16 @@ int32_t scg_frame_end(struct ScgContext *ctx, uint8_t *pixels, uint32_t stride);
 // that resumes on another thread of a pool will find it empty.
 //
 // **That slot's lifetime is shorter than the context one's**: every entry point
-// clears it on the way in, whichever it is and whether it takes a context or
-// not. So it is valid until the **next call of any kind on the same thread**,
-// where the context message survives until the next call on that same context.
-// A host that calls anything between the failure and the read gets the empty
-// string, not a stale message.
+// clears it on the way in, whether it takes a context or not — every one but
+// the two the contract exempts from the wrapper, `scg_abi_version` and this
+// function, which compute nothing and so write no message. So it is valid until
+// the **next call that can fail, on the same thread**, where the context message
+// survives until the next call on that same context. A host that calls anything
+// else between the failure and the read gets the empty string, not a stale
+// message.
+//
+// The two exemptions are what make this readable at all: a reader that cleared
+// the slot would erase the message it was called to fetch.
 //
 // Allowed on a faulted context, so the host can learn the cause.
 //

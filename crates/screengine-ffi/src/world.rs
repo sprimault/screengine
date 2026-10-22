@@ -17,6 +17,17 @@ use screengine::{Lightmaps, World};
 ///
 /// Created by `scg_world_load`, released by `scg_world_destroy`. It belongs to
 /// no context: the same map may be submitted to several, from several threads.
+///
+/// **Every function that only reads a loaded map is callable from any thread**,
+/// on the same handle, simultaneously and without limit — the map is immutable
+/// once loaded, and such a call takes no resource and holds no state. That is
+/// the criterion, written once: it covers the sweeps, the ray queries, locating
+/// and tracking a cell, and every accessor keyed on an identifier. The
+/// per-function notes do not repeat it, and a function added later inherits it
+/// by being of that kind rather than by being named here.
+///
+/// What is **not** of that kind, and says so on its own declaration: anything
+/// that takes a context, and `scg_lighting_build`, which fills a cache.
 pub struct ScgWorld {
     /// La ressource du noyau, immuable une fois chargée.
     ///
