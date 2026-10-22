@@ -38,11 +38,27 @@ permissions:
 # moins de treize minutes d'écart suffisent, et six lots ont été fusionnés ce
 # jour-là.
 #
-# À faux, les passages de `master` se mettent en file au lieu de s'annuler :
-# chacun est construit, dans l'ordre. C'est le comportement qu'on veut d'une
-# branche dont chaque commit est un candidat de publication.
+# **Mettre `cancel-in-progress` à faux ne suffisait pas**, et la première version
+# de ce commentaire l'affirmait à tort : la documentation d'Actions dit qu'un
+# groupe de concurrence n'admet **qu'un seul passage en attente**, et qu'un
+# nouveau venu annule celui qui attendait. Deux fusions rapprochées passent donc,
+# la troisième tue le passage de la deuxième — le trou revient, en plus rare.
+#
+# **D'où un groupe par commit sur `master`**, et non une file : chaque commit y
+# obtient son propre groupe, donc rien n'attend et rien n'est annulé. Les
+# branches de pull request gardent un groupe par référence et l'annulation, qui y
+# est juste — un nouveau push rend le commit précédent sans intérêt, et ça rend
+# une quinzaine de minutes de runner.
+#
+# Écarté : `queue: max`, qui porte la file à cent. Il est refusé en combinaison
+# avec `cancel-in-progress`, que les branches de PR gardent, et il ferait reposer
+# la garantie sur une capacité plutôt que sur son absence de besoin.
+#
+# Deux passages sur le **même** commit partagent encore leur groupe — un push et
+# une relance manuelle —, et c'est sans conséquence : même arbre, donc le second
+# n'apprend rien que le premier ne dise.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.ref == 'refs/heads/master' && github.sha || '' }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/master' }}
 
 env:
@@ -60,9 +76,21 @@ env:
 #
 # **Trop large, un plafond ne sert à rien** : à quarante minutes, le blocage de
 # trente-deux qu'on a vu serait passé dessous sans rien dire. C'est pourquoi
-# **chaque étape qui télécharge** en porte un propre, bien plus court que celui
-# de son job — elles sont deux dans le job de tests, et la seconde n'en a eu un
-# qu'après s'être arrêtée vingt-trois minutes.
+# **toute étape dont le travail est d'installer** porte le sien, bien plus court
+# que celui de son job.
+#
+# **Dix minutes, la même valeur partout, et c'est voulu** : une installation qui
+# dépasse dix minutes sur un runner est une panne de réseau, pas une charge.
+# Calibrer chacune donnerait une dizaine de nombres à tenir justes, qui
+# dériveraient comme un décompte en prose — la première version de ce commentaire
+# en portait un, et il était faux dans les deux sens.
+#
+# **Le critère est « son travail est d'installer », pas « elle touche au
+# réseau »**, et c'est lui qui décide des cas limites. `make msrv` et la
+# conformance 32 bits installent puis travaillent, et leur travail domine : leur
+# plafond est celui de leur job. L'étape `Go` ne fait que lire des versions, donc
+# elle n'en demande pas. Les deux étapes Android gardent le leur, calibré sur ce
+# qu'elles font et non sur ce qu'elles téléchargent.
 jobs:
   verification:
     name: Format, lint, no_std, header, licences
@@ -72,6 +100,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Chaîne Rust
+        timeout-minutes: 10
         run: |
           rustup toolchain install stable --profile minimal --component rustfmt,clippy
           rustup default stable
@@ -102,6 +131,7 @@ jobs:
           key: outils-${{ runner.os }}-${{ steps.outils.outputs.versions }}
 
       - name: Outils
+        timeout-minutes: 10
         run: make tools
 
       - name: Format
@@ -160,6 +190,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Chaîne Rust
+        timeout-minutes: 10
         run: |
           rustup toolchain install stable --profile minimal
           rustup default stable
@@ -167,12 +198,14 @@ jobs:
       # L'image Windows fournit bash mais pas GNU Make.
       - name: GNU Make
         if: runner.os == 'Windows'
+        timeout-minutes: 10
         run: choco install make --no-progress
 
       # L'hôte wasm de make test tourne sous Node, que les deux images
       # fournissent. Il lui faut la cible, que ce job n'installe pas par
       # make tools : recompiler les outils ici ne servirait qu'au lint.
       - name: Cible wasm
+        timeout-minutes: 10
         run: |
           rustup target add "$(make -s print-CIBLE_WASM)"
           node --version
@@ -215,11 +248,11 @@ jobs:
       # le seul moment où l'hôte Android a un appareil.
       #
       # **Elle télécharge aussi**, et c'est ce qui lui vaut un plafond propre :
-      # l'action installe le paquet `emulator` avant de créer l'appareil, donc il
-      # y a deux étapes qui pendent dans ce job et non une. Vue le 2026-10-21 sur
-      # une PR : vingt-trois minutes arrêtées sur `sdkmanager --install emulator`,
-      # qui ont mangé le plafond du job entier faute d'en avoir un ici. L'étape
-      # d'installation au-dessus en portait un depuis longtemps ; celle-ci, non.
+      # l'action installe le paquet `emulator` avant de créer l'appareil. Vue le
+      # 2026-10-21 sur une PR : vingt-trois minutes arrêtées sur
+      # `sdkmanager --install emulator`, qui ont mangé le plafond du job entier
+      # faute d'en avoir un ici. L'étape d'installation au-dessus en portait un
+      # depuis longtemps ; celle-ci, non.
       #
       # Quinze minutes : le job entier tourne en onze, émulateur et `make test`
       # compris. Les atteindre nomme la panne au lieu de laisser le job expirer
@@ -333,6 +366,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Chaîne Rust
+        timeout-minutes: 10
         run: |
           rustup toolchain install stable --profile minimal
           rustup default stable
@@ -358,6 +392,7 @@ jobs:
       # version plus récente existe, cache ou pas — donc une montée de sa version
       # recompile, cette clé-ci n'y changeant rien.
       - name: Outils
+        timeout-minutes: 10
         run: make tools
 
       - name: Vulnérabilités
