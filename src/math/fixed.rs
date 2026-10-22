@@ -70,6 +70,15 @@ pub fn to_subpixel(v: f32) -> i32 {
 /// **Ce que cette fonction ne couvre pas**, et c'est délibéré : la conversion du
 /// gain d'un sommet en 16.16, qui **tronque** vers zéro et le dit. Un demi-pas y
 /// serait un changement de rendu, pas une uniformisation.
+///
+/// **Et il existe une seconde famille, écrite deux fois** : [`to_subpixel`] et
+/// [`to_texel`] arrondissent avec un demi-pas **écarté de zéro**, parce que
+/// leurs grandeurs sont signées et que `as` tronque vers zéro — un demi-pas
+/// constant y inverserait le sens de l'arrondi de part et d'autre de l'origine.
+/// Leurs bornes sont symétriques là où celle-ci part de zéro. Deux occurrences :
+/// la règle de trois dit de les noter, pas de les fondre, et une abstraction
+/// construite sur deux cas qui ne partagent ni le signe ni la borne se
+/// révélerait fausse au troisième.
 pub fn rounded(value: f32, scale: f32, max: u32) -> u32 {
     if value.is_nan() {
         return 0;
