@@ -1464,3 +1464,67 @@ fn le_diagnostic_de_repere_nomme_la_clause() {
     assert_eq!(code, SCG_OK);
     assert_eq!(fault, SCG_LIGHTMAP_FAULT_EXTENT_TOO_LARGE);
 }
+
+/// Un porteur de lightmaps opposé à une autre carte est refusé, et les deux
+/// cartes sont ici **identiques au contenu près**.
+///
+/// **C'est ce que la frontière seule peut attraper**, et la raison d'être de sa
+/// confrontation : le handle garde la carte dont il vient, donc l'égalité porte
+/// sur l'identité. Le noyau, qui ne retient aucune carte, ne compare que des
+/// longueurs — deux cartes de même forme y passent, et c'est écrit dans la
+/// documentation de son garde.
+///
+/// Le refus tombe sur les deux soumissions éclairées, qui sont les deux seules à
+/// recevoir une carte et un porteur indépendants : les quatre appels de cuisson,
+/// eux, emploient la carte que le handle porte et ne peuvent pas être dépareillés.
+#[test]
+fn un_porteur_d_une_autre_carte_est_refuse() {
+    let mut ctx = ptr::null_mut();
+    let config = config();
+    // SAFETY: les deux pointeurs visent des valeurs locales vivantes.
+    assert_eq!(unsafe { scg_create(&config, &mut ctx) }, SCG_OK);
+
+    let sienne = load(&one_cell_world());
+    let autre = load(&one_cell_world());
+    let mut lighting = ptr::null_mut();
+    // SAFETY: carte vivante, pointeur de sortie local.
+    let code = unsafe { scg_lighting_create(sienne, &mut lighting) };
+    assert_eq!(code, SCG_OK);
+    // SAFETY: handle vivant.
+    assert_eq!(unsafe { scg_lighting_build(lighting, 7) }, SCG_OK);
+
+    let slots: [*const ScgTexture; 2] = [ptr::null(), ptr::null()];
+    let model = identity();
+
+    // SAFETY: contexte et cartes vivants, matrice et tableau locaux, compte des
+    // matériaux exact, porteur vivant.
+    let code = unsafe { scg_submit_world_lit(ctx, &model, autre, slots.as_ptr(), 2, lighting) };
+    assert_eq!(
+        code, SCG_ERR_INVALID_ARGUMENT,
+        "une carte étrangère doit être refusée"
+    );
+    assert!(
+        context_error(ctx).contains("another map"),
+        "le message doit nommer l'appariement, pas une borne : {}",
+        context_error(ctx)
+    );
+
+    // SAFETY: mêmes préconditions, par la traversée.
+    let code =
+        unsafe { scg_submit_world_visible(ctx, &model, autre, slots.as_ptr(), 2, lighting, 7) };
+    assert_eq!(code, SCG_ERR_INVALID_ARGUMENT);
+
+    // La même soumission sur la carte dont le porteur vient passe : le refus
+    // porte sur l'appariement et sur rien d'autre.
+    // SAFETY: mêmes préconditions, carte d'origine cette fois.
+    let code = unsafe { scg_submit_world_lit(ctx, &model, sienne, slots.as_ptr(), 2, lighting) };
+    assert_eq!(code, SCG_OK, "soumission refusée : {}", context_error(ctx));
+
+    // SAFETY: handles vivants, détruits une seule fois.
+    unsafe {
+        scg_lighting_destroy(lighting);
+        scg_world_destroy(autre);
+        scg_world_destroy(sienne);
+        scg_destroy(ctx);
+    }
+}

@@ -1491,10 +1491,29 @@ impl Context {
             // lightmap ? Sinon le lot part par le chemin non éclairé — **un
             // niveau partiellement rallumé reste affichable**, ce qui est
             // exactement le moment où un éditeur a besoin de le voir.
+            //
+            // **Un atlas plus court que sa cellule est un refus, pas une
+            // dégradation**, et c'est la seule décision de ce bloc qui ne se
+            // devine pas. Le porteur et la carte arrivent séparément : un atlas
+            // cuit sur une cellule de trois surfaces, opposé à une cellule qui en
+            // porte quatre, laissait la quatrième indexer hors de ses
+            // emplacements. Retomber sur le chemin non éclairé rendrait alors une
+            // image plausible depuis une carte dépareillée, ce que le projet
+            // refuse partout ailleurs ; la ligne au-dessus, elle, dégrade pour une
+            // cellule qui n'a **rien** de cuit, ce qui est un état d'éditeur
+            // légitime.
             let lit = lighting
                 .and_then(|lighting| lighting.of(index))
                 .filter(|_| !surface.skips_lightmap())
-                .map(|(texture, atlas)| (texture, atlas.slots[rank_in_cell]));
+                .map(|(texture, atlas)| {
+                    atlas
+                        .slots
+                        .get(rank_in_cell)
+                        .copied()
+                        .map(|slot| (texture, slot))
+                        .ok_or(Error::InvalidArgument(Argument::Lightmaps))
+                })
+                .transpose()?;
 
             match lit {
                 Some((lightmap, slot)) => {

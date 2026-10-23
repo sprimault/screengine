@@ -1953,6 +1953,12 @@ int32_t scg_submit_world(struct ScgContext *ctx,
 // traversed one a lit level, so the two would differ for a reason that has
 // nothing to do with what is being compared.
 //
+// **`lighting` must come from `world`**, and a holder created from another map
+// returns `SCG_ERR_INVALID_ARGUMENT` before anything is submitted. The holder
+// is sized on the map it was created from, down to the slots of each cell's
+// atlas: an atlas read against a cell that carries one surface more would index
+// past its own slots.
+//
 // **The map is submitted whole or not at all**, like `scg_submit_world`.
 //
 // # Safety
@@ -2205,6 +2211,12 @@ int32_t scg_world_track(const struct ScgWorld *world,
 // whose lightmaps are not computed is submitted unlit too, surface by surface:
 // **a partially relit level stays displayable**, which is exactly when an editor
 // needs to see it.
+//
+// **But it must come from `world`**: a holder created from another map returns
+// `SCG_ERR_INVALID_ARGUMENT` before anything is submitted. Falling back to the
+// unlit path there would render a plausible image from a mismatched map, which
+// is the one thing this clause does not do — it degrades for a cell that has
+// **nothing** computed, never for a holder that belongs elsewhere.
 //
 // # Safety
 //

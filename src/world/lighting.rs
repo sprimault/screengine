@@ -18,7 +18,7 @@ use alloc::sync::Arc;
 use alloc::vec::Vec;
 
 use crate::buffer::reserved;
-use crate::error::{Error, Result};
+use crate::error::{Argument, Error, Result};
 use crate::format::World;
 use crate::format::world::{Cell, Surface};
 use crate::texture::Texture;
@@ -94,6 +94,7 @@ impl Lightmaps {
     /// **ses voisines immédiates deviennent fausses** : la lumière qui passait par
     /// la porte était calculée là-bas, et c'est à l'hôte de les rappeler.
     pub fn build(&mut self, world: &World, cell_id: u32) -> Result<()> {
+        self.matches(world)?;
         let index = world.cell_of(cell_id).ok_or(Error::UnknownResource)?;
         let atlas = pack(&world.cells()[index as usize])?;
         let baked = bake(world, index, atlas)?;
@@ -108,6 +109,7 @@ impl Lightmaps {
 
     /// L'état de la lightmap d'une cellule.
     pub fn state(&self, world: &World, cell_id: u32) -> Result<Lightmap> {
+        self.matches(world)?;
         let index = world.cell_of(cell_id).ok_or(Error::UnknownResource)?;
         Ok(match self.cells[index as usize] {
             Some(_) => Lightmap::Ready,
@@ -139,6 +141,7 @@ impl Lightmaps {
     /// L'ordre du fichier est déjà celui des identifiants croissants — le
     /// chargement le vérifie —, donc les enregistrements sortent triés sans tri.
     fn records<'a>(&'a self, world: &'a World) -> Result<Vec<Record<'a>>> {
+        self.matches(world)?;
         let cells = world.cells();
         let mut out = reserved(self.cells.len())?;
         for (index, entry) in self.cells.iter().enumerate() {
@@ -167,6 +170,7 @@ impl Lightmaps {
     /// carte chargée. Une empreinte se vole, elle ne prouve rien — c'est un FNV, pas
     /// une signature —, donc le rangement relu est vérifié pour lui-même.
     pub fn restore(&mut self, world: &World, bytes: &[u8]) -> Result<u32> {
+        self.matches(world)?;
         let cells = world.cells();
         let mut accepted = 0;
         for entry in cache::read(bytes)? {
@@ -188,6 +192,34 @@ impl Lightmaps {
             accepted += 1;
         }
         Ok(accepted)
+    }
+
+    /// La carte passée est-elle celle qui a dimensionné ce porteur ?
+    ///
+    /// **Un garde en un point plutôt que quatre refus recopiés.** Les quatre
+    /// méthodes qui reçoivent un `&World` posent la même question, et chacune
+    /// indexe ensuite : `build`, `state` et `restore` prennent leur entrée par un
+    /// index venu de la carte passée, `records` lit la carte par un index venu du
+    /// porteur. Une égalité de longueurs vérifiée ici rend les quatre
+    /// indexations justes, là où quatre accès bornés auraient répété la même
+    /// erreur sans dire laquelle des deux bornes avait cédé.
+    ///
+    /// **Ce qu'il compare est une longueur, pas une identité**, et c'est ce qu'un
+    /// appelant doit savoir : deux cartes de même nombre de cellules passent.
+    /// Comparer les cartes elles-mêmes demanderait que le porteur en garde une —
+    /// ce que la frontière fait, par son `Arc`, et que le chemin Rust ne peut
+    /// faire sans changer six signatures publiées. Ce que ce garde achète est
+    /// qu'une erreur d'appariement ne fasse plus paniquer ; il ne promet pas de
+    /// l'attraper.
+    ///
+    /// La borne des surfaces d'une cellule, elle, n'est pas ici : un atlas est
+    /// dimensionné sur la cellule cuite, et c'est la soumission qui le confronte
+    /// à celle qu'on lui donne.
+    fn matches(&self, world: &World) -> Result<()> {
+        if self.cells.len() == world.cell_count() as usize {
+            return Ok(());
+        }
+        Err(Error::InvalidArgument(Argument::Lightmaps))
     }
 
     /// L'atlas d'une cellule, par son rang, ou `None` si rien n'est calculé.
