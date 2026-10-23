@@ -336,3 +336,97 @@ fn les_identifiants_survivent_au_rechargement() {
         );
     }
 }
+
+/// Le porteur opposé à une autre carte que la sienne : un refus, jamais une
+/// panique.
+///
+/// **Les quatre cas qui suivent rougissent par la panique elle-même** sur le code
+/// d'avant, et c'est ce qui les rend concluants : chacun indexait hors borne, en
+/// lecture ou en écriture, avec un index venu d'une carte et une borne venue de
+/// l'autre. Un hôte Rust qui garde son porteur en changeant de carte les atteint
+/// tous les quatre ; la frontière C, elle, repasse la carte de création et n'y
+/// arrive pas.
+///
+/// **Un cas par méthode publique et non un seul**, bien que les quatre passent
+/// désormais par le même garde : c'est ce qui attrape la méthode future qui
+/// l'oublierait, et `restore` est précisément celle qui l'avait déjà oublié — ses
+/// trois contrôles confrontaient l'entrée à la carte passée, jamais au
+/// dimensionnement du porteur.
+#[test]
+fn cuire_sur_une_autre_carte_est_refuse() {
+    let mut lighting = Lightmaps::new(&one_cell()).expect("porteur");
+    let deux = two_cells(0.0);
+
+    assert_eq!(
+        lighting.build(&deux, 8),
+        Err(Error::InvalidArgument(Argument::Lightmaps)),
+        "la carte porte deux cellules, le porteur une seule"
+    );
+}
+
+/// L'état lu sur une autre carte est refusé de même.
+#[test]
+fn lire_l_etat_sur_une_autre_carte_est_refuse() {
+    let lighting = Lightmaps::new(&one_cell()).expect("porteur");
+    let deux = two_cells(0.0);
+
+    assert_eq!(
+        lighting.state(&deux, 8),
+        Err(Error::InvalidArgument(Argument::Lightmaps))
+    );
+}
+
+/// Et le cache mesuré sur une carte plus courte, où c'est le porteur qui
+/// débordait.
+///
+/// Le sens du dépassement est inverse des deux précédents — l'index vient du
+/// porteur et la borne de la carte —, et c'est pourquoi ce cas-ci cuit d'abord :
+/// sans entrée calculée, `records` n'indexerait rien et le cas passerait sur le
+/// code fautif.
+#[test]
+fn mesurer_le_cache_sur_une_autre_carte_est_refuse() {
+    let deux = two_cells(0.0);
+    let mut lighting = Lightmaps::new(&deux).expect("porteur");
+    lighting.build(&deux, 8).expect("cuisson possible");
+
+    assert_eq!(
+        lighting.save_len(&one_cell()),
+        Err(Error::InvalidArgument(Argument::Lightmaps))
+    );
+}
+
+/// Et la reprise d'un cache écrit depuis une autre carte.
+///
+/// Le bloc est valide et son empreinte concorde avec la carte passée : les trois
+/// contrôles de `restore` l'acceptaient donc, et c'est l'écriture dans le porteur
+/// qui débordait.
+#[test]
+fn reprendre_un_cache_d_une_autre_carte_est_refuse() {
+    let deux = two_cells(0.0);
+    let mut source = Lightmaps::new(&deux).expect("porteur");
+    source.build(&deux, 8).expect("cuisson possible");
+    let mut bytes = alloc::vec![0u8; source.save_len(&deux).expect("longueur")];
+    source.save(&deux, &mut bytes).expect("écriture");
+
+    let mut lighting = Lightmaps::new(&one_cell()).expect("porteur");
+    assert_eq!(
+        lighting.restore(&deux, &bytes),
+        Err(Error::InvalidArgument(Argument::Lightmaps))
+    );
+}
+
+/// Deux cartes de même forme passent, et le garde ne promet pas l'inverse.
+///
+/// Écrit pour que personne ne lise le refus ci-dessus comme une détection de
+/// dépareillage : le porteur compare des longueurs, pas des cartes. Ce cas est
+/// donc la borne de la garantie, et il doit rester vert — s'il rougissait un
+/// jour, c'est que le porteur retiendrait sa carte, et la documentation de
+/// `matches` serait à reprendre avec lui.
+#[test]
+fn deux_cartes_de_meme_forme_ne_se_distinguent_pas() {
+    let mut lighting = Lightmaps::new(&one_cell()).expect("porteur");
+
+    lighting
+        .build(&renumbered(), 9)
+        .expect("une carte d'une cellule en vaut une autre pour ce garde");
+}

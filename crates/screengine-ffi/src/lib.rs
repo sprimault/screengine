@@ -46,6 +46,7 @@ use screengine::{
 
 use entry::AbiError;
 use output::HostRows;
+use world::paired;
 
 pub use context::{ScgContext, ScgContextConfig};
 pub use mesh::ScgMesh;
@@ -2196,6 +2197,12 @@ pub unsafe extern "C" fn scg_submit_world(
 /// traversed one a lit level, so the two would differ for a reason that has
 /// nothing to do with what is being compared.
 ///
+/// **`lighting` must come from `world`**, and a holder created from another map
+/// returns `SCG_ERR_INVALID_ARGUMENT` before anything is submitted. The holder
+/// is sized on the map it was created from, down to the slots of each cell's
+/// atlas: an atlas read against a cell that carries one surface more would index
+/// past its own slots.
+///
 /// **The map is submitted whole or not at all**, like `scg_submit_world`.
 ///
 /// # Safety
@@ -2220,7 +2227,7 @@ pub unsafe extern "C" fn scg_submit_world_lit(
         let world = unsafe { world.as_ref() }.ok_or(AbiError::NULL)?;
         // SAFETY: précondition de la fonction — nul, ou un handle vivant rendu
         // par `scg_lighting_create`.
-        let lighting = unsafe { lighting.as_ref() };
+        let lighting = paired(unsafe { lighting.as_ref() }, world)?;
         if textures.is_null() && texture_count != 0 {
             return Err(AbiError::NULL);
         }
@@ -2237,7 +2244,7 @@ pub unsafe extern "C" fn scg_submit_world_lit(
                 &world.inner,
                 // SAFETY: mêmes préconditions que `scg_submit_world`.
                 |material| unsafe { slot_texture(slots, material) },
-                lighting.map(|lighting| &lighting.inner),
+                lighting,
             )
             .map_err(AbiError::from)
     };
@@ -2720,6 +2727,12 @@ pub unsafe extern "C" fn scg_world_track(
 /// **a partially relit level stays displayable**, which is exactly when an editor
 /// needs to see it.
 ///
+/// **But it must come from `world`**: a holder created from another map returns
+/// `SCG_ERR_INVALID_ARGUMENT` before anything is submitted. Falling back to the
+/// unlit path there would render a plausible image from a mismatched map, which
+/// is the one thing this clause does not do — it degrades for a cell that has
+/// **nothing** computed, never for a holder that belongs elsewhere.
+///
 /// # Safety
 ///
 /// `ctx` must be null or a live handle, `model` must point to a readable
@@ -2744,7 +2757,7 @@ pub unsafe extern "C" fn scg_submit_world_visible(
         let world = unsafe { world.as_ref() }.ok_or(AbiError::NULL)?;
         // SAFETY: précondition de la fonction — nul, ou un handle vivant rendu par
         // `scg_lighting_create`.
-        let lighting = unsafe { lighting.as_ref() };
+        let lighting = paired(unsafe { lighting.as_ref() }, world)?;
         if textures.is_null() && texture_count != 0 {
             return Err(AbiError::NULL);
         }
@@ -2760,7 +2773,7 @@ pub unsafe extern "C" fn scg_submit_world_visible(
                 model,
                 &world.inner,
                 cell_id,
-                lighting.map(|lighting| &lighting.inner),
+                lighting,
                 // SAFETY: mêmes préconditions que `scg_submit_world`.
                 |material| unsafe { slot_texture(slots, material) },
             )

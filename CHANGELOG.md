@@ -71,6 +71,20 @@ publié, et explique les conventions du dépôt à qui y contribue.
 
 ## [Non publié]
 
+### Corrigé
+
+- **Un porteur de lightmaps opposé à une autre carte** rend
+  `SCG_ERR_INVALID_ARGUMENT` : la cuisson, l'état, le cache et la soumission du
+  décor paniquaient.
+
+***
+
+### Fixed
+
+- **A lightmap holder passed with a map other than its own** returns
+  `SCG_ERR_INVALID_ARGUMENT`: baking, state, cache and world submission used to
+  panic.
+
 ## [1.8.0] — 2026-10-22 — La rotation déterministe
 
 ### Ajouté

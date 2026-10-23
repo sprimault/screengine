@@ -1680,6 +1680,26 @@ pas dans le second.
   précis où un éditeur a besoin de le voir.
 - **`lighting` peut être nul** dans les deux soumissions : le décor rend alors ce
   que `scg_submit_world` rend aujourd'hui.
+- **Mais il doit venir de la carte passée.** Les deux soumissions éclairées sont
+  les seules à recevoir une carte et un porteur **indépendants** — les quatre
+  appels de cuisson emploient la carte que le handle porte —, et un porteur créé
+  depuis une autre carte rend `SCG_ERR_INVALID_ARGUMENT` avant qu'un triangle ne
+  soit préparé.
+
+  Le porteur est dimensionné sur sa carte à deux niveaux : une entrée par
+  cellule, et un emplacement par surface dans l'atlas de chaque cellule cuite.
+  Une cellule de même rang portant une surface de plus faisait donc lire un
+  emplacement qui n'existe pas. **Ce n'est pas le cas de la clause précédente** :
+  celle-ci dégrade pour une cellule qui n'a *rien* de calculé, état légitime d'un
+  éditeur, là où un porteur étranger rendrait une image plausible depuis une
+  carte qui n'est pas la sienne.
+
+  **La frontière compare les handles, le chemin Rust compare des longueurs**, et
+  un auteur de liaison n'a pas à s'en soucier : c'est le handle qui garde sa
+  carte vivante qui permet l'égalité exacte, et l'ABI est donc le plus strict des
+  deux. Écarté : ne rien vérifier au motif que le noyau refuse déjà — il ne
+  distingue pas deux cartes de même forme, et c'est précisément le cas qu'un hôte
+  produit en rechargeant un décor qu'il vient de modifier.
 
 #### Le cache de lightmaps
 

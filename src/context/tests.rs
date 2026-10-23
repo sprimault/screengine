@@ -2177,6 +2177,87 @@ fn un_pixel_hors_de_l_image_refuse_le_rayon() {
     }
 }
 
+/// Une carte d'une cellule carrée, dont le nombre de surfaces se choisit.
+///
+/// Les surfaces sont coplanaires et portent les mêmes sommets : le chargement ne
+/// vérifie aucune cohérence géométrique, par clause, et ce qui compte ici est
+/// leur **nombre** — c'est lui que l'atlas d'une cellule dimensionne.
+fn one_cell_surfaces(count: u32) -> World {
+    use crate::format::world::tests::{cell_bytes, file, frame, material, words};
+
+    let points = [
+        [0.0f32, 0.0, 0.0],
+        [4.0, 0.0, 0.0],
+        [4.0, 4.0, 0.0],
+        [0.0, 4.0, 0.0],
+    ];
+    let surfaces: Vec<Vec<u8>> = (0..count)
+        .map(|rank| {
+            let mut surface = words(&[11 + rank, 0, 1, 4]);
+            surface.extend_from_slice(&words(&[0, 1, 2, 3]));
+            surface.extend_from_slice(&frame([0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]));
+            surface.extend_from_slice(&frame([0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]));
+            surface
+        })
+        .collect();
+
+    let mut lights = words(&[1]);
+    for value in [2.0f32, 2.0, 2.0, 8.0] {
+        lights.extend_from_slice(&value.to_le_bytes());
+    }
+    lights.extend_from_slice(&[0xFF, 0xFF, 0xFF, 0x00]);
+
+    let cell = cell_bytes(7, 0, &points, &surfaces, &[]);
+    World::load(&file(&cell, &[], &lights, &material(1, "mur"))).expect("carte valide")
+}
+
+/// Une surface sans emplacement dans l'atlas qu'on lui oppose est un refus.
+///
+/// **Le cas que le garde du porteur ne voit pas**, et c'est pourquoi il vit ici :
+/// les deux cartes portent une cellule chacune, donc les longueurs concordent et
+/// `Lightmaps::matches` les accepte. Ce qui diffère est le nombre de surfaces de
+/// la cellule, sur lequel l'atlas cuit est dimensionné — la seconde surface
+/// indexait hors de ses emplacements.
+///
+/// Il rougit par cette panique sur le code d'avant, à la ligne qui lisait
+/// `atlas.slots[rank_in_cell]`. Et il tient les **deux** entrées publiques qui y
+/// mènent : la soumission brute du décor et la traversée.
+#[test]
+fn une_surface_hors_de_l_atlas_cuit_est_refusee() {
+    let cuite = one_cell_surfaces(1);
+    let soumise = one_cell_surfaces(2);
+    let mut lighting = Lightmaps::new(&cuite).expect("porteur");
+    lighting.build(&cuite, 7).expect("cuisson possible");
+
+    let mut ctx = Context::new(sane()).expect("configuration saine");
+    assert_eq!(
+        ctx.submit_world_lit(Affine3::IDENTITY, &soumise, |_| None, Some(&lighting)),
+        Err(Error::InvalidArgument(Argument::Lightmaps)),
+        "la cellule porte deux surfaces, son atlas un seul emplacement"
+    );
+    assert_eq!(
+        ctx.submit_world_visible(Affine3::IDENTITY, &soumise, 7, Some(&lighting), |_| None),
+        Err(Error::InvalidArgument(Argument::Lightmaps)),
+        "la traversée mène au même remplissage"
+    );
+}
+
+/// Autant de surfaces que l'atlas en porte : rien ne s'y oppose.
+///
+/// La borne de la garantie, comme pour le porteur : ce qui est refusé est un
+/// atlas trop **court**, jamais une carte qui n'est pas celle d'origine.
+#[test]
+fn le_meme_nombre_de_surfaces_passe() {
+    let cuite = one_cell_surfaces(2);
+    let soumise = one_cell_surfaces(2);
+    let mut lighting = Lightmaps::new(&cuite).expect("porteur");
+    lighting.build(&cuite, 7).expect("cuisson possible");
+
+    let mut ctx = Context::new(sane()).expect("configuration saine");
+    ctx.submit_world_lit(Affine3::IDENTITY, &soumise, |_| None, Some(&lighting))
+        .expect("le décor se soumet");
+}
+
 /// L'étendue peinte d'une image, en pixels, sur chaque axe.
 fn etendue(pixels: &[u8]) -> (usize, usize) {
     let peint = |i: usize| pixels[i * BYTES_PER_PIXEL] != 0;
