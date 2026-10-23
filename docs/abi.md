@@ -320,7 +320,9 @@ pas le signe d'un oubli :
 
 - une cellule inconnue par identifiant est **`SCG_ERR_UNKNOWN_RESOURCE`**, défini
   à l'étape 4 pour « une recherche par identifiant stable qui ne trouve rien » et
-  qu'aucun appel ne rendait encore. L'étape 5 lui donne ses premiers appelants ;
+  qu'aucun appel ne rendait encore. L'étape 5 lui donne ses premiers appelants —
+  **ceux qui agissent sur la cellule nommée**, les deux interrogations de position
+  rendant `0` comme pour une sortie de carte ; voir « La traversée » ;
 - un bloc de cache de lightmaps malformé est **`SCG_ERR_INVALID_FORMAT`**, et
   d'une version non lue **`SCG_ERR_UNSUPPORTED_FORMAT_VERSION`** : c'est un bloc
   de données comme un autre, venu du stockage de l'hôte, donc hostile par
@@ -339,9 +341,9 @@ pas le signe d'un oubli :
 Écarté : un `SCG_ERR_STALE_CACHE`, qui aurait fait refuser le bloc entier pour
 une seule cellule périmée — donc tout recuire pour un mur déplacé, l'inverse de
 ce que l'étape 8 existe pour rendre possible. Écarté aussi : un code pour un
-atlas de lightmap démesuré, que le **chargement** refuse désormais, dans le même
-passage qui vérifie déjà le repère de lightmap ; l'hôte l'apprend en ouvrant la
-carte et non trois appels plus tard.
+atlas de lightmap démesuré, qui tombe dans `SCG_ERR_INVALID_FORMAT` comme tout
+refus de contenu — voir « Le plafond d'un atlas », qui dit **quand** l'hôte
+l'apprend, et pourquoi ce n'est pas au chargement.
 
 Une plage vide ne coûte rien, un code publié garde son sens pour toujours, et
 ajouter un code plus tard n'incrémente pas `SCG_ABI_VERSION`.
@@ -1558,6 +1560,26 @@ pas dans le second.
   situation que l'hôte a le droit de produire.
 - **Un identifiant de cellule qui n'existe pas rend `SCG_ERR_UNKNOWN_RESOURCE`**,
   et rien n'est dessiné. `0` n'est pas un identifiant inconnu, c'est l'absence.
+- **Mais un identifiant n'appartient à aucune carte**, et c'est une précondition
+  qu'aucun appel ne peut vérifier. Un identifiant relevé sur une carte et passé
+  avec une autre où il désigne une cellule **existante** n'est ni refusé ni
+  signalé : la traversée part de la cellule nommée sans la confronter à la
+  caméra, et l'image sort depuis une cellule fausse — plausible, et silencieuse.
+  C'est exactement ce que la clause précédente écarte quand c'est le moteur qui
+  garderait une cellule périmée ; quand c'est l'hôte qui la fournit, le moteur ne
+  peut pas le savoir.
+
+  **Écarté : vérifier que la caméra est dans la cellule nommée.** Ce serait un
+  test d'appartenance par image, pour un appelant qui vient de l'obtenir de
+  `scg_world_locate` ou de `scg_world_track` — la même raison qui fait que le
+  balayage ne vérifie pas que sa cellule contient la boîte.
+
+  **Ce qu'un hôte doit en faire est donc une règle de sa part** : la cellule
+  courante appartient à l'état de partie, pas à l'état du monde, et elle se jette
+  au changement de carte comme le reste. Elle se réamorce par
+  `scg_world_locate`, dont c'est le second usage avec la reprise du fil après un
+  `0` — et le seul qui ne soit pas annoncé par un code de retour, puisque rien
+  n'a échoué.
 - **La profondeur de traversée est bornée à `SCG_TRAVERSAL_DEPTH`, et cette
   valeur ne se configure pas.** L'atteindre tronque l'image ; une borne réglable
   ferait donc dépendre l'image d'un champ de configuration, et la conformance ne
@@ -1632,9 +1654,25 @@ pas dans le second.
   `ScgWorld` — toute fonction qui ne lit qu'une carte chargée —, et leur erreur
   se lit par `scg_last_error(NULL)`.
   `scg_world_track` transporte la cellule quand le segment franchit un portail
-  apparié, et rend `0` quand il sort par un portail non apparié ou par une
-  surface. Le moteur ne se relocalise jamais de lui-même : c'est l'hôte qui
+  apparié. Le moteur ne se relocalise jamais de lui-même : c'est l'hôte qui
   rappelle `scg_world_locate`.
+
+  **Il rend `0` dans quatre cas, et la liste est close** : une sortie par une
+  surface, une sortie par un portail non apparié, un pas si long qu'il franchit
+  plus de cellules que le suivi n'en déplie, et **un `from_cell` qu'aucune cellule
+  ne porte**. Le dernier est le seul qui soit une faute d'appel, et c'est aussi
+  celui qui surprend : `scg_submit_world_visible` rend
+  `SCG_ERR_UNKNOWN_RESOURCE` pour le même paramètre sous le même nom.
+
+  **L'asymétrie est voulue, et elle se lit dans ce que l'hôte fait du résultat.**
+  Une soumission dessine, donc un identifiant faux y est une erreur à corriger
+  dans le code appelant ; un suivi répond « où suis-je », et la conduite est la
+  même qu'une sortie de carte — rappeler `scg_world_locate`. En faire une erreur
+  obligerait l'hôte à écrire deux branches qui se terminent par le même appel.
+  La clause générale des codes de l'étape 5 — « une cellule inconnue par
+  identifiant est `SCG_ERR_UNKNOWN_RESOURCE` » — vaut donc pour tout ce qui
+  **agit** sur une cellule nommée, jamais pour les deux interrogations de
+  position.
 
   Écarté : chercher la cellule à chaque image. La localisation est en O(surfaces)
   et c'est un appel nommé ; le suivi est local à une cellule et se paie par
@@ -1700,6 +1738,42 @@ pas dans le second.
   deux. Écarté : ne rien vérifier au motif que le noyau refuse déjà — il ne
   distingue pas deux cartes de même forme, et c'est précisément le cas qu'un hôte
   produit en rechargeant un décor qu'il vient de modifier.
+
+#### Le plafond d'un atlas
+
+**`scg_lighting_build` rend `SCG_ERR_INVALID_FORMAT` sur une carte que
+`scg_world_load` a acceptée**, quand les surfaces d'une cellule ne tiennent pas
+dans un atlas de `SCG_MAX_LIGHTMAP_SIZE` de côté. C'est le seul refus de contenu
+de toute l'ABI qui tombe **après** le chargement, et c'est pour cela qu'il a sa
+section : un intégrateur qui lit « le contenu est fautif » trois appels après
+l'ouverture du fichier cherche d'abord un défaut de son chargeur.
+
+- **Le chargement ne borne qu'une surface à la fois**, à 256 luxels par côté —
+  c'est la cinquième clause que `scg_lightmap_fault` nomme,
+  `SCG_LIGHTMAP_FAULT_EXTENT_TOO_LARGE`. Le passage qui la vérifie voit une
+  surface et son repère, jamais une cellule : il ne peut pas porter ce refus-ci,
+  et une surface qui tient sous son plafond ne dit rien du volume de ses voisines.
+- **Le côté d'un atlas n'est connu qu'au rangement**, qui part de l'aire totale et
+  double tant que les rectangles ne tiennent pas. Une cellule assez chargée place
+  ce côté au-delà de la borne d'emblée, sans qu'un essai échoue d'abord.
+- **Aucun élément n'est nommé**, à la différence des autres refus de contenu : ce
+  n'est pas une surface qui déborde, c'est le volume de toutes. Un hôte qui veut
+  savoir laquelle réduire les mesure par `scg_world_cell_luxel_count`, cellule par
+  cellule.
+- **Écarté : ranger toutes les cellules au chargement**, qui ferait tomber le refus
+  à l'ouverture comme pour le repère. Le rangement est un **cache**, dont l'ordre
+  entre dans l'image et que le contrat assemble à l'appel de calcul ; le faire au
+  chargement le ferait payer à un hôte qui ne cuit jamais — un serveur de collision
+  charge une carte sans allouer un seul luxel, ce qui est la raison d'être du
+  handle séparé.
+- **Écarté : un code dédié.** `SCG_ERR_INVALID_FORMAT` dit ce qu'il faut dire — la
+  faute est dans le contenu, que l'hôte n'a pas écrit —, et un code de plus
+  n'aurait servi qu'à distinguer deux refus auxquels l'hôte répond de la même
+  façon : réexporter la carte avec un pas de lightmap plus grossier.
+
+**Ce qu'un hôte doit en tirer pour changer de carte** : la cuisson de la nouvelle
+se fait **avant** de relâcher l'ancienne, puisque c'est elle qui peut encore
+refuser. Rien dans le chargement ne l'annonce.
 
 #### Le cache de lightmaps
 
@@ -1794,6 +1868,11 @@ attendait un générateur écrit en C, en Go ou en JavaScript.
   la moitié de ce côté le remplirait à elle seule. Sa valeur n'est pas publiée, et
   c'est délibéré : elle inviterait à reproduire la mesure de l'étendue, qui est
   justement ce que cette fonction existe pour éviter.
+
+  **Et les deux bornes ne se refusent pas au même moment** : celle-ci au
+  chargement, celle de l'atlas au calcul, parce que le volume d'une cellule n'est
+  connu qu'au rangement. Une carte dont chaque surface passe ici peut donc encore
+  faire échouer `scg_lighting_build` — voir « Le plafond d'un atlas ».
 
   **Les six se nomment ici parce qu'une liaison sans préprocesseur les recopie à
   la main**, comme les codes d'erreur : les lire dans le header est le privilège

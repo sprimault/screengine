@@ -2316,6 +2316,13 @@ pub unsafe extern "C" fn scg_lighting_destroy(lighting: *mut ScgLighting) {
 /// through the doorway was computed over there, and it is for the host to ask for
 /// them again.
 ///
+/// **It may return `SCG_ERR_INVALID_FORMAT` on a map that loaded cleanly**, when
+/// the surfaces of that cell do not fit an atlas of `SCG_MAX_LIGHTMAP_SIZE` a
+/// side. Loading bounds one surface at a time; the size of an atlas is only known
+/// once its rectangles are packed, which happens here. No element is named — it is
+/// the volume of every surface of the cell that overflows, not one of them. A host
+/// that changes maps therefore bakes the new one **before** releasing the old.
+///
 /// # Safety
 ///
 /// `lighting` must be a live handle from `scg_lighting_create`.
@@ -2670,9 +2677,16 @@ pub unsafe extern "C" fn scg_world_locate(
 /// Writes the identifier of the cell a move ends in to `out`, or `0`.
 ///
 /// `from_cell` is where the move starts. Crossing a linked portal carries the cell
-/// over; leaving through a wall or an unlinked portal writes `0`, and so does a
-/// `from_cell` that designates no cell — there is no thread to follow from a cell
-/// that does not exist.
+/// over. **Four things write `0`, and the list is closed**: leaving through a
+/// wall, leaving through an unlinked portal, a move so long it crosses more cells
+/// than this unfolds, and a `from_cell` that designates no cell — there is no
+/// thread to follow from a cell that does not exist. The host's response is the
+/// same for all four, so no code separates them.
+///
+/// **An identifier belongs to no map.** One taken from another map, where it names
+/// a cell that exists, is neither rejected nor flagged: the cell is a precondition
+/// here, and the engine cannot tell it apart from a correct one. A host keeps the
+/// current cell in its game state and drops it when it changes maps.
 ///
 /// **Several cells may be crossed in one move**, and this follows them. The engine
 /// never relocates a camera on its own: when this writes `0`, it is for the host
