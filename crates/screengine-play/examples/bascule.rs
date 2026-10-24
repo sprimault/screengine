@@ -2,7 +2,14 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
 //! Changer de carte sans quitter la fenêtre : la seule méthode que l'ABI offre,
-//! démontrée. `M` bascule, Échap ferme.
+//! démontrée. `B` bascule, Échap ferme.
+//!
+//! **`B` et non une lettre quelconque** : `KeyCode` désigne une **position
+//! physique**, pas un caractère, si bien qu'un `KeyCode::KeyM` répond à la touche
+//! marquée `,` sur un clavier AZERTY. Les positions de `B`, `G` ou `P` sont les
+//! mêmes sur les deux dispositions ; celles de `A`, `Z`, `Q`, `W` et `M` ne le
+//! sont pas. C'est la raison pour laquelle le couloir de `couloir.rs` se parcourt
+//! au `ZQSD` d'un AZERTY en écrivant `KeyW`, `KeyA`, `KeyS`, `KeyD`.
 //!
 //! **Ce que `carte.rs` ne montre pas.** Celui-là charge un décor et le parcourt ;
 //! il ne le remplace jamais. Or `docs/abi.md` arrête une méthode pour modifier
@@ -62,6 +69,13 @@ const NOMS: [&str; 2] = ["salles", "couloir"];
 
 /// Où la caméra se pose, dans l'une comme dans l'autre.
 ///
+/// **Ce qui cadre bien dans une carte cadre mal dans l'autre**, et c'est visible
+/// à l'essai : les salles ont de la hauteur, le couloir non, si bien que la vue y
+/// est serrée et qu'on y voit le fond par le bout ouvert de l'enfilade — un
+/// rectangle que rien ne dessine, parce qu'un portail non apparié est un mur pour
+/// la collision mais n'est pas une surface. Ce n'est ni un trou ni un défaut, et
+/// un hôte qui change vraiment de carte pose sa caméra par carte.
+///
 /// **Une position unique parce que les deux décors du dépôt la partagent**, et
 /// c'est vérifié plutôt que supposé : un point légal dans une carte tombe en
 /// général dans le mur d'une autre, et une caméra hors de toute cellule rendrait
@@ -90,20 +104,28 @@ struct Carte {
     world: World,
     /// Une texture par matériau, dans l'ordre que la carte déclare.
     materials: Vec<Arc<Texture>>,
-    /// Les lightmaps, cuites ou reprises avant la première image.
-    lightmaps: Lightmaps,
+    /// Les lightmaps, cuites ou reprises avant la première image — ou rien,
+    /// quand la carte ne porte aucune lumière statique à cuire.
+    lightmaps: Option<Lightmaps>,
     /// La cellule où la caméra se trouve, que l'hôte suit lui-même.
     cell: u32,
     /// Combien d'entrées de cache la dernière reprise a acceptées.
     reprises: u32,
 }
 
-/// Charge une carte, l'habille, et prépare ses lightmaps.
+/// Charge une carte, l'habille, et prépare ses lightmaps s'il y a de quoi.
 ///
 /// `cache` est celui que cette carte avait laissé, s'il y en a un. Les entrées
 /// qui concordent sont reprises, les autres écartées **sans erreur**, et ce qui
 /// reste absent est cuit : c'est le patron que `docs/abi.md` décrit pour une
 /// carte rechargée, et il vaut tel quel pour une carte qu'on retrouve.
+///
+/// **Une carte sans lumière statique n'est pas cuite du tout**, et c'est la
+/// décision d'hôte que cet exemple existe pour montrer : la cuisson d'un décor
+/// qu'aucune lampe n'atteint rend des luxels **noirs**, parfaitement justes, et
+/// une soumission éclairée les multiplie au décor — qui devient noir. Le moteur
+/// n'a rien à redire, l'hôte si. `couloir.world` est dans ce cas, `salles.world`
+/// non, et c'est pourquoi la bascule paraissait éteindre l'image.
 fn charger(
     bytes: &[u8],
     mur: &Arc<Texture>,
@@ -119,22 +141,26 @@ fn charger(
         })
         .collect();
 
-    let mut lightmaps = Lightmaps::new(&world).expect("porteur");
-    let reprises = match cache {
-        // Le bloc vient de cette carte-ci, mais le moteur ne s'y fie pas : il
-        // confronte chaque entrée à la carte chargée. C'est ce qui rend l'appel
-        // sûr même sur un cache qu'on aurait gardé d'un décor modifié depuis.
-        Some(bytes) => lightmaps.restore(&world, bytes).expect("cache lisible"),
-        None => 0,
-    };
-    // Ce que la reprise n'a pas donné se cuit. Toutes les cellules avant la
-    // première image, et non celles que la caméra voit : une lightmap est un
-    // cache de la carte, pas de la vue.
-    for index in 0..world.cell_count() {
-        if let Some(id) = world.cell_id(index) {
-            lightmaps.build(&world, id).expect("cuisson possible");
+    let mut reprises = 0;
+    let lightmaps = (world.light_count() > 0).then(|| {
+        let mut lightmaps = Lightmaps::new(&world).expect("porteur");
+        reprises = match cache {
+            // Le bloc vient de cette carte-ci, mais le moteur ne s'y fie pas : il
+            // confronte chaque entrée à la carte chargée. C'est ce qui rend
+            // l'appel sûr même sur un cache gardé d'un décor modifié depuis.
+            Some(bytes) => lightmaps.restore(&world, bytes).expect("cache lisible"),
+            None => 0,
+        };
+        // Ce que la reprise n'a pas donné se cuit. Toutes les cellules avant la
+        // première image, et non celles que la caméra voit : une lightmap est un
+        // cache de la carte, pas de la vue.
+        for index in 0..world.cell_count() {
+            if let Some(id) = world.cell_id(index) {
+                lightmaps.build(&world, id).expect("cuisson possible");
+            }
         }
-    }
+        lightmaps
+    });
 
     let cell = world.locate(depart);
     Carte {
@@ -146,21 +172,20 @@ fn charger(
     }
 }
 
-/// Le cache d'une carte, prêt à être rangé par l'hôte.
+/// Le cache d'une carte, prêt à être rangé par l'hôte, ou rien à ranger.
 ///
 /// Deux temps, comme à travers l'ABI : la longueur d'abord, le remplissage
-/// ensuite. L'appel de mesure ne sérialise rien.
-fn cache(carte: &Carte) -> Vec<u8> {
-    let len = carte
-        .lightmaps
-        .save_len(&carte.world)
-        .expect("longueur du cache");
+/// ensuite. L'appel de mesure ne sérialise rien. Une carte qu'on n'a pas cuite
+/// n'a pas de cache, et c'est différent d'un cache vide — il n'y a rien à garder
+/// pour elle, jamais.
+fn cache(carte: &Carte) -> Option<Vec<u8>> {
+    let lightmaps = carte.lightmaps.as_ref()?;
+    let len = lightmaps.save_len(&carte.world).expect("longueur du cache");
     let mut bytes = vec![0u8; len];
-    carte
-        .lightmaps
+    lightmaps
         .save(&carte.world, &mut bytes)
         .expect("écriture du cache");
-    bytes
+    Some(bytes)
 }
 
 /// Ce que la boucle garde entre deux images.
@@ -196,7 +221,7 @@ impl Scene {
     /// côté, puis basculer » veut dire, et le `drop` de Rust le rend implicite
     /// là où un hôte C appelle `scg_world_destroy`.
     fn basculer(&mut self) {
-        self.caches[self.rang] = Some(cache(&self.carte));
+        self.caches[self.rang] = cache(&self.carte);
         let rang = 1 - self.rang;
         let carte = charger(
             CARTES[rang],
@@ -213,7 +238,7 @@ impl Scene {
     }
 }
 
-/// Ouvre la fenêtre ; `M` bascule, Échap ferme.
+/// Ouvre la fenêtre ; `B` bascule, Échap ferme.
 fn main() -> Result<(), screengine_play::Error> {
     let mur = Arc::new(load_png(MUR)?);
     let sol = Arc::new(load_png(SOL)?);
@@ -239,7 +264,7 @@ fn main() -> Result<(), screengine_play::Error> {
                 if tick.input().pressed(KeyCode::Escape) {
                     tick.exit();
                 }
-                let tenue = tick.input().pressed(KeyCode::KeyM);
+                let tenue = tick.input().pressed(KeyCode::KeyB);
                 if tenue && !scene.bascule_tenue {
                     scene.basculer();
                 }
@@ -261,9 +286,13 @@ fn main() -> Result<(), screengine_play::Error> {
                 scene.previous = position;
 
                 tick.set_title(&format!(
-                    "Screengine — {} : {} cellules, {} entrées de cache reprises (M pour basculer)",
+                    "Screengine — {} : {} cellules, {}, {} entrées de cache reprises (B pour basculer)",
                     NOMS[scene.rang],
                     scene.carte.world.cell_count(),
+                    match scene.carte.lightmaps {
+                        Some(_) => "cuite",
+                        None => "sans lumière, non cuite",
+                    },
                     scene.carte.reprises,
                 ));
             },
@@ -273,7 +302,7 @@ fn main() -> Result<(), screengine_play::Error> {
                     Affine3::IDENTITY,
                     &scene.carte.world,
                     scene.carte.cell,
-                    Some(&scene.carte.lightmaps),
+                    scene.carte.lightmaps.as_ref(),
                     |material| scene.carte.materials.get(material as usize),
                 );
             },
@@ -290,7 +319,8 @@ fn main() -> Result<(), screengine_play::Error> {
 #[cfg(test)]
 mod tests {
     use super::{CARTES, DEPART, cache, charger};
-    use screengine::Texture;
+    use screengine::{Affine3, Config, Context, Texture};
+    use screengine_play::FreeCamera;
     use std::sync::Arc;
 
     /// Une texture d'un texel, puisque le test ne regarde aucune image.
@@ -298,39 +328,63 @@ mod tests {
         Arc::new(Texture::load(1, 1, &[0xFF, 0xFF, 0xFF, 0xFF]).expect("texel valide"))
     }
 
-    /// Un cache ne se reprend qu'entre deux chargements de la **même** carte.
+    /// Un cache rendu à sa propre carte se reprend en entier.
     ///
-    /// **C'est la clause que l'exemple existe pour montrer**, et elle se mesure
-    /// par un compte : aucune entrée reprise d'une carte à l'autre, toutes au
-    /// retour. Le premier zéro n'est pas un échec — l'empreinte hache la
-    /// géométrie et les lampes en coordonnées de monde, et deux décors
-    /// différents n'en partagent aucune.
+    /// **C'est le gain que le cache existe pour donner**, et il se mesure par un
+    /// compte : rien à la première visite, tout au retour. L'écart entre les deux
+    /// est la cuisson qu'on évite, qui coûte deux à trois ordres de grandeur le
+    /// chargement — `benches/cuisson.rs` le mesure.
+    ///
+    /// **Ce que ce cas ne garde pas, et qu'il faut dire** : qu'un cache donné à
+    /// une **autre** carte n'y reprenne rien. L'exemple ne peut plus l'éprouver,
+    /// sa seconde carte n'étant pas cuite — le dépôt n'a qu'un décor porteur de
+    /// lumières —, et l'assertion vaudrait alors zéro par construction plutôt que
+    /// par la non-concordance des empreintes. Ce qui la garde est dans le noyau,
+    /// `une_cellule_modifiee_est_la_seule_a_recuire`, sur deux cartes proches.
     #[test]
-    fn le_cache_ne_se_reprend_que_sur_sa_carte() {
+    fn un_cache_rendu_a_sa_carte_se_reprend_en_entier() {
         let (mur, sol) = (plate(), plate());
         let premiere = charger(CARTES[0], &mur, &sol, DEPART, None);
         assert_eq!(
             premiere.reprises, 0,
             "rien à reprendre à la première visite"
         );
-        let garde = cache(&premiere);
-        assert!(!garde.is_empty(), "une carte cuite laisse un cache");
+        let garde = cache(&premiere).expect("une carte cuite laisse un cache");
+        assert!(!garde.is_empty(), "le cache porte ses luxels");
 
-        // Le cache de la première carte, donné à la seconde : chaque entrée est
-        // confrontée à la carte chargée, et aucune ne concorde.
-        let seconde = charger(CARTES[1], &mur, &sol, DEPART, Some(&garde));
-        assert_eq!(
-            seconde.reprises, 0,
-            "deux cartes différentes ne partagent aucune empreinte"
-        );
-
-        // Le retour sur la première, avec son propre cache : tout est reprise,
-        // et c'est le gain que le cache existe pour donner.
         let retour = charger(CARTES[0], &mur, &sol, DEPART, Some(&garde));
         assert_eq!(
             retour.reprises,
             premiere.world.cell_count(),
             "toutes les cellules se reprennent sur leur propre carte"
+        );
+    }
+
+    /// Une carte sans lumière statique n'est ni cuite ni éclairée.
+    ///
+    /// **Le cas du défaut qui a fait écran noir**, et il porte sur la décision
+    /// d'hôte plutôt que sur l'image : cuire un décor qu'aucune lampe n'atteint
+    /// rend des luxels noirs, justes, et les multiplier au décor l'éteint. Le
+    /// garde est donc ici, et l'image a le sien juste en dessous.
+    #[test]
+    fn une_carte_sans_lumiere_n_est_pas_cuite() {
+        let (mur, sol) = (plate(), plate());
+        let sombre = charger(CARTES[1], &mur, &sol, DEPART, None);
+
+        assert_eq!(sombre.world.light_count(), 0, "le couloir n'a aucune lampe");
+        assert!(
+            sombre.lightmaps.is_none(),
+            "rien à cuire, donc aucun porteur : la soumission passera None"
+        );
+        assert!(
+            cache(&sombre).is_none(),
+            "une carte non cuite n'a pas de cache, ce qui n'est pas un cache vide"
+        );
+
+        let claire = charger(CARTES[0], &mur, &sol, DEPART, None);
+        assert!(
+            claire.lightmaps.is_some(),
+            "la carte qui porte des lampes est cuite, sinon ce cas ne distinguerait rien"
         );
     }
 
@@ -350,6 +404,63 @@ mod tests {
                 carte.cell, 0,
                 "le départ de la carte {rang} est hors de toute cellule"
             );
+        }
+    }
+
+    /// Les deux cartes peignent, et ce n'est pas la même chose que ne pas
+    /// échouer.
+    ///
+    /// **C'est le cas qui manquait, et son absence s'est payée** : les deux
+    /// précédents vérifiaient les cellules et le cache, donc tout passait au vert
+    /// pendant que la fenêtre rendait du noir — chaque appel réussissait, et une
+    /// lightmap entièrement noire est un résultat juste. Le critère est donc le
+    /// **pixel**, comme pour `hello.rs`, et pour la même raison : un exemple qui
+    /// n'échoue pas n'est pas un exemple qui montre quelque chose.
+    ///
+    /// Le fond laisse le rouge nul, ce dont le contrôle de couverture de la
+    /// conformance se sert déjà : un pixel qui en porte vient du décor.
+    #[test]
+    fn les_deux_cartes_peignent() {
+        let (mur, sol) = (plate(), plate());
+        let camera = FreeCamera::new(DEPART).camera();
+
+        for (rang, bytes) in CARTES.iter().enumerate() {
+            let carte = charger(bytes, &mur, &sol, DEPART, None);
+            let mut context = Context::new(config()).expect("cadrage valide");
+            context.set_camera(camera).expect("caméra finie");
+            context
+                .submit_world_visible(
+                    Affine3::IDENTITY,
+                    &carte.world,
+                    carte.cell,
+                    carte.lightmaps.as_ref(),
+                    |material| carte.materials.get(material as usize),
+                )
+                .expect("le décor se soumet");
+
+            let mut pixels = vec![0u8; 64 * 64 * 4];
+            context
+                .frame_end(&mut pixels, 64)
+                .expect("l'image se clôt dans le tampon");
+
+            let peints = pixels.chunks_exact(4).filter(|pixel| pixel[0] != 0).count();
+            assert!(
+                peints > 64,
+                "la carte {rang} ne peint que {peints} pixel(s) : la fenêtre serait noire"
+            );
+        }
+    }
+
+    /// Le cadrage du contrôle, assez petit pour tenir en une tuile.
+    fn config() -> Config {
+        Config {
+            max_width: 64,
+            max_height: 64,
+            width: 64,
+            height: 64,
+            tile_size: 64,
+            max_triangles: 0,
+            max_lines: 0,
         }
     }
 }
