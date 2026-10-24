@@ -46,7 +46,6 @@ use screengine::{
 
 use entry::AbiError;
 use output::HostRows;
-use world::paired;
 
 pub use context::{ScgContext, ScgContextConfig};
 pub use mesh::ScgMesh;
@@ -2226,8 +2225,9 @@ pub unsafe extern "C" fn scg_submit_world_lit(
         // SAFETY: précondition de la fonction — `world` est un handle vivant.
         let world = unsafe { world.as_ref() }.ok_or(AbiError::NULL)?;
         // SAFETY: précondition de la fonction — nul, ou un handle vivant rendu
-        // par `scg_lighting_create`.
-        let lighting = paired(unsafe { lighting.as_ref() }, world)?;
+        // par `scg_lighting_create`. L'appariement avec `world` est vérifié par le
+        // noyau, qui tient la carte du porteur.
+        let lighting = unsafe { lighting.as_ref() }.map(|lighting| &lighting.inner);
         if textures.is_null() && texture_count != 0 {
             return Err(AbiError::NULL);
         }
@@ -2277,11 +2277,8 @@ pub unsafe extern "C" fn scg_lighting_create(
         }
         // SAFETY: précondition de la fonction — `world` est nul ou vivant.
         let world = unsafe { world.as_ref() }.ok_or(AbiError::NULL)?;
-        let inner = Lightmaps::new(&world.inner).map_err(AbiError::from)?;
-        let handle = Box::into_raw(Box::new(ScgLighting {
-            inner,
-            world: world.inner.clone(),
-        }));
+        let inner = Lightmaps::new(world.inner.clone()).map_err(AbiError::from)?;
+        let handle = Box::into_raw(Box::new(ScgLighting { inner }));
         // SAFETY: précondition de la fonction — `out` vise un pointeur
         // inscriptible.
         unsafe { out.write(handle) };
@@ -2332,11 +2329,7 @@ pub unsafe extern "C" fn scg_lighting_build(lighting: *mut ScgLighting, cell_id:
         // SAFETY: précondition de la fonction — le handle est nul ou vivant, et
         // aucun autre appel ne le touche en même temps.
         let lighting = unsafe { lighting.as_mut() }.ok_or(AbiError::NULL)?;
-        let world = lighting.world.clone();
-        lighting
-            .inner
-            .build(&world, cell_id)
-            .map_err(AbiError::from)
+        lighting.inner.build(cell_id).map_err(AbiError::from)
     })
 }
 
@@ -2360,10 +2353,7 @@ pub unsafe extern "C" fn scg_lighting_state(
         }
         // SAFETY: précondition de la fonction — le handle est nul ou vivant.
         let lighting = unsafe { lighting.as_ref() }.ok_or(AbiError::NULL)?;
-        let state = lighting
-            .inner
-            .state(&lighting.world, cell_id)
-            .map_err(AbiError::from)?;
+        let state = lighting.inner.state(cell_id).map_err(AbiError::from)?;
         let value = match state {
             Lightmap::Absent => status::SCG_LIGHTMAP_ABSENT,
             Lightmap::Ready => status::SCG_LIGHTMAP_READY,
@@ -2409,10 +2399,7 @@ pub unsafe extern "C" fn scg_lighting_save(
         }
         // SAFETY: précondition de la fonction — le handle est nul ou vivant.
         let lighting = unsafe { lighting.as_ref() }.ok_or(AbiError::NULL)?;
-        let len = lighting
-            .inner
-            .save_len(&lighting.world)
-            .map_err(AbiError::from)?;
+        let len = lighting.inner.save_len().map_err(AbiError::from)?;
 
         if !buf.is_null() {
             if cap < len {
@@ -2422,10 +2409,7 @@ pub unsafe extern "C" fn scg_lighting_save(
             // inscriptibles, et `cap` vaut la longueur qu'on vient de mesurer. Le
             // cache vit dans le porteur, que `buf` ne recouvre pas.
             let out = unsafe { slice::from_raw_parts_mut(buf, len) };
-            lighting
-                .inner
-                .save(&lighting.world, out)
-                .map_err(AbiError::from)?;
+            lighting.inner.save(out).map_err(AbiError::from)?;
         }
         // SAFETY: précondition de la fonction — `out_len` vise une `size_t`
         // inscriptible.
@@ -2469,15 +2453,11 @@ pub unsafe extern "C" fn scg_lighting_restore(
         // SAFETY: précondition de la fonction — le handle est nul ou vivant, et
         // aucun autre appel ne le touche en même temps.
         let lighting = unsafe { lighting.as_mut() }.ok_or(AbiError::NULL)?;
-        let world = lighting.world.clone();
         // SAFETY: précondition de la fonction — `bytes` couvre `len` octets
         // lisibles. Ce qu'ils portent est hostile, et le décodeur le traite comme
         // tel ; seule la couverture est promise par l'appelant.
         let block = unsafe { slice_of_bytes(bytes, len) };
-        let accepted = lighting
-            .inner
-            .restore(&world, block)
-            .map_err(AbiError::from)?;
+        let accepted = lighting.inner.restore(block).map_err(AbiError::from)?;
         // SAFETY: précondition de la fonction — `out_accepted` vise un `u32`
         // inscriptible.
         unsafe { out_accepted.write(accepted) };
@@ -2770,8 +2750,9 @@ pub unsafe extern "C" fn scg_submit_world_visible(
         // SAFETY: précondition de la fonction — `world` est un handle vivant.
         let world = unsafe { world.as_ref() }.ok_or(AbiError::NULL)?;
         // SAFETY: précondition de la fonction — nul, ou un handle vivant rendu par
-        // `scg_lighting_create`.
-        let lighting = paired(unsafe { lighting.as_ref() }, world)?;
+        // `scg_lighting_create`. L'appariement avec `world` est vérifié par le
+        // noyau, qui tient la carte du porteur.
+        let lighting = unsafe { lighting.as_ref() }.map(|lighting| &lighting.inner);
         if textures.is_null() && texture_count != 0 {
             return Err(AbiError::NULL);
         }

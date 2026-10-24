@@ -773,7 +773,7 @@ fn le_decor_de_validation_porte_ses_trois_proprietes() {
 /// alors que pour un décor sans lightmap.
 #[test]
 fn la_traversee_ne_troue_pas_le_decor_de_validation() {
-    let world = World::load(&rooms_file::bytes()).expect("décor de validation valide");
+    let world = Arc::new(World::load(&rooms_file::bytes()).expect("décor de validation valide"));
     let walls = checker(512, 128);
     let floor = checker(256, 32);
     let textures = |material: u32| {
@@ -784,10 +784,10 @@ fn la_traversee_ne_troue_pas_le_decor_de_validation() {
         }
     };
 
-    let mut lightmaps = Lightmaps::new(&world).expect("atlas alloués");
+    let mut lightmaps = Lightmaps::new(Arc::clone(&world)).expect("atlas alloués");
     for index in 0..world.cell_count() {
         let id = world.cell_id(index).expect("rang dans le compte");
-        lightmaps.build(&world, id).expect("cuisson");
+        lightmaps.build(id).expect("cuisson");
     }
 
     for (index, (position, yaw, roll)) in ROOM_VIEWS.iter().enumerate() {

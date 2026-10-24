@@ -1452,6 +1452,7 @@ impl Context {
         // L'état avant le règlement, et le règlement avant la marque : les deux
         // raisons sont écrites dans `submit_mesh_with`.
         self.require_recording()?;
+        Lightmaps::paired(lighting, world)?;
         self.settle();
         let mark = self.mark();
 
@@ -1601,6 +1602,7 @@ impl Context {
         F: Fn(u32) -> Option<&'t Arc<Texture>>,
     {
         self.require_recording()?;
+        Lightmaps::paired(lighting, world)?;
         if cell_id == 0 {
             return Ok(Visibility::NoCell);
         }

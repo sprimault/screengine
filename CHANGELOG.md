@@ -27,9 +27,18 @@ Trois numéros à ne pas confondre :
 
 | Numéro | Où | Ce qu'il suit |
 |---|---|---|
-| version du dépôt | tag git | la bibliothèque |
+| version du dépôt | tag git | la bibliothèque, **par ses deux surfaces** |
 | `SCG_ABI_VERSION` | `include/screengine.h` et `scg_abi_version()` | la frontière C |
 | `version_format` | chaque carte et chaque maillage | le format de fichier |
+
+**« Par ses deux surfaces » veut dire l'ABI C et l'API Rust**, et la question
+s'est posée : le crate n'étant pas publié sur un registre, et les archives ne
+portant que la bibliothèque C, on pouvait lire que seule celle-ci comptait. Ce
+n'est pas ce que le numéro annonce. Une rupture de l'API Rust — une signature
+changée, une variante ajoutée à une énumération que le projet garde
+délibérément exhaustive — est une rupture, et prend un majeur même quand
+`SCG_ABI_VERSION` ne bouge pas. Les notes le disent alors en tête, avec ce qu'un
+consommateur Rust doit reprendre.
 
 Les deux derniers ne suivent pas SemVer. Ce sont des entiers : ajouter une
 fonction à l'ABI ou un champ optionnel à un format ne les incrémente pas, tout
@@ -70,6 +79,33 @@ doit reprendre son travail. Ce préambule reste en français : il n'est jamais
 publié, et explique les conventions du dépôt à qui y contribue.
 
 ## [Non publié]
+
+### Modifié
+
+- **`Lightmaps` prend sa carte et ne la reçoit plus** : `new` attend un
+  `Arc<World>`, et `build`, `state`, `save_len`, `save` et `restore` n'ont plus de
+  paramètre de carte. Un porteur opposé à une autre carte était jusqu'ici accepté
+  dès qu'elle avait autant de cellules, et rendait les luxels d'une autre
+  géométrie sans erreur.
+
+### Corrigé
+
+- **Les deux soumissions éclairées refusent un porteur étranger**, par
+  `SCG_ERR_INVALID_ARGUMENT`, sur les deux chemins et non sur le seul C.
+
+***
+
+### Changed
+
+- **`Lightmaps` now takes its map instead of receiving it**: `new` expects an
+  `Arc<World>`, and `build`, `state`, `save_len`, `save` and `restore` no longer
+  take a map. A holder passed with another map used to be accepted as soon as it
+  had as many cells, and rendered another geometry's luxels without an error.
+
+### Fixed
+
+- **Both lit submissions reject a foreign holder**, with
+  `SCG_ERR_INVALID_ARGUMENT`, on both paths and not on the C one alone.
 
 ## [2.0.0] — 2026-10-24 — Changer de carte
 

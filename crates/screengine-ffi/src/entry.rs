@@ -93,20 +93,6 @@ impl AbiError {
         message: "texture count must equal the number of slots the resource declares",
     };
 
-    /// Le porteur de lightmaps ne vient pas de la carte passée.
-    ///
-    /// **La frontière compare les handles, pas les formes**, et c'est tout ce
-    /// qu'elle ajoute au refus du noyau : le handle garde la carte dont il vient,
-    /// donc l'égalité est exacte et deux cartes identiques au contenu près ne se
-    /// confondent pas. Le noyau, lui, ne peut comparer que des longueurs — il ne
-    /// retient aucune carte.
-    ///
-    /// Le refus tombe avant la soumission, donc rien du décor n'est préparé.
-    pub(crate) const LIGHTING_WORLD: Self = Self {
-        code: SCG_ERR_INVALID_ARGUMENT,
-        message: "lightmap holder was created from another map than the one passed",
-    };
-
     /// Le tampon d'un nom ne peut pas porter le nom et son terminateur.
     ///
     /// Rien n'est écrit dans ce cas, `out_len` compris : la mesure a son propre

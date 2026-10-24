@@ -1574,12 +1574,19 @@ pas dans le second.
   `scg_world_locate` ou de `scg_world_track` — la même raison qui fait que le
   balayage ne vérifie pas que sa cellule contient la boîte.
 
-  **Ce qu'un hôte doit en faire est donc une règle de sa part** : la cellule
-  courante appartient à l'état de partie, pas à l'état du monde, et elle se jette
-  au changement de carte comme le reste. Elle se réamorce par
-  `scg_world_locate`, dont c'est le second usage avec la reprise du fil après un
-  `0` — et le seul qui ne soit pas annoncé par un code de retour, puisque rien
-  n'a échoué.
+  **Ce qu'un hôte doit en faire est donc une règle de sa part, et elle tient en
+  une phrase : la cellule courante ne survit pas au changement de carte.** Elle se
+  réamorce par `scg_world_locate`, dont c'est le second usage avec la reprise du
+  fil après un `0` — et le seul qui ne soit pas annoncé par un code de retour,
+  puisque rien n'a échoué.
+
+  **Deux formes la tiennent, et la seconde vaut mieux.** La ranger dans l'état de
+  partie et la jeter au changement en est une ; la ranger **avec la carte**, dans
+  la même structure, remplacée d'un bloc, en est une autre — et celle-là tient
+  l'invariant par construction, puisqu'il n'y a plus rien à penser à jeter. C'est
+  ce que fait l'exemple `bascule` du dépôt, et c'est la forme à recopier. La
+  clause disait « elle se jette », ce qui en désignait une seule et laissait croire
+  que l'autre y contrevenait.
 - **La profondeur de traversée est bornée à `SCG_TRAVERSAL_DEPTH`, et cette
   valeur ne se configure pas.** L'atteindre tronque l'image ; une borne réglable
   ferait donc dépendre l'image d'un champ de configuration, et la conformance ne
@@ -1720,24 +1727,28 @@ pas dans le second.
   que `scg_submit_world` rend aujourd'hui.
 - **Mais il doit venir de la carte passée.** Les deux soumissions éclairées sont
   les seules à recevoir une carte et un porteur **indépendants** — les quatre
-  appels de cuisson emploient la carte que le handle porte —, et un porteur créé
+  appels de cuisson emploient celle que le porteur tient —, et un porteur créé
   depuis une autre carte rend `SCG_ERR_INVALID_ARGUMENT` avant qu'un triangle ne
   soit préparé.
 
-  Le porteur est dimensionné sur sa carte à deux niveaux : une entrée par
-  cellule, et un emplacement par surface dans l'atlas de chaque cellule cuite.
-  Une cellule de même rang portant une surface de plus faisait donc lire un
-  emplacement qui n'existe pas. **Ce n'est pas le cas de la clause précédente** :
-  celle-ci dégrade pour une cellule qui n'a *rien* de calculé, état légitime d'un
-  éditeur, là où un porteur étranger rendrait une image plausible depuis une
-  carte qui n'est pas la sienne.
+  **Ce n'est pas le cas de la clause précédente** : celle-ci dégrade pour une
+  cellule qui n'a *rien* de calculé, état légitime d'un éditeur, là où un porteur
+  étranger rendrait une image plausible depuis une carte qui n'est pas la sienne.
 
-  **La frontière compare les handles, le chemin Rust compare des longueurs**, et
-  un auteur de liaison n'a pas à s'en soucier : c'est le handle qui garde sa
-  carte vivante qui permet l'égalité exacte, et l'ABI est donc le plus strict des
-  deux. Écarté : ne rien vérifier au motif que le noyau refuse déjà — il ne
-  distingue pas deux cartes de même forme, et c'est précisément le cas qu'un hôte
-  produit en rechargeant un décor qu'il vient de modifier.
+  **La comparaison porte sur l'identité de la carte, pas sur sa forme, et c'est
+  vrai des deux chemins.** Le porteur garde sa carte — côté C par le handle, côté
+  Rust par le porteur lui-même depuis la 3.0.0 —, donc deux cartes de même nombre
+  de cellules et de surfaces ne se confondent pas. Un auteur de liaison n'a donc
+  rien à vérifier de son côté.
+
+  **Cette clause a été fausse une version durant**, et c'est écrit parce que le
+  cas qu'elle ratait est celui qu'un hôte produit le plus : le chemin Rust ne
+  comparait que des longueurs, si bien qu'un décor engendré à dimensions
+  constantes passait son porteur à la mauvaise carte et recevait les luxels d'une
+  autre géométrie, sans erreur. Écarté pour y remédier : un condensé de la
+  structure de la carte, qui aurait promis « à collision près » là où le projet
+  veut une identité — c'est la clause qui interdit de condenser la clé d'un
+  sommet.
 
 #### Le plafond d'un atlas
 

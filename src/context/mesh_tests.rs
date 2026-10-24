@@ -839,7 +839,10 @@ fn une_cellule_inconnue_est_refusee() {
 /// l'image serait celle d'avant.
 #[test]
 fn une_cellule_cuite_change_l_image() {
-    let world = two_cell_world();
+    // Partagée par compteur de références : c'est ce que le porteur de lightmaps
+    // prend depuis qu'il garde sa carte, et la soumission la relit par
+    // déréférencement sans rien changer à sa signature.
+    let world = alloc::sync::Arc::new(two_cell_world());
     let texture = plain_texture(0x80, 0x80, 0x80);
 
     let mut sans = small_ctx();
@@ -847,9 +850,9 @@ fn une_cellule_cuite_change_l_image() {
         .expect("capacité");
     let brut = pixels_of(&mut sans);
 
-    let mut lightmaps = Lightmaps::new(&world).expect("porteur");
-    lightmaps.build(&world, 7).expect("cuisson possible");
-    lightmaps.build(&world, 8).expect("cuisson possible");
+    let mut lightmaps = Lightmaps::new(alloc::sync::Arc::clone(&world)).expect("porteur");
+    lightmaps.build(7).expect("cuisson possible");
+    lightmaps.build(8).expect("cuisson possible");
 
     let mut avec = small_ctx();
     avec.submit_world_visible(Affine3::IDENTITY, &world, 7, Some(&lightmaps), |_| {

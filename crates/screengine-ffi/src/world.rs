@@ -13,8 +13,6 @@ use std::sync::Arc;
 
 use screengine::{Lightmaps, World};
 
-use crate::entry::AbiError;
-
 /// An opaque handle to a loaded map.
 ///
 /// Created by `scg_world_load`, released by `scg_world_destroy`. It belongs to
@@ -52,42 +50,12 @@ pub struct ScgWorld {
 /// against.
 pub struct ScgLighting {
     /// Les lightmaps calculées, côté noyau.
+    ///
+    /// **Elles gardent leur carte elles-mêmes**, par l'`Arc` que `Lightmaps`
+    /// porte depuis la 3.0.0. Ce handle n'en tient donc plus de copie : il en
+    /// tenait une pour que les quatre appels de cuisson emploient la bonne, et
+    /// une fonction d'appariement confrontait les deux soumissions éclairées —
+    /// le noyau fait les deux désormais, et un champ de moins est un champ qui
+    /// ne peut plus diverger.
     pub(crate) inner: Lightmaps,
-    /// La carte dont elles viennent, gardée vivante.
-    ///
-    /// **Repasser le `ScgWorld` à chaque appel a été écarté** : cela ferait de
-    /// « la même carte » une précondition que rien ne vérifie, et un hôte qui se
-    /// tromperait de carte obtiendrait des rectangles pris sur une autre
-    /// géométrie, sans erreur.
-    ///
-    /// **Les quatre appels de cuisson tiennent cette clause en lisant ce
-    /// champ** ; les deux soumissions éclairées, elles, reçoivent une carte de
-    /// l'hôte, et c'est [`paired`] qui les confronte.
-    pub(crate) world: Arc<World>,
-}
-
-/// Le porteur vient-il de cette carte, et que passer au noyau ?
-///
-/// **Un seul endroit pour les deux soumissions éclairées**, qui prennent toutes
-/// deux un `world` et un `lighting` indépendants : la confrontation et la
-/// conversion vers ce que le noyau attend s'y écrivent ensemble, de sorte qu'un
-/// site ne puisse pas faire l'une sans l'autre. C'était le défaut — les deux
-/// convertissaient sans confronter, et une surface de plus dans la cellule
-/// soumise faisait indexer l'atlas cuit hors de ses emplacements.
-///
-/// L'égalité porte sur le **compteur de références**, donc sur l'identité de la
-/// carte et non sur sa forme. C'est plus fort que ce que le noyau peut faire, et
-/// c'est la seule chose que ce handle achète : il tient la carte vivante, donc il
-/// peut la reconnaître.
-///
-/// Un porteur nul n'est pas une erreur — un décor se soumet sans lightmaps.
-pub(crate) fn paired<'a>(
-    lighting: Option<&'a ScgLighting>,
-    world: &ScgWorld,
-) -> Result<Option<&'a Lightmaps>, AbiError> {
-    match lighting {
-        None => Ok(None),
-        Some(lighting) if Arc::ptr_eq(&lighting.world, &world.inner) => Ok(Some(&lighting.inner)),
-        Some(_) => Err(AbiError::LIGHTING_WORLD),
-    }
 }

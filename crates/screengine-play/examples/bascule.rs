@@ -52,7 +52,7 @@
 use std::sync::Arc;
 
 use screengine_play::{
-    Affine3, FreeCamera, KeyCode, Lightmaps, Play, Texture, Vec3, World, load_png,
+    Affine3, CoreError, FreeCamera, KeyCode, Lightmaps, Play, Texture, Vec3, World, load_png,
 };
 
 /// Les deux cartes versionnées du dépôt, celles que les cinq hôtes chargent.
@@ -100,8 +100,8 @@ const SOL: &[u8] = include_bytes!("../assets/sol-pave-mousse.png");
 /// permet d'en dépareiller deux — ce que la frontière refuse désormais, et que le
 /// chemin Rust ne peut que borner.
 struct Carte {
-    /// Le décor chargé.
-    world: World,
+    /// Le décor chargé, partagé avec son porteur de lightmaps.
+    world: Arc<World>,
     /// Une texture par matériau, dans l'ordre que la carte déclare.
     materials: Vec<Arc<Texture>>,
     /// Les lightmaps, cuites ou reprises avant la première image — ou rien,
@@ -132,8 +132,8 @@ fn charger(
     sol: &Arc<Texture>,
     depart: Vec3,
     cache: Option<&[u8]>,
-) -> Carte {
-    let world = World::load(bytes).expect("carte du dépôt valide");
+) -> Result<Carte, CoreError> {
+    let world = Arc::new(World::load(bytes)?);
     let materials = (0..world.material_count())
         .map(|rank| match world.material_name(rank) {
             Some("mur") => Arc::clone(mur),
@@ -141,14 +141,26 @@ fn charger(
         })
         .collect();
 
+    // **Rien n'est supposé réussir ici, et c'est le sujet de cette fonction.**
+    // L'en-tête dit que l'ordre des quatre gestes existe parce que la cuisson peut
+    // encore refuser — une cellule dont les surfaces ne tiennent pas dans un atlas
+    // rend `SCG_ERR_INVALID_FORMAT` sur une carte que le chargement a acceptée.
+    // Tant que ces appels paniquaient, le seul échec contre lequel l'ordre protège
+    // terminait le processus, et l'ancienne carte encore vivante n'y servait à
+    // rien.
     let mut reprises = 0;
-    let lightmaps = (world.light_count() > 0).then(|| {
-        let mut lightmaps = Lightmaps::new(&world).expect("porteur");
+    let lightmaps = if world.light_count() > 0 {
+        // **Le porteur prend la carte**, et c'est ce qui rend impossible de lui
+        // en opposer une autre : les quatre appels qui suivent n'en reçoivent
+        // plus. Ranger les deux dans la même structure, comme ci-dessous, était
+        // la seule parade tant que le porteur ne retenait rien — une discipline,
+        // pas une vérification.
+        let mut lightmaps = Lightmaps::new(Arc::clone(&world))?;
         reprises = match cache {
             // Le bloc vient de cette carte-ci, mais le moteur ne s'y fie pas : il
-            // confronte chaque entrée à la carte chargée. C'est ce qui rend
+            // confronte chaque entrée à la carte qu'il porte. C'est ce qui rend
             // l'appel sûr même sur un cache gardé d'un décor modifié depuis.
-            Some(bytes) => lightmaps.restore(&world, bytes).expect("cache lisible"),
+            Some(bytes) => lightmaps.restore(bytes)?,
             None => 0,
         };
         // Ce que la reprise n'a pas donné se cuit. Toutes les cellules avant la
@@ -156,20 +168,22 @@ fn charger(
         // cache de la carte, pas de la vue.
         for index in 0..world.cell_count() {
             if let Some(id) = world.cell_id(index) {
-                lightmaps.build(&world, id).expect("cuisson possible");
+                lightmaps.build(id)?;
             }
         }
-        lightmaps
-    });
+        Some(lightmaps)
+    } else {
+        None
+    };
 
     let cell = world.locate(depart);
-    Carte {
+    Ok(Carte {
         world,
         materials,
         lightmaps,
         cell,
         reprises,
-    }
+    })
 }
 
 /// Le cache d'une carte, prêt à être rangé par l'hôte, ou rien à ranger.
@@ -180,11 +194,9 @@ fn charger(
 /// pour elle, jamais.
 fn cache(carte: &Carte) -> Option<Vec<u8>> {
     let lightmaps = carte.lightmaps.as_ref()?;
-    let len = lightmaps.save_len(&carte.world).expect("longueur du cache");
+    let len = lightmaps.save_len().expect("longueur du cache");
     let mut bytes = vec![0u8; len];
-    lightmaps
-        .save(&carte.world, &mut bytes)
-        .expect("écriture du cache");
+    lightmaps.save(&mut bytes).expect("écriture du cache");
     Some(bytes)
 }
 
@@ -209,6 +221,12 @@ struct Scene {
     /// rechargerait les deux cartes à chaque image. Le front se tient donc ici,
     /// et c'est le genre de détail qu'un exemple existe pour montrer.
     bascule_tenue: bool,
+    /// Ce qu'une bascule a refusé, s'il y a lieu.
+    ///
+    /// Gardé plutôt qu'écrit une fois : le titre le montre tant qu'une bascule
+    /// réussie ne l'a pas effacé, là où un message passé à la console d'un
+    /// programme à fenêtre ne se lit pas.
+    refus: Option<CoreError>,
 }
 
 impl Scene {
@@ -220,7 +238,13 @@ impl Scene {
     /// qu'à l'affectation, quand la nouvelle est prête. C'est ce que « charger à
     /// côté, puis basculer » veut dire, et le `drop` de Rust le rend implicite
     /// là où un hôte C appelle `scg_world_destroy`.
-    fn basculer(&mut self) {
+    ///
+    /// **Et c'est pour cela qu'elle rend un résultat** : sur un refus, rien n'est
+    /// affecté, la scène garde la carte qu'elle affichait, et l'appelant montre
+    /// l'erreur. Une fonction qui ne peut pas échouer ferait de l'ordre des gestes
+    /// une précaution sans objet — l'ancienne carte serait vivante au moment précis
+    /// où le processus s'arrête.
+    fn basculer(&mut self) -> Result<(), CoreError> {
         self.caches[self.rang] = cache(&self.carte);
         let rang = 1 - self.rang;
         let carte = charger(
@@ -229,12 +253,13 @@ impl Scene {
             &self.textures.1,
             DEPART,
             self.caches[rang].as_deref(),
-        );
+        )?;
 
         self.carte = carte;
         self.rang = rang;
         self.camera = FreeCamera::new(DEPART);
         self.previous = DEPART;
+        Ok(())
     }
 }
 
@@ -242,7 +267,9 @@ impl Scene {
 fn main() -> Result<(), screengine_play::Error> {
     let mur = Arc::new(load_png(MUR)?);
     let sol = Arc::new(load_png(SOL)?);
-    let carte = charger(CARTES[0], &mur, &sol, DEPART, None);
+    // La première carte est celle du dépôt, et un refus ici n'a rien à voir avec
+    // la bascule : l'exemple s'arrête, plutôt que d'ouvrir une fenêtre vide.
+    let carte = charger(CARTES[0], &mur, &sol, DEPART, None).expect("carte du dépôt valide");
 
     let scene = Scene {
         camera: FreeCamera::new(DEPART),
@@ -252,6 +279,7 @@ fn main() -> Result<(), screengine_play::Error> {
         textures: (mur, sol),
         previous: DEPART,
         bascule_tenue: false,
+        refus: None,
     };
 
     Play::new()
@@ -266,7 +294,10 @@ fn main() -> Result<(), screengine_play::Error> {
                 }
                 let tenue = tick.input().pressed(KeyCode::KeyB);
                 if tenue && !scene.bascule_tenue {
-                    scene.basculer();
+                    // Un refus garde la carte courante affichée, et se lit dans le
+                    // titre : c'est la conduite que l'ordre des gestes rend
+                    // possible, et la montrer est la raison d'être de cet exemple.
+                    scene.refus = scene.basculer().err();
                 }
                 scene.bascule_tenue = tenue;
 
@@ -285,8 +316,12 @@ fn main() -> Result<(), screengine_play::Error> {
                 }
                 scene.previous = position;
 
+                let refus = match &scene.refus {
+                    Some(error) => format!(" — dernière bascule refusée : {error}"),
+                    None => String::new(),
+                };
                 tick.set_title(&format!(
-                    "Screengine — {} : {} cellules, {}, {} entrées de cache reprises (B pour basculer)",
+                    "Screengine — {} : {} cellules, {}, {} entrées de cache reprises (B pour basculer){refus}",
                     NOMS[scene.rang],
                     scene.carte.world.cell_count(),
                     match scene.carte.lightmaps {
@@ -344,7 +379,7 @@ mod tests {
     #[test]
     fn un_cache_rendu_a_sa_carte_se_reprend_en_entier() {
         let (mur, sol) = (plate(), plate());
-        let premiere = charger(CARTES[0], &mur, &sol, DEPART, None);
+        let premiere = charger(CARTES[0], &mur, &sol, DEPART, None).expect("carte valide");
         assert_eq!(
             premiere.reprises, 0,
             "rien à reprendre à la première visite"
@@ -352,7 +387,7 @@ mod tests {
         let garde = cache(&premiere).expect("une carte cuite laisse un cache");
         assert!(!garde.is_empty(), "le cache porte ses luxels");
 
-        let retour = charger(CARTES[0], &mur, &sol, DEPART, Some(&garde));
+        let retour = charger(CARTES[0], &mur, &sol, DEPART, Some(&garde)).expect("carte valide");
         assert_eq!(
             retour.reprises,
             premiere.world.cell_count(),
@@ -369,7 +404,7 @@ mod tests {
     #[test]
     fn une_carte_sans_lumiere_n_est_pas_cuite() {
         let (mur, sol) = (plate(), plate());
-        let sombre = charger(CARTES[1], &mur, &sol, DEPART, None);
+        let sombre = charger(CARTES[1], &mur, &sol, DEPART, None).expect("carte valide");
 
         assert_eq!(sombre.world.light_count(), 0, "le couloir n'a aucune lampe");
         assert!(
@@ -381,10 +416,35 @@ mod tests {
             "une carte non cuite n'a pas de cache, ce qui n'est pas un cache vide"
         );
 
-        let claire = charger(CARTES[0], &mur, &sol, DEPART, None);
+        let claire = charger(CARTES[0], &mur, &sol, DEPART, None).expect("carte valide");
         assert!(
             claire.lightmaps.is_some(),
             "la carte qui porte des lampes est cuite, sinon ce cas ne distinguerait rien"
+        );
+    }
+
+    /// Un chargement qui refuse rend une erreur, il ne termine pas le processus.
+    ///
+    /// **C'est la conduite dont l'ordre des quatre gestes dépend** : `basculer`
+    /// propage ce refus sans rien affecter, donc la scène garde la carte qu'elle
+    /// affichait. Tant que `charger` paniquait, le seul échec contre lequel cet
+    /// ordre protège arrêtait le programme, et l'ancienne carte encore vivante n'y
+    /// servait à rien.
+    ///
+    /// **Le refus éprouvé ici n'est pas celui d'un atlas démesuré**, et il faut le
+    /// dire : aucune carte du dépôt ne déborde son atlas, donc ce cas-là ne
+    /// s'écrit pas sans engendrer un décor pour lui. Ce qui est éprouvé est le
+    /// **chemin de retour** — un bloc refusé par le chargement l'emprunte
+    /// entièrement, du `?` jusqu'à l'appelant.
+    #[test]
+    fn un_chargement_refuse_ne_panique_pas() {
+        let (mur, sol) = (plate(), plate());
+        let tronque = &CARTES[0][..16];
+
+        let refus = charger(tronque, &mur, &sol, DEPART, None);
+        assert!(
+            refus.is_err(),
+            "un bloc tronqué doit être refusé, pas chargé"
         );
     }
 
@@ -399,7 +459,7 @@ mod tests {
     fn chaque_depart_est_dans_une_cellule() {
         let (mur, sol) = (plate(), plate());
         for (rang, bytes) in CARTES.iter().enumerate() {
-            let carte = charger(bytes, &mur, &sol, DEPART, None);
+            let carte = charger(bytes, &mur, &sol, DEPART, None).expect("carte valide");
             assert_ne!(
                 carte.cell, 0,
                 "le départ de la carte {rang} est hors de toute cellule"
@@ -425,7 +485,7 @@ mod tests {
         let camera = FreeCamera::new(DEPART).camera();
 
         for (rang, bytes) in CARTES.iter().enumerate() {
-            let carte = charger(bytes, &mur, &sol, DEPART, None);
+            let carte = charger(bytes, &mur, &sol, DEPART, None).expect("carte valide");
             let mut context = Context::new(config()).expect("cadrage valide");
             context.set_camera(camera).expect("caméra finie");
             context

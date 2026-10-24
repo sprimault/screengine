@@ -66,6 +66,22 @@ struct Lit {
 /// d'éclairage d'un triangle préparé, dans le rasteriseur, et deux notions
 /// voisines sous un même nom finissent par se confondre dans une signature.
 pub struct Lightmaps {
+    /// La carte dont ces lightmaps viennent, gardée vivante.
+    ///
+    /// **C'est ce champ qui remplace un garde**, et la différence n'est pas de
+    /// style : tant que le porteur ne retenait rien, chaque méthode recevant un
+    /// `&World` devait confronter elle-même ce qu'on lui donnait à ce qui l'avait
+    /// dimensionnée — et deux l'ont oublié, `restore` d'abord, les deux
+    /// soumissions éclairées ensuite. Un invariant qui dépend d'un appel répété
+    /// est un invariant qu'un ajout futur omettra ; celui-ci tient par le type.
+    ///
+    /// **Et il tient l'identité, pas la ressemblance.** Un garde sur les
+    /// longueurs laissait passer deux cartes de même nombre de cellules — le
+    /// régime d'un décor engendré à dimensions constantes —, et les luxels d'une
+    /// autre géométrie étaient rendus sans erreur. L'`Arc` garde la carte vivante,
+    /// donc son adresse ne peut pas être reprise par une autre : la comparaison
+    /// est exacte.
+    world: Arc<World>,
     /// Une entrée par cellule, dans l'ordre de la carte.
     cells: Vec<Option<Lit>>,
 }
@@ -75,12 +91,26 @@ impl Lightmaps {
     ///
     /// L'allocation a lieu ici, dans un appel nommé, et jamais au premier calcul :
     /// c'est ce qui permet à un hôte de savoir quand il paie.
-    pub fn new(world: &World) -> Result<Self> {
+    ///
+    /// **Le porteur prend la carte, il ne l'emprunte pas.** Les cinq méthodes qui
+    /// suivent n'en reçoivent donc plus : il n'y a pas deux cartes à apparier, et
+    /// rien à vérifier. C'est ce que `docs/abi.md` décrivait du handle C depuis
+    /// l'étape 5, et que le chemin Rust ne faisait pas.
+    pub fn new(world: Arc<World>) -> Result<Self> {
         let mut cells = reserved(world.cell_count() as usize)?;
         for _ in 0..world.cell_count() {
             cells.push(None);
         }
-        Ok(Self { cells })
+        Ok(Self { world, cells })
+    }
+
+    /// La carte dont ces lightmaps viennent.
+    ///
+    /// Ce que la soumission compare à celle qu'on lui passe, et ce qu'un hôte peut
+    /// lire s'il ne veut pas la tenir deux fois.
+    #[must_use]
+    pub fn world(&self) -> &World {
+        &self.world
     }
 
     /// Calcule les lightmaps d'une cellule, désignée par son identifiant.
@@ -93,23 +123,23 @@ impl Lightmaps {
     /// Une cellule modifiée recalcule les siennes, jamais celles du niveau — mais
     /// **ses voisines immédiates deviennent fausses** : la lumière qui passait par
     /// la porte était calculée là-bas, et c'est à l'hôte de les rappeler.
-    pub fn build(&mut self, world: &World, cell_id: u32) -> Result<()> {
-        self.matches(world)?;
+    pub fn build(&mut self, cell_id: u32) -> Result<()> {
+        let world = Arc::clone(&self.world);
         let index = world.cell_of(cell_id).ok_or(Error::UnknownResource)?;
         let atlas = pack(&world.cells()[index as usize])?;
-        let baked = bake(world, index, atlas)?;
+        let baked = bake(&world, index, atlas)?;
         let texture = Texture::load(baked.side, baked.side, &baked.texels)?;
         self.cells[index as usize] = Some(Lit {
             texture: Arc::new(texture),
             atlas: baked.atlas,
-            fingerprint: fingerprint(world, index)?,
+            fingerprint: fingerprint(&world, index)?,
         });
         Ok(())
     }
 
     /// L'état de la lightmap d'une cellule.
-    pub fn state(&self, world: &World, cell_id: u32) -> Result<Lightmap> {
-        self.matches(world)?;
+    pub fn state(&self, cell_id: u32) -> Result<Lightmap> {
+        let world = &self.world;
         let index = world.cell_of(cell_id).ok_or(Error::UnknownResource)?;
         Ok(match self.cells[index as usize] {
             Some(_) => Lightmap::Ready,
@@ -122,8 +152,8 @@ impl Lightmaps {
     /// **L'hôte mesure, alloue, puis remplit** : c'est le patron de l'ABI, et la
     /// mesure ne doit pas coûter une sérialisation jetée. Zéro quand aucune cellule
     /// n'est cuite — un bloc vide reste un bloc valide, que relire ne rend rien.
-    pub fn save_len(&self, world: &World) -> Result<usize> {
-        let records = self.records(world)?;
+    pub fn save_len(&self) -> Result<usize> {
+        let records = self.records()?;
         cache::measure(&records).ok_or(Error::OutOfMemory)
     }
 
@@ -132,17 +162,16 @@ impl Lightmaps {
     /// `out` doit faire exactement la longueur que [`Lightmaps::save_len`] annonce,
     /// mesurée sur le même état : un tampon d'une autre longueur est refusé sans
     /// rien écrire.
-    pub fn save(&self, world: &World, out: &mut [u8]) -> Result<()> {
-        cache::write(&self.records(world)?, out)
+    pub fn save(&self, out: &mut [u8]) -> Result<()> {
+        cache::write(&self.records()?, out)
     }
 
     /// Ce que l'état courant déposerait, dans l'ordre des cellules de la carte.
     ///
     /// L'ordre du fichier est déjà celui des identifiants croissants — le
     /// chargement le vérifie —, donc les enregistrements sortent triés sans tri.
-    fn records<'a>(&'a self, world: &'a World) -> Result<Vec<Record<'a>>> {
-        self.matches(world)?;
-        let cells = world.cells();
+    fn records(&self) -> Result<Vec<Record<'_>>> {
+        let cells = self.world.cells();
         let mut out = reserved(self.cells.len())?;
         for (index, entry) in self.cells.iter().enumerate() {
             let Some(lit) = entry else {
@@ -169,15 +198,15 @@ impl Lightmaps {
     /// Ce que porte le bloc ne décide de rien : chaque entrée est confrontée à la
     /// carte chargée. Une empreinte se vole, elle ne prouve rien — c'est un FNV, pas
     /// une signature —, donc le rangement relu est vérifié pour lui-même.
-    pub fn restore(&mut self, world: &World, bytes: &[u8]) -> Result<u32> {
-        self.matches(world)?;
+    pub fn restore(&mut self, bytes: &[u8]) -> Result<u32> {
+        let world = Arc::clone(&self.world);
         let cells = world.cells();
         let mut accepted = 0;
         for entry in cache::read(bytes)? {
             let Some(index) = world.cell_of(entry.cell_id) else {
                 continue;
             };
-            if entry.fingerprint != fingerprint(world, index)? {
+            if entry.fingerprint != fingerprint(&world, index)? {
                 continue;
             }
             if !fits(&entry, &cells[index as usize]) {
@@ -194,32 +223,26 @@ impl Lightmaps {
         Ok(accepted)
     }
 
-    /// La carte passée est-elle celle qui a dimensionné ce porteur ?
+    /// Ce porteur vient-il de la carte qu'on soumet ?
     ///
-    /// **Un garde en un point plutôt que quatre refus recopiés.** Les quatre
-    /// méthodes qui reçoivent un `&World` posent la même question, et chacune
-    /// indexe ensuite : `build`, `state` et `restore` prennent leur entrée par un
-    /// index venu de la carte passée, `records` lit la carte par un index venu du
-    /// porteur. Une égalité de longueurs vérifiée ici rend les quatre
-    /// indexations justes, là où quatre accès bornés auraient répété la même
-    /// erreur sans dire laquelle des deux bornes avait cédé.
+    /// **Une égalité d'adresses, et c'est ce qui la rend exacte.** Le porteur
+    /// garde sa carte par un `Arc`, donc aucune autre ne peut occuper cette
+    /// adresse tant qu'il vit — là où une comparaison de longueurs laissait passer
+    /// deux cartes de même nombre de cellules, et où un condensé promettrait « à
+    /// collision près », ce que le projet refuse d'une identité.
     ///
-    /// **Ce qu'il compare est une longueur, pas une identité**, et c'est ce qu'un
-    /// appelant doit savoir : deux cartes de même nombre de cellules passent.
-    /// Comparer les cartes elles-mêmes demanderait que le porteur en garde une —
-    /// ce que la frontière fait, par son `Arc`, et que le chemin Rust ne peut
-    /// faire sans changer six signatures publiées. Ce que ce garde achète est
-    /// qu'une erreur d'appariement ne fasse plus paniquer ; il ne promet pas de
-    /// l'attraper.
+    /// **Appelée une fois par soumission et non par cellule** : la question se
+    /// décide à l'entrée, et la poser dans la boucle des cellules ferait payer à
+    /// chaque décor ce qui ne dépend pas d'elles.
     ///
-    /// La borne des surfaces d'une cellule, elle, n'est pas ici : un atlas est
-    /// dimensionné sur la cellule cuite, et c'est la soumission qui le confronte
-    /// à celle qu'on lui donne.
-    fn matches(&self, world: &World) -> Result<()> {
-        if self.cells.len() == world.cell_count() as usize {
-            return Ok(());
+    /// Un porteur nul n'est pas une erreur — un décor se soumet sans lightmaps.
+    pub(crate) fn paired(lighting: Option<&Self>, world: &World) -> Result<()> {
+        match lighting {
+            Some(lighting) if !core::ptr::eq(lighting.world(), world) => {
+                Err(Error::InvalidArgument(Argument::Lightmaps))
+            }
+            _ => Ok(()),
         }
-        Err(Error::InvalidArgument(Argument::Lightmaps))
     }
 
     /// L'atlas d'une cellule, par son rang, ou `None` si rien n'est calculé.
@@ -234,11 +257,15 @@ impl Lightmaps {
 /// Le rangement relu décrit-il bien cette cellule ?
 ///
 /// **L'empreinte ne suffit pas à s'en assurer.** C'est un FNV, pas une signature :
-/// un bloc forgé peut la porter juste et décrire n'importe quel rangement. Or la
-/// soumission lit `slots[rang de la surface]` sans borne — un rectangle de moins
-/// ferait paniquer une image —, et un rectangle qui déborde de l'atlas ferait lire
-/// les luxels d'une autre surface. Les deux se vérifient ici, une fois, plutôt qu'à
-/// chaque image.
+/// un bloc forgé peut la porter juste et décrire n'importe quel rangement, et un
+/// rectangle qui déborde de l'atlas ferait alors lire les luxels d'une autre
+/// surface. Cela se vérifie ici, une fois, plutôt qu'à chaque image.
+///
+/// **Le compte de rectangles est vérifié ici aussi, et ce n'est plus pour éviter
+/// une panique** : la soumission borne désormais sa lecture d'emplacement et rend
+/// une erreur. Ce qui se gagne à le vérifier ici est le **moment** — une entrée
+/// trop courte est écartée à la reprise, une fois, plutôt que de faire refuser
+/// chaque image d'un décor que l'hôte croit cuit.
 fn fits(entry: &Entry<'_>, cell: &Cell) -> bool {
     if entry.surfaces.len() != cell.surfaces.len() {
         return false;
