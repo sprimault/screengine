@@ -45,6 +45,13 @@ harness = false
 name = "soumission"
 harness = false
 
+# Séparé de `chargement`, dont il reprend les cartes engendrées : ce que paie un
+# changement de carte n'est pas le décodage mais la cuisson qui le suit, et les
+# deux coûts ne se comparent qu'en étant mesurés séparément sur la même carte.
+[[bench]]
+name = "cuisson"
+harness = false
+
 [lints]
 workspace = true
 

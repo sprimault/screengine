@@ -109,10 +109,12 @@ fn main() -> Result<(), screengine_play::Error> {
 }
 ```
 
-`make run` launches this example. Two others run with `make example
-EXAMPLE=<name>`: `couloir`, a ruined corridor whose geometry is written in Rust,
-and `carte`, the same map all five hosts load. **They are to be watched, not
-tested** — they open a window, so no check runs them.
+`make run` launches this example. Three others run with `make example
+EXAMPLE=<name>`: `couloir`, a ruined corridor whose geometry is written in Rust;
+`carte`, the same map all five hosts load; and `bascule`, which changes maps
+without leaving the window. **They are to be watched, not tested** — they open a
+window, so no check runs them; `hello` and `bascule` do carry their own cases,
+which run without one.
 
 The Rust path adds convenience, never capability: everything it allows can also
 be done through the C ABI.

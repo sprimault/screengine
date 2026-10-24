@@ -18,6 +18,12 @@
 //! dise. C'est le mode de panne le plus discret d'une mesure, puisqu'il se
 //! présente comme un succès.
 //!
+//! **Et depuis, une troisième chose** : le générateur de cartes de
+//! [`decor`], que deux bancs emploient. Il entre ici pour la raison du témoin et
+//! non pour celle du chronomètre — ce qui est délicat dans une carte engendrée
+//! est sa **légalité**, et deux copies divergeraient d'abord là, sur des
+//! contraintes que `docs/cartes.md` porte et qu'un banc ne relit pas.
+//!
 //! Ce qui n'y entre pas : la ligne de résultat, que chaque banc rapporte à son
 //! unité — par pixel, par cellule, par sommet —, et la construction du
 //! contexte, que chacun règle pour ce qu'il mesure.
@@ -31,6 +37,8 @@ use core::time::Duration;
 use std::time::Instant;
 
 use screengine::BYTES_PER_PIXEL;
+
+pub mod decor;
 
 /// Le plus court temps observé sur `tours` répétitions.
 ///
