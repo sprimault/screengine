@@ -80,6 +80,19 @@ publié, et explique les conventions du dépôt à qui y contribue.
 
 ## [Non publié]
 
+## [3.0.0] — 2026-10-24 — Le porteur et sa carte
+
+**Un second majeur qui ne touche toujours pas la frontière C.**
+`SCG_ABI_VERSION` reste à **1**, `version_format` ne bouge pas, aucune empreinte
+ne se déplace : un hôte C, C++, JavaScript, Java ou Go se relie et se comporte à
+l'identique.
+
+**Ce qu'un consommateur Rust doit reprendre** : `Lightmaps::new` prend un
+`Arc<World>`, et `build`, `state`, `save_len`, `save` et `restore` n'ont plus de
+paramètre de carte. Le porteur garde la sienne, donc il n'y a plus deux cartes à
+apparier — ce que la 2.0.0 tentait par un garde qui ne couvrait ni les
+soumissions ni deux cartes de même forme.
+
 ### Modifié
 
 - **`Lightmaps` prend sa carte et ne la reçoit plus** : `new` attend un
@@ -94,6 +107,16 @@ publié, et explique les conventions du dépôt à qui y contribue.
   `SCG_ERR_INVALID_ARGUMENT`, sur les deux chemins et non sur le seul C.
 
 ***
+
+**A second major that still does not touch the C boundary.** `SCG_ABI_VERSION`
+stays at **1**, `version_format` does not move, no digest shifts: a C, C++,
+JavaScript, Java or Go host links and behaves identically.
+
+**What a Rust consumer must take up**: `Lightmaps::new` takes an `Arc<World>`,
+and `build`, `state`, `save_len`, `save` and `restore` no longer take a map. The
+holder keeps its own, so there are no longer two maps to pair — what 2.0.0
+attempted with a guard that covered neither the submissions nor two maps of the
+same shape.
 
 ### Changed
 
