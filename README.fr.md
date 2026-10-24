@@ -48,10 +48,9 @@ Windows, dans un navigateur et sur un téléphone.
 
 ## État
 
-**Version 1.8.0 : l'ABI est gelée.** Les dix étapes de la feuille de route sont
-livrées, et la frontière C ne bouge plus : rien de publié n'est jamais retiré,
-même déprécié, et un incrément de `SCG_ABI_VERSION` impose un majeur. Un hôte
-compilé contre ce header continuera de se lier.
+**L'ABI est gelée.** Les dix étapes de la feuille de route sont livrées, et un
+hôte compilé contre ce header continuera de se lier. Les conventions de version
+sont dans [`CHANGELOG.md`](CHANGELOG.md).
 
 Quatre chemins vectoriels remplissent une surface unie **et une surface
 texturée**, lightmap comprise — SSE2 et AVX2 sur x86, NEON sur `aarch64`,

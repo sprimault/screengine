@@ -71,6 +71,18 @@ publié, et explique les conventions du dépôt à qui y contribue.
 
 ## [Non publié]
 
+## [2.0.0] — 2026-10-24 — Changer de carte
+
+**Un majeur qui ne touche pas la frontière C.** `SCG_ABI_VERSION` reste à **1**,
+`version_format` ne bouge pas, et aucune empreinte de conformance ne se déplace :
+un hôte C, C++, JavaScript, Java ou Go se relie et se comporte à l'identique.
+
+Ce qui casse est l'**API Rust** : `Argument` gagne la variante
+`Argument::Lightmaps`, et cette énumération n'est délibérément pas
+`non_exhaustive` — un `match` exhaustif écrit dehors cesse donc de compiler,
+plutôt que de laisser la variante tomber dans un bras générique et de rendre une
+erreur pour une autre. Un bras à ajouter, rien à repenser.
+
 ### Corrigé
 
 - **Un porteur de lightmaps opposé à une autre carte** rend
@@ -89,6 +101,16 @@ publié, et explique les conventions du dépôt à qui y contribue.
   changement de carte, pas le rechargement.
 
 ***
+
+**A major that does not touch the C boundary.** `SCG_ABI_VERSION` stays at **1**,
+`version_format` does not move, and no conformance digest shifts: a C, C++,
+JavaScript, Java or Go host links and behaves identically.
+
+What breaks is the **Rust API**: `Argument` gains the `Argument::Lightmaps`
+variant, and that enum is deliberately not `non_exhaustive` — an exhaustive
+`match` written outside therefore stops compiling, rather than letting the
+variant fall into a catch-all arm and return one error for another. One arm to
+add, nothing to rethink.
 
 ### Fixed
 
