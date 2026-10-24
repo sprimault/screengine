@@ -1747,8 +1747,13 @@ $(addsuffix -wasi,test conform bench): %-wasi:
 # au code, et on finirait par relever son seuil jusqu'à ce qu'il ne mesure plus
 # rien. Rien n'échoue ici — on lit les chiffres et on les compare à ceux que le
 # fichier de mesure porte en commentaire.
+#
+# `BANC=<nom>` n'en joue qu'un. Les quatre bancs se comptent en minutes, et une
+# mesure qu'on reprend porte sur un seul chemin : les jouer tous pour en lire un
+# fait payer l'attente a chaque reprise, et la charge des autres entre dans ce
+# qu'on lit.
 bench:
-	cargo bench -p screengine
+	cargo bench -p screengine $(if $(BANC),--bench $(BANC),)
 
 # Les marqueurs d'étape qui restent dans le noyau et la frontière, que
 # `ROADMAP.md` lit comme mesure d'avancement.

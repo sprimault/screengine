@@ -27,23 +27,12 @@
 //! [`remplissage`](../remplissage/index.html) : aucun seuil, jamais d'échec sur
 //! une durée, le minimum plutôt que la moyenne.
 //!
-//! # La forme des cartes engendrées
-//!
-//! Une enfilade de cellules prismatiques, chacune reliée à la suivante par un
-//! portail — la forme du couloir du dépôt, à deux paramètres près :
-//!
-//! - **le nombre de cellules**, qui fait varier ce qui est linéaire et ce qui
-//!   est global : décodage, triangulation, et l'appariement des portails, qui
-//!   compare les portails de la carte entière ;
-//! - **le nombre de surfaces par cellule**, obtenu en subdivisant les deux longs
-//!   côtés de l'empreinte. C'est lui qui fait travailler le terme quadratique,
-//!   et c'est celui qu'aucun décor du dépôt ne pousse — une cellule d'éditeur en
-//!   porte cinquante là où les leurs en ont six.
-//!
-//! Les arêtes sont axiales et longues de huit unités, pour que le carré de
-//! chaque axe de repère de lightmap soit une puissance de deux : sans cela le
-//! chargement refuse la carte, et le banc ne mesurerait rien. Les contraintes
-//! que ce générateur respecte sont celles de `docs/cartes.md`.
+//! La forme des cartes et ce que chacun de ses paramètres fait travailler sont
+//! dans [`harnais::decor`](../harnais/decor/index.html), qui les engendre pour ce
+//! banc et pour [`cuisson`](../cuisson/index.html). Celui-ci n'en pose **aucune
+//! lampe** : une lumière ne traverse aucun chemin du décodage, et la carte sort
+//! alors octet pour octet celle sur laquelle les chiffres ci-dessous ont été
+//! pris.
 //!
 //! # La mesure, prise le 2026-10-01
 //!
@@ -108,6 +97,7 @@ use screengine::World;
 #[path = "harnais/mod.rs"]
 mod harnais;
 
+use harnais::decor::{carte, surfaces};
 use harnais::mesure;
 
 /// Répétitions par cas.
@@ -117,220 +107,18 @@ use harnais::mesure;
 /// bien avant.
 const TOURS: u32 = 12;
 
-/// Le côté d'un segment de mur, en unités de monde.
+/// Le nombre de lampes posées par cellule : aucune.
 ///
-/// Huit, et non une valeur quelconque : le repère de lightmap d'un mur a pour
-/// axe horizontal l'arête elle-même, dont le carré doit être une puissance de
-/// deux. Huit donne soixante-quatre.
-const PAS: f32 = 8.0;
-
-/// La hauteur d'une cellule, même contrainte que [`PAS`].
-const HAUTEUR: f32 = 8.0;
-
-/// La largeur d'une cellule, et donc la largeur d'un portail.
-const LARGEUR: f32 = 8.0;
-
-/// Le rang du matériau des murs.
-const MUR: u32 = 1;
-
-/// Celui du sol et du plafond.
-const SOL: u32 = 2;
-
-/// Luxels par unité de monde.
-///
-/// Un par unité, comme les cartes du dépôt. C'est ce qui garde l'étendue d'un
-/// sol sous le plafond de 256 luxels par côté tant que la cellule reste courte.
-const LUXEL: f32 = 1.0;
-
-/// Écrit des flottants, octet de poids faible en tête.
-fn floats(values: &[f32], out: &mut Vec<u8>) {
-    for value in values {
-        out.extend_from_slice(&value.to_le_bytes());
-    }
-}
-
-/// Écrit des entiers, octet de poids faible en tête.
-fn words(values: &[u32], out: &mut Vec<u8>) {
-    for value in values {
-        out.extend_from_slice(&value.to_le_bytes());
-    }
-}
-
-/// Écrit une surface : son en-tête, ses indices, puis ses deux repères.
-///
-/// L'origine des deux repères est celle du monde : elle tombe alors sur un nœud
-/// de sa propre grille sans aucun calcul, ce que le chargement exige.
-fn surface(id: u32, material: u32, indices: &[u32], u: [f32; 3], v: [f32; 3], out: &mut Vec<u8>) {
-    words(&[id, 0, material, indices.len() as u32], out);
-    words(indices, out);
-    // Le repère de texture prend une densité quelconque : ce banc ne rend aucune
-    // image, et seule la lightmap porte des contraintes de chargement.
-    for echelle in [LUXEL, LUXEL] {
-        floats(&[0.0, 0.0, 0.0], out);
-        floats(&[u[0] * echelle, u[1] * echelle, u[2] * echelle], out);
-        floats(&[v[0] * echelle, v[1] * echelle, v[2] * echelle], out);
-    }
-}
-
-/// L'empreinte au sol d'une cellule, en tournant dans le sens direct.
-///
-/// Un rectangle dont les deux longs côtés sont découpés en `segments` arêtes de
-/// [`PAS`] unités, les deux petits restant d'un seul tenant — ce sont eux qui
-/// deviennent des portails. L'aire signée est positive, ce qui oriente toutes
-/// les surfaces de la cellule d'un coup.
-fn empreinte(debut: f32, segments: u32) -> Vec<[f32; 2]> {
-    let mut points = Vec::new();
-    for i in 0..segments {
-        points.push([debut + PAS * i as f32, 0.0]);
-    }
-    let fin = debut + PAS * segments as f32;
-    for i in 0..segments {
-        points.push([fin - PAS * i as f32, LARGEUR]);
-    }
-    points
-}
-
-/// Une cellule prismatique, écrite dans `out`.
-///
-/// Les sommets sont rangés en deux étages, l'empreinte au sol puis la même en
-/// haut, si bien qu'un mur d'arête `i` porte les indices `i, i+n, (i+1)+n, i+1`.
-/// Le sol se parcourt dans l'ordre de l'empreinte et le plafond à l'envers :
-/// une face retournée disparaîtrait au découpage.
-fn cellule(id: u32, premier_id: u32, debut: f32, segments: u32, out: &mut Vec<u8>) {
-    let sol = empreinte(debut, segments);
-    let n = sol.len();
-    // Les deux arêtes qui ferment le rectangle sont les portails : celle qui
-    // joint le dernier point du bord bas au premier du bord haut, et l'inverse.
-    let portails = [segments as usize - 1, 2 * segments as usize - 1];
-
-    let mut corps = Vec::new();
-    let murs = n - portails.len();
-    words(
-        &[
-            id,
-            0,
-            (n * 2) as u32,
-            (murs + 2) as u32,
-            portails.len() as u32,
-        ],
-        &mut corps,
-    );
-
-    for z in [0.0, HAUTEUR] {
-        for point in &sol {
-            floats(&[point[0], point[1], z], &mut corps);
-        }
-    }
-
-    let bas: Vec<u32> = (0..n as u32).collect();
-    surface(
-        premier_id,
-        SOL,
-        &bas,
-        [1.0, 0.0, 0.0],
-        [0.0, 1.0, 0.0],
-        &mut corps,
-    );
-    let haut: Vec<u32> = (n as u32..(n * 2) as u32).rev().collect();
-    surface(
-        premier_id + 1,
-        SOL,
-        &haut,
-        [1.0, 0.0, 0.0],
-        [0.0, 1.0, 0.0],
-        &mut corps,
-    );
-
-    let mut suivant = premier_id + 2;
-    for i in 0..n {
-        if portails.contains(&i) {
-            continue;
-        }
-        let j = (i + 1) % n;
-        let (a, b) = (sol[i], sol[j]);
-        let le_long = [b[0] - a[0], b[1] - a[1], 0.0];
-        surface(
-            suivant,
-            MUR,
-            &[i as u32, (i + n) as u32, (j + n) as u32, j as u32],
-            le_long,
-            [0.0, 0.0, 1.0],
-            &mut corps,
-        );
-        suivant += 1;
-    }
-
-    for i in portails {
-        let j = (i + 1) % n;
-        words(&[suivant, 4], &mut corps);
-        words(
-            &[i as u32, j as u32, (j + n) as u32, (i + n) as u32],
-            &mut corps,
-        );
-        suivant += 1;
-    }
-
-    words(&[corps.len() as u32], out);
-    out.extend_from_slice(&corps);
-}
-
-/// Les octets d'une carte de `cellules` cellules à `segments` segments par long
-/// côté.
-///
-/// Les cellules se suivent le long de l'axe X, et deux voisines décrivent leur
-/// arête commune avec **les mêmes littéraux** : c'est ce que l'appariement
-/// exige, puisqu'il compare les positions au bit près.
-fn carte(cellules: u32, segments: u32) -> Vec<u8> {
-    let mut cells = Vec::new();
-    for i in 0..cellules {
-        cellule(
-            i + 1,
-            1000 * (i + 1),
-            PAS * segments as f32 * i as f32,
-            segments,
-            &mut cells,
-        );
-    }
-
-    let mut materiaux = Vec::new();
-    for (id, nom) in [(MUR, "mur"), (SOL, "sol")] {
-        words(&[id], &mut materiaux);
-        materiaux.extend_from_slice(&(nom.len() as u16).to_le_bytes());
-        materiaux.extend_from_slice(nom.as_bytes());
-    }
-
-    // Deux sections seulement : ni lumières, ni entités. Ce banc mesure le
-    // décodage de la géométrie, et une lumière n'en traverse aucun chemin.
-    let sections = [(*b"CELL", &cells), (*b"MATS", &materiaux)];
-    let premier = 20 + 12 * sections.len();
-    let total = premier + sections.iter().map(|(_, c)| c.len()).sum::<usize>();
-
-    let mut bytes = Vec::new();
-    bytes.extend_from_slice(b"SCG\x1a");
-    bytes.extend_from_slice(b"WRLD");
-    bytes.extend_from_slice(&1u32.to_le_bytes());
-    bytes.extend_from_slice(&(total as u32).to_le_bytes());
-    bytes.extend_from_slice(&(sections.len() as u32).to_le_bytes());
-
-    let mut decalage = premier;
-    for (tag, corps) in &sections {
-        bytes.extend_from_slice(tag);
-        bytes.extend_from_slice(&(decalage as u32).to_le_bytes());
-        bytes.extend_from_slice(&(corps.len() as u32).to_le_bytes());
-        decalage += corps.len();
-    }
-    for (_, corps) in &sections {
-        bytes.extend_from_slice(corps);
-    }
-    bytes
-}
+/// Le décodage ne lit pas une lumière autrement qu'il ne lit un sommet, et la
+/// section absente garde la carte identique à celle des chiffres ci-dessus.
+const LAMPES: u32 = 0;
 
 /// Mesure un cas et écrit sa ligne, durée totale puis coût par cellule.
 ///
 /// **Le coût par cellule est la colonne qui informe**, pas la durée : c'est elle
 /// qui dit si le coût est linéaire — elle reste plate — ou non.
 fn cas(cellules: u32, segments: u32) {
-    let bytes = carte(cellules, segments);
+    let bytes = carte(cellules, segments, LAMPES);
     // Le générateur est hors du chronomètre, et son résultat est vérifié avant :
     // une carte refusée rendrait une durée sans objet.
     let monde = World::load(&bytes).expect("la carte engendrée est légale");
@@ -339,9 +127,7 @@ fn cas(cellules: u32, segments: u32) {
         cellules,
         "le générateur n'a pas écrit le nombre de cellules demandé"
     );
-    // Deux longs côtés subdivisés, plus le sol et le plafond ; les deux petits
-    // côtés sont des portails et ne comptent pas comme surfaces.
-    let surfaces = 2 * segments + 2;
+    let surfaces = surfaces(segments);
 
     let duree = mesure(TOURS, || {
         World::load(black_box(&bytes)).expect("carte valide");

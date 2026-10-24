@@ -2879,6 +2879,35 @@ le rechargement complet est **linéaire en nombre de cellules** et
 **super-linéaire en surfaces d'une même cellule**. Il interdit de recharger à
 chaque mouvement de souris, et rien d'autre.
 
+**Mais ce n'est pas le rechargement qui domine un changement de carte, c'est la
+cuisson.** Elle coûte deux à trois ordres de grandeur le chargement de la même
+carte, et c'est une mesure et non un ordre de grandeur supposé — voir
+`benches/cuisson.rs`, qui porte les chiffres et la machine sur laquelle ils sont
+pris. Ses trois axes :
+
+- **linéaire en nombre de cellules**, la cuisson d'une cellule ne regardant
+  qu'elle et ses voisines immédiates ;
+- **super-linéaire en surfaces d'une même cellule**, et pour deux raisons qui se
+  composent : plus de luxels à calculer, et plus d'occulteurs à tester pour
+  chacun ;
+- **linéaire en lampes retenues**, celles dont la sphère coupe la boîte de la
+  cellule.
+
+**Ce que l'hôte en fait lui appartient**, et les trois voies existent déjà : le
+grain est la cellule, donc il peut l'étaler sur plusieurs images, et l'appel ne
+prenant pas de contexte, il peut aussi cuire plusieurs cellules en parallèle
+depuis ses propres threads. Ce qu'il ne peut pas faire est de l'ignorer : rien
+n'est calculé au chargement, et une carte chargée sans cuisson s'affiche non
+éclairée.
+
+**Et `scg_world_cell_luxel_count` est la pondération que l'ABI offre pour une
+barre de progression.** Elle est juste à géométrie et éclairage comparables, et
+sous-estime d'un facteur allant jusqu'à trois une cellule chargée en surfaces ou
+en lampes : une barre pondérée par lui avance trop vite au début d'un décor
+hétérogène. C'est le seul chiffre que la cuisson publie, et il n'en existe aucun
+qui annonce une durée — elle dépend de la machine, et le contrat n'en promet
+aucune.
+
 - **Les identifiants survivent au rechargement**, et c'est ce qui rend la
   bascule utilisable : la cellule, la surface ou l'entité qu'un éditeur avait
   sélectionnée se retrouve par son identifiant dans la nouvelle carte.

@@ -84,3 +84,11 @@ workspace = true
 [[example]]
 name = "hello"
 test = true
+
+# Et sur celui-ci pour une autre raison : sa séquence — charger à côté, cuire,
+# basculer, relâcher — est décrite par `docs/abi.md` et n'était exercée par
+# aucun appelant du dépôt. Un exemple à fenêtre ne garde rien, aucun contrôle
+# n'en lançant ; son test, si.
+[[example]]
+name = "bascule"
+test = true

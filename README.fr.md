@@ -110,11 +110,12 @@ fn main() -> Result<(), screengine_play::Error> {
 }
 ```
 
-`make run` lance cet exemple. Deux autres se lancent par `make example
+`make run` lance cet exemple. Trois autres se lancent par `make example
 EXAMPLE=<nom>` : `couloir`, un couloir en ruine dont la géométrie est écrite en
-Rust, et `carte`, le même décor que chargent les cinq hôtes. **Ils se regardent,
-ils ne se testent pas** — ils ouvrent une fenêtre, donc aucun contrôle ne les
-exécute.
+Rust ; `carte`, le même décor que chargent les cinq hôtes ; et `bascule`, qui
+change de carte sans quitter la fenêtre. **Ils se regardent, ils ne se testent
+pas** — ils ouvrent une fenêtre, donc aucun contrôle ne les exécute ; `hello` et
+`bascule` portent en revanche leurs propres cas, qui tournent sans fenêtre.
 
 Le chemin Rust ajoute du confort, jamais de capacité : tout ce qu'il permet se
 fait aussi par l'ABI C.

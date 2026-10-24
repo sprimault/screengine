@@ -82,6 +82,12 @@ publié, et explique les conventions du dépôt à qui y contribue.
 - **`scg_world_track` rend `0` sur un identifiant de cellule inconnu** :
   quatrième cause que le contrat n'énumérait pas.
 
+### Ajouté
+
+- **Le coût de la cuisson des lightmaps est publié** : ses trois axes, et ce que
+  vaut `scg_world_cell_luxel_count` comme pondération. C'est elle qui domine un
+  changement de carte, pas le rechargement.
+
 ***
 
 ### Fixed
@@ -94,6 +100,12 @@ publié, et explique les conventions du dépôt à qui y contribue.
   loading refused it, and did not publish that code.
 - **`scg_world_track` writes `0` for an unknown cell identifier**: a fourth cause
   the contract did not list.
+
+### Added
+
+- **The cost of baking lightmaps is published**: its three axes, and what
+  `scg_world_cell_luxel_count` is worth as a weighting. It is baking, not
+  reloading, that dominates a change of map.
 
 ## [1.8.0] — 2026-10-22 — La rotation déterministe
 
