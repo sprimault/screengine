@@ -7,6 +7,7 @@
 //! passerait donnerait des tampons incohérents, et le défaut ne se verrait qu'au
 //! premier remplissage.
 
+use alloc::sync::Arc;
 use alloc::vec;
 
 use crate::math::{Angle, Quat};
@@ -2182,7 +2183,7 @@ fn un_pixel_hors_de_l_image_refuse_le_rayon() {
 /// Les surfaces sont coplanaires et portent les mêmes sommets : le chargement ne
 /// vérifie aucune cohérence géométrique, par clause, et ce qui compte ici est
 /// leur **nombre** — c'est lui que l'atlas d'une cellule dimensionne.
-fn one_cell_surfaces(count: u32) -> World {
+fn one_cell_surfaces(count: u32) -> Arc<World> {
     use crate::format::world::tests::{cell_bytes, file, frame, material, words};
 
     let points = [
@@ -2208,53 +2209,54 @@ fn one_cell_surfaces(count: u32) -> World {
     lights.extend_from_slice(&[0xFF, 0xFF, 0xFF, 0x00]);
 
     let cell = cell_bytes(7, 0, &points, &surfaces, &[]);
-    World::load(&file(&cell, &[], &lights, &material(1, "mur"))).expect("carte valide")
+    Arc::new(World::load(&file(&cell, &[], &lights, &material(1, "mur"))).expect("carte valide"))
 }
 
-/// Une surface sans emplacement dans l'atlas qu'on lui oppose est un refus.
+/// Un porteur qui ne vient pas de la carte soumise est refusé.
 ///
-/// **Le cas que le garde du porteur ne voit pas**, et c'est pourquoi il vit ici :
-/// les deux cartes portent une cellule chacune, donc les longueurs concordent et
-/// `Lightmaps::matches` les accepte. Ce qui diffère est le nombre de surfaces de
-/// la cellule, sur lequel l'atlas cuit est dimensionné — la seconde surface
-/// indexait hors de ses emplacements.
+/// **Les deux cartes sont de même forme**, et c'est tout l'objet : une cellule
+/// chacune, deux surfaces chacune. Un garde sur les longueurs les acceptait donc
+/// l'une pour l'autre, et l'accès borné à l'atlas ne mordait pas non plus — les
+/// luxels d'une autre géométrie étaient rendus, l'appel rendant `Ok`. C'est le
+/// régime d'un décor engendré à dimensions constantes, et celui qu'un intégrateur
+/// a signalé.
 ///
-/// Il rougit par cette panique sur le code d'avant, à la ligne qui lisait
-/// `atlas.slots[rank_in_cell]`. Et il tient les **deux** entrées publiques qui y
-/// mènent : la soumission brute du décor et la traversée.
+/// Il rougit sur le code d'avant par son assertion, jamais par une panique : rien
+/// ne débordait, l'image était simplement fausse. Et il tient les **deux** entrées
+/// publiques qui portent un porteur — la soumission du décor entier et la
+/// traversée.
 #[test]
-fn une_surface_hors_de_l_atlas_cuit_est_refusee() {
-    let cuite = one_cell_surfaces(1);
+fn un_porteur_d_une_autre_carte_est_refuse() {
+    let cuite = one_cell_surfaces(2);
     let soumise = one_cell_surfaces(2);
-    let mut lighting = Lightmaps::new(&cuite).expect("porteur");
-    lighting.build(&cuite, 7).expect("cuisson possible");
+    let mut lighting = Lightmaps::new(Arc::clone(&cuite)).expect("porteur");
+    lighting.build(7).expect("cuisson possible");
 
     let mut ctx = Context::new(sane()).expect("configuration saine");
     assert_eq!(
         ctx.submit_world_lit(Affine3::IDENTITY, &soumise, |_| None, Some(&lighting)),
         Err(Error::InvalidArgument(Argument::Lightmaps)),
-        "la cellule porte deux surfaces, son atlas un seul emplacement"
+        "ce porteur vient d'une autre carte, de même forme"
     );
     assert_eq!(
         ctx.submit_world_visible(Affine3::IDENTITY, &soumise, 7, Some(&lighting), |_| None),
         Err(Error::InvalidArgument(Argument::Lightmaps)),
-        "la traversée mène au même remplissage"
+        "la traversée porte le même porteur"
     );
 }
 
-/// Autant de surfaces que l'atlas en porte : rien ne s'y oppose.
+/// La carte dont le porteur vient passe, elle.
 ///
-/// La borne de la garantie, comme pour le porteur : ce qui est refusé est un
-/// atlas trop **court**, jamais une carte qui n'est pas celle d'origine.
+/// La borne de la garantie : ce qui est refusé est un porteur **étranger**, et
+/// rien d'autre — sans ce cas, un refus qui refuserait tout passerait pour juste.
 #[test]
-fn le_meme_nombre_de_surfaces_passe() {
-    let cuite = one_cell_surfaces(2);
-    let soumise = one_cell_surfaces(2);
-    let mut lighting = Lightmaps::new(&cuite).expect("porteur");
-    lighting.build(&cuite, 7).expect("cuisson possible");
+fn la_carte_du_porteur_passe() {
+    let world = one_cell_surfaces(2);
+    let mut lighting = Lightmaps::new(Arc::clone(&world)).expect("porteur");
+    lighting.build(7).expect("cuisson possible");
 
     let mut ctx = Context::new(sane()).expect("configuration saine");
-    ctx.submit_world_lit(Affine3::IDENTITY, &soumise, |_| None, Some(&lighting))
+    ctx.submit_world_lit(Affine3::IDENTITY, &world, |_| None, Some(&lighting))
         .expect("le décor se soumet");
 }
 

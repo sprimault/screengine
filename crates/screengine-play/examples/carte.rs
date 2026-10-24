@@ -409,7 +409,7 @@ struct Scene {
     /// La caméra dirigée au clavier et à la souris.
     camera: FreeCamera,
     /// Le décor.
-    world: World,
+    world: Arc<World>,
     /// Le maillage posé trois fois.
     crate_mesh: Mesh,
     /// Sa demi-étendue dans le décor, lue une fois du maillage.
@@ -449,7 +449,7 @@ struct Scene {
 
 /// Ouvre la fenêtre ; Échap ferme.
 fn main() -> Result<(), screengine_play::Error> {
-    let world = World::load(SALLES).expect("carte du dépôt valide");
+    let world = Arc::new(World::load(SALLES).expect("carte du dépôt valide"));
     // L'hôte lit les noms et décide de ce qu'il charge : le moteur ne connaît
     // que des emplacements à remplir, dans l'ordre de la table. Un nom qu'il ne
     // reconnaît pas prend le pavé, plutôt que de laisser un trou sans texture
@@ -466,10 +466,10 @@ fn main() -> Result<(), screengine_play::Error> {
     // **Toutes les cellules sont cuites avant la première image**, et non celles
     // que la caméra voit : une lightmap est un cache de la carte, pas de la vue, et
     // la cuire en chemin ferait allouer un atlas au milieu d'une image.
-    let mut lightmaps = Lightmaps::new(&world).expect("porteur");
+    let mut lightmaps = Lightmaps::new(Arc::clone(&world)).expect("porteur");
     for index in 0..world.cell_count() {
         if let Some(id) = world.cell_id(index) {
-            lightmaps.build(&world, id).expect("cuisson possible");
+            lightmaps.build(id).expect("cuisson possible");
         }
     }
 

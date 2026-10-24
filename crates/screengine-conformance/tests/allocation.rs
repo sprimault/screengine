@@ -955,15 +955,15 @@ fn aucune_image_de_traversee_n_alloue() {
     let mut pixels = vec![0u8; width as usize * height as usize * BYTES_PER_PIXEL];
 
     // Hors mesure : le décor, ses textures et la cuisson de toutes ses cellules.
-    let world = World::load(SALLES).expect("décor versionné valide");
+    let world = Arc::new(World::load(SALLES).expect("décor versionné valide"));
     let texture = Arc::new(
         Texture::load(64, 64, &vec![0x80u8; 64 * 64 * BYTES_PER_PIXEL]).expect("texture valide"),
     );
-    let mut lightmaps = Lightmaps::new(&world).expect("atlas alloués");
+    let mut lightmaps = Lightmaps::new(Arc::clone(&world)).expect("atlas alloués");
     let mut cells = Vec::new();
     for index in 0..world.cell_count() {
         let id = world.cell_id(index).expect("rang dans le compte");
-        lightmaps.build(&world, id).expect("cuisson");
+        lightmaps.build(id).expect("cuisson");
         cells.push(id);
     }
 
@@ -1150,8 +1150,8 @@ fn aucune_image_tracee_n_alloue() {
 /// rien ne le vérifie.
 #[test]
 fn la_cuisson_n_alloue_pas_par_rayon() {
-    let world = World::load(SALLES).expect("décor versionné valide");
-    let mut lightmaps = Lightmaps::new(&world).expect("atlas alloués");
+    let world = Arc::new(World::load(SALLES).expect("décor versionné valide"));
+    let mut lightmaps = Lightmaps::new(Arc::clone(&world)).expect("atlas alloués");
     let id = world.cell_id(0).expect("le décor a au moins une cellule");
     let luxels = world.cell_luxel_count(id).expect("cellule connue") as usize;
     assert!(
@@ -1160,7 +1160,7 @@ fn la_cuisson_n_alloue_pas_par_rayon() {
     );
 
     let seen = allocations(|| {
-        lightmaps.build(&world, id).expect("cuisson");
+        lightmaps.build(id).expect("cuisson");
     });
     assert!(
         seen < luxels,

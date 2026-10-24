@@ -8,7 +8,7 @@ use super::*;
 use crate::format::world::tests::{cell_bytes, file, frame, material, words};
 
 /// Une carte d'une cellule et d'une lumière.
-fn one_cell() -> World {
+fn one_cell() -> Arc<World> {
     one_cell_with(7, 2.0)
 }
 
@@ -18,7 +18,7 @@ fn one_cell() -> World {
 /// identique** : déplacer la lampe périme l'empreinte, renuméroter la cellule fait
 /// que l'entrée ne désigne plus rien. Une carte franchement différente ne
 /// distinguerait pas les deux cas.
-fn one_cell_with(id: u32, light_x: f32) -> World {
+fn one_cell_with(id: u32, light_x: f32) -> Arc<World> {
     let points = [
         [0.0f32, 0.0, 0.0],
         [4.0, 0.0, 0.0],
@@ -37,18 +37,18 @@ fn one_cell_with(id: u32, light_x: f32) -> World {
     lights.extend_from_slice(&[0xFF, 0xFF, 0xFF, 0x00]);
 
     let cell = cell_bytes(id, 0, &points, &[surface], &[]);
-    World::load(&file(&cell, &[], &lights, &material(1, "mur"))).expect("carte valide")
+    Arc::new(World::load(&file(&cell, &[], &lights, &material(1, "mur"))).expect("carte valide"))
 }
 
 /// Une cellule commence sans lightmap, et en a une après son calcul.
 #[test]
 fn une_cellule_passe_d_absente_a_prete() {
     let world = one_cell();
-    let mut lighting = Lightmaps::new(&world).expect("porteur");
-    assert_eq!(lighting.state(&world, 7).unwrap(), Lightmap::Absent);
+    let mut lighting = Lightmaps::new(Arc::clone(&world)).expect("porteur");
+    assert_eq!(lighting.state(7).unwrap(), Lightmap::Absent);
 
-    lighting.build(&world, 7).expect("cuisson possible");
-    assert_eq!(lighting.state(&world, 7).unwrap(), Lightmap::Ready);
+    lighting.build(7).expect("cuisson possible");
+    assert_eq!(lighting.state(7).unwrap(), Lightmap::Ready);
     assert!(
         lighting.of(0).is_some(),
         "l'atlas est accessible par son rang"
@@ -60,9 +60,9 @@ fn une_cellule_passe_d_absente_a_prete() {
 #[test]
 fn une_cellule_inconnue_est_refusee() {
     let world = one_cell();
-    let mut lighting = Lightmaps::new(&world).expect("porteur");
-    assert_eq!(lighting.build(&world, 99), Err(Error::UnknownResource));
-    assert_eq!(lighting.state(&world, 99), Err(Error::UnknownResource));
+    let mut lighting = Lightmaps::new(Arc::clone(&world)).expect("porteur");
+    assert_eq!(lighting.build(99), Err(Error::UnknownResource));
+    assert_eq!(lighting.state(99), Err(Error::UnknownResource));
 }
 
 /// Recalculer une cellule remplace sa lightmap.
@@ -73,10 +73,10 @@ fn une_cellule_inconnue_est_refusee() {
 #[test]
 fn recalculer_remplace_la_lightmap() {
     let world = one_cell();
-    let mut lighting = Lightmaps::new(&world).expect("porteur");
-    lighting.build(&world, 7).expect("cuisson possible");
-    lighting.build(&world, 7).expect("cuisson possible");
-    assert_eq!(lighting.state(&world, 7).unwrap(), Lightmap::Ready);
+    let mut lighting = Lightmaps::new(Arc::clone(&world)).expect("porteur");
+    lighting.build(7).expect("cuisson possible");
+    lighting.build(7).expect("cuisson possible");
+    assert_eq!(lighting.state(7).unwrap(), Lightmap::Ready);
 }
 
 /// Un porteur neuf n'a rien calculé, et n'alloue aucun luxel.
@@ -86,7 +86,7 @@ fn recalculer_remplace_la_lightmap() {
 #[test]
 fn un_porteur_neuf_ne_calcule_rien() {
     let world = one_cell();
-    let lighting = Lightmaps::new(&world).expect("porteur");
+    let lighting = Lightmaps::new(Arc::clone(&world)).expect("porteur");
     assert!(lighting.of(0).is_none());
 }
 
@@ -97,15 +97,15 @@ fn un_porteur_neuf_ne_calcule_rien() {
 #[test]
 fn un_porteur_neuf_sauve_un_bloc_vide() {
     let world = one_cell();
-    let lighting = Lightmaps::new(&world).expect("porteur");
+    let lighting = Lightmaps::new(Arc::clone(&world)).expect("porteur");
 
-    let len = lighting.save_len(&world).expect("longueur");
+    let len = lighting.save_len().expect("longueur");
     let mut bytes = alloc::vec![0u8; len];
-    lighting.save(&world, &mut bytes).expect("écriture");
+    lighting.save(&mut bytes).expect("écriture");
 
-    let mut other = Lightmaps::new(&world).expect("porteur");
-    assert_eq!(other.restore(&world, &bytes).expect("reprise"), 0);
-    assert_eq!(other.state(&world, 7).unwrap(), Lightmap::Absent);
+    let mut other = Lightmaps::new(Arc::clone(&world)).expect("porteur");
+    assert_eq!(other.restore(&bytes).expect("reprise"), 0);
+    assert_eq!(other.state(7).unwrap(), Lightmap::Absent);
 }
 
 /// Un cache repris rend exactement les luxels qui ont été cuits, **à tous les
@@ -126,16 +126,16 @@ fn un_porteur_neuf_sauve_un_bloc_vide() {
 #[test]
 fn un_cache_repris_rend_les_memes_luxels() {
     let world = one_cell();
-    let mut lighting = Lightmaps::new(&world).expect("porteur");
-    lighting.build(&world, 7).expect("cuisson possible");
+    let mut lighting = Lightmaps::new(Arc::clone(&world)).expect("porteur");
+    lighting.build(7).expect("cuisson possible");
 
-    let len = lighting.save_len(&world).expect("longueur");
+    let len = lighting.save_len().expect("longueur");
     let mut bytes = alloc::vec![0u8; len];
-    lighting.save(&world, &mut bytes).expect("écriture");
+    lighting.save(&mut bytes).expect("écriture");
 
-    let mut other = Lightmaps::new(&world).expect("porteur");
-    assert_eq!(other.restore(&world, &bytes).expect("reprise"), 1);
-    assert_eq!(other.state(&world, 7).unwrap(), Lightmap::Ready);
+    let mut other = Lightmaps::new(Arc::clone(&world)).expect("porteur");
+    assert_eq!(other.restore(&bytes).expect("reprise"), 1);
+    assert_eq!(other.state(7).unwrap(), Lightmap::Ready);
 
     let (cooked, packing) = lighting.of(0).expect("cuite");
     let (taken, restored) = other.of(0).expect("reprise");
@@ -165,16 +165,16 @@ fn un_cache_repris_rend_les_memes_luxels() {
 #[test]
 fn deux_ecritures_du_meme_etat_rendent_les_memes_octets() {
     let world = one_cell();
-    let mut lighting = Lightmaps::new(&world).expect("porteur");
-    lighting.build(&world, 7).expect("cuisson possible");
+    let mut lighting = Lightmaps::new(Arc::clone(&world)).expect("porteur");
+    lighting.build(7).expect("cuisson possible");
 
-    let mut first = alloc::vec![0u8; lighting.save_len(&world).expect("longueur")];
-    lighting.save(&world, &mut first).expect("écriture");
+    let mut first = alloc::vec![0u8; lighting.save_len().expect("longueur")];
+    lighting.save(&mut first).expect("écriture");
 
-    let mut other = Lightmaps::new(&world).expect("porteur");
-    other.restore(&world, &first).expect("reprise");
-    let mut second = alloc::vec![0u8; other.save_len(&world).expect("longueur")];
-    other.save(&world, &mut second).expect("écriture");
+    let mut other = Lightmaps::new(Arc::clone(&world)).expect("porteur");
+    other.restore(&first).expect("reprise");
+    let mut second = alloc::vec![0u8; other.save_len().expect("longueur")];
+    other.save(&mut second).expect("écriture");
 
     assert_eq!(first, second);
 }
@@ -187,15 +187,15 @@ fn deux_ecritures_du_meme_etat_rendent_les_memes_octets() {
 #[test]
 fn une_entree_perimee_est_ecartee_sans_erreur() {
     let world = one_cell();
-    let mut lighting = Lightmaps::new(&world).expect("porteur");
-    lighting.build(&world, 7).expect("cuisson possible");
-    let mut bytes = alloc::vec![0u8; lighting.save_len(&world).expect("longueur")];
-    lighting.save(&world, &mut bytes).expect("écriture");
+    let mut lighting = Lightmaps::new(Arc::clone(&world)).expect("porteur");
+    lighting.build(7).expect("cuisson possible");
+    let mut bytes = alloc::vec![0u8; lighting.save_len().expect("longueur")];
+    lighting.save(&mut bytes).expect("écriture");
 
     let moved = moved_light();
-    let mut other = Lightmaps::new(&moved).expect("porteur");
-    assert_eq!(other.restore(&moved, &bytes).expect("reprise"), 0);
-    assert_eq!(other.state(&moved, 7).unwrap(), Lightmap::Absent);
+    let mut other = Lightmaps::new(moved).expect("porteur");
+    assert_eq!(other.restore(&bytes).expect("reprise"), 0);
+    assert_eq!(other.state(7).unwrap(), Lightmap::Absent);
 }
 
 /// **Une entrée qui désigne une cellule absente est écartée de même.**
@@ -204,36 +204,36 @@ fn une_entree_perimee_est_ecartee_sans_erreur() {
 #[test]
 fn une_cellule_absente_est_ecartee_sans_erreur() {
     let world = one_cell();
-    let mut lighting = Lightmaps::new(&world).expect("porteur");
-    lighting.build(&world, 7).expect("cuisson possible");
-    let mut bytes = alloc::vec![0u8; lighting.save_len(&world).expect("longueur")];
-    lighting.save(&world, &mut bytes).expect("écriture");
+    let mut lighting = Lightmaps::new(Arc::clone(&world)).expect("porteur");
+    lighting.build(7).expect("cuisson possible");
+    let mut bytes = alloc::vec![0u8; lighting.save_len().expect("longueur")];
+    lighting.save(&mut bytes).expect("écriture");
 
     // La même carte, dont la cellule porte un autre identifiant : l'entrée ne
     // désigne donc plus rien.
     let renumbered = renumbered();
-    let mut other = Lightmaps::new(&renumbered).expect("porteur");
-    assert_eq!(other.restore(&renumbered, &bytes).expect("reprise"), 0);
+    let mut other = Lightmaps::new(renumbered).expect("porteur");
+    assert_eq!(other.restore(&bytes).expect("reprise"), 0);
 }
 
 /// Un bloc malformé est une erreur, contrairement à une entrée périmée.
 #[test]
 fn un_bloc_malforme_est_une_erreur() {
     let world = one_cell();
-    let mut lighting = Lightmaps::new(&world).expect("porteur");
+    let mut lighting = Lightmaps::new(Arc::clone(&world)).expect("porteur");
     assert!(matches!(
-        lighting.restore(&world, b"pas un bloc"),
+        lighting.restore(b"pas un bloc"),
         Err(Error::InvalidFormat(_))
     ));
 }
 
 /// La même carte, la lampe déplacée d'une unité.
-fn moved_light() -> World {
+fn moved_light() -> Arc<World> {
     one_cell_with(7, 3.0)
 }
 
 /// La même carte, la cellule renumérotée.
-fn renumbered() -> World {
+fn renumbered() -> Arc<World> {
     one_cell_with(9, 2.0)
 }
 
@@ -247,7 +247,7 @@ fn renumbered() -> World {
 /// c'est le cas où la reprise partielle doit être la plus nette. Ce que les
 /// voisines ajoutent est éprouvé par la scène de conformance, sur un décor qui
 /// en a.
-fn two_cells(shift: f32) -> World {
+fn two_cells(shift: f32) -> Arc<World> {
     let mut cells = Vec::new();
     for (id, x0, z) in [(7u32, 0.0f32, 0.0f32), (8, 8.0, shift)] {
         let points = [
@@ -269,7 +269,7 @@ fn two_cells(shift: f32) -> World {
     }
     lights.extend_from_slice(&[0xFF, 0xFF, 0xFF, 0x00]);
 
-    World::load(&file(&cells, &[], &lights, &material(1, "mur"))).expect("carte valide")
+    Arc::new(World::load(&file(&cells, &[], &lights, &material(1, "mur"))).expect("carte valide"))
 }
 
 /// **Modifier une carte, c'est la recharger — et seule la cellule touchée
@@ -283,27 +283,27 @@ fn two_cells(shift: f32) -> World {
 #[test]
 fn une_cellule_modifiee_est_la_seule_a_recuire() {
     let avant = two_cells(0.0);
-    let mut lighting = Lightmaps::new(&avant).expect("porteur");
-    lighting.build(&avant, 7).expect("cuisson possible");
-    lighting.build(&avant, 8).expect("cuisson possible");
+    let mut lighting = Lightmaps::new(Arc::clone(&avant)).expect("porteur");
+    lighting.build(7).expect("cuisson possible");
+    lighting.build(8).expect("cuisson possible");
 
-    let mut bytes = alloc::vec![0u8; lighting.save_len(&avant).expect("longueur")];
-    lighting.save(&avant, &mut bytes).expect("écriture");
+    let mut bytes = alloc::vec![0u8; lighting.save_len().expect("longueur")];
+    lighting.save(&mut bytes).expect("écriture");
 
     // La carte modifiée : construite à côté, et chargée comme n'importe quelle
     // autre. `World` n'a pas bougé d'un octet — c'est tout le propos.
     let apres = two_cells(1.0);
-    let mut repris = Lightmaps::new(&apres).expect("porteur");
-    let acceptees = repris.restore(&apres, &bytes).expect("reprise");
+    let mut repris = Lightmaps::new(apres).expect("porteur");
+    let acceptees = repris.restore(&bytes).expect("reprise");
 
     assert_eq!(acceptees, 1, "une seule entrée est reprise");
     assert_eq!(
-        repris.state(&apres, 7).unwrap(),
+        repris.state(7).unwrap(),
         Lightmap::Ready,
         "la cellule intacte garde sa lightmap"
     );
     assert_eq!(
-        repris.state(&apres, 8).unwrap(),
+        repris.state(8).unwrap(),
         Lightmap::Absent,
         "la cellule modifiée est à recuire"
     );
@@ -337,96 +337,48 @@ fn les_identifiants_survivent_au_rechargement() {
     }
 }
 
-/// Le porteur opposé à une autre carte que la sienne : un refus, jamais une
-/// panique.
+/// Le porteur garde la carte qu'on lui donne, et c'est **la même**.
 ///
-/// **Les quatre cas qui suivent rougissent par la panique elle-même** sur le code
-/// d'avant, et c'est ce qui les rend concluants : chacun indexait hors borne, en
-/// lecture ou en écriture, avec un index venu d'une carte et une borne venue de
-/// l'autre. Un hôte Rust qui garde son porteur en changeant de carte les atteint
-/// tous les quatre ; la frontière C, elle, repasse la carte de création et n'y
-/// arrive pas.
+/// **Cinq cas ont disparu d'ici, et ce n'est pas une perte de couverture** : ils
+/// éprouvaient le refus d'une carte dépareillée sur `build`, `state`, `save_len`
+/// et `restore`, et ces méthodes n'en reçoivent plus. On ne peut plus écrire
+/// l'erreur, donc il n'y a plus d'erreur à éprouver — c'est ce que « l'invariant
+/// tient par le type » veut dire, et c'est la seule forme de correction qui rende
+/// ses propres cas inécrivables.
 ///
-/// **Un cas par méthode publique et non un seul**, bien que les quatre passent
-/// désormais par le même garde : c'est ce qui attrape la méthode future qui
-/// l'oublierait, et `restore` est précisément celle qui l'avait déjà oublié — ses
-/// trois contrôles confrontaient l'entrée à la carte passée, jamais au
-/// dimensionnement du porteur.
+/// Ce qui reste à garder est l'identité elle-même : le porteur rend la carte
+/// qu'on lui a passée, et la soumission s'en sert pour refuser une autre. Le cas
+/// de ce refus vit dans `context`, là où la soumission est écrite.
 #[test]
-fn cuire_sur_une_autre_carte_est_refuse() {
-    let mut lighting = Lightmaps::new(&one_cell()).expect("porteur");
-    let deux = two_cells(0.0);
+fn le_porteur_garde_la_carte_qu_on_lui_donne() {
+    let world = one_cell();
+    let lighting = Lightmaps::new(Arc::clone(&world)).expect("porteur");
 
-    assert_eq!(
-        lighting.build(&deux, 8),
-        Err(Error::InvalidArgument(Argument::Lightmaps)),
-        "la carte porte deux cellules, le porteur une seule"
+    assert!(
+        core::ptr::eq(lighting.world(), &*world),
+        "le porteur doit rendre la carte même, pas une qui lui ressemble"
     );
 }
 
-/// L'état lu sur une autre carte est refusé de même.
-#[test]
-fn lire_l_etat_sur_une_autre_carte_est_refuse() {
-    let lighting = Lightmaps::new(&one_cell()).expect("porteur");
-    let deux = two_cells(0.0);
-
-    assert_eq!(
-        lighting.state(&deux, 8),
-        Err(Error::InvalidArgument(Argument::Lightmaps))
-    );
-}
-
-/// Et le cache mesuré sur une carte plus courte, où c'est le porteur qui
-/// débordait.
+/// Deux porteurs de deux cartes ne se confondent pas.
 ///
-/// Le sens du dépassement est inverse des deux précédents — l'index vient du
-/// porteur et la borne de la carte —, et c'est pourquoi ce cas-ci cuit d'abord :
-/// sans entrée calculée, `records` n'indexerait rien et le cas passerait sur le
-/// code fautif.
+/// **Ce que l'identité achète, et que la forme ne donnait pas** : les deux cartes
+/// de ce cas portent le même nombre de cellules et la même géométrie à une lampe
+/// près, donc une comparaison de longueurs les acceptait l'une pour l'autre — le
+/// régime d'un décor engendré à dimensions constantes, et celui qu'un intégrateur
+/// a signalé. Deux adresses distinctes, elles, ne se confondent jamais.
 #[test]
-fn mesurer_le_cache_sur_une_autre_carte_est_refuse() {
-    let deux = two_cells(0.0);
-    let mut lighting = Lightmaps::new(&deux).expect("porteur");
-    lighting.build(&deux, 8).expect("cuisson possible");
+fn deux_porteurs_de_deux_cartes_ne_se_confondent_pas() {
+    let world = one_cell();
+    let other = moved_light();
+    let lighting = Lightmaps::new(Arc::clone(&world)).expect("porteur");
 
-    assert_eq!(
-        lighting.save_len(&one_cell()),
-        Err(Error::InvalidArgument(Argument::Lightmaps))
+    assert!(
+        core::ptr::eq(lighting.world(), &*world),
+        "le porteur vient de sa carte"
     );
-}
-
-/// Et la reprise d'un cache écrit depuis une autre carte.
-///
-/// Le bloc est valide et son empreinte concorde avec la carte passée : les trois
-/// contrôles de `restore` l'acceptaient donc, et c'est l'écriture dans le porteur
-/// qui débordait.
-#[test]
-fn reprendre_un_cache_d_une_autre_carte_est_refuse() {
-    let deux = two_cells(0.0);
-    let mut source = Lightmaps::new(&deux).expect("porteur");
-    source.build(&deux, 8).expect("cuisson possible");
-    let mut bytes = alloc::vec![0u8; source.save_len(&deux).expect("longueur")];
-    source.save(&deux, &mut bytes).expect("écriture");
-
-    let mut lighting = Lightmaps::new(&one_cell()).expect("porteur");
-    assert_eq!(
-        lighting.restore(&deux, &bytes),
-        Err(Error::InvalidArgument(Argument::Lightmaps))
+    assert!(
+        !core::ptr::eq(lighting.world(), &*other),
+        "et d'aucune autre, même de même forme"
     );
-}
-
-/// Deux cartes de même forme passent, et le garde ne promet pas l'inverse.
-///
-/// Écrit pour que personne ne lise le refus ci-dessus comme une détection de
-/// dépareillage : le porteur compare des longueurs, pas des cartes. Ce cas est
-/// donc la borne de la garantie, et il doit rester vert — s'il rougissait un
-/// jour, c'est que le porteur retiendrait sa carte, et la documentation de
-/// `matches` serait à reprendre avec lui.
-#[test]
-fn deux_cartes_de_meme_forme_ne_se_distinguent_pas() {
-    let mut lighting = Lightmaps::new(&one_cell()).expect("porteur");
-
-    lighting
-        .build(&renumbered(), 9)
-        .expect("une carte d'une cellule en vaut une autre pour ce garde");
 }

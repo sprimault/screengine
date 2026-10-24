@@ -91,6 +91,7 @@
 //! utilisable, et qu'il faut savoir.
 
 use core::hint::black_box;
+use std::sync::Arc;
 
 use screengine::{Lightmaps, World};
 
@@ -123,7 +124,7 @@ const LAMPE: u32 = 1;
 fn cuire(monde: &World, lightmaps: &mut Lightmaps) {
     for index in 0..monde.cell_count() {
         let id = monde.cell_id(index).expect("rang sous le compte");
-        lightmaps.build(monde, id).expect("cuisson possible");
+        lightmaps.build(id).expect("cuisson possible");
     }
 }
 
@@ -137,7 +138,7 @@ fn cas(cellules: u32, segments: u32, par_cellule: u32) {
     let bytes = carte(cellules, segments, par_cellule);
     // Hors du chronomètre, et vérifié avant : une carte refusée rendrait une
     // durée sans objet, et un décor éteint un chiffre qui ne mesure rien.
-    let monde = World::load(&bytes).expect("la carte engendrée est légale");
+    let monde = Arc::new(World::load(&bytes).expect("la carte engendrée est légale"));
     let luxels: u64 = (0..monde.cell_count())
         .map(|index| {
             let id = monde.cell_id(index).expect("rang sous le compte");
@@ -154,7 +155,7 @@ fn cas(cellules: u32, segments: u32, par_cellule: u32) {
     );
 
     let duree = mesure(TOURS, || {
-        let mut lightmaps = Lightmaps::new(black_box(&monde)).expect("porteur");
+        let mut lightmaps = Lightmaps::new(black_box(Arc::clone(&monde))).expect("porteur");
         cuire(&monde, &mut lightmaps);
     });
     let ms = duree.as_secs_f64() * 1e3;

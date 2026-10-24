@@ -2423,8 +2423,14 @@ impl Scene {
             // la caméra se trouve — trouvée et non supposée, ce qui met
             // `World::locate` dans le chemin de la conformance.
             Self::Rooms => {
-                let world = World::load(&rooms_file::bytes())
-                    .unwrap_or_else(|_| unreachable!("le décor de validation est bien formé"));
+                // **Partagée par compteur de références**, ce que le porteur de
+                // lightmaps exige depuis qu'il garde sa carte : c'est cette
+                // propriété conjointe qui rend impossible de lui en opposer une
+                // autre.
+                let world = Arc::new(
+                    World::load(&rooms_file::bytes())
+                        .unwrap_or_else(|_| unreachable!("le décor de validation est bien formé")),
+                );
                 let (position, yaw, roll) = ROOM_VIEWS[view.angle as usize];
                 let position = Vec3::new(position[0], position[1], position[2]);
                 let spin = room_view_orientation(yaw, roll);
@@ -2442,12 +2448,12 @@ impl Scene {
                 // vue montre** : une lightmap est un cache dérivable, calculé une
                 // fois pour la carte, et le faire par vue rendrait l'éclairage
                 // dépendant de la position de la caméra.
-                let mut lightmaps = Lightmaps::new(&world)?;
+                let mut lightmaps = Lightmaps::new(Arc::clone(&world))?;
                 for index in 0..world.cell_count() {
                     let id = world
                         .cell_id(index)
                         .unwrap_or_else(|| unreachable!("le rang vient du compte"));
-                    lightmaps.build(&world, id)?;
+                    lightmaps.build(id)?;
                 }
 
                 context

@@ -217,16 +217,15 @@ pub enum Argument {
     Grade,
     /// Un porteur de lightmaps opposé à une autre carte que celle dont il vient.
     ///
-    /// Le porteur se dimensionne à sa création sur le nombre de cellules de sa
-    /// carte, et chacun de ses atlas sur le nombre de surfaces de la cellule
-    /// cuite. Une autre carte le fait indexer hors de ces bornes, et c'est
-    /// l'appariement que ce refus nomme — jamais un identifiant, qui existe de
-    /// part et d'autre.
+    /// Le porteur **garde** sa carte depuis sa création, si bien que les seuls
+    /// appels à pouvoir les dépareiller sont les deux soumissions éclairées, qui
+    /// reçoivent l'une et l'autre. C'est l'appariement que ce refus nomme, jamais
+    /// un identifiant — celui-ci existe de part et d'autre.
     ///
-    /// **Deux cartes de même forme passent**, et c'est assumé : le moteur
-    /// compare des longueurs, pas des cartes. Ce qu'un hôte y gagne n'est pas
-    /// l'assurance d'avoir visé juste, c'est qu'une erreur de visée ne le fait
-    /// plus paniquer.
+    /// **La comparaison porte sur l'identité**, pas sur la forme : deux cartes de
+    /// même nombre de cellules et de surfaces ne se confondent pas, ce qu'un garde
+    /// sur les longueurs laissait passer. Les luxels d'une autre géométrie étaient
+    /// alors rendus sans erreur.
     Lightmaps,
 }
 
@@ -541,7 +540,7 @@ impl Error {
                 "pixel block of the wrong length: needs width x height x 4 bytes"
             }
             Self::InvalidArgument(Argument::Lightmaps) => {
-                "lightmap holder does not match the map passed: a holder is sized on the map it was \
+                "lightmap holder does not come from the map passed: a holder keeps the map it was \
                  created from"
             }
             Self::OutOfMemory => "out of memory",

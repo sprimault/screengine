@@ -1468,15 +1468,16 @@ fn le_diagnostic_de_repere_nomme_la_clause() {
 /// Un porteur de lightmaps opposé à une autre carte est refusé, et les deux
 /// cartes sont ici **identiques au contenu près**.
 ///
-/// **C'est ce que la frontière seule peut attraper**, et la raison d'être de sa
-/// confrontation : le handle garde la carte dont il vient, donc l'égalité porte
-/// sur l'identité. Le noyau, qui ne retient aucune carte, ne compare que des
-/// longueurs — deux cartes de même forme y passent, et c'est écrit dans la
-/// documentation de son garde.
+/// **Le refus vient du noyau, et c'est ce qui a changé** : le porteur garde sa
+/// carte, donc l'égalité porte sur l'identité des deux côtés. La frontière avait
+/// sa propre confrontation tant que le noyau ne comparait que des longueurs —
+/// deux cartes de même forme y passaient —, et ce cas éprouvait alors ce que
+/// l'ABI seule attrapait. Il garde désormais que l'ABI **transporte** ce refus.
 ///
 /// Le refus tombe sur les deux soumissions éclairées, qui sont les deux seules à
 /// recevoir une carte et un porteur indépendants : les quatre appels de cuisson,
-/// eux, emploient la carte que le handle porte et ne peuvent pas être dépareillés.
+/// eux, emploient la carte que le porteur tient et ne peuvent pas être
+/// dépareillés.
 #[test]
 fn un_porteur_d_une_autre_carte_est_refuse() {
     let mut ctx = ptr::null_mut();
@@ -1504,7 +1505,7 @@ fn un_porteur_d_une_autre_carte_est_refuse() {
         "une carte étrangère doit être refusée"
     );
     assert!(
-        context_error(ctx).contains("another map"),
+        context_error(ctx).contains("does not come from the map"),
         "le message doit nommer l'appariement, pas une borne : {}",
         context_error(ctx)
     );
