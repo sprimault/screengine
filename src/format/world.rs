@@ -616,9 +616,19 @@ impl World {
     /// L'identifiant de la cellule où un déplacement aboutit, ou `0` s'il sort de
     /// toute cellule.
     ///
-    /// `from_cell` est celui d'où le déplacement part. Un identifiant qui ne
-    /// désigne aucune cellule rend `0`, comme une sortie : il n'y a pas de fil à
-    /// reprendre depuis une cellule qui n'existe pas.
+    /// `from_cell` est celui d'où le déplacement part.
+    ///
+    /// **Quatre choses rendent `0`, et la liste est close** : une sortie par une
+    /// surface, une sortie par un portail non apparié, un pas qui franchit plus
+    /// de cellules que le suivi n'en déplie, et un identifiant qui ne désigne
+    /// aucune cellule — il n'y a pas de fil à reprendre depuis une cellule qui
+    /// n'existe pas. La conduite de l'appelant est la même pour les quatre, donc
+    /// rien ne les sépare.
+    ///
+    /// **Un identifiant n'appartient à aucune carte**, et celui d'une autre, s'il
+    /// désigne ici une cellule existante, est suivi sans que rien ne le signale :
+    /// c'est une précondition, et l'appelant garde sa cellule courante avec son
+    /// état de jeu plutôt qu'avec le monde.
     ///
     /// **Plusieurs cellules peuvent être traversées en un seul déplacement**, et
     /// le suivi les enchaîne. Le moteur ne se relocalise jamais de lui-même :

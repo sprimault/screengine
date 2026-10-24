@@ -76,6 +76,11 @@ publié, et explique les conventions du dépôt à qui y contribue.
 - **Un porteur de lightmaps opposé à une autre carte** rend
   `SCG_ERR_INVALID_ARGUMENT` : la cuisson, l'état, le cache et la soumission du
   décor paniquaient.
+- **Le refus d'un atlas de lightmap démesuré** tombe au calcul, par
+  `SCG_ERR_INVALID_FORMAT` sur une carte que le chargement a acceptée. Le contrat
+  annonçait le chargement et ne publiait pas ce code.
+- **`scg_world_track` rend `0` sur un identifiant de cellule inconnu** :
+  quatrième cause que le contrat n'énumérait pas.
 
 ***
 
@@ -84,6 +89,11 @@ publié, et explique les conventions du dépôt à qui y contribue.
 - **A lightmap holder passed with a map other than its own** returns
   `SCG_ERR_INVALID_ARGUMENT`: baking, state, cache and world submission used to
   panic.
+- **An oversized lightmap atlas is refused at bake time**, with
+  `SCG_ERR_INVALID_FORMAT` on a map that loaded cleanly. The contract claimed
+  loading refused it, and did not publish that code.
+- **`scg_world_track` writes `0` for an unknown cell identifier**: a fourth cause
+  the contract did not list.
 
 ## [1.8.0] — 2026-10-22 — La rotation déterministe
 
