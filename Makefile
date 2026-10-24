@@ -748,17 +748,23 @@ ETAT_DOCS = $(wildcard README.md README.fr.md ROADMAP.md CONTRIBUTING*.md \
 ETAT_MOTIF = ersion [0-9]+\.[0-9]+\.[0-9]+
 
 # Combien d'annonces le dépôt porte, et **c'est un contrôle, pas un réglage** :
-# les deux `README`, `docs/abi.md` et `docs/construction.md`.
+# `docs/abi.md` et `docs/construction.md`.
+#
+# **Les deux `README` n'en portent plus**, retiré le 2026-10-24 : le numéro y
+# était une source de vérité de plus, que personne ne va y chercher — on le lit
+# sur la page des versions ou dans le `CHANGELOG` — et c'est elle qui a laissé
+# publier la 0.9.0 en annonçant l'étape 8. Ce qui reste à annoncer la version est
+# ce qui la décrit : les capacités de l'ABI, et la matrice de construction.
 #
 # **Un compte et non « au moins une », parce que la cassure l'a exigé.** Un motif
-# accentué — `étape` au lieu de `tape` — n'en perd que les **trois** françaises
-# et garde l'anglaise, que l'accent ne touche pas : le contrôle passait alors en
+# accentué — `étape` au lieu de `tape` — n'en perdait que les françaises et
+# gardait l'anglaise, que l'accent ne touche pas : le contrôle passait alors en
 # ne surveillant plus qu'un document sur quatre. C'est la panne silencieuse de la
 # famille des accents de recette, sous une forme partielle qu'on n'attendait pas.
 #
 # Un écart dans les deux sens est un échec. En plus : un document qui se met à
 # annoncer l'état doit être vu, et c'est ce chiffre qui le fait voir.
-ETAT_ANNONCES = 4
+ETAT_ANNONCES = 2
 
 # Les bornes publiques du noyau doivent toutes avoir leur constante d'ABI, et
 # c'est la façade de `src/lib.rs` qui en fait foi : tous les modules du noyau sont

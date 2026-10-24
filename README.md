@@ -46,10 +46,9 @@ browser and on a phone.
 
 ## Status
 
-**Version 1.8.0: the ABI is frozen.** All ten roadmap steps are delivered, and
-the C boundary no longer moves: nothing published is ever removed, not even once
-deprecated, and an increment of `SCG_ABI_VERSION` forces a major. A host
-compiled against this header will keep linking.
+**The ABI is frozen.** All ten roadmap steps are delivered, and a host compiled
+against this header will keep linking. The versioning conventions are in
+[`CHANGELOG.md`](CHANGELOG.md).
 
 Four vector paths fill a flat surface **and a textured one**, lightmap included
 — SSE2 and AVX2 on x86, NEON on `aarch64`, `simd128` on wasm — selected at
