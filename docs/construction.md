@@ -33,7 +33,7 @@ Sans lui, un clone se construit dans `target/`.
 | Go | 1.24 au minimum, celui du `go.mod` de l'hôte | l'hôte Go de `make test`, avec un compilateur C pour cgo — MinGW-w64 sous Windows, `cc` ailleurs. Aucun module tiers |
 | NDK, SDK Android | NDK r29, build-tools 36.0.0, `android-36`, épinglés dans `hosts/android/Makefile` | l'hôte Android ; r28 au minimum pour les pages de 16 Ko. Fournis par `hosts/android/Dockerfile` |
 | JDK | 17 | `javac` et les outils du SDK |
-| `qemu-user` | celui de la distribution | exécute les tests aarch64 et armv7 de l'hôte Android sans appareil |
+| `qemu-user` | celui de la distribution | exécute les tests aarch64 et armv7 sans appareil, pour l'hôte Android comme pour les deux cibles glibc ARM. Un seul paquet pour les quatre : les binaires `qemu-*-static` ont disparu de l'archive Ubuntu avec la 26.04 |
 
 Les versions des outils que `make tools` installe sont épinglées dans le
 `Makefile` ; celles de l'outillage Android le sont dans `hosts/android/Makefile`,
@@ -365,9 +365,16 @@ toutes les autres cibles.
   cas.
 - **L'hôte C se lie à la bibliothèque statique.** La liaison réclame les
   bibliothèques système dont dépend `std` — aujourd'hui `kernel32 ntdll userenv
-  ws2_32 dbghelp`. Elles sont figées dans `hosts/c`, et `make native-libs` en
-  relit la liste quand une montée de Rust la change : une liste périmée échoue
-  bruyamment à l'édition de liens, jamais en silence.
+  ws2_32 dbghelp synchronization`. Elles sont figées dans `hosts/c`, et
+  `make native-libs` en relit la liste quand une montée de Rust la change : une
+  liste périmée échoue bruyamment à l'édition de liens, jamais en silence.
+
+  **Ce mécanisme a servi, et c'est ce qui vaut d'être retenu** : `synchronization`
+  est entrée avec Rust 1.100, dont la `std` implémente ses mutex par les futex
+  Win32 — `WaitOnAddress` et les deux `WakeByAddress`. Trois symboles non
+  résolus, sur une montée de chaîne qu'aucun fichier du dépôt n'annonçait. **Un
+  intégrateur qui lie la statique le voit aussi**, et c'est pourquoi la liste
+  figure dans le `CHANGELOG` plutôt qu'ici seulement.
 - **Rust se lie au CRT dynamique (`/MD`).** Un hôte C compilé en `/MT` échoue à
   l'édition de liens sur des symboles en double, ou pire, se lie avec deux tas
   distincts.

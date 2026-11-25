@@ -105,8 +105,8 @@ fn un_triangle_coupe_par_le_plan_proche_donne_un_quadrilatere() {
     let poly = clip(t, p.frustum());
     assert_eq!(poly.len, 4);
     assert_eq!(poly.triangle_count(), 2);
-    for i in 0..poly.len {
-        assert!(poly.v[i].w >= 0.1, "sommet {i} en deçà du plan proche");
+    for (i, vertex) in poly.v.iter().enumerate().take(poly.len) {
+        assert!(vertex.w >= 0.1, "sommet {i} en deçà du plan proche");
     }
 }
 

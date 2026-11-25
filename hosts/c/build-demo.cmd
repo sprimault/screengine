@@ -40,4 +40,4 @@ rem -MD comme l'hôte de conformance : Rust se lie au CRT dynamique, et SDL3
 rem aussi. -W4 sans -WX : les en-tetes de SDL3 ne sont pas ecrits pour le
 rem niveau d'avertissement du projet, et une dependance tierce n'a pas a l'etre.
 cl -nologo -MD -std:c17 -W4 -O2 -I"%~4" -I"%~6\include" -Fo"%~2\\" -Fe"%~1" "%~5" "%~3" ^
-  "%~6\lib\x64\SDL3.lib" kernel32.lib ntdll.lib userenv.lib ws2_32.lib dbghelp.lib shell32.lib
+  "%~6\lib\x64\SDL3.lib" kernel32.lib ntdll.lib userenv.lib ws2_32.lib dbghelp.lib synchronization.lib shell32.lib

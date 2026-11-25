@@ -1638,11 +1638,18 @@ $(addsuffix -arm,test conform): %-arm:
 # **Pas de liaison statique ici**, contrairement aux cibles Android : celles-là
 # réclament `/system/bin/linker64`, qui n'existe que sur un appareil. Une glibc a
 # son éditeur de liens dynamique dans le sysroot croisé, que `-L` donne à qemu.
+#
+# **L'émulateur se nomme sans suffixe, comme pour les ABI Android**, et c'est le
+# même paquet pour les deux familles : `qemu-user`. Les binaires `qemu-*-static`
+# ont disparu de l'archive Ubuntu avec la 26.04 — le paquet qui les portait n'y a
+# plus de candidat, et aucun autre ne les fournit. Rien ne se perd : le suffixe
+# n'emballait que la liaison statique du même émulateur, utile sous binfmt dans
+# un chroot, dont un runner que `-L` pointe sur le sysroot croisé n'a que faire.
 LINUX_ARM_ENV = \
   CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc \
-  CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_RUNNER="qemu-aarch64-static -L /usr/aarch64-linux-gnu" \
+  CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_RUNNER="qemu-aarch64 -L /usr/aarch64-linux-gnu" \
   CARGO_TARGET_ARMV7_UNKNOWN_LINUX_GNUEABIHF_LINKER=arm-linux-gnueabihf-gcc \
-  CARGO_TARGET_ARMV7_UNKNOWN_LINUX_GNUEABIHF_RUNNER="qemu-arm-static -L /usr/arm-linux-gnueabihf"
+  CARGO_TARGET_ARMV7_UNKNOWN_LINUX_GNUEABIHF_RUNNER="qemu-arm -L /usr/arm-linux-gnueabihf"
 
 # Le noyau **et la frontière** : celle-ci est la raison d'être de ces cibles, et
 # l'oublier laisserait éprouver ce qui ne dépend d'aucune bibliothèque C. Un test
@@ -1660,9 +1667,9 @@ $(addsuffix -linux-arm,test conform): %-linux-arm:
 	if ! command -v aarch64-linux-gnu-gcc >/dev/null 2>&1 \
 	    || ! command -v arm-linux-gnueabihf-gcc >/dev/null 2>&1; then \
 	  reason="chaine C croisee introuvable, gcc-aarch64-linux-gnu ou gcc-arm-linux-gnueabihf"; \
-	elif ! command -v qemu-aarch64-static >/dev/null 2>&1 \
-	    || ! command -v qemu-arm-static >/dev/null 2>&1; then \
-	  reason="qemu-aarch64-static ou qemu-arm-static introuvable"; \
+	elif ! command -v qemu-aarch64 >/dev/null 2>&1 \
+	    || ! command -v qemu-arm >/dev/null 2>&1; then \
+	  reason="qemu-aarch64 ou qemu-arm introuvable, paquet qemu-user"; \
 	fi; \
 	if [ -n "$$reason" ] && [ -n "$$CI" ]; then \
 	  echo "$@ impossible en integration continue : $$reason"; exit 1; \

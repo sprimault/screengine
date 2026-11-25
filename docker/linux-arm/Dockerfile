@@ -3,7 +3,7 @@
 #
 # Exécution des deux cibles Linux sur ARM, sans rien installer sur la machine :
 # chaîne Rust et ses deux cibles, les deux chaînes C croisées avec leurs libc, et
-# `qemu-user-static` pour exécuter ce qui en sort.
+# `qemu-user` pour exécuter ce qui en sort.
 #
 #   docker build -t screengine-linux-arm docker/linux-arm
 #   docker run --rm --name screengine-linux-arm-test -u "$(id -u):$(id -g)" \
@@ -45,7 +45,7 @@ RUN apt-get update \
       ca-certificates curl make gcc libc6-dev \
       gcc-aarch64-linux-gnu libc6-dev-arm64-cross \
       gcc-arm-linux-gnueabihf libc6-dev-armhf-cross \
-      qemu-user-static \
+      qemu-user \
  && rm -rf /var/lib/apt/lists/*
 
 # CARGO_HOME pointe vers le cache au lancement ; les binaires de rustup restent
