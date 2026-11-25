@@ -80,6 +80,8 @@ publié, et explique les conventions du dépôt à qui y contribue.
 
 ## [Non publié]
 
+## [3.0.1] — 2026-11-25 — Une bibliothèque de plus à lier
+
 ### Modifié
 
 - **La bibliothèque statique Windows réclame `synchronization.lib`** en plus de
