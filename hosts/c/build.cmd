@@ -45,4 +45,4 @@ rem donnent deux tas. -std:c17 : sans lui, cl ne définit pas __STDC_VERSION__
 rem et les assertions de disposition du header disparaissent.
 rem Les bibliothèques système sont celles que rend `make native-libs`.
 cl -nologo -MD -std:c17 -W4 -WX -O2 -I"%~4" -Fo"%~2\\" -Fe"%~1" "%~5" "%~3" ^
-  kernel32.lib ntdll.lib userenv.lib ws2_32.lib dbghelp.lib
+  kernel32.lib ntdll.lib userenv.lib ws2_32.lib dbghelp.lib synchronization.lib

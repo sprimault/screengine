@@ -80,6 +80,20 @@ publié, et explique les conventions du dépôt à qui y contribue.
 
 ## [Non publié]
 
+### Modifié
+
+- **La bibliothèque statique Windows réclame `synchronization.lib`** en plus de
+  `kernel32 ntdll userenv ws2_32 dbghelp` : sans elle, l'édition de liens échoue
+  sur `WaitOnAddress` et les deux `WakeByAddress`.
+
+***
+
+### Changed
+
+- **The Windows static library now requires `synchronization.lib`** on top of
+  `kernel32 ntdll userenv ws2_32 dbghelp`: without it, linking fails on
+  `WaitOnAddress` and the two `WakeByAddress`.
+
 ## [3.0.0] — 2026-10-24 — Le porteur et sa carte
 
 **Un second majeur qui ne touche toujours pas la frontière C.**

@@ -313,6 +313,12 @@ jobs:
       # Les `libc6-dev-*-cross` sont nommés explicitement : sans eux, `gcc-*`
       # croisé est là mais l'édition de liens échoue sur `Scrt1.o` introuvable,
       # un message qui ne nomme pas le paquet qui manque.
+      #
+      # `qemu-user` et non `qemu-user-static` : ce dernier n'a plus de candidat
+      # depuis que l'image est passée à Ubuntu 26.04, et l'étape s'arrêtait sur
+      # `has no installation candidate`. C'est le paquet que l'étape Android
+      # installe déjà plus haut, et les deux familles emploient désormais les
+      # mêmes noms de binaires.
       - name: Chaînes croisées Linux ARM
         if: runner.os == 'Linux'
         timeout-minutes: 5
@@ -322,7 +328,7 @@ jobs:
           sudo apt-get install -y --no-install-recommends \
             gcc-aarch64-linux-gnu libc6-dev-arm64-cross \
             gcc-arm-linux-gnueabihf libc6-dev-armhf-cross \
-            qemu-user-static
+            qemu-user
 
       - name: Tests du noyau et de la frontière sur Linux ARM
         if: runner.os == 'Linux'

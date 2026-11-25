@@ -74,11 +74,10 @@ fn un_gamma_de_deux_deux_eclaircit() {
     assert_eq!(grade.tables[0], 0);
     assert_eq!(grade.tables[LEVELS - 1], 255);
 
-    for level in 1..LEVELS - 1 {
+    for (level, &out) in grade.tables.iter().enumerate().take(LEVELS - 1).skip(1) {
         assert!(
-            grade.tables[level] > level as u8,
-            "niveau {level} : {} devrait être plus clair",
-            grade.tables[level]
+            out > level as u8,
+            "niveau {level} : {out} devrait être plus clair"
         );
     }
 }
